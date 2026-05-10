@@ -1,0 +1,11 @@
+[build]
+  command = "npm run build"
+
+# Next.js App Router（/api/* 含む）を Netlify 本番で動かす公式プラグイン
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# フレームワーク自体がキャッシュヘッダを付与するため、追加の強制キャッシュは避ける
