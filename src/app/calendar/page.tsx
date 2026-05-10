@@ -343,7 +343,7 @@ export default function CalendarPage() {
               工事カレンダー
             </h1>
             <p className="mt-1 text-[14px] leading-snug text-slate-500">
-              日付をタップで詳細表示。案件はタップで @pocket を開きます。
+              日付をタップで下に一覧表示。案件から @pocket を開けます（横スクロール不要）。
             </p>
           </div>
 
@@ -388,12 +388,13 @@ export default function CalendarPage() {
         </div>
 
         <LiffCard>
-          <div className="overflow-x-auto p-3 sm:p-4">
-            <div className="grid min-w-[min(100vw-2rem,36rem)] grid-cols-7 gap-2 rounded-2xl bg-slate-100/95 p-2">
+          <div className="w-full p-2 sm:p-4">
+            {/* grid-cols-7 は画面幅いっぱいに収め、セルは min-w-0 で縮小可能にする（横スクロールなし） */}
+            <div className="grid w-full grid-cols-7 gap-px rounded-xl bg-slate-300/90 p-px sm:gap-0.5 sm:rounded-2xl sm:p-0.5">
               {WEEK_LABELS.map((w, wi) => (
                 <div
                   key={w}
-                  className={`rounded-xl px-1 py-3 text-center text-[12px] font-extrabold tracking-wide ${weekHeaderClass(wi)}`}
+                  className={`min-w-0 rounded-lg px-0 py-2 text-center text-[10px] font-extrabold leading-none tracking-wide sm:rounded-xl sm:py-2.5 sm:text-[11px] ${weekHeaderClass(wi)}`}
                 >
                   {w}
                 </div>
@@ -402,12 +403,12 @@ export default function CalendarPage() {
                 const accent = cellAccent(cell.date, holidaySet);
                 const accentCls =
                   accent === "hol"
-                    ? "bg-red-50/98 text-red-800 ring-red-100/80"
+                    ? "bg-red-50/98 text-red-800"
                     : accent === "sun"
-                      ? "bg-rose-50/90 text-rose-700 ring-rose-100/70"
+                      ? "bg-rose-50/90 text-rose-700"
                       : accent === "sat"
-                        ? "bg-sky-50/90 text-sky-800 ring-sky-100/70"
-                        : "bg-white text-slate-800 ring-slate-100/90";
+                        ? "bg-sky-50/90 text-sky-800"
+                        : "bg-white text-slate-800";
 
                 const dayItems: CalendarMonthApiItem[] =
                   cell.dayKey && data?.byDay
@@ -417,13 +418,14 @@ export default function CalendarPage() {
                 const isToday = cell.dayKey === todayKey && cell.inMonth;
                 const isSelected =
                   Boolean(cell.dayKey && selectedDayKey === cell.dayKey);
+                const n = dayItems.length;
 
                 return (
                   <div
                     key={`${idx}-${cell.dayKey ?? "x"}`}
                     role="button"
                     tabIndex={cell.inMonth ? 0 : -1}
-                    className={`flex min-h-[152px] flex-col rounded-2xl p-2 shadow-sm ring-1 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#06C755] ${accentCls} ${cell.inMonth ? "cursor-pointer active:bg-opacity-90" : "cursor-default opacity-[0.42]"} ${isSelected ? "ring-2 ring-[#06C755] ring-offset-2 ring-offset-slate-50" : ""}`}
+                    className={`flex min-h-[3.25rem] min-w-0 flex-col rounded-lg p-0.5 shadow-sm ring-1 ring-slate-200/70 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#06C755] sm:min-h-[4.25rem] sm:rounded-xl sm:p-1 ${accentCls} ${cell.inMonth ? "cursor-pointer active:brightness-[0.97]" : "cursor-default opacity-[0.42]"} ${isSelected ? "z-[1] ring-2 ring-[#06C755] ring-offset-1 ring-offset-white" : ""}`}
                     onClick={() => selectDay(cell)}
                     onKeyDown={(e) => {
                       if (!cell.inMonth) return;
@@ -433,65 +435,23 @@ export default function CalendarPage() {
                       }
                     }}
                   >
-                    <div className="mb-2 flex justify-end">
+                    <div className="flex justify-center sm:justify-end">
                       <span
-                        className={`flex size-9 items-center justify-center rounded-full text-[14px] font-bold tabular-nums leading-none ${isToday ? "bg-[#06C755] text-white shadow-md shadow-emerald-600/35" : "bg-white/70 text-current shadow-inner ring-1 ring-black/5"}`}
+                        className={`flex size-6 items-center justify-center rounded-full text-[11px] font-bold tabular-nums leading-none sm:size-7 sm:text-[12px] ${isToday ? "bg-[#06C755] text-white shadow-sm shadow-emerald-700/25" : "bg-white/75 text-current ring-1 ring-black/[0.06]"}`}
                       >
                         {cell.dayNum}
                       </span>
                     </div>
-                    <ul className="flex flex-1 flex-col gap-1.5">
-                      {dayItems.slice(0, 4).map((item, j) => {
-                        const hue = contractorHue(item.contractorKey);
-                        const border = `4px solid hsl(${hue} 44% 46%)`;
-                        return (
-                          <li key={`${cell.dayKey}-${j}-${item.recordId ?? j}`}>
-                            <button
-                              type="button"
-                              title={
-                                item.memo
-                                  ? `${item.line1}\n${item.memo}`
-                                  : item.line1
-                              }
-                              onClick={(ev) => {
-                                ev.stopPropagation();
-                                openExternal(item.accessEditUrl);
-                              }}
-                              disabled={!item.accessEditUrl?.trim()}
-                              className="w-full min-h-[48px] rounded-xl border border-slate-200/95 bg-white px-2 py-2.5 text-left text-[11px] font-bold leading-snug text-slate-900 shadow-sm outline-none transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-65"
-                              style={{ borderLeft: border }}
-                            >
-                              <span className="line-clamp-4">
-                                {item.line1}
-                                {item.showKankoCheck ? (
-                                  <span
-                                    className="ml-0.5 inline-block text-emerald-600"
-                                    title="工事報告と一致"
-                                  >
-                                    ✅
-                                  </span>
-                                ) : null}
-                              </span>
-                              {item.line2 ? (
-                                <span className="mt-1 block text-[10px] font-semibold leading-snug text-slate-600 line-clamp-2">
-                                  {item.line2}
-                                </span>
-                              ) : null}
-                              {item.memo ? (
-                                <span className="mt-1.5 inline-block rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
-                                  備考あり
-                                </span>
-                              ) : null}
-                            </button>
-                          </li>
-                        );
-                      })}
-                      {dayItems.length > 4 ? (
-                        <li className="px-0.5 text-center text-[10px] font-bold text-slate-500">
-                          +{dayItems.length - 4} 件
-                        </li>
+                    <div className="mt-auto flex min-h-[14px] items-end justify-center pb-0.5 sm:min-h-[18px]">
+                      {n > 0 ? (
+                        <span
+                          className="inline-flex min-w-[1rem] items-center justify-center rounded-full bg-emerald-600 px-1 py-px text-[9px] font-bold tabular-nums leading-none text-white sm:text-[10px]"
+                          title={`${n}件`}
+                        >
+                          {n > 99 ? "99+" : n}
+                        </span>
                       ) : null}
-                    </ul>
+                    </div>
                   </div>
                 );
               })}
