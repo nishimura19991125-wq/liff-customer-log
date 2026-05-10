@@ -33,6 +33,16 @@ function apiKey(): string {
   return key;
 }
 
+/** ログアプリ（LOG_APP_ID）へのレコード登録用。未設定時は担当者マスタと同じ ATPOCKET_API_KEY */
+function apiKeyForCreateRecord(appsId: string): string {
+  const logAppId = process.env.LOG_APP_ID?.trim();
+  const logKey = process.env.LOG_ATPOCKET_API_KEY?.trim();
+  if (logAppId && appsId === logAppId && logKey) {
+    return logKey;
+  }
+  return apiKey();
+}
+
 async function fetchWithMethodOverride(
   pathWithQuery: string,
 ): Promise<Response> {
@@ -94,7 +104,7 @@ export async function createRecord(
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      [authHeaderName()]: apiKey(),
+      [authHeaderName()]: apiKeyForCreateRecord(appsId),
     },
     body: JSON.stringify({ record }),
   });
