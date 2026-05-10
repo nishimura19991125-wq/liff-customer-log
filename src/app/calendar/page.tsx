@@ -18,6 +18,7 @@ import type {
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
 const WEEK_LABELS = ["日", "月", "火", "水", "木", "金", "土"] as const;
+const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
 
 function contractorHue(key: string): number {
   let h = 0;
@@ -32,6 +33,20 @@ function ymdKey(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function parseDayKey(dayKey: string): Date | null {
+  const p = dayKey.split("-").map(Number);
+  if (p.length !== 3 || p.some((n) => Number.isNaN(n))) return null;
+  const d = new Date(p[0], p[1] - 1, p[2]);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function formatDayHeading(dayKey: string): string {
+  const dt = parseDayKey(dayKey);
+  if (!dt) return dayKey;
+  const w = WEEKDAY_JA[dt.getDay()];
+  return `${dt.getMonth() + 1}月${dt.getDate()}日（${w}）`;
 }
 
 type GridCell = {
@@ -102,6 +117,12 @@ function openExternal(url: string) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
+function weekHeaderClass(i: number): string {
+  if (i === 0) return "text-red-600 bg-red-50/95";
+  if (i === 6) return "text-sky-700 bg-sky-50/95";
+  return "text-slate-600 bg-white/95";
+}
+
 export default function CalendarPage() {
   const today = useMemo(() => new Date(), []);
   const [ym, setYm] = useState(() => ({
@@ -116,6 +137,7 @@ export default function CalendarPage() {
     LIFF_ID ? null : "NEXT_PUBLIC_LIFF_ID が設定されていません",
   );
   const [data, setData] = useState<CalendarApiPayload | null>(null);
+  const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
 
   const loadCalendar = useCallback(async (idToken: string, year: number, month: number) => {
     setPhase("loading");
@@ -203,6 +225,19 @@ export default function CalendarPage() {
     return () => clearTimeout(t);
   }, [idToken, ym.year, ym.month, loadCalendar]);
 
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const tk = ymdKey(today);
+      if (ym.year === today.getFullYear() && ym.month === today.getMonth() + 1) {
+        setSelectedDayKey(tk);
+      } else {
+        const d = `${ym.year}-${String(ym.month).padStart(2, "0")}-01`;
+        setSelectedDayKey(d);
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, [ym.year, ym.month, today]);
+
   const holidaySet = useMemo(
     () => new Set(data?.holidayKeys ?? []),
     [data?.holidayKeys],
@@ -214,6 +249,11 @@ export default function CalendarPage() {
   );
 
   const todayKey = ymdKey(today);
+
+  const selectedItems: CalendarMonthApiItem[] = useMemo(() => {
+    if (!selectedDayKey || !data?.byDay) return [];
+    return data.byDay[selectedDayKey] ?? [];
+  }, [data, selectedDayKey]);
 
   function shiftMonth(delta: number) {
     setYm((prev) => {
@@ -231,11 +271,16 @@ export default function CalendarPage() {
     });
   }
 
+  function selectDay(cell: GridCell) {
+    if (!cell.inMonth || !cell.dayKey) return;
+    setSelectedDayKey(cell.dayKey);
+  }
+
   if (phase === "init" || phase === "need-login") {
     return (
       <LiffLoadingBlock
         message="LINE でログインしています"
-        footer={<LiffGhostLink href="/">ログ入力へ</LiffGhostLink>}
+        footer={<LiffGhostLink href="/">メニューへ</LiffGhostLink>}
       />
     );
   }
@@ -244,7 +289,7 @@ export default function CalendarPage() {
     return (
       <LiffLoadingBlock
         message="カレンダーを読み込んでいます"
-        footer={<LiffGhostLink href="/">ログ入力へ</LiffGhostLink>}
+        footer={<LiffGhostLink href="/">メニューへ</LiffGhostLink>}
       />
     );
   }
@@ -254,9 +299,12 @@ export default function CalendarPage() {
       <LiffScreen>
         <div className="flex flex-1 flex-col justify-center py-8">
           <div className="mb-6 text-center">
-            <Link href="/" className="inline-flex items-center gap-2 text-[14px] font-semibold text-emerald-800">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 text-[14px] font-semibold text-emerald-800"
+            >
               <span aria-hidden>‹</span>
-              ログ入力へ戻る
+              メニューへ戻る
             </Link>
           </div>
           <LiffCard>
@@ -269,7 +317,7 @@ export default function CalendarPage() {
                   href="/"
                   className="inline-flex w-full items-center justify-center rounded-2xl bg-[#06C755] py-3.5 text-[15px] font-semibold text-white shadow-lg shadow-emerald-600/20 transition active:scale-[0.98]"
                 >
-                  ログ入力へ
+                  メニューへ
                 </Link>
               </div>
             </div>
@@ -281,44 +329,57 @@ export default function CalendarPage() {
 
   return (
     <LiffScreen>
-      <div className="mx-auto w-full max-w-xl flex-1 pb-6 pt-2">
-        <div className="mb-5 flex flex-col gap-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <Link
-                href="/"
-                className="inline-flex items-center gap-1 text-[13px] font-semibold text-emerald-800 active:opacity-70"
-              >
-                <span className="text-lg leading-none">‹</span>
-                ログ入力
-              </Link>
-              <h1 className="mt-3 text-[1.45rem] font-bold tracking-tight text-slate-900">
-                工事カレンダー
-              </h1>
-              <p className="mt-1 text-[13px] text-slate-500">
-                現場スケジュールを確認できます
-              </p>
-            </div>
+      <div className="mx-auto w-full max-w-xl flex-1 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2">
+        <div className="mb-4 flex flex-col gap-4">
+          <div>
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1 text-[13px] font-semibold text-emerald-800 active:opacity-70"
+            >
+              <span className="text-lg leading-none">‹</span>
+              メニューへ
+            </Link>
+            <h1 className="mt-3 text-[1.5rem] font-bold tracking-tight text-slate-900">
+              工事カレンダー
+            </h1>
+            <p className="mt-1 text-[14px] leading-snug text-slate-500">
+              日付をタップで詳細表示。案件はタップで @pocket を開きます。
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+            <span className="inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 ring-1 ring-slate-200/80">
+              <span className="size-2 rounded-full bg-[#06C755]" aria-hidden />
+              今日
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-red-700 ring-1 ring-red-100">
+              赤背景
+              <span className="font-normal text-red-600/90">祝・日曜</span>
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-sky-800 ring-1 ring-sky-100">
+              水色
+              <span className="font-normal text-sky-700/90">土曜</span>
+            </span>
           </div>
 
           <div className="flex items-center gap-2 rounded-2xl bg-slate-200/55 p-1.5 shadow-inner">
             <button
               type="button"
               onClick={() => shiftMonth(-1)}
-              className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white text-lg font-medium text-slate-700 shadow-sm transition active:scale-95"
+              className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-white text-xl font-medium text-slate-700 shadow-sm transition active:scale-95"
               aria-label="前の月"
             >
               ‹
             </button>
             <div className="min-w-0 flex-1 text-center">
-              <span className="text-[15px] font-bold tabular-nums text-slate-800">
+              <span className="text-[1.05rem] font-bold tabular-nums text-slate-800">
                 {ym.year}年 {ym.month}月
               </span>
             </div>
             <button
               type="button"
               onClick={() => shiftMonth(1)}
-              className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white text-lg font-medium text-slate-700 shadow-sm transition active:scale-95"
+              className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-white text-xl font-medium text-slate-700 shadow-sm transition active:scale-95"
               aria-label="次の月"
             >
               ›
@@ -328,11 +389,11 @@ export default function CalendarPage() {
 
         <LiffCard>
           <div className="overflow-x-auto p-3 sm:p-4">
-            <div className="grid min-w-[340px] grid-cols-7 gap-1 rounded-2xl bg-slate-100/90 p-1">
-              {WEEK_LABELS.map((w) => (
+            <div className="grid min-w-[min(100vw-2rem,36rem)] grid-cols-7 gap-2 rounded-2xl bg-slate-100/95 p-2">
+              {WEEK_LABELS.map((w, wi) => (
                 <div
                   key={w}
-                  className="rounded-lg bg-white/90 px-0.5 py-2.5 text-center text-[11px] font-bold tracking-wide text-slate-500"
+                  className={`rounded-xl px-1 py-3 text-center text-[12px] font-extrabold tracking-wide ${weekHeaderClass(wi)}`}
                 >
                   {w}
                 </div>
@@ -341,12 +402,12 @@ export default function CalendarPage() {
                 const accent = cellAccent(cell.date, holidaySet);
                 const accentCls =
                   accent === "hol"
-                    ? "bg-red-50/95 text-red-700"
+                    ? "bg-red-50/98 text-red-800 ring-red-100/80"
                     : accent === "sun"
-                      ? "bg-rose-50/60 text-rose-600"
+                      ? "bg-rose-50/90 text-rose-700 ring-rose-100/70"
                       : accent === "sat"
-                        ? "bg-sky-50/70 text-sky-700"
-                        : "bg-white text-slate-800";
+                        ? "bg-sky-50/90 text-sky-800 ring-sky-100/70"
+                        : "bg-white text-slate-800 ring-slate-100/90";
 
                 const dayItems: CalendarMonthApiItem[] =
                   cell.dayKey && data?.byDay
@@ -354,23 +415,35 @@ export default function CalendarPage() {
                     : [];
 
                 const isToday = cell.dayKey === todayKey && cell.inMonth;
+                const isSelected =
+                  Boolean(cell.dayKey && selectedDayKey === cell.dayKey);
 
                 return (
                   <div
                     key={`${idx}-${cell.dayKey ?? "x"}`}
-                    className={`flex min-h-[118px] flex-col rounded-xl p-1.5 shadow-sm ring-1 ring-slate-200/60 transition-colors ${accentCls} ${cell.inMonth ? "" : "opacity-[0.45]"}`}
+                    role="button"
+                    tabIndex={cell.inMonth ? 0 : -1}
+                    className={`flex min-h-[152px] flex-col rounded-2xl p-2 shadow-sm ring-1 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#06C755] ${accentCls} ${cell.inMonth ? "cursor-pointer active:bg-opacity-90" : "cursor-default opacity-[0.42]"} ${isSelected ? "ring-2 ring-[#06C755] ring-offset-2 ring-offset-slate-50" : ""}`}
+                    onClick={() => selectDay(cell)}
+                    onKeyDown={(e) => {
+                      if (!cell.inMonth) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        selectDay(cell);
+                      }
+                    }}
                   >
-                    <div className="mb-1.5 flex justify-end">
+                    <div className="mb-2 flex justify-end">
                       <span
-                        className={`flex size-7 items-center justify-center rounded-full text-[12px] font-bold tabular-nums leading-none ${isToday ? "bg-[#06C755] text-white shadow-md shadow-emerald-600/30" : "text-current opacity-90"}`}
+                        className={`flex size-9 items-center justify-center rounded-full text-[14px] font-bold tabular-nums leading-none ${isToday ? "bg-[#06C755] text-white shadow-md shadow-emerald-600/35" : "bg-white/70 text-current shadow-inner ring-1 ring-black/5"}`}
                       >
                         {cell.dayNum}
                       </span>
                     </div>
-                    <ul className="flex flex-1 flex-col gap-1">
-                      {dayItems.map((item, j) => {
+                    <ul className="flex flex-1 flex-col gap-1.5">
+                      {dayItems.slice(0, 4).map((item, j) => {
                         const hue = contractorHue(item.contractorKey);
-                        const border = `3px solid hsl(${hue} 46% 48%)`;
+                        const border = `4px solid hsl(${hue} 44% 46%)`;
                         return (
                           <li key={`${cell.dayKey}-${j}-${item.recordId ?? j}`}>
                             <button
@@ -380,12 +453,15 @@ export default function CalendarPage() {
                                   ? `${item.line1}\n${item.memo}`
                                   : item.line1
                               }
-                              onClick={() => openExternal(item.accessEditUrl)}
+                              onClick={(ev) => {
+                                ev.stopPropagation();
+                                openExternal(item.accessEditUrl);
+                              }}
                               disabled={!item.accessEditUrl?.trim()}
-                              className="w-full min-h-[44px] rounded-lg border border-slate-200/90 bg-white/95 px-1.5 py-2 text-left text-[10px] font-semibold leading-snug text-slate-900 shadow-sm outline-none transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
+                              className="w-full min-h-[48px] rounded-xl border border-slate-200/95 bg-white px-2 py-2.5 text-left text-[11px] font-bold leading-snug text-slate-900 shadow-sm outline-none transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-65"
                               style={{ borderLeft: border }}
                             >
-                              <span className="line-clamp-3">
+                              <span className="line-clamp-4">
                                 {item.line1}
                                 {item.showKankoCheck ? (
                                   <span
@@ -397,19 +473,24 @@ export default function CalendarPage() {
                                 ) : null}
                               </span>
                               {item.line2 ? (
-                                <span className="mt-0.5 block truncate text-[9px] font-normal text-slate-600">
+                                <span className="mt-1 block text-[10px] font-semibold leading-snug text-slate-600 line-clamp-2">
                                   {item.line2}
                                 </span>
                               ) : null}
                               {item.memo ? (
-                                <span className="mt-1 inline-block rounded bg-slate-100 px-1 py-0.5 text-[8px] font-medium text-slate-600">
-                                  備考
+                                <span className="mt-1.5 inline-block rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+                                  備考あり
                                 </span>
                               ) : null}
                             </button>
                           </li>
                         );
                       })}
+                      {dayItems.length > 4 ? (
+                        <li className="px-0.5 text-center text-[10px] font-bold text-slate-500">
+                          +{dayItems.length - 4} 件
+                        </li>
+                      ) : null}
                     </ul>
                   </div>
                 );
@@ -418,9 +499,63 @@ export default function CalendarPage() {
           </div>
         </LiffCard>
 
-        <p className="mx-auto mt-5 max-w-md px-1 text-center text-[11px] leading-relaxed text-slate-500">
-          案件をタップすると @pocket の編集画面を開きます（権限・URL が無い場合は開けません）。
-        </p>
+        {selectedDayKey ? (
+          <section className="mt-5" aria-labelledby="day-detail-heading">
+            <h2
+              id="day-detail-heading"
+              className="mb-3 px-1 text-[15px] font-bold text-slate-800"
+            >
+              {formatDayHeading(selectedDayKey)}の予定
+            </h2>
+            <LiffCard>
+              <div className="px-4 py-4 sm:px-5">
+                {selectedItems.length === 0 ? (
+                  <p className="py-6 text-center text-[14px] text-slate-500">
+                    この日の予定はありません
+                  </p>
+                ) : (
+                  <ul className="flex flex-col gap-3">
+                    {selectedItems.map((item, i) => {
+                      const hue = contractorHue(item.contractorKey);
+                      const border = `4px solid hsl(${hue} 44% 46%)`;
+                      return (
+                        <li key={`detail-${selectedDayKey}-${i}-${item.recordId ?? i}`}>
+                          <button
+                            type="button"
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99] disabled:opacity-60"
+                            style={{ borderLeft: border }}
+                            disabled={!item.accessEditUrl?.trim()}
+                            onClick={() => openExternal(item.accessEditUrl)}
+                          >
+                            <p className="text-[15px] font-bold leading-snug text-slate-900">
+                              {item.line1}
+                              {item.showKankoCheck ? (
+                                <span className="ml-1 text-emerald-600">✅</span>
+                              ) : null}
+                            </p>
+                            {item.line2 ? (
+                              <p className="mt-2 text-[13px] font-semibold leading-relaxed text-slate-600">
+                                {item.line2}
+                              </p>
+                            ) : null}
+                            {item.memo ? (
+                              <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-[13px] leading-relaxed text-slate-700 whitespace-pre-wrap">
+                                {item.memo}
+                              </p>
+                            ) : null}
+                            <p className="mt-3 text-[11px] font-semibold text-[#06C755]">
+                              タップして @pocket で開く →
+                            </p>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </LiffCard>
+          </section>
+        ) : null}
       </div>
     </LiffScreen>
   );

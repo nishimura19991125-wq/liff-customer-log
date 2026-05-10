@@ -16,8 +16,8 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
 
 export const metadata: Metadata = {
   ...(siteUrl ? { metadataBase: new URL(siteUrl) } : {}),
-  title: "顧客対応ログ入力",
-  description: "社内向け顧客対応ログ（LIFF）",
+  title: { default: "情報確認くん", template: "%s | 情報確認くん" },
+  description: "情報確認くん — 社内向け顧客対応ログ・工事カレンダー（LIFF）",
 };
 
 export default function RootLayout({
