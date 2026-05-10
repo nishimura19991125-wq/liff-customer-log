@@ -2,12 +2,20 @@ import "server-only";
 
 export type AtPocketRecordRow = {
   recordId?: number;
+  id?: number;
   uniqueId?: string;
   record?: Record<string, unknown>;
+  /** 一覧 API が返す編集画面への URL（環境により付与） */
+  accessEditUrl?: string;
 };
 
 export type AtPocketListResponse = {
   records?: AtPocketRecordRow[];
+};
+
+export type AtPocketFieldRow = {
+  uniqueId?: string;
+  caption?: string;
 };
 
 function baseUrl(): string {
@@ -33,6 +41,24 @@ function apiKey(): string {
   return key;
 }
 
+/** 工事カレンダー用アプリの読み取りキー（未設定時は ATPOCKET_API_KEY） */
+export function apiKeyForCalendarPocket(): string {
+  const k = process.env.CALENDAR_ATPOCKET_API_KEY?.trim();
+  if (k) return k;
+  return apiKey();
+}
+
+/** 工事報告アプリ読み取り用キー（未設定時は工事カレンダー用キー／それも無ければ ATPOCKET_API_KEY） */
+export function apiKeyForCalendarReportPocket(): string {
+  const k = process.env.CALENDAR_REPORT_ATPOCKET_API_KEY?.trim();
+  if (k) return k;
+  return apiKeyForCalendarPocket();
+}
+
+export type AtPocketFetchAuth = {
+  apiKey?: string;
+};
+
 /** ログアプリ（LOG_APP_ID）へのレコード登録用。未設定時は担当者マスタと同じ ATPOCKET_API_KEY */
 function apiKeyForCreateRecord(appsId: string): string {
   const logAppId = process.env.LOG_APP_ID?.trim();
@@ -45,13 +71,15 @@ function apiKeyForCreateRecord(appsId: string): string {
 
 async function fetchWithMethodOverride(
   pathWithQuery: string,
+  auth?: AtPocketFetchAuth,
 ): Promise<Response> {
   const url = `${baseUrl()}${pathWithQuery}`;
+  const key = auth?.apiKey ?? apiKey();
   return fetch(url, {
     method: "POST",
     headers: {
       Accept: "application/json",
-      [authHeaderName()]: apiKey(),
+      [authHeaderName()]: key,
       "X-HTTP-Method-Override": "GET",
     },
   });
@@ -61,6 +89,7 @@ async function fetchWithMethodOverride(
 export async function fetchRecordsList(
   appsId: string,
   searchParams?: { limit?: string; page?: string; fields?: string },
+  auth?: AtPocketFetchAuth,
 ): Promise<AtPocketListResponse> {
   const params = new URLSearchParams();
   params.set("limit", searchParams?.limit ?? "1000");
@@ -69,7 +98,7 @@ export async function fetchRecordsList(
   const qs = params.toString();
   const path = `/api/apps/${appsId}/records${qs ? `?${qs}` : ""}`;
 
-  const res = await fetchWithMethodOverride(path);
+  const res = await fetchWithMethodOverride(path, auth);
 
   const text = await res.text();
   if (!res.ok) {
@@ -78,7 +107,53 @@ export async function fetchRecordsList(
   return text ? (JSON.parse(text) as AtPocketListResponse) : { records: [] };
 }
 
-/** 単一レコード取得 GET /api/apps/{appsId}/records/{recordId} */
+/** アプリのフィールド定義一覧 GET /api/apps/{appsId}/fields */
+export async function fetchAppFields(
+  appsId: string,
+  auth?: AtPocketFetchAuth,
+): Promise<AtPocketFieldRow[]> {
+  const params = new URLSearchParams();
+  params.set("limit", "1000");
+  params.set("page", "1");
+  const path = `/api/apps/${appsId}/fields?${params.toString()}`;
+  const res = await fetchWithMethodOverride(path, auth);
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`@pocket list fields failed: ${res.status} ${text}`);
+  }
+  if (!text) return [];
+  const json = JSON.parse(text) as { fields?: AtPocketFieldRow[] };
+  return json.fields ?? [];
+}
+
+const CALENDAR_PAGE_LIMIT = 1000;
+const CALENDAR_MAX_PAGES = 200;
+
+/** @pocket 一覧をページングで全件取得（工事カレンダーなど） */
+export async function fetchAllRecordsPages(
+  appsId: string,
+  fieldsCsv: string,
+  auth?: AtPocketFetchAuth,
+): Promise<AtPocketRecordRow[]> {
+  const all: AtPocketRecordRow[] = [];
+  for (let page = 1; page <= CALENDAR_MAX_PAGES; page++) {
+    const data = await fetchRecordsList(
+      appsId,
+      {
+        limit: String(CALENDAR_PAGE_LIMIT),
+        page: String(page),
+        fields: fieldsCsv,
+      },
+      auth,
+    );
+    const recs = data.records ?? [];
+    all.push(...recs);
+    if (recs.length < CALENDAR_PAGE_LIMIT) break;
+  }
+  return all;
+}
+
+/** 単一レコード GET /api/apps/{appsId}/records/{recordId} */
 export async function fetchRecordById(
   appsId: string,
   recordId: string,

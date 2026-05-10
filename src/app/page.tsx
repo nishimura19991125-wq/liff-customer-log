@@ -1,6 +1,7 @@
 "use client";
 
 import liff from "@line/liff";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 type Staff = { id: string; name: string };
@@ -200,6 +201,15 @@ export default function Home() {
         <h1 className="mb-6 text-xl font-semibold text-zinc-900">
           顧客対応ログ入力
         </h1>
+
+        <p className="mb-5 text-sm">
+          <Link
+            href="/calendar"
+            className="font-medium text-emerald-700 underline-offset-2 hover:underline"
+          >
+            工事カレンダーを表示
+          </Link>
+        </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           <label className="flex flex-col gap-1 text-sm">
