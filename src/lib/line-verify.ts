@@ -17,7 +17,9 @@ export async function verifyLineIdToken(
   });
 
   if (!res.ok) {
-    throw new Error("LINE token verification failed");
+    const text = await res.text();
+    console.error("[line-verify] LINE verify failed:", res.status, text);
+    throw new Error(`LINE token verification failed (${res.status})`);
   }
 
   const json = (await res.json()) as { sub?: string };
