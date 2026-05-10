@@ -1,3 +1,5 @@
+import "server-only";
+
 export type AtPocketRecordRow = {
   recordId?: number;
   uniqueId?: string;

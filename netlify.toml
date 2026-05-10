@@ -7,5 +7,8 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  # Secrets Controller scans build output for values of env vars marked "secret".
+  # NEXT_PUBLIC_* is inlined into bundles; LINE channel ID is used like OAuth client_id.
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_LIFF_ID,LINE_LOGIN_CHANNEL_ID"
 
 # フレームワーク自体がキャッシュヘッダを付与するため、追加の強制キャッシュは避ける

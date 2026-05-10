@@ -1,3 +1,5 @@
+import "server-only";
+
 import { fetchRecordById } from "@/lib/atpocket";
 
 /** 担当者マスタからレコード ID に対応する表示名だけをサーバー側で解決（クライアント改ざん防止） */

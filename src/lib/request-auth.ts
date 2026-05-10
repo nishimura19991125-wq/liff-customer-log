@@ -1,3 +1,5 @@
+import "server-only";
+
 import { verifyLineIdToken } from "@/lib/line-verify";
 
 /** Bearer の LINE ID トークンを検証し `sub`（ユーザー ID）を返す */

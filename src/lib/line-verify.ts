@@ -1,3 +1,5 @@
+import "server-only";
+
 /** LINE Login の ID トークンを検証し `sub`（ユーザー ID）を返す */
 export async function verifyLineIdToken(
   idToken: string,
