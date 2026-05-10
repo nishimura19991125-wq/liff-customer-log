@@ -1,12 +1,34 @@
 "use client";
 
 import liff from "@line/liff";
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+
+import {
+  LiffCard,
+  LiffLoadingBlock,
+  LiffNavPill,
+  LiffPageHeader,
+  LiffPrimaryButton,
+  LiffScreen,
+} from "@/components/liff-chrome";
 
 type Staff = { id: string; name: string };
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
+
+function CalendarGlyph() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M8 2v3M16 2v3M3.5 9.09h17M21 8.5V17c0 3-1.5 5-5 5H8c-3.5 0-5-2-5-5V8.5c0-3 1.5-5 5-5h8c3.5 0 5 2 5 5Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 export default function Home() {
   const [phase, setPhase] = useState<
@@ -26,6 +48,9 @@ export default function Home() {
   const [staffRecordId, setStaffRecordId] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [content, setContent] = useState("");
+
+  const inputClass =
+    "min-h-[48px] w-full rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#06C755] focus:ring-2 focus:ring-[#06C755]/25";
 
   const loadStaff = useCallback(async (idToken: string) => {
     setPhase("loading-staff");
@@ -162,112 +187,153 @@ export default function Home() {
 
   if (phase === "init" || phase === "need-login" || phase === "loading-staff") {
     return (
-      <div className="flex min-h-full flex-1 items-center justify-center bg-zinc-100 px-4 py-16">
-        <p className="text-zinc-700">
-          {phase === "loading-staff"
-            ? "担当者マスタを読み込み中…"
-            : "ログイン処理中…"}
-        </p>
-      </div>
+      <LiffLoadingBlock
+        message={
+          phase === "loading-staff"
+            ? "担当者マスタを読み込んでいます"
+            : "LINE でログインしています"
+        }
+      />
     );
   }
 
   if (phase === "error") {
     return (
-      <div className="flex min-h-full flex-1 flex-col items-center justify-center gap-4 bg-zinc-100 px-4 py-16">
-        <p className="max-w-md text-center text-red-700">{errorMessage}</p>
-      </div>
+      <LiffScreen>
+        <div className="flex flex-1 flex-col justify-center py-10">
+          <LiffCard>
+            <div className="px-5 py-8 text-center">
+              <p className="text-[15px] leading-relaxed text-red-700 whitespace-pre-wrap">
+                {errorMessage}
+              </p>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="mt-8 rounded-xl px-6 py-3 text-[14px] font-semibold text-slate-700 underline underline-offset-2"
+              >
+                再読み込み
+              </button>
+            </div>
+          </LiffCard>
+        </div>
+      </LiffScreen>
     );
   }
 
   if (phase === "done") {
     return (
-      <div className="flex min-h-full flex-1 flex-col items-center justify-center gap-6 bg-zinc-100 px-4 py-16">
-        <p className="text-lg font-medium text-zinc-900">登録完了</p>
-        <button
-          type="button"
-          onClick={handleClose}
-          className="rounded-lg bg-emerald-600 px-6 py-3 text-white hover:bg-emerald-700"
-        >
-          閉じる
-        </button>
-      </div>
+      <LiffScreen>
+        <div className="flex flex-1 flex-col items-center justify-center gap-8 py-12">
+          <div className="flex size-20 items-center justify-center rounded-full bg-emerald-100 text-[2.5rem] shadow-inner">
+            ✓
+          </div>
+          <div className="text-center">
+            <p className="text-xl font-bold text-slate-900">登録完了</p>
+            <p className="mt-2 text-[14px] text-slate-500">
+              ご入力ありがとうございました
+            </p>
+          </div>
+          <div className="w-full max-w-xs px-2">
+            <LiffPrimaryButton type="button" onClick={handleClose}>
+              閉じる
+            </LiffPrimaryButton>
+          </div>
+        </div>
+      </LiffScreen>
     );
   }
 
   return (
-    <div className="min-h-full flex-1 bg-zinc-100 px-4 py-10">
-      <main className="mx-auto w-full max-w-lg rounded-2xl bg-white p-6 shadow-sm ring-1 ring-zinc-200">
-        <h1 className="mb-6 text-xl font-semibold text-zinc-900">
-          顧客対応ログ入力
-        </h1>
+    <LiffScreen>
+      <main className="mx-auto w-full max-w-lg flex-1 py-4">
+        <LiffPageHeader
+          title="顧客対応ログ"
+          subtitle="対応内容を入力して送信してください"
+        />
 
-        <p className="mb-5 text-sm">
-          <Link
+        <div className="mb-4">
+          <LiffNavPill
             href="/calendar"
-            className="font-medium text-emerald-700 underline-offset-2 hover:underline"
-          >
-            工事カレンダーを表示
-          </Link>
-        </p>
+            label="工事カレンダーを見る"
+            icon={<CalendarGlyph />}
+          />
+        </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-zinc-800">担当者</span>
-            <select
-              required
-              value={staffRecordId}
-              onChange={(e) => setStaffRecordId(e.target.value)}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30"
+        <LiffCard>
+          <form
+            onSubmit={handleSubmit}
+            className="flex flex-col gap-6 px-5 py-7 sm:px-7"
+          >
+            <label className="flex flex-col gap-2">
+              <span className="text-[13px] font-semibold tracking-wide text-slate-600">
+                担当者
+              </span>
+              <select
+                required
+                value={staffRecordId}
+                onChange={(e) => setStaffRecordId(e.target.value)}
+                className={`${inputClass} appearance-none bg-[length:1rem] bg-[right_0.85rem_center] bg-no-repeat pr-10`}
+                style={{
+                  backgroundImage:
+                    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m19 9-7 7-7-7'/%3E%3C/svg%3E\")",
+                }}
+              >
+                <option value="">選択してください</option>
+                {staff.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-2">
+              <span className="text-[13px] font-semibold tracking-wide text-slate-600">
+                顧客名
+              </span>
+              <input
+                type="text"
+                required
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                className={inputClass}
+                placeholder="お客様のお名前"
+                autoComplete="name"
+              />
+            </label>
+
+            <label className="flex flex-col gap-2">
+              <span className="text-[13px] font-semibold tracking-wide text-slate-600">
+                対応内容
+              </span>
+              <textarea
+                required
+                rows={6}
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                className={`${inputClass} min-h-[160px] resize-y py-3 leading-relaxed`}
+                placeholder="ここに対応内容を記入してください"
+              />
+            </label>
+
+            {errorMessage ? (
+              <div
+                role="alert"
+                className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] leading-relaxed text-red-800 whitespace-pre-wrap"
+              >
+                {errorMessage}
+              </div>
+            ) : null}
+
+            <LiffPrimaryButton
+              type="submit"
+              disabled={phase === "submitting"}
             >
-              <option value="">選択してください</option>
-              {staff.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-zinc-800">顧客名</span>
-            <input
-              type="text"
-              required
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              className="rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30"
-              placeholder="顧客名を入力"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-zinc-800">対応内容</span>
-            <textarea
-              required
-              rows={6}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className="resize-y rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30"
-              placeholder="対応内容を入力"
-            />
-          </label>
-
-          {errorMessage ? (
-            <p className="whitespace-pre-wrap break-words text-sm text-red-600">
-              {errorMessage}
-            </p>
-          ) : null}
-
-          <button
-            type="submit"
-            disabled={phase === "submitting"}
-            className="mt-2 rounded-lg bg-emerald-600 py-3 font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
-          >
-            {phase === "submitting" ? "送信中…" : "送信"}
-          </button>
-        </form>
+              {phase === "submitting" ? "送信中…" : "送信する"}
+            </LiffPrimaryButton>
+          </form>
+        </LiffCard>
       </main>
-    </div>
+    </LiffScreen>
   );
 }

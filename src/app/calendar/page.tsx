@@ -4,6 +4,12 @@ import liff from "@line/liff";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  LiffCard,
+  LiffGhostLink,
+  LiffLoadingBlock,
+  LiffScreen,
+} from "@/components/liff-chrome";
 import type {
   CalendarApiPayload,
   CalendarMonthApiItem,
@@ -225,163 +231,197 @@ export default function CalendarPage() {
     });
   }
 
-  if (phase === "init" || phase === "need-login" || phase === "loading") {
+  if (phase === "init" || phase === "need-login") {
     return (
-      <div className="flex min-h-full flex-1 flex-col items-center justify-center gap-4 bg-zinc-100 px-4 py-16">
-        <p className="text-zinc-700">
-          {phase === "loading" ? "工事カレンダーを読み込み中…" : "ログイン処理中…"}
-        </p>
-        {phase === "loading" ? (
-          <Link
-            href="/"
-            className="text-sm text-emerald-700 underline underline-offset-2"
-          >
-            ログ入力へ戻る
-          </Link>
-        ) : null}
-      </div>
+      <LiffLoadingBlock
+        message="LINE でログインしています"
+        footer={<LiffGhostLink href="/">ログ入力へ</LiffGhostLink>}
+      />
+    );
+  }
+
+  if (phase === "loading") {
+    return (
+      <LiffLoadingBlock
+        message="カレンダーを読み込んでいます"
+        footer={<LiffGhostLink href="/">ログ入力へ</LiffGhostLink>}
+      />
     );
   }
 
   if (phase === "error" || phase === "disabled") {
     return (
-      <div className="flex min-h-full flex-1 flex-col items-center justify-center gap-6 bg-zinc-100 px-4 py-16">
-        <p className="max-w-md whitespace-pre-wrap text-center text-red-700">
-          {errorMessage}
-        </p>
-        <Link
-          href="/"
-          className="rounded-lg bg-zinc-800 px-5 py-2.5 text-sm font-medium text-white hover:bg-zinc-900"
-        >
-          ログ入力へ戻る
-        </Link>
-      </div>
+      <LiffScreen>
+        <div className="flex flex-1 flex-col justify-center py-8">
+          <div className="mb-6 text-center">
+            <Link href="/" className="inline-flex items-center gap-2 text-[14px] font-semibold text-emerald-800">
+              <span aria-hidden>‹</span>
+              ログ入力へ戻る
+            </Link>
+          </div>
+          <LiffCard>
+            <div className="px-5 py-8">
+              <p className="whitespace-pre-wrap text-center text-[15px] leading-relaxed text-red-700">
+                {errorMessage}
+              </p>
+              <div className="mx-auto mt-8 max-w-xs">
+                <Link
+                  href="/"
+                  className="inline-flex w-full items-center justify-center rounded-2xl bg-[#06C755] py-3.5 text-[15px] font-semibold text-white shadow-lg shadow-emerald-600/20 transition active:scale-[0.98]"
+                >
+                  ログ入力へ
+                </Link>
+              </div>
+            </div>
+          </LiffCard>
+        </div>
+      </LiffScreen>
     );
   }
 
   return (
-    <div className="min-h-full flex-1 bg-zinc-100 px-3 py-6 pb-10">
-      <div className="mx-auto w-full max-w-3xl">
-        <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/"
-              className="text-sm font-medium text-emerald-800 underline-offset-2 hover:underline"
-            >
-              ← ログ入力
-            </Link>
-            <h1 className="text-lg font-semibold text-zinc-900">工事カレンダー</h1>
+    <LiffScreen>
+      <div className="mx-auto w-full max-w-xl flex-1 pb-6 pt-2">
+        <div className="mb-5 flex flex-col gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <Link
+                href="/"
+                className="inline-flex items-center gap-1 text-[13px] font-semibold text-emerald-800 active:opacity-70"
+              >
+                <span className="text-lg leading-none">‹</span>
+                ログ入力
+              </Link>
+              <h1 className="mt-3 text-[1.45rem] font-bold tracking-tight text-slate-900">
+                工事カレンダー
+              </h1>
+              <p className="mt-1 text-[13px] text-slate-500">
+                現場スケジュールを確認できます
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-2 rounded-2xl bg-slate-200/55 p-1.5 shadow-inner">
             <button
               type="button"
               onClick={() => shiftMonth(-1)}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-800 hover:bg-zinc-50"
+              className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white text-lg font-medium text-slate-700 shadow-sm transition active:scale-95"
+              aria-label="前の月"
             >
-              前月
+              ‹
             </button>
-            <span className="min-w-[8rem] text-center text-sm font-semibold text-zinc-800">
-              {ym.year}年{ym.month}月
-            </span>
+            <div className="min-w-0 flex-1 text-center">
+              <span className="text-[15px] font-bold tabular-nums text-slate-800">
+                {ym.year}年 {ym.month}月
+              </span>
+            </div>
             <button
               type="button"
               onClick={() => shiftMonth(1)}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-800 hover:bg-zinc-50"
+              className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white text-lg font-medium text-slate-700 shadow-sm transition active:scale-95"
+              aria-label="次の月"
             >
-              翌月
+              ›
             </button>
-          </div>
-        </header>
-
-        <div className="overflow-x-auto rounded-xl bg-white p-2 shadow-sm ring-1 ring-zinc-200">
-          <div className="grid grid-cols-7 gap-px rounded-lg bg-zinc-200">
-            {WEEK_LABELS.map((w) => (
-              <div
-                key={w}
-                className="bg-zinc-50 px-1 py-2 text-center text-[11px] font-bold text-zinc-600"
-              >
-                {w}
-              </div>
-            ))}
-            {grid.map((cell, idx) => {
-              const accent = cellAccent(cell.date, holidaySet);
-              const accentCls =
-                accent === "hol"
-                  ? "text-red-600 bg-red-50"
-                  : accent === "sun"
-                    ? "text-red-500 bg-white"
-                    : accent === "sat"
-                      ? "text-blue-600 bg-white"
-                      : "text-zinc-800 bg-white";
-
-              const dayItems: CalendarMonthApiItem[] =
-                cell.dayKey && data?.byDay
-                  ? (data.byDay[cell.dayKey] ?? [])
-                  : [];
-
-              const isToday = cell.dayKey === todayKey && cell.inMonth;
-
-              return (
-                <div
-                  key={`${idx}-${cell.dayKey ?? "x"}`}
-                  className={`min-h-[120px] p-1 ${accentCls} ${cell.inMonth ? "" : "opacity-55"}`}
-                >
-                  <div
-                    className={`mb-1 flex justify-end ${isToday ? "font-bold ring-1 ring-emerald-500 ring-offset-1 rounded-full px-1.5 py-0.5 inline-flex ml-auto" : ""}`}
-                  >
-                    <span className="text-[11px] tabular-nums">{cell.dayNum}</span>
-                  </div>
-                  <ul className="flex flex-col gap-1">
-                    {dayItems.map((item, j) => {
-                      const hue = contractorHue(item.contractorKey);
-                      const border = `3px solid hsl(${hue} 42% 42%)`;
-                      return (
-                        <li key={`${cell.dayKey}-${j}-${item.recordId ?? j}`}>
-                          <button
-                            type="button"
-                            title={
-                              item.memo
-                                ? `${item.line1}\n${item.memo}`
-                                : item.line1
-                            }
-                            onClick={() => openExternal(item.accessEditUrl)}
-                            disabled={!item.accessEditUrl?.trim()}
-                            className="w-full rounded border border-zinc-200 bg-zinc-50/90 px-1 py-1 text-left text-[10px] leading-snug text-zinc-900 hover:bg-white disabled:cursor-default disabled:opacity-80"
-                            style={{ borderLeft: border }}
-                          >
-                            <span className="line-clamp-3 text-[10px] font-semibold">
-                              {item.line1}
-                              {item.showKankoCheck ? (
-                                <span className="ml-0.5 text-emerald-600" title="工事報告と一致">
-                                  ✅
-                                </span>
-                              ) : null}
-                            </span>
-                            {item.line2 ? (
-                              <span className="mt-0.5 block truncate text-[9px] text-zinc-600">
-                                {item.line2}
-                              </span>
-                            ) : null}
-                            {item.memo ? (
-                              <span className="mt-0.5 block truncate text-[9px] text-zinc-500">
-                                備考あり
-                              </span>
-                            ) : null}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              );
-            })}
           </div>
         </div>
 
-        <p className="mt-3 text-center text-[11px] text-zinc-500">
-          チップをタップすると @pocket のレコード編集を開きます（権限・URL の有無により無効な場合があります）。
+        <LiffCard>
+          <div className="overflow-x-auto p-3 sm:p-4">
+            <div className="grid min-w-[340px] grid-cols-7 gap-1 rounded-2xl bg-slate-100/90 p-1">
+              {WEEK_LABELS.map((w) => (
+                <div
+                  key={w}
+                  className="rounded-lg bg-white/90 px-0.5 py-2.5 text-center text-[11px] font-bold tracking-wide text-slate-500"
+                >
+                  {w}
+                </div>
+              ))}
+              {grid.map((cell, idx) => {
+                const accent = cellAccent(cell.date, holidaySet);
+                const accentCls =
+                  accent === "hol"
+                    ? "bg-red-50/95 text-red-700"
+                    : accent === "sun"
+                      ? "bg-rose-50/60 text-rose-600"
+                      : accent === "sat"
+                        ? "bg-sky-50/70 text-sky-700"
+                        : "bg-white text-slate-800";
+
+                const dayItems: CalendarMonthApiItem[] =
+                  cell.dayKey && data?.byDay
+                    ? (data.byDay[cell.dayKey] ?? [])
+                    : [];
+
+                const isToday = cell.dayKey === todayKey && cell.inMonth;
+
+                return (
+                  <div
+                    key={`${idx}-${cell.dayKey ?? "x"}`}
+                    className={`flex min-h-[118px] flex-col rounded-xl p-1.5 shadow-sm ring-1 ring-slate-200/60 transition-colors ${accentCls} ${cell.inMonth ? "" : "opacity-[0.45]"}`}
+                  >
+                    <div className="mb-1.5 flex justify-end">
+                      <span
+                        className={`flex size-7 items-center justify-center rounded-full text-[12px] font-bold tabular-nums leading-none ${isToday ? "bg-[#06C755] text-white shadow-md shadow-emerald-600/30" : "text-current opacity-90"}`}
+                      >
+                        {cell.dayNum}
+                      </span>
+                    </div>
+                    <ul className="flex flex-1 flex-col gap-1">
+                      {dayItems.map((item, j) => {
+                        const hue = contractorHue(item.contractorKey);
+                        const border = `3px solid hsl(${hue} 46% 48%)`;
+                        return (
+                          <li key={`${cell.dayKey}-${j}-${item.recordId ?? j}`}>
+                            <button
+                              type="button"
+                              title={
+                                item.memo
+                                  ? `${item.line1}\n${item.memo}`
+                                  : item.line1
+                              }
+                              onClick={() => openExternal(item.accessEditUrl)}
+                              disabled={!item.accessEditUrl?.trim()}
+                              className="w-full min-h-[44px] rounded-lg border border-slate-200/90 bg-white/95 px-1.5 py-2 text-left text-[10px] font-semibold leading-snug text-slate-900 shadow-sm outline-none transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
+                              style={{ borderLeft: border }}
+                            >
+                              <span className="line-clamp-3">
+                                {item.line1}
+                                {item.showKankoCheck ? (
+                                  <span
+                                    className="ml-0.5 inline-block text-emerald-600"
+                                    title="工事報告と一致"
+                                  >
+                                    ✅
+                                  </span>
+                                ) : null}
+                              </span>
+                              {item.line2 ? (
+                                <span className="mt-0.5 block truncate text-[9px] font-normal text-slate-600">
+                                  {item.line2}
+                                </span>
+                              ) : null}
+                              {item.memo ? (
+                                <span className="mt-1 inline-block rounded bg-slate-100 px-1 py-0.5 text-[8px] font-medium text-slate-600">
+                                  備考
+                                </span>
+                              ) : null}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </LiffCard>
+
+        <p className="mx-auto mt-5 max-w-md px-1 text-center text-[11px] leading-relaxed text-slate-500">
+          案件をタップすると @pocket の編集画面を開きます（権限・URL が無い場合は開けません）。
         </p>
       </div>
-    </div>
+    </LiffScreen>
   );
 }
