@@ -92,8 +92,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("[api/submit]", e);
+    const detail =
+      e instanceof Error ? e.message.slice(0, 800) : String(e).slice(0, 800);
     return NextResponse.json(
-      { error: "ログの登録に失敗しました" },
+      {
+        error: "ログの登録に失敗しました",
+        detail,
+      },
       { status: 502 },
     );
   }

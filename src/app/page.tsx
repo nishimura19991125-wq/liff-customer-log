@@ -126,9 +126,16 @@ export default function Home() {
           content,
         }),
       });
-      const data = (await res.json()) as { ok?: boolean; error?: string };
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        detail?: string;
+      };
       if (!res.ok) {
-        setErrorMessage(data.error ?? "送信に失敗しました");
+        const base = data.error ?? "送信に失敗しました";
+        setErrorMessage(
+          data.detail ? `${base}\n${data.detail}` : base,
+        );
         setPhase("ready");
         return;
       }
@@ -237,7 +244,9 @@ export default function Home() {
           </label>
 
           {errorMessage ? (
-            <p className="text-sm text-red-600">{errorMessage}</p>
+            <p className="whitespace-pre-wrap break-words text-sm text-red-600">
+              {errorMessage}
+            </p>
           ) : null}
 
           <button
