@@ -123,6 +123,19 @@ function weekHeaderClass(i: number): string {
   return "text-slate-600 bg-white/95";
 }
 
+function countCasesAndSlots(items: CalendarMonthApiItem[]): {
+  cases: number;
+  emptySlots: number;
+} {
+  let cases = 0;
+  let emptySlots = 0;
+  for (const x of items) {
+    if (x.category === "empty") emptySlots += 1;
+    else cases += 1;
+  }
+  return { cases, emptySlots };
+}
+
 export default function CalendarPage() {
   const today = useMemo(() => new Date(), []);
   const [ym, setYm] = useState(() => ({
@@ -352,6 +365,14 @@ export default function CalendarPage() {
               <span className="size-2 rounded-full bg-[#06C755]" aria-hidden />
               今日
             </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800 ring-1 ring-emerald-100">
+              緑
+              <span className="font-normal text-emerald-700/90">案件の件数</span>
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-slate-400 bg-slate-50 px-2.5 py-1 font-semibold text-slate-700">
+              点線枠
+              <span className="font-normal text-slate-600">工事空枠の件数</span>
+            </span>
             <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-red-700 ring-1 ring-red-100">
               赤背景
               <span className="font-normal text-red-600/90">祝・日曜</span>
@@ -418,7 +439,8 @@ export default function CalendarPage() {
                 const isToday = cell.dayKey === todayKey && cell.inMonth;
                 const isSelected =
                   Boolean(cell.dayKey && selectedDayKey === cell.dayKey);
-                const n = dayItems.length;
+                const { cases: caseCount, emptySlots: emptyCount } =
+                  countCasesAndSlots(dayItems);
 
                 return (
                   <div
@@ -442,13 +464,21 @@ export default function CalendarPage() {
                         {cell.dayNum}
                       </span>
                     </div>
-                    <div className="mt-auto flex min-h-[14px] items-end justify-center pb-0.5 sm:min-h-[18px]">
-                      {n > 0 ? (
+                    <div className="mt-auto flex min-h-[18px] flex-col items-center justify-end gap-0.5 pb-0.5 sm:min-h-[22px] sm:gap-1">
+                      {caseCount > 0 ? (
                         <span
-                          className="inline-flex min-w-[1rem] items-center justify-center rounded-full bg-emerald-600 px-1 py-px text-[9px] font-bold tabular-nums leading-none text-white sm:text-[10px]"
-                          title={`${n}件`}
+                          className="inline-flex max-w-full items-center justify-center rounded-full bg-emerald-600 px-1 py-px text-[8px] font-extrabold tabular-nums leading-none text-white ring-1 ring-emerald-700/20 sm:text-[9px]"
+                          title={`案件（お客様名のある工事）${caseCount}件`}
                         >
-                          {n > 99 ? "99+" : n}
+                          案件{caseCount}
+                        </span>
+                      ) : null}
+                      {emptyCount > 0 ? (
+                        <span
+                          className="inline-flex max-w-full items-center justify-center rounded border border-dashed border-slate-500 bg-white px-1 py-px text-[8px] font-extrabold tabular-nums leading-none text-slate-700 sm:text-[9px]"
+                          title={`工事空枠${emptyCount}件`}
+                        >
+                          空枠{emptyCount}
                         </span>
                       ) : null}
                     </div>
@@ -474,43 +504,123 @@ export default function CalendarPage() {
                     この日の予定はありません
                   </p>
                 ) : (
-                  <ul className="flex flex-col gap-3">
-                    {selectedItems.map((item, i) => {
-                      const hue = contractorHue(item.contractorKey);
-                      const border = `4px solid hsl(${hue} 44% 46%)`;
-                      return (
-                        <li key={`detail-${selectedDayKey}-${i}-${item.recordId ?? i}`}>
-                          <button
-                            type="button"
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99] disabled:opacity-60"
-                            style={{ borderLeft: border }}
-                            disabled={!item.accessEditUrl?.trim()}
-                            onClick={() => openExternal(item.accessEditUrl)}
-                          >
-                            <p className="text-[15px] font-bold leading-snug text-slate-900">
-                              {item.line1}
-                              {item.showKankoCheck ? (
-                                <span className="ml-1 text-emerald-600">✅</span>
-                              ) : null}
-                            </p>
-                            {item.line2 ? (
-                              <p className="mt-2 text-[13px] font-semibold leading-relaxed text-slate-600">
-                                {item.line2}
-                              </p>
-                            ) : null}
-                            {item.memo ? (
-                              <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-[13px] leading-relaxed text-slate-700 whitespace-pre-wrap">
-                                {item.memo}
-                              </p>
-                            ) : null}
-                            <p className="mt-3 text-[11px] font-semibold text-[#06C755]">
-                              タップして @pocket で開く →
-                            </p>
-                          </button>
-                        </li>
+                  <div className="flex flex-col gap-6">
+                    {(() => {
+                      const caseItems = selectedItems.filter(
+                        (i) => i.category === "list",
                       );
-                    })}
-                  </ul>
+                      const emptyItems = selectedItems.filter(
+                        (i) => i.category === "empty",
+                      );
+
+                      const renderCard = (
+                        item: CalendarMonthApiItem,
+                        i: number,
+                        kind: "case" | "empty",
+                      ) => {
+                        const isEmpty = kind === "empty";
+                        const hue = contractorHue(item.contractorKey);
+                        const leftBorder = `4px solid hsl(${hue} 44% 46%)`;
+                        return (
+                          <li
+                            key={`detail-${selectedDayKey}-${kind}-${i}-${item.recordId ?? i}`}
+                          >
+                            <button
+                              type="button"
+                              className={`w-full rounded-2xl px-4 py-4 text-left shadow-sm transition active:scale-[0.99] disabled:opacity-60 ${
+                                isEmpty
+                                  ? "border-2 border-dashed border-slate-400 bg-slate-50 ring-1 ring-slate-200/80"
+                                  : "border border-slate-200 bg-white ring-1 ring-slate-100"
+                              }`}
+                              style={
+                                isEmpty
+                                  ? undefined
+                                  : { borderLeft: leftBorder }
+                              }
+                              disabled={!item.accessEditUrl?.trim()}
+                              onClick={() => openExternal(item.accessEditUrl)}
+                            >
+                              <div className="mb-2 flex flex-wrap items-center gap-2">
+                                <span
+                                  className={`inline-flex rounded-lg px-2 py-0.5 text-[11px] font-extrabold tracking-wide ${
+                                    isEmpty
+                                      ? "border border-dashed border-slate-400 bg-white text-slate-700"
+                                      : "bg-emerald-600 text-white shadow-sm"
+                                  }`}
+                                >
+                                  {isEmpty ? "工事空枠" : "案件"}
+                                </span>
+                                {!isEmpty && item.housingShort ? (
+                                  <span className="text-[11px] font-bold text-slate-500">
+                                    {item.housingShort}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="text-[15px] font-bold leading-snug text-slate-900">
+                                {item.line1}
+                                {item.showKankoCheck ? (
+                                  <span className="ml-1 text-emerald-600">
+                                    ✅
+                                  </span>
+                                ) : null}
+                              </p>
+                              {item.line2 ? (
+                                <p className="mt-2 text-[13px] font-semibold leading-relaxed text-slate-600">
+                                  {item.line2}
+                                </p>
+                              ) : null}
+                              {item.memo ? (
+                                <p className="mt-3 rounded-xl bg-white/80 px-3 py-2 text-[13px] leading-relaxed text-slate-700 whitespace-pre-wrap ring-1 ring-slate-100">
+                                  {item.memo}
+                                </p>
+                              ) : null}
+                              <p className="mt-3 text-[11px] font-semibold text-[#06C755]">
+                                タップして @pocket で開く →
+                              </p>
+                            </button>
+                          </li>
+                        );
+                      };
+
+                      return (
+                        <>
+                          {caseItems.length > 0 ? (
+                            <div>
+                              <h3 className="mb-2 flex items-center gap-2 px-0.5 text-[12px] font-extrabold uppercase tracking-wider text-emerald-800">
+                                <span
+                                  className="size-2 rounded-full bg-emerald-600"
+                                  aria-hidden
+                                />
+                                案件（お客様名のある工事）
+                              </h3>
+                              <ul className="flex flex-col gap-3">
+                                {caseItems.map((item, i) =>
+                                  renderCard(item, i, "case"),
+                                )}
+                              </ul>
+                            </div>
+                          ) : null}
+
+                          {emptyItems.length > 0 ? (
+                            <div>
+                              <h3 className="mb-2 flex items-center gap-2 px-0.5 text-[12px] font-extrabold uppercase tracking-wider text-slate-600">
+                                <span
+                                  className="size-2 rounded border border-dashed border-slate-500 bg-slate-100"
+                                  aria-hidden
+                                />
+                                工事空枠
+                              </h3>
+                              <ul className="flex flex-col gap-3">
+                                {emptyItems.map((item, i) =>
+                                  renderCard(item, i, "empty"),
+                                )}
+                              </ul>
+                            </div>
+                          ) : null}
+                        </>
+                      );
+                    })()}
+                  </div>
                 )}
               </div>
             </LiffCard>
