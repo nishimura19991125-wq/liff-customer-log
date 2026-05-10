@@ -373,14 +373,6 @@ export default function CalendarPage() {
               点線枠
               <span className="font-normal text-slate-600">工事空枠の件数</span>
             </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-red-700 ring-1 ring-red-100">
-              赤背景
-              <span className="font-normal text-red-600/90">祝・日曜</span>
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-sky-800 ring-1 ring-sky-100">
-              水色
-              <span className="font-normal text-sky-700/90">土曜</span>
-            </span>
           </div>
 
           <div className="flex items-center gap-2 rounded-2xl bg-slate-200/55 p-1.5 shadow-inner">
