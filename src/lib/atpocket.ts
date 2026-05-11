@@ -137,13 +137,19 @@ async function fetchWithMethodOverrideWithRetry(
 /** @pocket docs: auth key header is tied to POST; use override for GET semantics */
 export async function fetchRecordsList(
   appsId: string,
-  searchParams?: { limit?: string; page?: string; fields?: string },
+  searchParams?: {
+    limit?: string;
+    page?: string;
+    fields?: string;
+    query?: string;
+  },
   auth?: AtPocketFetchAuth,
 ): Promise<AtPocketListResponse> {
   const params = new URLSearchParams();
   params.set("limit", searchParams?.limit ?? "1000");
   if (searchParams?.page) params.set("page", searchParams.page);
   if (searchParams?.fields) params.set("fields", searchParams.fields);
+  if (searchParams?.query) params.set("query", searchParams.query);
   const qs = params.toString();
   const path = `/api/apps/${appsId}/records${qs ? `?${qs}` : ""}`;
 
@@ -217,6 +223,7 @@ export async function fetchAllRecordsPages(
   appsId: string,
   fieldsCsv: string,
   auth?: AtPocketFetchAuth,
+  pocketQuery?: string | null,
 ): Promise<AtPocketRecordRow[]> {
   const all: AtPocketRecordRow[] = [];
   for (let page = 1; page <= CALENDAR_MAX_PAGES; page++) {
@@ -226,6 +233,7 @@ export async function fetchAllRecordsPages(
         limit: String(CALENDAR_PAGE_LIMIT),
         page: String(page),
         fields: fieldsCsv,
+        ...(pocketQuery?.trim() ? { query: pocketQuery.trim() } : {}),
       },
       auth,
     );

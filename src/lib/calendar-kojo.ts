@@ -265,6 +265,35 @@ export function ymdKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * @pocket レコード一覧の `query` 用。表示月と期間が重なる工事だけに絞り、一覧APIのページ数を抑える。
+ * 終了日が未推定のときは開始日が月内のレコードのみになりうる（境界データは CALENDAR_RECORDS_QUERY_FILTER をオフに）。
+ */
+export function buildConstructionRecordsMonthOverlapQuery(
+  fids: ConstructionFieldIds,
+  viewYear: number,
+  viewMonth1To12: number,
+): string | null {
+  const startId = fids.startDate?.trim();
+  if (!startId) return null;
+
+  const month0 = viewMonth1To12 - 1;
+  const ms = ymdKey(new Date(viewYear, month0, 1));
+  const me = ymdKey(new Date(viewYear, month0 + 1, 0));
+
+  const endId = fids.endDate?.trim();
+  const zankoId = fids.zankoDay?.trim();
+
+  const overlapCore = endId
+    ? `(${startId} <= "${me}" and (${endId} >= "${ms}" or ${endId} is empty))`
+    : `(${startId} <= "${me}" and ${startId} >= "${ms}")`;
+
+  if (zankoId) {
+    return `(${overlapCore} or (${zankoId} >= "${ms}" and ${zankoId} <= "${me}"))`;
+  }
+  return overlapCore;
+}
+
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
 }

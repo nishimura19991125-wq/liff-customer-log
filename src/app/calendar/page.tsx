@@ -430,7 +430,7 @@ export default function CalendarPage() {
     if (!idToken) return;
     const t = window.setTimeout(() => {
       void loadCalendar(idToken, ym.year, ym.month);
-    }, 380);
+    }, 120);
     return () => clearTimeout(t);
   }, [idToken, ym.year, ym.month, loadCalendar]);
 

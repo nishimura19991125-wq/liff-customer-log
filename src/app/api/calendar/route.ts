@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { CalendarApiPayload } from "@/lib/calendar-api-types";
 import {
   buildCalendarPayload,
+  buildConstructionRecordsMonthOverlapQuery,
   collectConstructionFieldsCsv,
   collectReportFieldsCsv,
   resolveConstructionFieldIds,
@@ -10,6 +11,7 @@ import {
 } from "@/lib/calendar-kojo";
 import { getOrComputeCalendarPayload } from "@/lib/calendar-response-cache";
 import {
+  type AtPocketRecordRow,
   apiKeyForCalendarPocket,
   apiKeyForCalendarReportPocket,
   fetchAllRecordsPages,
@@ -65,14 +67,17 @@ export async function GET(request: Request) {
     process.env.CALENDAR_INCLUDE_SANDWICH_NATIONAL_HOLIDAY?.trim() === "true";
 
   const reportAppId = process.env.CALENDAR_REPORT_APP_ID?.trim() ?? "";
+  const recordsQueryFilterEnabled =
+    process.env.CALENDAR_RECORDS_QUERY_FILTER?.trim() === "true";
 
   /** 認証済みユーザー間で同一の組織カレンダーを共有する前提のキャッシュキー（ユーザー ID は含めない） */
   const cacheKey = JSON.stringify({
-    v: 2,
+    v: 3,
     calAppId,
     reportAppId,
     extra: extraHolidayKeys.slice().sort().join(","),
     sandwich: includeSandwich,
+    recordsQueryFilter: recordsQueryFilterEnabled,
     year,
     month,
   });
@@ -85,33 +90,45 @@ export async function GET(request: Request) {
         const calAuth = { apiKey: apiKeyForCalendarPocket() };
         const reportAuth = { apiKey: apiKeyForCalendarReportPocket() };
 
-        const constructionFields = await fetchAppFields(calAppId, calAuth);
+        const [constructionFields, reportFields] = await Promise.all([
+          fetchAppFields(calAppId, calAuth),
+          reportAppId
+            ? fetchAppFields(reportAppId, reportAuth)
+            : Promise.resolve(null),
+        ]);
+
         const fids = resolveConstructionFieldIds(constructionFields);
         const csv = collectConstructionFieldsCsv(fids);
-        const constructionRecords = await fetchAllRecordsPages(
-          calAppId,
-          csv,
-          calAuth,
-        );
 
-        let reportRecords: Awaited<
-          ReturnType<typeof fetchAllRecordsPages>
-        > | null = null;
-        let reportFields: Awaited<ReturnType<typeof fetchAppFields>> | null =
-          null;
+        const pocketQuery =
+          recordsQueryFilterEnabled
+            ? buildConstructionRecordsMonthOverlapQuery(fids, year, month)
+            : undefined;
 
-        if (reportAppId) {
-          reportFields = await fetchAppFields(reportAppId, reportAuth);
+        let reportRecordsPromise: Promise<AtPocketRecordRow[] | null> =
+          Promise.resolve(null);
+
+        if (reportAppId && reportFields) {
           const rf = resolveReportFieldIds(reportFields);
           const rcsv = collectReportFieldsCsv(rf);
           if (rcsv) {
-            reportRecords = await fetchAllRecordsPages(
+            reportRecordsPromise = fetchAllRecordsPages(
               reportAppId,
               rcsv,
               reportAuth,
             );
           }
         }
+
+        const [constructionRecords, reportRecords] = await Promise.all([
+          fetchAllRecordsPages(
+            calAppId,
+            csv,
+            calAuth,
+            pocketQuery ?? undefined,
+          ),
+          reportRecordsPromise,
+        ]);
 
         return buildCalendarPayload(
           year,
