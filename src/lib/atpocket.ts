@@ -92,6 +92,48 @@ async function fetchWithMethodOverride(
   });
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRetryAfterMs(headers: Headers): number | null {
+  const ra = headers.get("retry-after");
+  if (ra) {
+    const sec = Number(ra);
+    if (Number.isFinite(sec) && sec >= 0) {
+      return Math.min(sec * 1000, 60_000);
+    }
+    const when = Date.parse(ra);
+    if (!Number.isNaN(when)) {
+      return Math.max(0, Math.min(when - Date.now(), 60_000));
+    }
+  }
+  return null;
+}
+
+const POCKET_GET_RETRY_MAX = 5;
+const POCKET_GET_RETRY_BASE_MS = 450;
+
+/** 429 のとき指数バックオフで再試行（429 応答は本文を読み捨て済みであること） */
+async function fetchWithMethodOverrideWithRetry(
+  pathWithQuery: string,
+  auth?: AtPocketFetchAuth,
+): Promise<Response> {
+  let last: Response | undefined;
+  for (let attempt = 0; attempt < POCKET_GET_RETRY_MAX; attempt++) {
+    const res = await fetchWithMethodOverride(pathWithQuery, auth);
+    last = res;
+    if (res.status !== 429) return res;
+    if (attempt === POCKET_GET_RETRY_MAX - 1) return res;
+    await res.text();
+    const wait =
+      parseRetryAfterMs(res.headers) ??
+      Math.min(14_000, POCKET_GET_RETRY_BASE_MS * 2 ** attempt);
+    await sleep(wait + Math.floor(Math.random() * 220));
+  }
+  return last as Response;
+}
+
 /** @pocket docs: auth key header is tied to POST; use override for GET semantics */
 export async function fetchRecordsList(
   appsId: string,
@@ -105,7 +147,7 @@ export async function fetchRecordsList(
   const qs = params.toString();
   const path = `/api/apps/${appsId}/records${qs ? `?${qs}` : ""}`;
 
-  const res = await fetchWithMethodOverride(path, auth);
+  const res = await fetchWithMethodOverrideWithRetry(path, auth);
 
   const text = await res.text();
   if (!res.ok) {
@@ -114,8 +156,13 @@ export async function fetchRecordsList(
   return text ? (JSON.parse(text) as AtPocketListResponse) : { records: [] };
 }
 
-/** アプリのフィールド定義一覧 GET /api/apps/{appsId}/fields */
-export async function fetchAppFields(
+/** アプリのフィールド定義一覧 GET /api/apps/{appsId}/fields（短時間キャッシュで一覧連打を抑制） */
+const APP_FIELDS_TTL_MS = 5 * 60 * 1000;
+type FieldsCacheEntry = { expiresAt: number; fields: AtPocketFieldRow[] };
+const appFieldsStore = new Map<string, FieldsCacheEntry>();
+const appFieldsInflight = new Map<string, Promise<AtPocketFieldRow[]>>();
+
+async function fetchAppFieldsOnce(
   appsId: string,
   auth?: AtPocketFetchAuth,
 ): Promise<AtPocketFieldRow[]> {
@@ -123,7 +170,7 @@ export async function fetchAppFields(
   params.set("limit", "1000");
   params.set("page", "1");
   const path = `/api/apps/${appsId}/fields?${params.toString()}`;
-  const res = await fetchWithMethodOverride(path, auth);
+  const res = await fetchWithMethodOverrideWithRetry(path, auth);
   const text = await res.text();
   if (!res.ok) {
     throw new Error(`@pocket list fields failed: ${res.status} ${text}`);
@@ -131,6 +178,35 @@ export async function fetchAppFields(
   if (!text) return [];
   const json = JSON.parse(text) as { fields?: AtPocketFieldRow[] };
   return json.fields ?? [];
+}
+
+export async function fetchAppFields(
+  appsId: string,
+  auth?: AtPocketFetchAuth,
+): Promise<AtPocketFieldRow[]> {
+  const key = appsId.trim();
+  const now = Date.now();
+  const hit = appFieldsStore.get(key);
+  if (hit && hit.expiresAt > now) return hit.fields;
+
+  const pending = appFieldsInflight.get(key);
+  if (pending) return pending;
+
+  const promise = (async () => {
+    try {
+      const fields = await fetchAppFieldsOnce(appsId, auth);
+      appFieldsStore.set(key, {
+        expiresAt: Date.now() + APP_FIELDS_TTL_MS,
+        fields,
+      });
+      return fields;
+    } finally {
+      appFieldsInflight.delete(key);
+    }
+  })();
+
+  appFieldsInflight.set(key, promise);
+  return promise;
 }
 
 const CALENDAR_PAGE_LIMIT = 1000;
@@ -172,7 +248,7 @@ export async function fetchRecordById(
   if (csv) {
     path += `?fields=${encodeURIComponent(csv)}`;
   }
-  const res = await fetchWithMethodOverride(path, auth);
+  const res = await fetchWithMethodOverrideWithRetry(path, auth);
   const text = await res.text();
   if (res.status === 404) return null;
   if (!res.ok) {

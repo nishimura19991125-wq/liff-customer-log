@@ -167,10 +167,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("[api/calendar/fill-empty-slot]", e);
-    const detail =
-      e instanceof Error ? e.message.slice(0, 800) : String(e).slice(0, 800);
     return NextResponse.json(
-      { error: "レコードの更新に失敗しました", detail },
+      {
+        error:
+          "レコードの更新に失敗しました。しばらくしてから再度お試しください。",
+      },
       { status: 502 },
     );
   }

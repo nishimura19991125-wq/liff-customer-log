@@ -178,13 +178,11 @@ function EmptySlotCard({
           housingStatus: hs,
         }),
       });
-      const data = (await res.json()) as { error?: string; detail?: string };
+      const data = (await res.json()) as { error?: string };
       if (!res.ok) {
         setFeedback({
           kind: "err",
-          text: data.detail
-            ? `${data.error ?? "エラー"}\n${data.detail}`
-            : (data.error ?? "保存に失敗しました"),
+          text: data.error ?? "保存に失敗しました",
         });
         return;
       }
@@ -366,9 +364,18 @@ export default function CalendarPage() {
     }
 
     if (!res.ok) {
-      const body = (await res.json()) as { error?: string; detail?: string };
-      const base = body.error ?? "読み込みに失敗しました";
-      setErrorMessage(body.detail ? `${base}\n${body.detail}` : base);
+      let body: { error?: string } = {};
+      try {
+        body = (await res.json()) as { error?: string };
+      } catch {
+        /* ignore */
+      }
+      const base =
+        body.error ??
+        (res.status === 429
+          ? "アクセスが集中しています。少し待ってから再度お試しください。"
+          : "読み込みに失敗しました");
+      setErrorMessage(base);
       setPhase("error");
       return;
     }
@@ -423,7 +430,7 @@ export default function CalendarPage() {
     if (!idToken) return;
     const t = window.setTimeout(() => {
       void loadCalendar(idToken, ym.year, ym.month);
-    }, 0);
+    }, 380);
     return () => clearTimeout(t);
   }, [idToken, ym.year, ym.month, loadCalendar]);
 
