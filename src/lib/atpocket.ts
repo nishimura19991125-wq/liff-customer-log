@@ -55,6 +55,13 @@ export function apiKeyForCalendarReportPocket(): string {
   return apiKeyForCalendarPocket();
 }
 
+/** 工事カレンダーアプリのレコード更新用（書き込み権限のあるキー。未設定時は CALENDAR_ATPOCKET_API_KEY → ATPOCKET_API_KEY） */
+export function apiKeyForCalendarWrite(): string {
+  const w = process.env.CALENDAR_WRITE_ATPOCKET_API_KEY?.trim();
+  if (w) return w;
+  return apiKeyForCalendarPocket();
+}
+
 export type AtPocketFetchAuth = {
   apiKey?: string;
 };
@@ -157,9 +164,10 @@ export async function fetchAllRecordsPages(
 export async function fetchRecordById(
   appsId: string,
   recordId: string,
+  auth?: AtPocketFetchAuth,
 ): Promise<AtPocketRecordRow | null> {
   const path = `/api/apps/${appsId}/records/${encodeURIComponent(recordId)}`;
-  const res = await fetchWithMethodOverride(path);
+  const res = await fetchWithMethodOverride(path, auth);
   const text = await res.text();
   if (res.status === 404) return null;
   if (!res.ok) {
@@ -187,5 +195,30 @@ export async function createRecord(
   const text = await res.text();
   if (!res.ok) {
     throw new Error(`@pocket create record failed: ${res.status} ${text}`);
+  }
+}
+
+/** レコード更新 PUT /api/apps/{appsId}/records/{recordId} */
+export async function updateRecord(
+  appsId: string,
+  recordId: string,
+  record: Record<string, unknown>,
+  auth?: AtPocketFetchAuth,
+): Promise<void> {
+  const url = `${baseUrl()}/api/apps/${appsId}/records/${encodeURIComponent(recordId)}`;
+  const key = auth?.apiKey ?? apiKey();
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      [authHeaderName()]: key,
+    },
+    body: JSON.stringify({ record }),
+  });
+
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`@pocket update record failed: ${res.status} ${text}`);
   }
 }

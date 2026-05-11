@@ -14,6 +14,7 @@ import type {
   CalendarApiPayload,
   CalendarMonthApiItem,
 } from "@/lib/calendar-api-types";
+import { EMPTY_FILL_HOUSING_STATUS_VALUES } from "@/lib/calendar-empty-fill-options";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -134,6 +135,194 @@ function countCasesAndSlots(items: CalendarMonthApiItem[]): {
     else cases += 1;
   }
   return { cases, emptySlots };
+}
+
+function EmptySlotCard({
+  item,
+  idToken,
+  onSaved,
+}: {
+  item: CalendarMonthApiItem;
+  idToken: string | null;
+  onSaved: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [customerName, setCustomerName] = useState("");
+  const [housingStatus, setHousingStatus] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<{
+    kind: "ok" | "err";
+    text: string;
+  } | null>(null);
+
+  const rid = item.recordId?.trim();
+  const canSubmit = Boolean(rid && idToken);
+
+  async function handleSubmit() {
+    if (!rid || !idToken) return;
+    const name = customerName.trim();
+    const hs = housingStatus.trim();
+    if (!name || !hs) return;
+    setSubmitting(true);
+    setFeedback(null);
+    try {
+      const res = await fetch("/api/calendar/fill-empty-slot", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          recordId: rid,
+          customerName: name,
+          housingStatus: hs,
+        }),
+      });
+      const data = (await res.json()) as { error?: string; detail?: string };
+      if (!res.ok) {
+        setFeedback({
+          kind: "err",
+          text: data.detail
+            ? `${data.error ?? "エラー"}\n${data.detail}`
+            : (data.error ?? "保存に失敗しました"),
+        });
+        return;
+      }
+      setCustomerName("");
+      setHousingStatus("");
+      setOpen(false);
+      await onSaved();
+      setFeedback({
+        kind: "ok",
+        text: "保存しました。@pocket にも反映済みです。",
+      });
+    } catch {
+      setFeedback({ kind: "err", text: "通信に失敗しました" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border-2 border-dashed border-slate-400 bg-slate-50 px-4 py-4 shadow-sm ring-1 ring-slate-200/80">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="inline-flex rounded-lg border border-dashed border-slate-400 bg-white px-2 py-0.5 text-[11px] font-extrabold tracking-wide text-slate-700">
+          工事空枠
+        </span>
+      </div>
+      <p className="text-[15px] font-bold leading-snug text-slate-900">
+        {item.line1}
+        {item.showKankoCheck ? (
+          <span className="ml-1 text-emerald-600">✅</span>
+        ) : null}
+      </p>
+      {item.line2 ? (
+        <p className="mt-2 text-[13px] font-semibold leading-relaxed text-slate-600">
+          {item.line2}
+        </p>
+      ) : null}
+      {item.memo ? (
+        <p className="mt-3 rounded-xl bg-white/80 px-3 py-2 text-[13px] leading-relaxed text-slate-700 whitespace-pre-wrap ring-1 ring-slate-100">
+          {item.memo}
+        </p>
+      ) : null}
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="inline-flex flex-1 min-w-[8rem] items-center justify-center rounded-xl bg-[#06C755] px-3 py-2.5 text-[13px] font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50 sm:flex-none"
+          disabled={!rid}
+          onClick={() => {
+            setOpen((o) => !o);
+            setFeedback(null);
+          }}
+        >
+          {open ? "入力を閉じる" : "情報を入力"}
+        </button>
+        {item.accessEditUrl?.trim() ? (
+          <button
+            type="button"
+            className="inline-flex flex-1 min-w-[8rem] items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-bold text-slate-700 shadow-sm transition active:scale-[0.99] sm:flex-none"
+            onClick={() => openExternal(item.accessEditUrl)}
+          >
+            @pocket で開く
+          </button>
+        ) : null}
+      </div>
+
+      {!rid ? (
+        <p className="mt-3 text-[12px] font-semibold text-amber-800">
+          レコードIDが取得できないため、この画面からは保存できません。@pocket
+          で開いて編集してください。
+        </p>
+      ) : null}
+
+      {open ? (
+        <div className="mt-4 border-t border-slate-200/90 pt-4">
+          <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
+            住宅ステータスとお客様名を登録すると、@pocket のレコードが更新され、カレンダーでは「案件」として表示されます。
+          </p>
+          <label className="block">
+            <span className="mb-1 block text-[12px] font-bold text-slate-700">
+              住宅ステータス{" "}
+              <span className="font-semibold text-red-600">必須</span>
+            </span>
+            <select
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
+              value={housingStatus}
+              onChange={(e) => setHousingStatus(e.target.value)}
+              disabled={submitting || !canSubmit}
+            >
+              <option value="">選択してください</option>
+              {EMPTY_FILL_HOUSING_STATUS_VALUES.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="mt-3 block">
+            <span className="mb-1 block text-[12px] font-bold text-slate-700">
+              お客様名{" "}
+              <span className="font-semibold text-red-600">必須</span>
+            </span>
+            <input
+              type="text"
+              autoComplete="name"
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              placeholder="例：山田太郎"
+              disabled={submitting || !canSubmit}
+            />
+          </label>
+          <button
+            type="button"
+            className="mt-4 w-full rounded-xl bg-slate-800 py-3 text-[14px] font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+            disabled={
+              submitting ||
+              !customerName.trim() ||
+              !housingStatus.trim() ||
+              !canSubmit
+            }
+            onClick={() => void handleSubmit()}
+          >
+            {submitting ? "保存中…" : "保存してカレンダーに反映"}
+          </button>
+        </div>
+      ) : null}
+
+      {feedback ? (
+        <p
+          className={`mt-3 whitespace-pre-wrap text-[13px] font-semibold leading-relaxed ${
+            feedback.kind === "ok" ? "text-emerald-800" : "text-red-700"
+          }`}
+        >
+          {feedback.text}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 export default function CalendarPage() {
@@ -356,7 +545,8 @@ export default function CalendarPage() {
               工事カレンダー
             </h1>
             <p className="mt-1 text-[14px] leading-snug text-slate-500">
-              日付をタップで下に一覧表示。案件から @pocket を開けます（横スクロール不要）。
+              日付をタップで下に一覧表示。工事空枠は「情報を入力」からお客様名を登録できます。案件は
+              @pocket を開けます。
             </p>
           </div>
 
@@ -505,44 +695,28 @@ export default function CalendarPage() {
                         (i) => i.category === "empty",
                       );
 
-                      const renderCard = (
+                      const renderCaseCard = (
                         item: CalendarMonthApiItem,
                         i: number,
-                        kind: "case" | "empty",
                       ) => {
-                        const isEmpty = kind === "empty";
                         const hue = contractorHue(item.contractorKey);
                         const leftBorder = `4px solid hsl(${hue} 44% 46%)`;
                         return (
                           <li
-                            key={`detail-${selectedDayKey}-${kind}-${i}-${item.recordId ?? i}`}
+                            key={`detail-${selectedDayKey}-case-${i}-${item.recordId ?? i}`}
                           >
                             <button
                               type="button"
-                              className={`w-full rounded-2xl px-4 py-4 text-left shadow-sm transition active:scale-[0.99] disabled:opacity-60 ${
-                                isEmpty
-                                  ? "border-2 border-dashed border-slate-400 bg-slate-50 ring-1 ring-slate-200/80"
-                                  : "border border-slate-200 bg-white ring-1 ring-slate-100"
-                              }`}
-                              style={
-                                isEmpty
-                                  ? undefined
-                                  : { borderLeft: leftBorder }
-                              }
+                              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99] disabled:opacity-60"
+                              style={{ borderLeft: leftBorder }}
                               disabled={!item.accessEditUrl?.trim()}
                               onClick={() => openExternal(item.accessEditUrl)}
                             >
                               <div className="mb-2 flex flex-wrap items-center gap-2">
-                                <span
-                                  className={`inline-flex rounded-lg px-2 py-0.5 text-[11px] font-extrabold tracking-wide ${
-                                    isEmpty
-                                      ? "border border-dashed border-slate-400 bg-white text-slate-700"
-                                      : "bg-emerald-600 text-white shadow-sm"
-                                  }`}
-                                >
-                                  {isEmpty ? "工事空枠" : "案件"}
+                                <span className="inline-flex rounded-lg bg-emerald-600 px-2 py-0.5 text-[11px] font-extrabold tracking-wide text-white shadow-sm">
+                                  案件
                                 </span>
-                                {!isEmpty && item.housingShort ? (
+                                {item.housingShort ? (
                                   <span className="text-[11px] font-bold text-slate-500">
                                     {item.housingShort}
                                   </span>
@@ -587,7 +761,7 @@ export default function CalendarPage() {
                               </h3>
                               <ul className="flex flex-col gap-3">
                                 {caseItems.map((item, i) =>
-                                  renderCard(item, i, "case"),
+                                  renderCaseCard(item, i),
                                 )}
                               </ul>
                             </div>
@@ -603,9 +777,21 @@ export default function CalendarPage() {
                                 工事空枠
                               </h3>
                               <ul className="flex flex-col gap-3">
-                                {emptyItems.map((item, i) =>
-                                  renderCard(item, i, "empty"),
-                                )}
+                                {emptyItems.map((item, i) => (
+                                  <li
+                                    key={`detail-${selectedDayKey}-empty-${i}-${item.recordId ?? i}`}
+                                  >
+                                    <EmptySlotCard
+                                      item={item}
+                                      idToken={idToken}
+                                      onSaved={async () => {
+                                        const t = idToken;
+                                        if (!t) return;
+                                        await loadCalendar(t, ym.year, ym.month);
+                                      }}
+                                    />
+                                  </li>
+                                ))}
                               </ul>
                             </div>
                           ) : null}

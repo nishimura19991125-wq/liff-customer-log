@@ -280,6 +280,20 @@ function isBlankDisplayStr(raw: unknown): boolean {
   return String(raw).replace(/\s/g, "").length === 0;
 }
 
+/** お客様名フィールド（uniqueId）が空か。工事空枠の判定と一致 */
+export function constructionTitleFieldIsEmpty(
+  recObj: Record<string, unknown>,
+  titleFieldUniqueId: string,
+): boolean {
+  if (!titleFieldUniqueId) return false;
+  const nameRaw = extractValue(recObj[titleFieldUniqueId]);
+  const nameTrim =
+    nameRaw != null && !isBlankDisplayStr(nameRaw)
+      ? String(nameRaw).trim()
+      : "";
+  return nameTrim.length === 0;
+}
+
 function normalizeTNumberKey(raw: unknown): string | null {
   if (raw == null || isBlankDisplayStr(String(raw))) return null;
   return String(raw).replace(/\s+/g, " ").trim();
