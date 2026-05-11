@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { isValidEmptyFillHousingStatus } from "@/lib/calendar-empty-fill-options";
-import { constructionTitleFieldIsEmpty } from "@/lib/calendar-kojo";
+import {
+  collectConstructionFieldsCsv,
+  constructionTitleFieldIsEmpty,
+  resolveConstructionFieldIds,
+} from "@/lib/calendar-kojo";
 import {
   apiKeyForCalendarPocket,
+  fetchAppFields,
   fetchRecordById,
   updateRecord,
 } from "@/lib/atpocket";
@@ -77,7 +82,33 @@ export async function POST(request: Request) {
   const pocketAuth = { apiKey: apiKeyForCalendarPocket() };
 
   try {
-    const recRow = await fetchRecordById(calAppId, recordId, pocketAuth);
+    const constructionFields = await fetchAppFields(calAppId, pocketAuth);
+    const fids = resolveConstructionFieldIds(constructionFields);
+    const baseParts = collectConstructionFieldsCsv(fids)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const seen = new Set(baseParts);
+    for (const uid of [customerField, housingField]) {
+      if (uid && !seen.has(uid)) {
+        seen.add(uid);
+        baseParts.push(uid);
+      }
+    }
+    const fieldsCsv = baseParts.join(",");
+
+    let recRow: Awaited<ReturnType<typeof fetchRecordById>> = null;
+    try {
+      recRow = await fetchRecordById(
+        calAppId,
+        recordId,
+        pocketAuth,
+        fieldsCsv,
+      );
+    } catch {
+      recRow = await fetchRecordById(calAppId, recordId, pocketAuth);
+    }
+
     if (!recRow?.record || typeof recRow.record !== "object") {
       return NextResponse.json({ error: "レコードが見つかりません" }, { status: 404 });
     }

@@ -160,13 +160,18 @@ export async function fetchAllRecordsPages(
   return all;
 }
 
-/** 単一レコード GET /api/apps/{appsId}/records/{recordId} */
+/** 単一レコード GET /api/apps/{appsId}/records/{recordId}（fields は一覧APIと同様の CSV・任意） */
 export async function fetchRecordById(
   appsId: string,
   recordId: string,
   auth?: AtPocketFetchAuth,
+  fieldsCsv?: string,
 ): Promise<AtPocketRecordRow | null> {
-  const path = `/api/apps/${appsId}/records/${encodeURIComponent(recordId)}`;
+  let path = `/api/apps/${appsId}/records/${encodeURIComponent(recordId)}`;
+  const csv = fieldsCsv?.trim();
+  if (csv) {
+    path += `?fields=${encodeURIComponent(csv)}`;
+  }
   const res = await fetchWithMethodOverride(path, auth);
   const text = await res.text();
   if (res.status === 404) return null;
