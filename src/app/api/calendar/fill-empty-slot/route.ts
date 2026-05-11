@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 import { isValidEmptyFillHousingStatus } from "@/lib/calendar-empty-fill-options";
 import {
-  collectConstructionFieldsCsv,
   constructionTitleFieldIsEmpty,
   resolveConstructionFieldIds,
 } from "@/lib/calendar-kojo";
@@ -21,6 +20,20 @@ type Body = {
   customerName?: string;
   housingStatus?: string;
 };
+
+/** GET/PUT に載せるフィールドはこの3つのみ（それ以外を PUT すると「有効なフィールドではありません」になることがある） */
+function uniqueFieldsCsv(...uids: (string | undefined)[]): string {
+  const seen = new Set<string>();
+  const parts: string[] = [];
+  for (const u of uids) {
+    const t = u?.trim();
+    if (t && !seen.has(t)) {
+      seen.add(t);
+      parts.push(t);
+    }
+  }
+  return parts.join(",");
+}
 
 export async function POST(request: Request) {
   if (!(await resolveCallerLineUserId(request))) {
@@ -84,18 +97,25 @@ export async function POST(request: Request) {
   try {
     const constructionFields = await fetchAppFields(calAppId, pocketAuth);
     const fids = resolveConstructionFieldIds(constructionFields);
-    const baseParts = collectConstructionFieldsCsv(fids)
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const seen = new Set(baseParts);
-    for (const uid of [customerField, housingField]) {
-      if (uid && !seen.has(uid)) {
-        seen.add(uid);
-        baseParts.push(uid);
-      }
+    const tNumberField =
+      process.env.CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID?.trim() ||
+      fids.tNumber?.trim();
+
+    if (!tNumberField) {
+      return NextResponse.json(
+        {
+          error:
+            "T番号フィールドの uniqueId が分かりません。CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID を .env に設定するか、アプリに「T番号」見出しのフィールドを用意してください。",
+        },
+        { status: 500 },
+      );
     }
-    const fieldsCsv = baseParts.join(",");
+
+    const fieldsCsv = uniqueFieldsCsv(
+      customerField,
+      housingField,
+      tNumberField,
+    );
 
     let recRow: Awaited<ReturnType<typeof fetchRecordById>> = null;
     try {
@@ -124,18 +144,25 @@ export async function POST(request: Request) {
       );
     }
 
+    const existingT = recObj[tNumberField];
+    if (existingT === undefined || existingT === null) {
+      return NextResponse.json(
+        {
+          error:
+            "このレコードから T番号 を取得できませんでした。@pocket で空枠に T番号 が入っているか、CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID が正しい uniqueId か確認してください。",
+        },
+        { status: 409 },
+      );
+    }
+
+    /** PUT はこの3キーのみ（GET で返った T番号はそのままの形で送る） */
     const patch: Record<string, unknown> = {
+      [tNumberField]: existingT,
       [customerField]: customerName,
       [housingField]: housingRaw,
     };
 
-    /** PUT がキー項目（例: T番号）を丸ごと要求する場合があるため、取得済みの record とマージする */
-    const merged: Record<string, unknown> = {
-      ...(typeof recObj === "object" && recObj !== null ? recObj : {}),
-      ...patch,
-    };
-
-    await updateRecord(calAppId, recordId, merged, pocketAuth);
+    await updateRecord(calAppId, recordId, patch, pocketAuth);
 
     return NextResponse.json({ ok: true });
   } catch (e) {
