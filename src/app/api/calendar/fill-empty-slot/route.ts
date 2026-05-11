@@ -98,7 +98,13 @@ export async function POST(request: Request) {
       [housingField]: housingRaw,
     };
 
-    await updateRecord(calAppId, recordId, patch, pocketAuth);
+    /** PUT がキー項目（例: T番号）を丸ごと要求する場合があるため、取得済みの record とマージする */
+    const merged: Record<string, unknown> = {
+      ...(typeof recObj === "object" && recObj !== null ? recObj : {}),
+      ...patch,
+    };
+
+    await updateRecord(calAppId, recordId, merged, pocketAuth);
 
     return NextResponse.json({ ok: true });
   } catch (e) {
