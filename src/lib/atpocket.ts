@@ -66,12 +66,16 @@ export type AtPocketFetchAuth = {
   apiKey?: string;
 };
 
-/** ログアプリ（LOG_APP_ID）へのレコード登録用。未設定時は担当者マスタと同じ ATPOCKET_API_KEY */
+/** ログアプリ・工事カレンダーアプリへのレコード登録用キー */
 function apiKeyForCreateRecord(appsId: string): string {
   const logAppId = process.env.LOG_APP_ID?.trim();
   const logKey = process.env.LOG_ATPOCKET_API_KEY?.trim();
   if (logAppId && appsId === logAppId && logKey) {
     return logKey;
+  }
+  const calAppId = process.env.CALENDAR_APP_ID?.trim();
+  if (calAppId && appsId === calAppId) {
+    return apiKeyForCalendarPocket();
   }
   return apiKey();
 }

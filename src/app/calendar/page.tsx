@@ -323,6 +323,155 @@ function EmptySlotCard({
   );
 }
 
+function NewConstructionRecordPanel({
+  idToken,
+  open,
+  onToggleOpen,
+  onSaved,
+}: {
+  idToken: string | null;
+  open: boolean;
+  onToggleOpen: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [customerName, setCustomerName] = useState("");
+  const [housingStatus, setHousingStatus] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<{
+    kind: "ok" | "err";
+    text: string;
+  } | null>(null);
+
+  const canSubmit = Boolean(idToken);
+
+  async function handleSubmit() {
+    if (!idToken) return;
+    const name = customerName.trim();
+    const hs = housingStatus.trim();
+    if (!name || !hs) return;
+    setSubmitting(true);
+    setFeedback(null);
+    try {
+      const res = await fetch("/api/calendar/create-record", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          customerName: name,
+          housingStatus: hs,
+        }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setFeedback({
+          kind: "err",
+          text: data.error ?? "登録に失敗しました",
+        });
+        return;
+      }
+      setCustomerName("");
+      setHousingStatus("");
+      await onSaved();
+      setFeedback({
+        kind: "ok",
+        text: "登録しました。@pocket で T番号が採番されています。カレンダーを更新しました。",
+      });
+    } catch {
+      setFeedback({ kind: "err", text: "通信に失敗しました" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm ring-1 ring-slate-100">
+      <button
+        type="button"
+        className="w-full rounded-xl bg-[#06C755] py-3 text-[14px] font-bold text-white shadow-sm transition active:scale-[0.99]"
+        onClick={() => {
+          onToggleOpen();
+          setFeedback(null);
+        }}
+      >
+        {open ? "入力を閉じる" : "新規作成"}
+      </button>
+
+      {open ? (
+        <div className="mt-4 border-t border-slate-200/90 pt-4">
+          <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
+            住宅ステータスとお客様名を入力して登録します。T番号は @pocket
+            の自動採番により付与されます（空枠の更新と同じ項目です）。
+          </p>
+          <label className="block">
+            <span className="mb-1 block text-[12px] font-bold text-slate-700">
+              住宅ステータス{" "}
+              <span className="font-semibold text-red-600">必須</span>
+            </span>
+            <select
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
+              value={housingStatus}
+              onChange={(e) => setHousingStatus(e.target.value)}
+              disabled={submitting || !canSubmit}
+            >
+              <option value="">選択してください</option>
+              {EMPTY_FILL_HOUSING_STATUS_VALUES.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="mt-3 block">
+            <span className="mb-1 block text-[12px] font-bold text-slate-700">
+              お客様名{" "}
+              <span className="font-semibold text-red-600">必須</span>
+            </span>
+            <input
+              type="text"
+              autoComplete="name"
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              placeholder="例：山田太郎"
+              disabled={submitting || !canSubmit}
+            />
+          </label>
+          {!idToken ? (
+            <p className="mt-3 text-[12px] font-semibold text-amber-800">
+              ログイン情報がありません。この画面からは登録できません。
+            </p>
+          ) : null}
+          <button
+            type="button"
+            className="mt-4 w-full rounded-xl bg-slate-800 py-3 text-[14px] font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+            disabled={
+              submitting ||
+              !customerName.trim() ||
+              !housingStatus.trim() ||
+              !canSubmit
+            }
+            onClick={() => void handleSubmit()}
+          >
+            {submitting ? "登録中…" : "登録してカレンダーを更新"}
+          </button>
+        </div>
+      ) : null}
+
+      {feedback ? (
+        <p
+          className={`mt-3 whitespace-pre-wrap text-[13px] font-semibold leading-relaxed ${
+            feedback.kind === "ok" ? "text-emerald-800" : "text-red-700"
+          }`}
+        >
+          {feedback.text}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export default function CalendarPage() {
   const today = useMemo(() => new Date(), []);
   const [ym, setYm] = useState(() => ({
@@ -338,6 +487,7 @@ export default function CalendarPage() {
   );
   const [data, setData] = useState<CalendarApiPayload | null>(null);
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
+  const [newRecordOpen, setNewRecordOpen] = useState(false);
 
   const loadCalendar = useCallback(async (idToken: string, year: number, month: number) => {
     setPhase("loading");
@@ -571,6 +721,17 @@ export default function CalendarPage() {
               <span className="font-normal text-slate-600">工事空枠の件数</span>
             </span>
           </div>
+
+          <NewConstructionRecordPanel
+            idToken={idToken}
+            open={newRecordOpen}
+            onToggleOpen={() => setNewRecordOpen((o) => !o)}
+            onSaved={async () => {
+              const t = idToken;
+              if (!t) return;
+              await loadCalendar(t, ym.year, ym.month);
+            }}
+          />
 
           <div className="flex items-center gap-2 rounded-2xl bg-slate-200/55 p-1.5 shadow-inner">
             <button
