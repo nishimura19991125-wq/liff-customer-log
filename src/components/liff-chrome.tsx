@@ -89,65 +89,6 @@ export function LiffGhostLink({
   );
 }
 
-/**
- * ブックマーク・シェア用リンク。
- * href は同一サイト内の相対パス。フル URL 表示には NEXT_PUBLIC_SITE_URL を設定してください。
- */
-export function LiffDirectUrlLinks({
-  links,
-  className = "",
-}: {
-  links: { path: string; label: string }[];
-  className?: string;
-}) {
-  const envBase =
-    process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "") ?? "";
-
-  return (
-    <aside
-      className={`rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3 shadow-sm ring-1 ring-slate-100/80 backdrop-blur-sm ${className}`}
-    >
-      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-        URL で直接開く
-      </p>
-      <p className="mt-1 text-[11px] leading-snug text-slate-500">
-        タップで移動できます。アドレスバーにはサイトのドメイン＋下記パスを入力できます。
-        {!envBase ? (
-          <>
-            {" "}
-            フル URL をここに出すには Netlify などで{" "}
-            <span className="font-mono text-[10px] text-slate-600">
-              NEXT_PUBLIC_SITE_URL
-            </span>{" "}
-            を設定してください。
-          </>
-        ) : null}
-      </p>
-      <ul className="mt-3 flex flex-col gap-2.5">
-        {links.map(({ path, label }) => {
-          const normalized = path.startsWith("/") ? path : `/${path}`;
-          const displayUrl = envBase ? `${envBase}${normalized}` : normalized;
-          return (
-            <li key={`${label}-${normalized}`}>
-              <a
-                href={normalized}
-                className="group inline-flex flex-col gap-0.5 rounded-xl px-1 py-0.5 transition hover:bg-emerald-50/90"
-              >
-                <span className="text-[13px] font-semibold text-emerald-900 underline decoration-emerald-300 underline-offset-2 group-hover:decoration-emerald-600">
-                  {label}
-                </span>
-                <span className="break-all font-mono text-[11px] leading-snug text-slate-600">
-                  {displayUrl}
-                </span>
-              </a>
-            </li>
-          );
-        })}
-      </ul>
-    </aside>
-  );
-}
-
 export function LiffLoadingBlock({
   message,
   footer,

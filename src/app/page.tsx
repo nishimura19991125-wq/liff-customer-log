@@ -8,7 +8,6 @@ import {
   LiffCard,
   LiffLoadingBlock,
   LiffMenuCard,
-  LiffDirectUrlLinks,
   LiffPageHeader,
   LiffScreen,
   LiffStaffBindPanel,
@@ -165,29 +164,20 @@ export default function HomeHubPage() {
 
         <div className="mt-6 flex flex-col gap-4">
           <LiffMenuCard
-            href="/customer-info"
-            title="お客様情報入力"
-            description="お客様情報の入力（詳細は今後追加します）。"
-            icon={<CustomerInfoGlyph />}
-            disabled={needsStaffBind}
-          />
-          <LiffMenuCard
             href="/calendar"
             title="工事カレンダー"
             description="工事予定を月表示で確認し、詳細から @pocket を開けます。"
             icon={<CalendarGlyph />}
             disabled={needsStaffBind}
           />
+          <LiffMenuCard
+            href="/customer-info"
+            title="お客様情報入力"
+            description="お客様情報の入力（詳細は今後追加します）。"
+            icon={<CustomerInfoGlyph />}
+            disabled={needsStaffBind}
+          />
         </div>
-
-        <LiffDirectUrlLinks
-          className="mt-8"
-          links={[
-            { path: "/", label: "メニュー（トップ）" },
-            { path: "/customer-info", label: "お客様情報入力" },
-            { path: "/calendar", label: "工事カレンダー" },
-          ]}
-        />
       </main>
     </LiffScreen>
   );
