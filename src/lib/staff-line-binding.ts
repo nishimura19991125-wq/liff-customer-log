@@ -1,9 +1,88 @@
 import "server-only";
 
-/** @pocket スタッフ名簿の LINE ユーザーIDフィールド値を比較用に正規化 */
-export function normalizeStaffLineUserId(raw: unknown): string {
+function stripSpaces(s: string): string {
+  return s.replace(/\s/g, "").trim();
+}
+
+/**
+ * @pocket のフィールド値をフラットな文字列にする。
+ * 一覧 API でオブジェクト・配列になるタイプ（選択肢・リンク等）でも照合できるようにする。
+ */
+function coercePocketFieldToPlainString(raw: unknown): string {
   if (raw == null) return "";
-  return String(raw).replace(/\s/g, "").trim();
+  if (
+    typeof raw === "string" ||
+    typeof raw === "number" ||
+    typeof raw === "boolean"
+  ) {
+    return String(raw);
+  }
+  if (Array.isArray(raw)) {
+    return raw.map(coercePocketFieldToPlainString).filter(Boolean).join(" ");
+  }
+  if (typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    for (const k of [
+      "value",
+      "text",
+      "displayValue",
+      "label",
+      "name",
+      "caption",
+    ]) {
+      if (o[k] != null) {
+        const s = coercePocketFieldToPlainString(o[k]);
+        if (s) return s;
+      }
+    }
+    return Object.values(o)
+      .map(coercePocketFieldToPlainString)
+      .filter(Boolean)
+      .join(" ");
+  }
+  return "";
+}
+
+/** フィールド全体を空白扱いか（紐付け先スロットが空か） */
+function isStaffLineFieldEffectivelyEmpty(raw: unknown): boolean {
+  return !stripSpaces(coercePocketFieldToPlainString(raw));
+}
+
+/**
+ * @pocket に保存された値から LINE ユーザー ID 照合用の候補を集める。
+ * セルに「コメント + U…」が混在していても U で始まるトークンを拾う。
+ */
+function lineUserIdMatchCandidatesFromPocketField(
+  raw: unknown,
+): Set<string> {
+  const plain = coercePocketFieldToPlainString(raw);
+  const compact = stripSpaces(plain);
+  const out = new Set<string>();
+  if (compact) out.add(compact);
+  const re = /U[A-Za-z0-9+/=_-]{10,}/g;
+  let m: RegExpExecArray | null;
+  const haystack = plain.length >= compact.length ? plain : compact;
+  re.lastIndex = 0;
+  while ((m = re.exec(haystack)) !== null) {
+    out.add(stripSpaces(m[0]));
+  }
+  return out;
+}
+
+function pocketFieldContainsLineUserId(
+  raw: unknown,
+  lineUserId: string,
+): boolean {
+  const want = stripSpaces(lineUserId);
+  if (!want) return false;
+  for (const c of lineUserIdMatchCandidatesFromPocketField(raw)) {
+    if (c === want) return true;
+  }
+  return false;
+}
+
+export function normalizeStaffLineUserId(raw: unknown): string {
+  return stripSpaces(coercePocketFieldToPlainString(raw));
 }
 
 /** 1レコードあたり最大2つの LINE ID フィールドのいずれかが一致するか */
@@ -13,14 +92,11 @@ export function staffRecordMatchesLineUser(
   lineField2: string | undefined,
   lineUserId: string,
 ): boolean {
-  const want = lineUserId.replace(/\s/g, "").trim();
+  const want = stripSpaces(lineUserId);
   if (!want) return false;
-  const a = normalizeStaffLineUserId(record[lineField1]);
-  if (a && a === want) return true;
-  if (lineField2) {
-    const b = normalizeStaffLineUserId(record[lineField2]);
-    if (b && b === want) return true;
-  }
+  if (pocketFieldContainsLineUserId(record[lineField1], want)) return true;
+  if (lineField2 && pocketFieldContainsLineUserId(record[lineField2], want))
+    return true;
   return false;
 }
 
@@ -36,14 +112,21 @@ export function resolveBindLineSlot(
   lineField2: string | undefined,
   callerLineUserId: string,
 ): BindLineSlotResult {
-  const want = callerLineUserId.replace(/\s/g, "").trim();
+  const want = stripSpaces(callerLineUserId);
   if (!want) return { kind: "full" };
 
-  const v1 = normalizeStaffLineUserId(record[lineField1]);
-  const v2 = lineField2 ? normalizeStaffLineUserId(record[lineField2]) : "";
+  if (pocketFieldContainsLineUserId(record[lineField1], want))
+    return { kind: "already" };
+  if (lineField2 && pocketFieldContainsLineUserId(record[lineField2], want))
+    return { kind: "already" };
 
-  if (v1 === want || v2 === want) return { kind: "already" };
-  if (!v1) return { kind: "field", fieldId: lineField1, value: want };
-  if (lineField2 && !v2) return { kind: "field", fieldId: lineField2, value: want };
+  const slot1Empty = isStaffLineFieldEffectivelyEmpty(record[lineField1]);
+  const slot2Empty = lineField2
+    ? isStaffLineFieldEffectivelyEmpty(record[lineField2])
+    : true;
+
+  if (slot1Empty) return { kind: "field", fieldId: lineField1, value: want };
+  if (lineField2 && slot2Empty)
+    return { kind: "field", fieldId: lineField2, value: want };
   return { kind: "full" };
 }

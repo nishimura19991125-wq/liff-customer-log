@@ -13,10 +13,6 @@ import {
 
 export const dynamic = "force-dynamic";
 
-function uniqueCsv(fields: string[]): string {
-  return [...new Set(fields.map((s) => s.trim()).filter(Boolean))].join(",");
-}
-
 function rowId(row: {
   recordId?: number;
   uniqueId?: string;
@@ -78,20 +74,11 @@ export async function POST(request: Request) {
   }
 
   const pocketAuth = { apiKey: apiKeyForStaffWrite() };
-  const fieldsCsv = uniqueCsv([
-    staffNameFieldId,
-    lineField1,
-    ...(lineField2 ? [lineField2] : []),
-  ]);
 
   try {
     const data = await fetchRecordsList(
       staffAppId,
-      {
-        limit: "1000",
-        page: "1",
-        fields: fieldsCsv,
-      },
+      { limit: "1000", page: "1" },
       pocketAuth,
     );
     const rows = data.records ?? [];

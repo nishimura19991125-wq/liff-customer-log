@@ -6,10 +6,6 @@ import { staffRecordMatchesLineUser } from "@/lib/staff-line-binding";
 
 export const dynamic = "force-dynamic";
 
-function uniqueCsv(fields: string[]): string {
-  return [...new Set(fields.map((s) => s.trim()).filter(Boolean))].join(",");
-}
-
 export async function GET(request: Request) {
   const caller = await resolveCallerLineUserId(request);
   if (!caller) {
@@ -32,17 +28,14 @@ export async function GET(request: Request) {
   const lineField1 = process.env.STAFF_LINE_USER_ID_FIELD_ID?.trim();
   const lineField2 = process.env.STAFF_LINE_USER_ID_FIELD_ID_2?.trim();
 
-  const fieldsCsv = uniqueCsv([
-    staffNameFieldId,
-    ...(lineField1 ? [lineField1] : []),
-    ...(lineField2 ? [lineField2] : []),
-  ]);
-
   try {
+    /** LINE 照合用は fields 無指定でフル record を取得（fields 指定だと値が欠けることがある） */
     const data = await fetchRecordsList(staffAppId, {
       limit: "1000",
       page: "1",
-      ...(fieldsCsv ? { fields: fieldsCsv } : {}),
+      ...(!lineField1 && staffNameFieldId
+        ? { fields: staffNameFieldId }
+        : {}),
     });
     const rows = data.records ?? [];
 
