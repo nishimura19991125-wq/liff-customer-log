@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, FormEvent, ReactNode } from "react";
+import { useState } from "react";
 
 /** LIFF / モバイル WebView 向け：背景・セーフエリア・最大幅 */
 export function LiffScreen({ children }: { children: ReactNode }) {
@@ -133,6 +134,168 @@ export function LiffNavPill({
         ›
       </span>
     </Link>
+  );
+}
+
+/** 右上：LINE プロフィールとスタッフ名簿紐付け（最大2つの LINE ID はサーバーで照合） */
+export function LiffAccountBar({
+  loading,
+  displayName,
+  pictureUrl,
+  lineUserId,
+  boundStaffName,
+}: {
+  loading?: boolean;
+  displayName?: string;
+  pictureUrl?: string;
+  lineUserId?: string;
+  boundStaffName?: string | null;
+}) {
+  if (loading) {
+    return (
+      <div className="flex w-full justify-end pb-2">
+        <div
+          className="h-11 w-40 max-w-[85vw] animate-pulse rounded-full bg-slate-200/75"
+          aria-hidden
+        />
+      </div>
+    );
+  }
+
+  const shortId =
+    lineUserId && lineUserId.length > 14
+      ? `${lineUserId.slice(0, 8)}…${lineUserId.slice(-4)}`
+      : (lineUserId ?? "");
+
+  const lineName = displayName?.trim() ?? "";
+  const staffName = boundStaffName?.trim() ?? "";
+  /** 主表示はスタッフ名簿の社員名（未紐付け時は LINE 表示名） */
+  const primary = staffName || lineName || "LINE";
+  const avatarLetter = (staffName || lineName || "L").slice(0, 1);
+
+  return (
+    <div className="flex w-full justify-end pb-2">
+      <div className="flex max-w-[min(100%,22rem)] items-center gap-2 rounded-full border border-slate-200/90 bg-white/95 py-1 pl-1 pr-3 shadow-sm backdrop-blur-sm">
+        {pictureUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- LIFF の外部プロフィール画像
+          <img
+            src={pictureUrl}
+            alt=""
+            className="size-9 shrink-0 rounded-full object-cover ring-1 ring-slate-200/80"
+          />
+        ) : (
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-emerald-200 text-[13px] font-bold text-emerald-800 ring-1 ring-slate-200/80">
+            {avatarLetter}
+          </div>
+        )}
+        <div className="min-w-0 flex-1 text-right leading-tight">
+          <p className="truncate text-[13px] font-bold text-slate-900">{primary}</p>
+          {staffName ? (
+            lineName ? (
+              <p className="truncate text-[11px] text-slate-500">LINE: {lineName}</p>
+            ) : null
+          ) : (
+            <p className="truncate text-[11px] text-amber-800">
+              スタッフ名簿と未紐付け（@pocket に LINE ID を登録）
+            </p>
+          )}
+          {shortId ? (
+            <p className="truncate font-mono text-[10px] text-slate-400 tabular-nums">
+              {shortId}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 初回：スタッフ名簿と LINE を一覧から紐づけ（@pocket に LINE ID を書き込む） */
+export function LiffStaffBindPanel({
+  staff,
+  bindingEnabled,
+  boundStaffName,
+  accountLoading,
+  onBind,
+}: {
+  staff: { id: string; name: string }[];
+  bindingEnabled: boolean;
+  boundStaffName: string | null;
+  accountLoading?: boolean;
+  onBind: (
+    staffRecordId: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+}) {
+  const [selectedId, setSelectedId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (
+    !bindingEnabled ||
+    boundStaffName ||
+    accountLoading ||
+    staff.length === 0
+  ) {
+    return null;
+  }
+
+  const selectClass =
+    "min-h-[48px] w-full rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-[#06C755] focus:ring-2 focus:ring-[#06C755]/25";
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!selectedId) {
+      setError("リストから自分の名前を選択してください");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const r = await onBind(selectedId);
+    setBusy(false);
+    if (!r.ok) setError(r.error ?? "紐付けに失敗しました");
+  }
+
+  return (
+    <div className="mb-3 rounded-2xl border border-amber-200/90 bg-amber-50/90 px-4 py-3 shadow-sm ring-1 ring-amber-100/80">
+      <p className="text-[13px] font-bold text-amber-950">
+        初回：スタッフ名簿と紐づけ
+      </p>
+      <p className="mt-1 text-[12px] leading-snug text-amber-900/85">
+        一覧から自分の名前を選ぶと、スタッフ名簿に LINE ID が保存されます。
+      </p>
+      <form onSubmit={handleSubmit} className="mt-3 flex flex-col gap-2">
+        <select
+          value={selectedId}
+          onChange={(e) => {
+            setSelectedId(e.target.value);
+            setError(null);
+          }}
+          className={`${selectClass} appearance-none bg-[length:1rem] bg-[right_0.85rem_center] bg-no-repeat pr-10`}
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m19 9-7 7-7-7'/%3E%3C/svg%3E\")",
+          }}
+          aria-label="スタッフ名を選択"
+        >
+          <option value="">名前を選択…</option>
+          {staff.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        {error ? (
+          <p className="text-[12px] leading-snug text-red-700">{error}</p>
+        ) : null}
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-xl bg-[#06C755] py-3 text-[14px] font-semibold text-white shadow-md shadow-emerald-700/15 transition active:scale-[0.99] disabled:opacity-50"
+        >
+          {busy ? "保存中…" : "この名前で紐づける"}
+        </button>
+      </form>
+    </div>
   );
 }
 

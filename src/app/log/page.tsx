@@ -5,14 +5,25 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  LiffAccountBar,
   LiffCard,
   LiffLoadingBlock,
   LiffPageHeader,
   LiffPrimaryButton,
   LiffScreen,
+  LiffStaffBindPanel,
 } from "@/components/liff-chrome";
+import { LIFF_PROFILE_CACHE_KEY } from "@/hooks/use-liff-account-strip";
 
 type Staff = { id: string; name: string };
+
+type StaffApiPayload = {
+  staff?: Staff[];
+  boundStaff?: { id: string; name: string } | null;
+  lineUserId?: string;
+  error?: string;
+  bindingEnabled?: boolean;
+};
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -30,6 +41,14 @@ export default function LogPage() {
     LIFF_ID ? null : "NEXT_PUBLIC_LIFF_ID が設定されていません",
   );
   const [staff, setStaff] = useState<Staff[]>([]);
+  const [idToken, setIdToken] = useState<string | null>(null);
+  const [accountStrip, setAccountStrip] = useState<{
+    displayName: string;
+    pictureUrl: string;
+    lineUserId: string;
+    boundStaffName: string | null;
+    bindingEnabled: boolean;
+  } | null>(null);
 
   const [staffRecordId, setStaffRecordId] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -41,11 +60,42 @@ export default function LogPage() {
   const loadStaff = useCallback(async (idToken: string) => {
     setPhase("loading-staff");
     setErrorMessage(null);
+    setAccountStrip(null);
+
+    let profile: {
+      displayName: string;
+      pictureUrl?: string;
+      userId: string;
+    };
+    try {
+      const p = await liff.getProfile();
+      profile = {
+        displayName: p.displayName,
+        pictureUrl: p.pictureUrl,
+        userId: p.userId,
+      };
+      try {
+        sessionStorage.setItem(
+          LIFF_PROFILE_CACHE_KEY,
+          JSON.stringify({
+            displayName: p.displayName,
+            pictureUrl: p.pictureUrl,
+            userId: p.userId,
+          }),
+        );
+      } catch {
+        /* ignore */
+      }
+    } catch {
+      setErrorMessage("LINE プロフィールを取得できませんでした");
+      setPhase("error");
+      return;
+    }
 
     const res = await fetch("/api/staff", {
       headers: { Authorization: `Bearer ${idToken}` },
     });
-    const data = (await res.json()) as { staff?: Staff[]; error?: string };
+    const data = (await res.json()) as StaffApiPayload;
 
     if (res.status === 401) {
       setErrorMessage(
@@ -62,8 +112,57 @@ export default function LogPage() {
     }
 
     setStaff(data.staff ?? []);
+    setAccountStrip({
+      displayName: profile.displayName,
+      pictureUrl: profile.pictureUrl ?? "",
+      lineUserId: profile.userId,
+      boundStaffName: data.boundStaff?.name ?? null,
+      bindingEnabled: Boolean(data.bindingEnabled),
+    });
     setPhase("ready");
   }, []);
+
+  const bindLineStaff = useCallback(
+    async (
+      staffRecordId: string,
+    ): Promise<{ ok: boolean; error?: string }> => {
+      const token = idToken;
+      if (!token) {
+        return { ok: false, error: "ログイン情報がありません" };
+      }
+      try {
+        const res = await fetch("/api/staff/bind", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ staffRecordId }),
+        });
+        const payload = (await res.json()) as {
+          boundStaff?: { name?: string };
+          error?: string;
+        };
+        if (!res.ok) {
+          return {
+            ok: false,
+            error:
+              typeof payload.error === "string"
+                ? payload.error
+                : "紐付けに失敗しました",
+          };
+        }
+        const n = payload.boundStaff?.name?.trim();
+        setAccountStrip((prev) =>
+          prev ? { ...prev, boundStaffName: n ?? prev.boundStaffName } : prev,
+        );
+        return { ok: true };
+      } catch {
+        return { ok: false, error: "通信に失敗しました" };
+      }
+    },
+    [idToken],
+  );
 
   useEffect(() => {
     if (!LIFF_ID) return;
@@ -90,6 +189,7 @@ export default function LogPage() {
           return;
         }
 
+        setIdToken(token);
         await loadStaff(token);
       } catch (e) {
         if (cancelled) return;
@@ -241,6 +341,25 @@ export default function LogPage() {
             メニューへ
           </Link>
         </nav>
+
+        {accountStrip ? (
+          <LiffAccountBar
+            displayName={accountStrip.displayName}
+            pictureUrl={accountStrip.pictureUrl}
+            lineUserId={accountStrip.lineUserId}
+            boundStaffName={accountStrip.boundStaffName}
+          />
+        ) : null}
+
+        {accountStrip ? (
+          <LiffStaffBindPanel
+            staff={staff}
+            bindingEnabled={accountStrip.bindingEnabled}
+            boundStaffName={accountStrip.boundStaffName}
+            accountLoading={false}
+            onBind={bindLineStaff}
+          />
+        ) : null}
 
         <LiffPageHeader
           title="顧客対応ログ"

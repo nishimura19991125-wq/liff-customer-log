@@ -4,12 +4,15 @@ import liff from "@line/liff";
 import { useEffect, useState } from "react";
 
 import {
+  LiffAccountBar,
   LiffCard,
   LiffLoadingBlock,
   LiffMenuCard,
   LiffPageHeader,
   LiffScreen,
+  LiffStaffBindPanel,
 } from "@/components/liff-chrome";
+import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -55,6 +58,9 @@ export default function HomeHubPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(() =>
     LIFF_ID ? null : "NEXT_PUBLIC_LIFF_ID が設定されていません",
   );
+  const [idToken, setIdToken] = useState<string | null>(null);
+
+  const account = useLiffAccountStrip(idToken, phase === "ready");
 
   useEffect(() => {
     if (!LIFF_ID) return;
@@ -81,6 +87,7 @@ export default function HomeHubPage() {
           return;
         }
 
+        setIdToken(token);
         setPhase("ready");
       } catch (e) {
         if (cancelled) return;
@@ -133,6 +140,20 @@ export default function HomeHubPage() {
   return (
     <LiffScreen>
       <main className="mx-auto w-full max-w-lg flex-1 py-6">
+        <LiffAccountBar
+          loading={account.loading}
+          displayName={account.displayName}
+          pictureUrl={account.pictureUrl}
+          lineUserId={account.lineUserId}
+          boundStaffName={account.boundStaffName}
+        />
+        <LiffStaffBindPanel
+          staff={account.staff}
+          bindingEnabled={account.bindingEnabled}
+          boundStaffName={account.boundStaffName}
+          accountLoading={account.loading}
+          onBind={account.bindStaff}
+        />
         <LiffPageHeader
           title="情報確認くん"
           subtitle="メニューから利用する機能を選んでください"

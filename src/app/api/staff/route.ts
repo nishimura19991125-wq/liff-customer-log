@@ -2,8 +2,13 @@ import { NextResponse } from "next/server";
 
 import { fetchRecordsList } from "@/lib/atpocket";
 import { resolveCallerLineUserId } from "@/lib/request-auth";
+import { staffRecordMatchesLineUser } from "@/lib/staff-line-binding";
 
 export const dynamic = "force-dynamic";
+
+function uniqueCsv(fields: string[]): string {
+  return [...new Set(fields.map((s) => s.trim()).filter(Boolean))].join(",");
+}
 
 export async function GET(request: Request) {
   const caller = await resolveCallerLineUserId(request);
@@ -24,13 +29,27 @@ export async function GET(request: Request) {
     );
   }
 
+  const lineField1 = process.env.STAFF_LINE_USER_ID_FIELD_ID?.trim();
+  const lineField2 = process.env.STAFF_LINE_USER_ID_FIELD_ID_2?.trim();
+
+  const fieldsCsv = uniqueCsv([
+    staffNameFieldId,
+    ...(lineField1 ? [lineField1] : []),
+    ...(lineField2 ? [lineField2] : []),
+  ]);
+
   try {
-    const data = await fetchRecordsList(staffAppId);
+    const data = await fetchRecordsList(staffAppId, {
+      limit: "1000",
+      page: "1",
+      ...(fieldsCsv ? { fields: fieldsCsv } : {}),
+    });
     const rows = data.records ?? [];
 
     const staff = rows
       .map((row) => {
-        const id = row.recordId != null ? String(row.recordId) : row.uniqueId ?? "";
+        const id =
+          row.recordId != null ? String(row.recordId) : row.uniqueId ?? "";
         const raw = row.record?.[staffNameFieldId];
         const name =
           raw === undefined || raw === null ? "" : String(raw).trim();
@@ -38,7 +57,39 @@ export async function GET(request: Request) {
       })
       .filter((s) => s.id && s.name);
 
-    return NextResponse.json({ staff });
+    let boundStaff: { id: string; name: string } | null = null;
+    if (lineField1) {
+      for (const row of rows) {
+        const rec = row.record;
+        if (!rec || typeof rec !== "object") continue;
+        const id =
+          row.recordId != null ? String(row.recordId) : row.uniqueId ?? "";
+        const rawName = rec[staffNameFieldId];
+        const name =
+          rawName === undefined || rawName === null
+            ? ""
+            : String(rawName).trim();
+        if (!id || !name) continue;
+        if (
+          staffRecordMatchesLineUser(
+            rec as Record<string, unknown>,
+            lineField1,
+            lineField2 || undefined,
+            caller.lineUserId,
+          )
+        ) {
+          boundStaff = { id, name };
+          break;
+        }
+      }
+    }
+
+    return NextResponse.json({
+      staff,
+      boundStaff,
+      lineUserId: caller.lineUserId,
+      bindingEnabled: Boolean(lineField1),
+    });
   } catch (e) {
     console.error("[api/staff]", e);
     return NextResponse.json(

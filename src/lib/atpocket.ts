@@ -62,6 +62,13 @@ export function apiKeyForCalendarWrite(): string {
   return apiKeyForCalendarPocket();
 }
 
+/** スタッフ名簿アプリの LINE 紐付け更新用（未設定時は ATPOCKET_API_KEY・書き込み権限が必要） */
+export function apiKeyForStaffWrite(): string {
+  const w = process.env.STAFF_WRITE_ATPOCKET_API_KEY?.trim();
+  if (w) return w;
+  return apiKey();
+}
+
 export type AtPocketFetchAuth = {
   apiKey?: string;
 };

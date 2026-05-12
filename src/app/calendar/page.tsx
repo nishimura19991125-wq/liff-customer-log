@@ -5,11 +5,14 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  LiffAccountBar,
   LiffCard,
   LiffGhostLink,
   LiffLoadingBlock,
   LiffScreen,
+  LiffStaffBindPanel,
 } from "@/components/liff-chrome";
+import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import type {
   CalendarApiPayload,
   CalendarMonthApiItem,
@@ -537,6 +540,8 @@ export default function CalendarPage() {
 
   const [idToken, setIdToken] = useState<string | null>(null);
 
+  const account = useLiffAccountStrip(idToken, phase === "ready");
+
   useEffect(() => {
     if (!LIFF_ID) return;
 
@@ -689,6 +694,20 @@ export default function CalendarPage() {
   return (
     <LiffScreen>
       <div className="mx-auto w-full max-w-xl flex-1 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2">
+        <LiffAccountBar
+          loading={account.loading}
+          displayName={account.displayName}
+          pictureUrl={account.pictureUrl}
+          lineUserId={account.lineUserId}
+          boundStaffName={account.boundStaffName}
+        />
+        <LiffStaffBindPanel
+          staff={account.staff}
+          bindingEnabled={account.bindingEnabled}
+          boundStaffName={account.boundStaffName}
+          accountLoading={account.loading}
+          onBind={account.bindStaff}
+        />
         <div className="mb-4 flex flex-col gap-4">
           <div>
             <Link
