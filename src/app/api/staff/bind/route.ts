@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 
 import {
   apiKeyForStaffWrite,
-  fetchAppFields,
+  fetchAppFieldUniqueIdsSetTryKeys,
   fetchRecordById,
   fetchRecordsList,
   pickRecordFieldsForSchema,
+  stripLikelyInvalidPocketKeysFromRecord,
   updateRecord,
 } from "@/lib/atpocket";
 import { resolveCallerLineUserId } from "@/lib/request-auth";
@@ -165,14 +166,19 @@ export async function POST(request: Request) {
       });
     }
 
-    const fieldDefs = await fetchAppFields(staffAppId, pocketAuth);
-    const schemaUniqueIds = new Set(
-      fieldDefs
-        .map((f) => f.uniqueId?.trim())
-        .filter((u): u is string => Boolean(u)),
+    const cleanedRecord = stripLikelyInvalidPocketKeysFromRecord(recordObj);
+
+    const readKey = process.env.ATPOCKET_API_KEY?.trim() ?? "";
+    const schemaUniqueIds = await fetchAppFieldUniqueIdsSetTryKeys(
+      staffAppId,
+      [readKey, apiKeyForStaffWrite()],
     );
 
-    const picked = pickRecordFieldsForSchema(recordObj, schemaUniqueIds);
+    const picked =
+      schemaUniqueIds != null && schemaUniqueIds.size > 0
+        ? pickRecordFieldsForSchema(cleanedRecord, schemaUniqueIds)
+        : cleanedRecord;
+
     const payload: Record<string, unknown> = {
       ...picked,
       [slot.fieldId]: slot.value,

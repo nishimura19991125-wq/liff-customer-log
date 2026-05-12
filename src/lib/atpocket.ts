@@ -238,6 +238,59 @@ export function pickRecordFieldsForSchema(
   return out;
 }
 
+/**
+ * GET の record に混ざる `field-123` 形式は PUT で「有効なフィールドではない」と拒否されることがある。
+ */
+export function stripLikelyInvalidPocketKeysFromRecord(
+  record: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(record)) {
+    if (/^field-\d+$/i.test(k)) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/** 複数 API キーを順に試し、フィールド定義一覧を返す。すべて失敗なら null（403 対策） */
+export async function fetchAppFieldsTryKeys(
+  appsId: string,
+  apiKeysInOrder: string[],
+): Promise<AtPocketFieldRow[] | null> {
+  const dedup = new Set<string>();
+  const keys = apiKeysInOrder
+    .map((k) => k?.trim())
+    .filter((k): k is string => Boolean(k))
+    .filter((k) => {
+      if (dedup.has(k)) return false;
+      dedup.add(k);
+      return true;
+    });
+
+  for (const apiKey of keys) {
+    try {
+      return await fetchAppFields(appsId, { apiKey });
+    } catch {
+      /* 次のキー */
+    }
+  }
+  return null;
+}
+
+/** 複数 API キーを順に試し、フィールド一覧が取れたら uniqueId の集合を返す。すべて失敗なら null */
+export async function fetchAppFieldUniqueIdsSetTryKeys(
+  appsId: string,
+  apiKeysInOrder: string[],
+): Promise<Set<string> | null> {
+  const defs = await fetchAppFieldsTryKeys(appsId, apiKeysInOrder);
+  if (!defs) return null;
+  return new Set(
+    defs
+      .map((f) => f.uniqueId?.trim())
+      .filter((u): u is string => Boolean(u)),
+  );
+}
+
 const CALENDAR_PAGE_LIMIT = 1000;
 const CALENDAR_MAX_PAGES = 200;
 
