@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 
 import { fetchRecordsList } from "@/lib/atpocket";
 import { resolveCallerLineUserId } from "@/lib/request-auth";
+import {
+  readStaffImportKeyFromRawRecord,
+  staffImportKeyFieldIdEnv,
+} from "@/lib/staff-import-key";
 import { staffRecordMatchesLineUser } from "@/lib/staff-line-binding";
 
 export const dynamic = "force-dynamic";
@@ -38,15 +42,27 @@ export async function GET(request: Request) {
         : {}),
     });
     const rows = data.records ?? [];
+    const includeImportKey = Boolean(staffImportKeyFieldIdEnv());
 
     const staff = rows
       .map((row) => {
         const id =
           row.recordId != null ? String(row.recordId) : row.uniqueId ?? "";
-        const raw = row.record?.[staffNameFieldId];
+        const rec = row.record;
+        const raw = rec?.[staffNameFieldId];
         const name =
           raw === undefined || raw === null ? "" : String(raw).trim();
-        return { id, name };
+        const importKey =
+          includeImportKey &&
+          rec &&
+          typeof rec === "object"
+            ? readStaffImportKeyFromRawRecord(rec as Record<string, unknown>)
+            : undefined;
+        return {
+          id,
+          name,
+          ...(includeImportKey ? { importKey } : {}),
+        };
       })
       .filter((s) => s.id && s.name);
 

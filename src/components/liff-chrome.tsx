@@ -225,12 +225,13 @@ export function LiffStaffBindPanel({
   accountLoading,
   onBind,
 }: {
-  staff: { id: string; name: string }[];
+  staff: { id: string; name: string; importKey?: string }[];
   bindingEnabled: boolean;
   boundStaffName: string | null;
   accountLoading?: boolean;
   onBind: (
     staffRecordId: string,
+    staffImportKey?: string,
   ) => Promise<{ ok: boolean; error?: string }>;
 }) {
   const [selectedId, setSelectedId] = useState("");
@@ -257,7 +258,8 @@ export function LiffStaffBindPanel({
     }
     setBusy(true);
     setError(null);
-    const r = await onBind(selectedId);
+    const sel = staff.find((s) => s.id === selectedId);
+    const r = await onBind(selectedId, sel?.importKey);
     setBusy(false);
     if (!r.ok) setError(r.error ?? "紐付けに失敗しました");
   }

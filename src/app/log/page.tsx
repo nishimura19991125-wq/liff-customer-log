@@ -15,7 +15,7 @@ import {
 } from "@/components/liff-chrome";
 import { LIFF_PROFILE_CACHE_KEY } from "@/hooks/use-liff-account-strip";
 
-type Staff = { id: string; name: string };
+type Staff = { id: string; name: string; importKey?: string };
 
 type StaffApiPayload = {
   staff?: Staff[];
@@ -131,19 +131,26 @@ export default function LogPage() {
   const bindLineStaff = useCallback(
     async (
       staffRecordId: string,
+      staffImportKey?: string,
     ): Promise<{ ok: boolean; error?: string }> => {
       const token = idToken;
       if (!token) {
         return { ok: false, error: "ログイン情報がありません" };
       }
       try {
+        const trimmedKey = staffImportKey?.trim();
         const res = await fetch("/api/staff/bind", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ staffRecordId }),
+          body: JSON.stringify({
+            staffRecordId,
+            ...(trimmedKey
+              ? { staffImportKeyValue: trimmedKey }
+              : {}),
+          }),
         });
         const payload = (await res.json()) as {
           boundStaff?: { name?: string };

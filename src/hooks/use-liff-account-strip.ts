@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 export const LIFF_PROFILE_CACHE_KEY = "liff_profile_cache_v1";
 
 type StaffApiPayload = {
-  staff?: { id: string; name: string }[];
+  staff?: { id: string; name: string; importKey?: string }[];
   boundStaff?: { id: string; name: string } | null;
   lineUserId?: string;
   bindingEnabled?: boolean;
@@ -20,7 +20,7 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
   const [pictureUrl, setPictureUrl] = useState("");
   const [lineUserId, setLineUserId] = useState("");
   const [boundStaffName, setBoundStaffName] = useState<string | null>(null);
-  const [staff, setStaff] = useState<{ id: string; name: string }[]>([]);
+  const [staff, setStaff] = useState<{ id: string; name: string; importKey?: string }[]>([]);
   const [bindingEnabled, setBindingEnabled] = useState(false);
 
   useEffect(() => {
@@ -98,18 +98,25 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
   const bindStaff = useCallback(
     async (
       staffRecordId: string,
+      staffImportKey?: string,
     ): Promise<{ ok: boolean; error?: string }> => {
       if (!idToken) {
         return { ok: false, error: "ログイン情報がありません" };
       }
       try {
+        const trimmedKey = staffImportKey?.trim();
         const res = await fetch("/api/staff/bind", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${idToken}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ staffRecordId }),
+          body: JSON.stringify({
+            staffRecordId,
+            ...(trimmedKey
+              ? { staffImportKeyValue: trimmedKey }
+              : {}),
+          }),
         });
         const payload = (await res.json()) as {
           ok?: boolean;

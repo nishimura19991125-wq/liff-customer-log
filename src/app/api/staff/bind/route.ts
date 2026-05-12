@@ -11,55 +11,17 @@ import {
 } from "@/lib/atpocket";
 import { resolveCallerLineUserId } from "@/lib/request-auth";
 import {
+  enrichCleanedRecordWithImportKey,
+  recordValueLooksPresent,
+  staffImportKeyFieldIdEnv,
+  staffRecordRefreshFieldsCsv,
+} from "@/lib/staff-import-key";
+import {
   resolveBindLineSlot,
   staffRecordMatchesLineUser,
 } from "@/lib/staff-line-binding";
 
 export const dynamic = "force-dynamic";
-
-function recordValueLooksPresent(v: unknown): boolean {
-  if (v === undefined || v === null) return false;
-  if (typeof v === "string") return v.trim() !== "";
-  return true;
-}
-
-/**
- * GET の record が `field-5` のみで返す取込キー（社員ID）を strip で落とすと PUT が 400 になる。
- * STAFF_IMPORT_KEY_FIELD_ID に正式な uniqueId を設定し、元レコードの別キーから値を移す。
- */
-function enrichCleanedRecordWithImportKey(
-  rawRecord: Record<string, unknown>,
-  cleanedRecord: Record<string, unknown>,
-): Record<string, unknown> {
-  const dest = process.env.STAFF_IMPORT_KEY_FIELD_ID?.trim();
-  if (!dest) return cleanedRecord;
-
-  if (recordValueLooksPresent(cleanedRecord[dest])) {
-    return cleanedRecord;
-  }
-
-  const explicitSources =
-    process.env.STAFF_IMPORT_KEY_SOURCE_FIELD_IDS?.trim()
-      ?.split(",")
-      .map((s) => s.trim())
-      .filter(Boolean) ?? [];
-
-  for (const sk of explicitSources) {
-    const v = rawRecord[sk];
-    if (recordValueLooksPresent(v)) {
-      return { ...cleanedRecord, [dest]: v };
-    }
-  }
-
-  const legacyFieldEntries = Object.entries(rawRecord).filter(
-    ([k, v]) => /^field-\d+$/i.test(k) && recordValueLooksPresent(v),
-  );
-  if (legacyFieldEntries.length === 1) {
-    return { ...cleanedRecord, [dest]: legacyFieldEntries[0][1] };
-  }
-
-  return cleanedRecord;
-}
 
 function rowId(row: {
   recordId?: number;
@@ -95,6 +57,15 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  const staffImportKeyBody =
+    typeof body === "object" &&
+    body !== null &&
+    "staffImportKeyValue" in body &&
+    typeof (body as { staffImportKeyValue?: unknown }).staffImportKeyValue ===
+      "string"
+      ? (body as { staffImportKeyValue: string }).staffImportKeyValue.trim()
+      : "";
 
   const staffAppId = process.env.STAFF_APP_ID?.trim();
   const staffNameFieldId = process.env.STAFF_NAME_FIELD_ID?.trim();
@@ -176,6 +147,35 @@ export async function POST(request: Request) {
       /* 単体取得に失敗した場合は一覧の record で続行 */
     }
 
+    const refreshCsv = staffRecordRefreshFieldsCsv({
+      staffNameFieldId,
+      lineField1,
+      lineField2: lineField2 || undefined,
+    });
+    if (refreshCsv) {
+      try {
+        const partial = await fetchRecordById(
+          staffAppId,
+          staffRecordIdRaw,
+          pocketAuth,
+          refreshCsv,
+        );
+        if (partial?.record && typeof partial.record === "object") {
+          recordObj = {
+            ...recordObj,
+            ...(partial.record as Record<string, unknown>),
+          };
+        }
+      } catch {
+        /* 続行 */
+      }
+    }
+
+    const importKeyDest = staffImportKeyFieldIdEnv();
+    if (importKeyDest && staffImportKeyBody) {
+      recordObj = { ...recordObj, [importKeyDest]: staffImportKeyBody };
+    }
+
     const rawName = recordObj[staffNameFieldId];
     const name =
       rawName === undefined || rawName === null ? "" : String(rawName).trim();
@@ -247,6 +247,17 @@ export async function POST(request: Request) {
       }
     }
     payload[slot.fieldId] = slot.value;
+
+    const importKeyId = staffImportKeyFieldIdEnv();
+    if (importKeyId && !recordValueLooksPresent(payload[importKeyId])) {
+      return NextResponse.json(
+        {
+          error:
+            "スタッフの取込キー（社員ID）を更新用データに含められませんでした。Netlify で STAFF_IMPORT_KEY_FIELD_ID と STAFF_IMPORT_KEY_SOURCE_FIELD_IDS（例: field-5）を設定するか、@pocket で「社員ID」が取込設定のキーになっているか確認してください。",
+        },
+        { status: 503 },
+      );
+    }
 
     await updateRecord(staffAppId, staffRecordIdRaw, payload, pocketAuth);
 
