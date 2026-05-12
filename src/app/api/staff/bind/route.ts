@@ -259,7 +259,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "スタッフの取込キー（社員ID）を更新用データに含められませんでした。Netlify で STAFF_IMPORT_KEY_FIELD_ID と STAFF_IMPORT_KEY_SOURCE_FIELD_IDS（例: field-5）を設定するか、@pocket で「社員ID」が取込設定のキーになっているか確認してください。",
+            "スタッフの取込キー（社員ID）を更新用データに含められませんでした。@pocket の「社員ID」列の **正式な uniqueId** を STAFF_IMPORT_KEY_FIELD_ID に設定してください（`field-1` は GET の仮キーのことが多く、宛先には使えません）。値が field-1 でしか返らないときは STAFF_IMPORT_KEY_SOURCE_FIELD_IDS に field-1 を追加するか、STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS を `正式uniqueId,field-1` のように並べてください。",
         },
         { status: 503 },
       );
@@ -272,7 +272,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "レコードに field-数字 形式の列があります。Netlify で STAFF_IMPORT_KEY_FIELD_ID を設定するか、STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS の先頭に「社員ID」列の uniqueId を置いてください（必要なら STAFF_IMPORT_KEY_SOURCE_FIELD_IDS に field-5 など）。",
+            "レコードに field-数字 形式の列があります。STAFF_IMPORT_KEY_FIELD_ID に社員ID列の **正式な uniqueId**（@pocket 管理画面の API 識別子）を設定してください。`field-1` だけを STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS に入れても足りません（必要なら STAFF_IMPORT_KEY_SOURCE_FIELD_IDS=field-1 など）。",
         },
         { status: 503 },
       );
@@ -291,7 +291,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "@pocket: 取込キー「社員ID」を認識できませんでした。環境変数の STAFF_IMPORT_KEY_FIELD_ID（または STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS の先頭が社員ID列の uniqueId）と STAFF_IMPORT_KEY_SOURCE_FIELD_IDS を確認するか、@pocket で「社員ID」が取込・連携のキー設定に含まれているか確認してください。",
+            "@pocket: 取込キー「社員ID」を認識できませんでした。STAFF_IMPORT_KEY_FIELD_ID には `field-1` ではなく列の正式 uniqueId を入れ、値の取得元が field-1 のときは STAFF_IMPORT_KEY_SOURCE_FIELD_IDS または STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS に field-1 を含めてください。@pocket の取込設定に「社員ID」がキーとして含まれているかも確認してください。",
         },
         { status: 502 },
       );

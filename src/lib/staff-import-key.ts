@@ -5,20 +5,32 @@ export function staffImportKeyFieldIdEnv(): string | undefined {
   return id || undefined;
 }
 
-/** STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS の先頭のみを取込キー相当として使う（IMPORT_KEY 未設定時の互換） */
-function firstBindAlwaysIncludeFieldId(): string | undefined {
+/** STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS を順に分割（カンマ区切り） */
+function bindAlwaysIncludeFieldIdsInOrder(): string[] {
   const csv = process.env.STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS?.trim();
-  if (!csv) return undefined;
-  const first = csv.split(",")[0]?.trim();
-  return first || undefined;
+  if (!csv) return [];
+  return csv.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+/** API が返す `field-5` 形式。PUT の宛先 uniqueId としては使わない（誤設定が多いため） */
+function isLegacyHyphenNumericFieldKey(id: string): boolean {
+  return /^field-\d+$/i.test(id);
 }
 
 /**
  * 取込キー「社員ID」列の uniqueId。
- * 明示は STAFF_IMPORT_KEY_FIELD_ID。無ければ STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS の先頭を利用する。
+ * - STAFF_IMPORT_KEY_FIELD_ID が最優先
+ * - 無ければ STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS のうち **field-数字 以外** の先頭（@pocket 管理画面の正式 uniqueId）
+ *
+ * `field-1` のみを BIND に置くのは誤り。**値の取り元**は STAFF_IMPORT_KEY_SOURCE_FIELD_IDS か、BIND 内の field-* に書く。
  */
 export function staffImportKeyFieldIdResolved(): string | undefined {
-  return staffImportKeyFieldIdEnv() ?? firstBindAlwaysIncludeFieldId();
+  const explicit = staffImportKeyFieldIdEnv();
+  if (explicit) return explicit;
+  for (const id of bindAlwaysIncludeFieldIdsInOrder()) {
+    if (!isLegacyHyphenNumericFieldKey(id)) return id;
+  }
+  return undefined;
 }
 
 export function recordValueLooksPresent(v: unknown): boolean {
@@ -28,12 +40,22 @@ export function recordValueLooksPresent(v: unknown): boolean {
 }
 
 function importKeySourceFieldIds(): string[] {
-  return (
+  const fromEnv =
     process.env.STAFF_IMPORT_KEY_SOURCE_FIELD_IDS?.trim()
       ?.split(",")
       .map((s) => s.trim())
-      .filter(Boolean) ?? []
+      .filter(Boolean) ?? [];
+  const fromBindLegacy = bindAlwaysIncludeFieldIdsInOrder().filter((id) =>
+    isLegacyHyphenNumericFieldKey(id),
   );
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const x of [...fromEnv, ...fromBindLegacy]) {
+    if (seen.has(x)) continue;
+    seen.add(x);
+    out.push(x);
+  }
+  return out;
 }
 
 /** 一覧・単体 GET の生 record から取込キー相当の表示用文字列を取る（LIFF への返却用） */
