@@ -8,6 +8,7 @@ import {
   LiffCard,
   LiffLoadingBlock,
   LiffMenuCard,
+  LiffDirectUrlLinks,
   LiffPageHeader,
   LiffScreen,
   LiffStaffBindPanel,
@@ -30,18 +31,11 @@ function CalendarGlyph() {
   );
 }
 
-function LogGlyph() {
+function CustomerInfoGlyph() {
   return (
     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
       <path
-        d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M14 2v6h6M16 13H8M16 17H8M10 9H8"
+        d="M9 12h6m-6 4h4m6 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
         stroke="currentColor"
         strokeWidth="1.6"
         strokeLinecap="round"
@@ -171,10 +165,10 @@ export default function HomeHubPage() {
 
         <div className="mt-6 flex flex-col gap-4">
           <LiffMenuCard
-            href="/log"
-            title="顧客対応ログ入力"
-            description="担当者・顧客名・対応内容を記録して送信します。"
-            icon={<LogGlyph />}
+            href="/customer-info"
+            title="お客様情報入力"
+            description="お客様情報の入力（詳細は今後追加します）。"
+            icon={<CustomerInfoGlyph />}
             disabled={needsStaffBind}
           />
           <LiffMenuCard
@@ -185,6 +179,15 @@ export default function HomeHubPage() {
             disabled={needsStaffBind}
           />
         </div>
+
+        <LiffDirectUrlLinks
+          className="mt-8"
+          links={[
+            { path: "/", label: "メニュー（トップ）" },
+            { path: "/customer-info", label: "お客様情報入力" },
+            { path: "/calendar", label: "工事カレンダー" },
+          ]}
+        />
       </main>
     </LiffScreen>
   );

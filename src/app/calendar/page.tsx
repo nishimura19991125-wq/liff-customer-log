@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   LiffAccountBar,
   LiffCard,
+  LiffDirectUrlLinks,
   LiffGhostLink,
   LiffLoadingBlock,
   LiffScreen,
@@ -1022,6 +1023,14 @@ export default function CalendarPage() {
         ) : null}
           </div>
         </div>
+        <LiffDirectUrlLinks
+          className="mt-6"
+          links={[
+            { path: "/", label: "メニュー（トップ）" },
+            { path: "/customer-info", label: "お客様情報入力" },
+            { path: "/calendar", label: "工事カレンダー（このページ）" },
+          ]}
+        />
       </div>
     </LiffScreen>
   );
