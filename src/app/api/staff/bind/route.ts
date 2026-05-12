@@ -12,6 +12,7 @@ import {
 import { resolveCallerLineUserId } from "@/lib/request-auth";
 import {
   enrichCleanedRecordWithImportKey,
+  pocketHyphenNumericFieldKeysToPreserveForStaffBind,
   recordValueLooksPresent,
   staffImportKeyFieldIdResolved,
   staffRecordRefreshFieldsCsv,
@@ -216,15 +217,28 @@ export async function POST(request: Request) {
       });
     }
 
-    const cleanedRecord = enrichCleanedRecordWithImportKey(
-      recordObj,
-      stripLikelyInvalidPocketKeysFromRecord(recordObj),
-    );
-
     const readKey = process.env.ATPOCKET_API_KEY?.trim() ?? "";
     const schemaUniqueIds = await fetchAppFieldUniqueIdsSetTryKeys(
       staffAppId,
       [readKey, apiKeyForStaffWrite()],
+    );
+
+    const preserveHyphen = pocketHyphenNumericFieldKeysToPreserveForStaffBind({
+      staffNameFieldId,
+      lineField1,
+      lineField2: lineField2 || undefined,
+    });
+    if (schemaUniqueIds != null && schemaUniqueIds.size > 0) {
+      for (const k of Object.keys(recordObj)) {
+        if (/^field-\d+$/i.test(k) && schemaUniqueIds.has(k)) {
+          preserveHyphen.add(k);
+        }
+      }
+    }
+
+    const cleanedRecord = enrichCleanedRecordWithImportKey(
+      recordObj,
+      stripLikelyInvalidPocketKeysFromRecord(recordObj, preserveHyphen),
     );
 
     const picked =
@@ -259,7 +273,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "スタッフの取込キー（社員ID）を更新用データに含められませんでした。@pocket の「社員ID」列の **正式な uniqueId** を STAFF_IMPORT_KEY_FIELD_ID に設定してください（`field-1` は GET の仮キーのことが多く、宛先には使えません）。値が field-1 でしか返らないときは STAFF_IMPORT_KEY_SOURCE_FIELD_IDS に field-1 を追加するか、STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS を `正式uniqueId,field-1` のように並べてください。",
+            "スタッフの取込キー（社員ID）を更新用データに含められませんでした。管理画面の「社員ID」列のフィールド識別名（例: field-1）を STAFF_IMPORT_KEY_FIELD_ID に設定するか、STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS に field-1 だけを書いてください。@pocket の取込設定に「社員ID」がキーとして含まれているかも確認してください。",
         },
         { status: 503 },
       );
@@ -272,7 +286,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "レコードに field-数字 形式の列があります。STAFF_IMPORT_KEY_FIELD_ID に社員ID列の **正式な uniqueId**（@pocket 管理画面の API 識別子）を設定してください。`field-1` だけを STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS に入れても足りません（必要なら STAFF_IMPORT_KEY_SOURCE_FIELD_IDS=field-1 など）。",
+            "レコードに field-数字 形式の列がありますが、取込キーを特定できません。STAFF_IMPORT_KEY_FIELD_ID に「社員ID」列の識別名を設定するか、STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS に field-1 などを含めてください。",
         },
         { status: 503 },
       );
@@ -291,7 +305,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "@pocket: 取込キー「社員ID」を認識できませんでした。STAFF_IMPORT_KEY_FIELD_ID には `field-1` ではなく列の正式 uniqueId を入れ、値の取得元が field-1 のときは STAFF_IMPORT_KEY_SOURCE_FIELD_IDS または STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS に field-1 を含めてください。@pocket の取込設定に「社員ID」がキーとして含まれているかも確認してください。",
+            "@pocket: 取込キー「社員ID」を認識できませんでした。「社員ID」列のフィールド識別名（画面どおり field-1 のことがあります）を STAFF_IMPORT_KEY_FIELD_ID または BIND に合わせ、@pocket の取込設定を確認してください。",
         },
         { status: 502 },
       );

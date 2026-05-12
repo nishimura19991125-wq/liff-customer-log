@@ -239,14 +239,20 @@ export function pickRecordFieldsForSchema(
 }
 
 /**
- * GET の record に混ざる `field-123` 形式は PUT で「有効なフィールドではない」と拒否されることがある。
+ * GET の record に混ざる `field-123` 形式は、環境によっては PUT で拒否される。
+ * ただし @pocket 管理画面のフィールド識別名そのものが `field-1` などである場合があり、そのキーは削除しない。
  */
 export function stripLikelyInvalidPocketKeysFromRecord(
   record: Record<string, unknown>,
+  preserveHyphenNumericFieldKeys?: Set<string>,
 ): Record<string, unknown> {
+  const preserve = preserveHyphenNumericFieldKeys ?? new Set<string>();
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(record)) {
-    if (/^field-\d+$/i.test(k)) continue;
+    if (/^field-\d+$/i.test(k)) {
+      if (preserve.has(k)) out[k] = v;
+      continue;
+    }
     out[k] = v;
   }
   return out;

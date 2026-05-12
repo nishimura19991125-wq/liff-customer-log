@@ -12,7 +12,7 @@ function bindAlwaysIncludeFieldIdsInOrder(): string[] {
   return csv.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-/** API が返す `field-5` 形式。PUT の宛先 uniqueId としては使わない（誤設定が多いため） */
+/** `field-数字` 形式のキーかどうか（管理画面の識別名がそのまま field-1 になる場合あり） */
 function isLegacyHyphenNumericFieldKey(id: string): boolean {
   return /^field-\d+$/i.test(id);
 }
@@ -20,17 +20,52 @@ function isLegacyHyphenNumericFieldKey(id: string): boolean {
 /**
  * 取込キー「社員ID」列の uniqueId。
  * - STAFF_IMPORT_KEY_FIELD_ID が最優先
- * - 無ければ STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS のうち **field-数字 以外** の先頭（@pocket 管理画面の正式 uniqueId）
- *
- * `field-1` のみを BIND に置くのは誤り。**値の取り元**は STAFF_IMPORT_KEY_SOURCE_FIELD_IDS か、BIND 内の field-* に書く。
+ * - STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS が **field-1 の1つだけ**のときは、その識別名をそのまま使う（管理画面の公式 ID が field-N の構成）
+ * - それ以外は BIND リストで **field-数字 以外** の先頭を宛先にする（`syain_name,field-1` のような並び）
  */
 export function staffImportKeyFieldIdResolved(): string | undefined {
   const explicit = staffImportKeyFieldIdEnv();
   if (explicit) return explicit;
-  for (const id of bindAlwaysIncludeFieldIdsInOrder()) {
+  const bindList = bindAlwaysIncludeFieldIdsInOrder();
+  if (
+    bindList.length === 1 &&
+    bindList[0] &&
+    isLegacyHyphenNumericFieldKey(bindList[0])
+  ) {
+    return bindList[0];
+  }
+  for (const id of bindList) {
     if (!isLegacyHyphenNumericFieldKey(id)) return id;
   }
   return undefined;
+}
+
+/**
+ * strip で落とさない `field-数字` キー（環境変数・名前列・LINE 列・取込キー解決結果）。
+ */
+export function pocketHyphenNumericFieldKeysToPreserveForStaffBind(opts: {
+  staffNameFieldId: string;
+  lineField1?: string;
+  lineField2?: string;
+}): Set<string> {
+  const s = new Set<string>();
+  const add = (id?: string) => {
+    const t = id?.trim();
+    if (t) s.add(t);
+  };
+  add(opts.staffNameFieldId);
+  add(opts.lineField1);
+  add(opts.lineField2);
+  add(staffImportKeyFieldIdEnv());
+  add(staffImportKeyFieldIdResolved());
+  for (const id of bindAlwaysIncludeFieldIdsInOrder()) add(id);
+  const srcCsv =
+    process.env.STAFF_IMPORT_KEY_SOURCE_FIELD_IDS?.trim()
+      ?.split(",")
+      .map((x) => x.trim())
+      .filter(Boolean) ?? [];
+  for (const id of srcCsv) add(id);
+  return s;
 }
 
 export function recordValueLooksPresent(v: unknown): boolean {
