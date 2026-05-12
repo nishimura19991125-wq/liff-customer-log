@@ -61,6 +61,11 @@ export default function HomeHubPage() {
   const [idToken, setIdToken] = useState<string | null>(null);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
+  const needsStaffBind =
+    account.bindingEnabled &&
+    !account.boundStaffName &&
+    !account.loading &&
+    account.staff.length > 0;
 
   useEffect(() => {
     if (!LIFF_ID) return;
@@ -146,6 +151,7 @@ export default function HomeHubPage() {
           pictureUrl={account.pictureUrl}
           lineUserId={account.lineUserId}
           boundStaffName={account.boundStaffName}
+          bindingEnabled={account.bindingEnabled}
         />
         <LiffStaffBindPanel
           staff={account.staff}
@@ -156,7 +162,11 @@ export default function HomeHubPage() {
         />
         <LiffPageHeader
           title="情報確認くん"
-          subtitle="メニューから利用する機能を選んでください"
+          subtitle={
+            needsStaffBind
+              ? "先にスタッフ名簿と紐づけてから、メニューをお選びください"
+              : "メニューから利用する機能を選んでください"
+          }
         />
 
         <div className="mt-6 flex flex-col gap-4">
@@ -165,12 +175,14 @@ export default function HomeHubPage() {
             title="顧客対応ログ入力"
             description="担当者・顧客名・対応内容を記録して送信します。"
             icon={<LogGlyph />}
+            disabled={needsStaffBind}
           />
           <LiffMenuCard
             href="/calendar"
             title="工事カレンダー"
             description="工事予定を月表示で確認し、詳細から @pocket を開けます。"
             icon={<CalendarGlyph />}
+            disabled={needsStaffBind}
           />
         </div>
       </main>

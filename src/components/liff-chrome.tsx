@@ -144,12 +144,15 @@ export function LiffAccountBar({
   pictureUrl,
   lineUserId,
   boundStaffName,
+  bindingEnabled,
 }: {
   loading?: boolean;
   displayName?: string;
   pictureUrl?: string;
   lineUserId?: string;
   boundStaffName?: string | null;
+  /** アプリから名前リストで紐づけ可能なとき true（メッセージの出し分け） */
+  bindingEnabled?: boolean;
 }) {
   if (loading) {
     return (
@@ -194,9 +197,13 @@ export function LiffAccountBar({
             lineName ? (
               <p className="truncate text-[11px] text-slate-500">LINE: {lineName}</p>
             ) : null
+          ) : bindingEnabled ? (
+            <p className="truncate text-[11px] font-semibold text-amber-900">
+              先に名前を選んで紐づけしてください
+            </p>
           ) : (
             <p className="truncate text-[11px] text-amber-800">
-              スタッフ名簿と未紐付け（@pocket に LINE ID を登録）
+              スタッフ名簿と未紐付け（管理者が @pocket に LINE ID を登録）
             </p>
           )}
           {shortId ? (
@@ -258,10 +265,11 @@ export function LiffStaffBindPanel({
   return (
     <div className="mb-3 rounded-2xl border border-amber-200/90 bg-amber-50/90 px-4 py-3 shadow-sm ring-1 ring-amber-100/80">
       <p className="text-[13px] font-bold text-amber-950">
-        初回：スタッフ名簿と紐づけ
+        スタッフ名簿と紐づけ（必須）
       </p>
       <p className="mt-1 text-[12px] leading-snug text-amber-900/85">
-        一覧から自分の名前を選ぶと、スタッフ名簿に LINE ID が保存されます。
+        利用前に一覧から自分の名前を選んでください。@pocket のスタッフ名簿に LINE
+        ID が保存されます。
       </p>
       <form onSubmit={handleSubmit} className="mt-3 flex flex-col gap-2">
         <select
@@ -305,17 +313,49 @@ export function LiffMenuCard({
   title,
   description,
   icon,
+  disabled,
 }: {
   href: string;
   title: string;
   description: string;
   icon: ReactNode;
+  /** true のとき遷移不可（スタッフ未紐付けなど） */
+  disabled?: boolean;
 }) {
+  const cls =
+    "group flex items-stretch gap-4 rounded-[1.35rem] border border-slate-200/90 bg-white/95 p-5 shadow-[0_10px_36px_-14px_rgba(15,23,42,0.18)] ring-1 ring-slate-200/55 transition active:scale-[0.99]";
+
+  if (disabled) {
+    return (
+      <div
+        role="link"
+        aria-disabled="true"
+        aria-label={`${title}（スタッフ紐付け後に利用できます）`}
+        className={`${cls} cursor-not-allowed opacity-45`}
+      >
+        <span className="flex size-[3.25rem] shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100/70 text-[1.65rem] leading-none text-[#06C755]">
+          {icon}
+        </span>
+        <div className="min-w-0 flex-1 py-0.5">
+          <p className="text-[1.05rem] font-bold leading-snug text-slate-900">
+            {title}
+          </p>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
+            {description}
+          </p>
+        </div>
+        <span
+          className="self-center text-xl font-light text-slate-300"
+          aria-hidden
+        >
+          ›
+        </span>
+      </div>
+    );
+  }
+
   return (
-    <Link
-      href={href}
-      className="group flex items-stretch gap-4 rounded-[1.35rem] border border-slate-200/90 bg-white/95 p-5 shadow-[0_10px_36px_-14px_rgba(15,23,42,0.18)] ring-1 ring-slate-200/55 transition active:scale-[0.99]"
-    >
+    <Link href={href} className={cls}>
       <span className="flex size-[3.25rem] shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100/70 text-[1.65rem] leading-none text-[#06C755]">
         {icon}
       </span>

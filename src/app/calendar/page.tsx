@@ -541,6 +541,11 @@ export default function CalendarPage() {
   const [idToken, setIdToken] = useState<string | null>(null);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
+  const needsStaffBind =
+    account.bindingEnabled &&
+    !account.boundStaffName &&
+    !account.loading &&
+    account.staff.length > 0;
 
   useEffect(() => {
     if (!LIFF_ID) return;
@@ -700,6 +705,7 @@ export default function CalendarPage() {
           pictureUrl={account.pictureUrl}
           lineUserId={account.lineUserId}
           boundStaffName={account.boundStaffName}
+          bindingEnabled={account.bindingEnabled}
         />
         <LiffStaffBindPanel
           staff={account.staff}
@@ -725,7 +731,27 @@ export default function CalendarPage() {
               @pocket を開けます。
             </p>
           </div>
+        </div>
 
+        <div className="relative">
+          {needsStaffBind ? (
+            <div
+              className="absolute inset-0 z-20 flex justify-center rounded-2xl bg-white/70 px-3 pt-5 backdrop-blur-[2px]"
+              role="status"
+            >
+              <p className="max-w-sm text-center text-[13px] font-bold leading-snug text-amber-950">
+                先に上の一覧から名前を選んで紐づけてください
+              </p>
+            </div>
+          ) : null}
+          <div
+            className={
+              needsStaffBind
+                ? "pointer-events-none opacity-[0.35] saturate-50"
+                : undefined
+            }
+          >
+            <div className="mb-4 flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
             <span className="inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 ring-1 ring-slate-200/80">
               <span className="size-2 rounded-full bg-[#06C755]" aria-hidden />
@@ -991,6 +1017,8 @@ export default function CalendarPage() {
             </LiffCard>
           </section>
         ) : null}
+          </div>
+        </div>
       </div>
     </LiffScreen>
   );

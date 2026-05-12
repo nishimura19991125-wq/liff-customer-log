@@ -54,6 +54,12 @@ export default function LogPage() {
   const [customerName, setCustomerName] = useState("");
   const [content, setContent] = useState("");
 
+  const needsStaffBind =
+    phase === "ready" &&
+    Boolean(accountStrip?.bindingEnabled) &&
+    !accountStrip?.boundStaffName &&
+    staff.length > 0;
+
   const inputClass =
     "min-h-[48px] w-full rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#06C755] focus:ring-2 focus:ring-[#06C755]/25";
 
@@ -208,6 +214,13 @@ export default function LogPage() {
     e.preventDefault();
     if (phase !== "ready" || !LIFF_ID) return;
 
+    if (needsStaffBind) {
+      setErrorMessage(
+        "先に上の一覧から名前を選び、スタッフ名簿と紐づけてください。",
+      );
+      return;
+    }
+
     const selected = staff.find((s) => s.id === staffRecordId);
     if (!selected) {
       setErrorMessage("担当者を選択してください");
@@ -348,6 +361,7 @@ export default function LogPage() {
             pictureUrl={accountStrip.pictureUrl}
             lineUserId={accountStrip.lineUserId}
             boundStaffName={accountStrip.boundStaffName}
+            bindingEnabled={accountStrip.bindingEnabled}
           />
         ) : null}
 
@@ -363,13 +377,17 @@ export default function LogPage() {
 
         <LiffPageHeader
           title="顧客対応ログ"
-          subtitle="対応内容を入力して送信してください"
+          subtitle={
+            needsStaffBind
+              ? "先にスタッフ名簿と紐づけてから入力・送信してください"
+              : "対応内容を入力して送信してください"
+          }
         />
 
         <LiffCard>
           <form
             onSubmit={handleSubmit}
-            className="flex flex-col gap-6 px-5 py-7 sm:px-7"
+            className={`flex flex-col gap-6 px-5 py-7 sm:px-7 ${needsStaffBind ? "pointer-events-none opacity-[0.42]" : ""}`}
           >
             <label className="flex flex-col gap-2">
               <span className="text-[13px] font-semibold tracking-wide text-slate-600">
@@ -434,7 +452,7 @@ export default function LogPage() {
 
             <LiffPrimaryButton
               type="submit"
-              disabled={phase === "submitting"}
+              disabled={phase === "submitting" || needsStaffBind}
             >
               {phase === "submitting" ? "送信中…" : "送信する"}
             </LiffPrimaryButton>
