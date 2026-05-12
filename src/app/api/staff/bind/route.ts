@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   apiKeyForStaffWrite,
+  fetchRecordById,
   fetchRecordsList,
   updateRecord,
 } from "@/lib/atpocket";
@@ -112,7 +113,22 @@ export async function POST(request: Request) {
       );
     }
 
-    const recordObj = rec as Record<string, unknown>;
+    const recordFromList = rec as Record<string, unknown>;
+
+    let recordObj = recordFromList;
+    try {
+      const fresh = await fetchRecordById(
+        staffAppId,
+        staffRecordIdRaw,
+        pocketAuth,
+      );
+      if (fresh?.record && typeof fresh.record === "object") {
+        recordObj = fresh.record as Record<string, unknown>;
+      }
+    } catch {
+      /* 単体取得に失敗した場合は一覧の record で続行 */
+    }
+
     const rawName = recordObj[staffNameFieldId];
     const name =
       rawName === undefined || rawName === null ? "" : String(rawName).trim();
@@ -147,12 +163,13 @@ export async function POST(request: Request) {
       });
     }
 
-    await updateRecord(
-      staffAppId,
-      staffRecordIdRaw,
-      { [slot.fieldId]: slot.value },
-      pocketAuth,
-    );
+    /** 取込のキー項目（社員ID 等）が欠けると @pocket が 400 を返すため、単体 GET の record をベースに LINE のみ上書きして PUT する */
+    const payload: Record<string, unknown> = {
+      ...recordObj,
+      [slot.fieldId]: slot.value,
+    };
+
+    await updateRecord(staffAppId, staffRecordIdRaw, payload, pocketAuth);
 
     return NextResponse.json({
       ok: true,
