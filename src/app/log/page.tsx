@@ -362,15 +362,23 @@ export default function LogPage() {
           </Link>
         </nav>
 
-        {accountStrip ? (
-          <LiffAccountBar
-            displayName={accountStrip.displayName}
-            pictureUrl={accountStrip.pictureUrl}
-            lineUserId={accountStrip.lineUserId}
-            boundStaffName={accountStrip.boundStaffName}
-            bindingEnabled={accountStrip.bindingEnabled}
-          />
-        ) : null}
+        <LiffPageHeader
+          title="顧客対応ログ"
+          subtitle={
+            needsStaffBind
+              ? "先にスタッフ名簿と紐づけてから入力・送信してください"
+              : "対応内容を入力して送信してください"
+          }
+          action={
+            accountStrip ? (
+              <LiffAccountBar
+                pictureUrl={accountStrip.pictureUrl}
+                boundStaffName={accountStrip.boundStaffName}
+                bindingEnabled={accountStrip.bindingEnabled}
+              />
+            ) : null
+          }
+        />
 
         {accountStrip ? (
           <LiffStaffBindPanel
@@ -381,15 +389,6 @@ export default function LogPage() {
             onBind={bindLineStaff}
           />
         ) : null}
-
-        <LiffPageHeader
-          title="顧客対応ログ"
-          subtitle={
-            needsStaffBind
-              ? "先にスタッフ名簿と紐づけてから入力・送信してください"
-              : "対応内容を入力して送信してください"
-          }
-        />
 
         <LiffCard>
           <form

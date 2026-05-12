@@ -45,7 +45,9 @@ export function LiffPageHeader({ title, subtitle, action }: LiffPageHeaderProps)
           <p className="mt-1 text-[13px] leading-snug text-slate-500">{subtitle}</p>
         ) : null}
       </div>
-      {action ? <div className="shrink-0 pt-1">{action}</div> : null}
+      {action ? (
+        <div className="flex shrink-0 items-start pt-0.5">{action}</div>
+      ) : null}
     </header>
   );
 }
@@ -137,82 +139,75 @@ export function LiffNavPill({
   );
 }
 
-/** 右上：LINE プロフィールとスタッフ名簿紐付け（最大2つの LINE ID はサーバーで照合） */
+/**
+ * ログイン中ユーザー表示：@pocket スタッフ名簿の名前とアイコンのみ（見出し行と同じ高さに載せる想定）。
+ * アイコンは LIFF プロフィール画像（名簿側に写真が無いため）。
+ */
 export function LiffAccountBar({
   loading,
-  displayName,
   pictureUrl,
-  lineUserId,
   boundStaffName,
   bindingEnabled,
 }: {
   loading?: boolean;
-  displayName?: string;
   pictureUrl?: string;
-  lineUserId?: string;
   boundStaffName?: string | null;
-  /** アプリから名前リストで紐づけ可能なとき true（メッセージの出し分け） */
   bindingEnabled?: boolean;
 }) {
   if (loading) {
     return (
-      <div className="flex w-full justify-end pb-2">
-        <div
-          className="h-11 w-40 max-w-[85vw] animate-pulse rounded-full bg-slate-200/75"
-          aria-hidden
-        />
+      <div
+        className="flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/90 py-1 pl-1 pr-3 shadow-sm"
+        aria-busy
+      >
+        <div className="size-10 shrink-0 animate-pulse rounded-full bg-slate-200/80" />
+        <div className="h-4 w-24 animate-pulse rounded bg-slate-200/75" />
       </div>
     );
   }
 
-  const shortId =
-    lineUserId && lineUserId.length > 14
-      ? `${lineUserId.slice(0, 8)}…${lineUserId.slice(-4)}`
-      : (lineUserId ?? "");
-
-  const lineName = displayName?.trim() ?? "";
   const staffName = boundStaffName?.trim() ?? "";
-  /** 主表示はスタッフ名簿の社員名（未紐付け時は LINE 表示名） */
-  const primary = staffName || lineName || "LINE";
-  const avatarLetter = (staffName || lineName || "L").slice(0, 1);
+  const showBindHint = bindingEnabled && !staffName;
+
+  const avatarLetter = staffName
+    ? staffName.slice(0, 1)
+    : showBindHint
+      ? "?"
+      : "—";
+
+  const label = staffName
+    ? staffName
+    : showBindHint
+      ? "名前を選択…"
+      : "未登録";
 
   return (
-    <div className="flex w-full justify-end pb-2">
-      <div className="flex max-w-[min(100%,22rem)] items-center gap-2 rounded-full border border-slate-200/90 bg-white/95 py-1 pl-1 pr-3 shadow-sm backdrop-blur-sm">
-        {pictureUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element -- LIFF の外部プロフィール画像
-          <img
-            src={pictureUrl}
-            alt=""
-            className="size-9 shrink-0 rounded-full object-cover ring-1 ring-slate-200/80"
-          />
-        ) : (
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-emerald-200 text-[13px] font-bold text-emerald-800 ring-1 ring-slate-200/80">
-            {avatarLetter}
-          </div>
-        )}
-        <div className="min-w-0 flex-1 text-right leading-tight">
-          <p className="truncate text-[13px] font-bold text-slate-900">{primary}</p>
-          {staffName ? (
-            lineName ? (
-              <p className="truncate text-[11px] text-slate-500">LINE: {lineName}</p>
-            ) : null
-          ) : bindingEnabled ? (
-            <p className="truncate text-[11px] font-semibold text-amber-900">
-              先に名前を選んで紐づけしてください
-            </p>
-          ) : (
-            <p className="truncate text-[11px] text-amber-800">
-              スタッフ名簿と未紐付け（管理者が @pocket に LINE ID を登録）
-            </p>
-          )}
-          {shortId ? (
-            <p className="truncate font-mono text-[10px] text-slate-400 tabular-nums">
-              {shortId}
-            </p>
-          ) : null}
+    <div className="flex max-w-[min(100%,14rem)] items-center gap-2 rounded-full border border-slate-200/90 bg-white/95 py-1 pl-1 pr-3 shadow-sm backdrop-blur-sm">
+      {pictureUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- LIFF の外部プロフィール画像
+        <img
+          src={pictureUrl}
+          alt=""
+          className="size-10 shrink-0 rounded-full object-cover ring-1 ring-slate-200/80"
+        />
+      ) : (
+        <div
+          className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ring-1 ring-slate-200/80 ${
+            showBindHint
+              ? "bg-amber-50 text-amber-900"
+              : "bg-gradient-to-br from-emerald-100 to-emerald-200 text-emerald-800"
+          }`}
+        >
+          {avatarLetter}
         </div>
-      </div>
+      )}
+      <p
+        className={`truncate text-right text-[15px] font-bold leading-tight tracking-tight ${
+          showBindHint ? "text-amber-950" : "text-slate-900"
+        }`}
+      >
+        {label}
+      </p>
     </div>
   );
 }

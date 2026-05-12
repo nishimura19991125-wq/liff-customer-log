@@ -699,21 +699,6 @@ export default function CalendarPage() {
   return (
     <LiffScreen>
       <div className="mx-auto w-full max-w-xl flex-1 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2">
-        <LiffAccountBar
-          loading={account.loading}
-          displayName={account.displayName}
-          pictureUrl={account.pictureUrl}
-          lineUserId={account.lineUserId}
-          boundStaffName={account.boundStaffName}
-          bindingEnabled={account.bindingEnabled}
-        />
-        <LiffStaffBindPanel
-          staff={account.staff}
-          bindingEnabled={account.bindingEnabled}
-          boundStaffName={account.boundStaffName}
-          accountLoading={account.loading}
-          onBind={account.bindStaff}
-        />
         <div className="mb-4 flex flex-col gap-4">
           <div>
             <Link
@@ -723,15 +708,33 @@ export default function CalendarPage() {
               <span className="text-lg leading-none">‹</span>
               メニューへ
             </Link>
-            <h1 className="mt-3 text-[1.5rem] font-bold tracking-tight text-slate-900">
-              工事カレンダー
-            </h1>
+            <div className="mt-3 flex items-start justify-between gap-3">
+              <h1 className="min-w-0 flex-1 text-[1.35rem] font-bold leading-tight tracking-tight text-slate-900">
+                工事カレンダー
+              </h1>
+              <div className="flex shrink-0 items-start pt-0.5">
+                <LiffAccountBar
+                  loading={account.loading}
+                  pictureUrl={account.pictureUrl}
+                  boundStaffName={account.boundStaffName}
+                  bindingEnabled={account.bindingEnabled}
+                />
+              </div>
+            </div>
             <p className="mt-1 text-[14px] leading-snug text-slate-500">
               日付をタップで下に一覧表示。工事空枠は「情報を入力」からお客様名を登録できます。案件は
               @pocket を開けます。
             </p>
           </div>
         </div>
+
+        <LiffStaffBindPanel
+          staff={account.staff}
+          bindingEnabled={account.bindingEnabled}
+          boundStaffName={account.boundStaffName}
+          accountLoading={account.loading}
+          onBind={account.bindStaff}
+        />
 
         <div className="relative">
           {needsStaffBind ? (

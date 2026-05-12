@@ -145,21 +145,6 @@ export default function HomeHubPage() {
   return (
     <LiffScreen>
       <main className="mx-auto w-full max-w-lg flex-1 py-6">
-        <LiffAccountBar
-          loading={account.loading}
-          displayName={account.displayName}
-          pictureUrl={account.pictureUrl}
-          lineUserId={account.lineUserId}
-          boundStaffName={account.boundStaffName}
-          bindingEnabled={account.bindingEnabled}
-        />
-        <LiffStaffBindPanel
-          staff={account.staff}
-          bindingEnabled={account.bindingEnabled}
-          boundStaffName={account.boundStaffName}
-          accountLoading={account.loading}
-          onBind={account.bindStaff}
-        />
         <LiffPageHeader
           title="情報確認くん"
           subtitle={
@@ -167,6 +152,21 @@ export default function HomeHubPage() {
               ? "先にスタッフ名簿と紐づけてから、メニューをお選びください"
               : "メニューから利用する機能を選んでください"
           }
+          action={
+            <LiffAccountBar
+              loading={account.loading}
+              pictureUrl={account.pictureUrl}
+              boundStaffName={account.boundStaffName}
+              bindingEnabled={account.bindingEnabled}
+            />
+          }
+        />
+        <LiffStaffBindPanel
+          staff={account.staff}
+          bindingEnabled={account.bindingEnabled}
+          boundStaffName={account.boundStaffName}
+          accountLoading={account.loading}
+          onBind={account.bindStaff}
         />
 
         <div className="mt-6 flex flex-col gap-4">
