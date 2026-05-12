@@ -13,7 +13,7 @@ import { resolveCallerLineUserId } from "@/lib/request-auth";
 import {
   enrichCleanedRecordWithImportKey,
   recordValueLooksPresent,
-  staffImportKeyFieldIdEnv,
+  staffImportKeyFieldIdResolved,
   staffRecordRefreshFieldsCsv,
 } from "@/lib/staff-import-key";
 import {
@@ -22,6 +22,12 @@ import {
 } from "@/lib/staff-line-binding";
 
 export const dynamic = "force-dynamic";
+
+function recordHasLegacyNumericFieldValues(raw: Record<string, unknown>): boolean {
+  return Object.entries(raw).some(
+    ([k, v]) => /^field-\d+$/i.test(k) && recordValueLooksPresent(v),
+  );
+}
 
 function rowId(row: {
   recordId?: number;
@@ -171,7 +177,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const importKeyDest = staffImportKeyFieldIdEnv();
+    const importKeyDest = staffImportKeyFieldIdResolved();
     if (importKeyDest && staffImportKeyBody) {
       recordObj = { ...recordObj, [importKeyDest]: staffImportKeyBody };
     }
@@ -248,12 +254,25 @@ export async function POST(request: Request) {
     }
     payload[slot.fieldId] = slot.value;
 
-    const importKeyId = staffImportKeyFieldIdEnv();
+    const importKeyId = staffImportKeyFieldIdResolved();
     if (importKeyId && !recordValueLooksPresent(payload[importKeyId])) {
       return NextResponse.json(
         {
           error:
             "スタッフの取込キー（社員ID）を更新用データに含められませんでした。Netlify で STAFF_IMPORT_KEY_FIELD_ID と STAFF_IMPORT_KEY_SOURCE_FIELD_IDS（例: field-5）を設定するか、@pocket で「社員ID」が取込設定のキーになっているか確認してください。",
+        },
+        { status: 503 },
+      );
+    }
+
+    if (
+      !staffImportKeyFieldIdResolved() &&
+      recordHasLegacyNumericFieldValues(recordObj)
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "レコードに field-数字 形式の列があります。Netlify で STAFF_IMPORT_KEY_FIELD_ID を設定するか、STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS の先頭に「社員ID」列の uniqueId を置いてください（必要なら STAFF_IMPORT_KEY_SOURCE_FIELD_IDS に field-5 など）。",
         },
         { status: 503 },
       );
@@ -267,6 +286,16 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     console.error("[api/staff/bind]", e);
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("社員ID") && msg.includes("取込設定")) {
+      return NextResponse.json(
+        {
+          error:
+            "@pocket: 取込キー「社員ID」を認識できませんでした。環境変数の STAFF_IMPORT_KEY_FIELD_ID（または STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS の先頭が社員ID列の uniqueId）と STAFF_IMPORT_KEY_SOURCE_FIELD_IDS を確認するか、@pocket で「社員ID」が取込・連携のキー設定に含まれているか確認してください。",
+        },
+        { status: 502 },
+      );
+    }
     return NextResponse.json(
       { error: "スタッフ名簿の更新に失敗しました" },
       { status: 502 },

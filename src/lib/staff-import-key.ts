@@ -5,6 +5,22 @@ export function staffImportKeyFieldIdEnv(): string | undefined {
   return id || undefined;
 }
 
+/** STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS の先頭のみを取込キー相当として使う（IMPORT_KEY 未設定時の互換） */
+function firstBindAlwaysIncludeFieldId(): string | undefined {
+  const csv = process.env.STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS?.trim();
+  if (!csv) return undefined;
+  const first = csv.split(",")[0]?.trim();
+  return first || undefined;
+}
+
+/**
+ * 取込キー「社員ID」列の uniqueId。
+ * 明示は STAFF_IMPORT_KEY_FIELD_ID。無ければ STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS の先頭を利用する。
+ */
+export function staffImportKeyFieldIdResolved(): string | undefined {
+  return staffImportKeyFieldIdEnv() ?? firstBindAlwaysIncludeFieldId();
+}
+
 export function recordValueLooksPresent(v: unknown): boolean {
   if (v === undefined || v === null) return false;
   if (typeof v === "string") return v.trim() !== "";
@@ -24,7 +40,7 @@ function importKeySourceFieldIds(): string[] {
 export function readStaffImportKeyFromRawRecord(
   rawRecord: Record<string, unknown>,
 ): string {
-  const dest = staffImportKeyFieldIdEnv();
+  const dest = staffImportKeyFieldIdResolved();
   if (!dest) return "";
   if (recordValueLooksPresent(rawRecord[dest])) {
     return String(rawRecord[dest]).trim();
@@ -48,7 +64,7 @@ export function enrichCleanedRecordWithImportKey(
   rawRecord: Record<string, unknown>,
   cleanedRecord: Record<string, unknown>,
 ): Record<string, unknown> {
-  const dest = staffImportKeyFieldIdEnv();
+  const dest = staffImportKeyFieldIdResolved();
   if (!dest) return cleanedRecord;
 
   if (recordValueLooksPresent(cleanedRecord[dest])) {
@@ -86,7 +102,7 @@ export function staffRecordRefreshFieldsCsv(opts: {
   add(opts.staffNameFieldId);
   add(opts.lineField1);
   add(opts.lineField2);
-  add(staffImportKeyFieldIdEnv());
+  add(staffImportKeyFieldIdResolved());
   for (const x of importKeySourceFieldIds()) add(x);
   const extra =
     process.env.STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS?.trim()

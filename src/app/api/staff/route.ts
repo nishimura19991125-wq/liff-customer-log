@@ -4,7 +4,7 @@ import { fetchRecordsList } from "@/lib/atpocket";
 import { resolveCallerLineUserId } from "@/lib/request-auth";
 import {
   readStaffImportKeyFromRawRecord,
-  staffImportKeyFieldIdEnv,
+  staffImportKeyFieldIdResolved,
 } from "@/lib/staff-import-key";
 import { staffRecordMatchesLineUser } from "@/lib/staff-line-binding";
 
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
         : {}),
     });
     const rows = data.records ?? [];
-    const includeImportKey = Boolean(staffImportKeyFieldIdEnv());
+    const includeImportKey = Boolean(staffImportKeyFieldIdResolved());
 
     const staff = rows
       .map((row) => {
