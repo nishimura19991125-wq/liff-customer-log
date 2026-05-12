@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 
 import {
   apiKeyForStaffWrite,
+  fetchAppFields,
   fetchRecordById,
   fetchRecordsList,
+  pickRecordFieldsForSchema,
   updateRecord,
 } from "@/lib/atpocket";
 import { resolveCallerLineUserId } from "@/lib/request-auth";
@@ -163,9 +165,16 @@ export async function POST(request: Request) {
       });
     }
 
-    /** 取込のキー項目（社員ID 等）が欠けると @pocket が 400 を返すため、単体 GET の record をベースに LINE のみ上書きして PUT する */
+    const fieldDefs = await fetchAppFields(staffAppId, pocketAuth);
+    const schemaUniqueIds = new Set(
+      fieldDefs
+        .map((f) => f.uniqueId?.trim())
+        .filter((u): u is string => Boolean(u)),
+    );
+
+    const picked = pickRecordFieldsForSchema(recordObj, schemaUniqueIds);
     const payload: Record<string, unknown> = {
-      ...recordObj,
+      ...picked,
       [slot.fieldId]: slot.value,
     };
 

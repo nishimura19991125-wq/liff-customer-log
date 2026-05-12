@@ -226,6 +226,18 @@ export async function fetchAppFields(
   return promise;
 }
 
+/** アプリのフィールド定義にある uniqueId のみ残す。GET の record に混ざる無効キーで PUT が 400 になるのを防ぐ */
+export function pickRecordFieldsForSchema(
+  record: Record<string, unknown>,
+  schemaUniqueIds: Set<string>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(record)) {
+    if (schemaUniqueIds.has(k)) out[k] = v;
+  }
+  return out;
+}
+
 const CALENDAR_PAGE_LIMIT = 1000;
 const CALENDAR_MAX_PAGES = 200;
 
