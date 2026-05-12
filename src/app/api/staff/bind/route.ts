@@ -17,6 +17,50 @@ import {
 
 export const dynamic = "force-dynamic";
 
+function recordValueLooksPresent(v: unknown): boolean {
+  if (v === undefined || v === null) return false;
+  if (typeof v === "string") return v.trim() !== "";
+  return true;
+}
+
+/**
+ * GET の record が `field-5` のみで返す取込キー（社員ID）を strip で落とすと PUT が 400 になる。
+ * STAFF_IMPORT_KEY_FIELD_ID に正式な uniqueId を設定し、元レコードの別キーから値を移す。
+ */
+function enrichCleanedRecordWithImportKey(
+  rawRecord: Record<string, unknown>,
+  cleanedRecord: Record<string, unknown>,
+): Record<string, unknown> {
+  const dest = process.env.STAFF_IMPORT_KEY_FIELD_ID?.trim();
+  if (!dest) return cleanedRecord;
+
+  if (recordValueLooksPresent(cleanedRecord[dest])) {
+    return cleanedRecord;
+  }
+
+  const explicitSources =
+    process.env.STAFF_IMPORT_KEY_SOURCE_FIELD_IDS?.trim()
+      ?.split(",")
+      .map((s) => s.trim())
+      .filter(Boolean) ?? [];
+
+  for (const sk of explicitSources) {
+    const v = rawRecord[sk];
+    if (recordValueLooksPresent(v)) {
+      return { ...cleanedRecord, [dest]: v };
+    }
+  }
+
+  const legacyFieldEntries = Object.entries(rawRecord).filter(
+    ([k, v]) => /^field-\d+$/i.test(k) && recordValueLooksPresent(v),
+  );
+  if (legacyFieldEntries.length === 1) {
+    return { ...cleanedRecord, [dest]: legacyFieldEntries[0][1] };
+  }
+
+  return cleanedRecord;
+}
+
 function rowId(row: {
   recordId?: number;
   uniqueId?: string;
@@ -166,7 +210,10 @@ export async function POST(request: Request) {
       });
     }
 
-    const cleanedRecord = stripLikelyInvalidPocketKeysFromRecord(recordObj);
+    const cleanedRecord = enrichCleanedRecordWithImportKey(
+      recordObj,
+      stripLikelyInvalidPocketKeysFromRecord(recordObj),
+    );
 
     const readKey = process.env.ATPOCKET_API_KEY?.trim() ?? "";
     const schemaUniqueIds = await fetchAppFieldUniqueIdsSetTryKeys(
@@ -183,6 +230,23 @@ export async function POST(request: Request) {
       ...picked,
       [slot.fieldId]: slot.value,
     };
+
+    /** フィールド一覧 API に載らない取込キー（社員ID 等）が pick で落ちるため、GET で返った値は追加する */
+    for (const k of Object.keys(cleanedRecord)) {
+      if (!(k in payload)) {
+        payload[k] = cleanedRecord[k];
+      }
+    }
+
+    const extraCsv = process.env.STAFF_BIND_ALWAYS_INCLUDE_FIELD_IDS?.trim();
+    if (extraCsv) {
+      for (const id of extraCsv.split(",").map((s) => s.trim()).filter(Boolean)) {
+        if (id in cleanedRecord) {
+          payload[id] = cleanedRecord[id];
+        }
+      }
+    }
+    payload[slot.fieldId] = slot.value;
 
     await updateRecord(staffAppId, staffRecordIdRaw, payload, pocketAuth);
 
