@@ -17,7 +17,10 @@ import {
   fetchAllRecordsPages,
   fetchAppFields,
 } from "@/lib/atpocket";
-import { resolveCallerLineUserId } from "@/lib/request-auth";
+import {
+  lineAuthUnauthorizedResponse,
+  resolveCallerLineAuth,
+} from "@/lib/request-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -30,9 +33,8 @@ function calendarCacheTtlMs(): number {
 }
 
 export async function GET(request: Request) {
-  if (!(await resolveCallerLineUserId(request))) {
-    return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
-  }
+  const auth = await resolveCallerLineAuth(request);
+  if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
 
   const calAppId = process.env.CALENDAR_APP_ID?.trim();
   if (!calAppId) {

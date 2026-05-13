@@ -9,7 +9,7 @@ import {
   stripLikelyInvalidPocketKeysFromRecord,
   updateRecord,
 } from "@/lib/atpocket";
-import { resolveCallerLineUserId } from "@/lib/request-auth";
+import { resolveCallerLineAuth, lineAuthUnauthorizedResponse } from "@/lib/request-auth";
 import {
   enrichCleanedRecordWithImportKey,
   pocketHyphenNumericFieldKeysToPreserveForStaffBind,
@@ -38,11 +38,9 @@ function rowId(row: {
 }
 
 export async function POST(request: Request) {
-  const caller = await resolveCallerLineUserId(request);
-  if (!caller) {
-    return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
-  }
-
+  const auth = await resolveCallerLineAuth(request);
+  if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
+  const caller = auth;
   let body: unknown;
   try {
     body = await request.json();

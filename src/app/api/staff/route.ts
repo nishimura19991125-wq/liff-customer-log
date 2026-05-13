@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { fetchRecordsList } from "@/lib/atpocket";
-import { resolveCallerLineUserId } from "@/lib/request-auth";
+import {
+  lineAuthUnauthorizedResponse,
+  resolveCallerLineAuth,
+} from "@/lib/request-auth";
 import {
   readStaffImportKeyFromRawRecord,
   staffImportKeyFieldIdResolved,
@@ -11,11 +14,9 @@ import { staffRecordMatchesLineUser } from "@/lib/staff-line-binding";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const caller = await resolveCallerLineUserId(request);
-  if (!caller) {
-    return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
-  }
-
+  const auth = await resolveCallerLineAuth(request);
+  if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
+  const caller = auth;
   const staffAppId = process.env.STAFF_APP_ID?.trim();
   const staffNameFieldId = process.env.STAFF_NAME_FIELD_ID?.trim();
 

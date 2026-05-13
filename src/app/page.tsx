@@ -10,6 +10,7 @@ import {
   LiffMenuCard,
   LiffPageHeader,
   LiffScreen,
+  LiffSessionExpiredPanel,
   LiffStaffBindPanel,
 } from "@/components/liff-chrome";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
@@ -133,6 +134,10 @@ export default function HomeHubPage() {
         </div>
       </LiffScreen>
     );
+  }
+
+  if (phase === "ready" && account.sessionExpired) {
+    return <LiffSessionExpiredPanel />;
   }
 
   return (

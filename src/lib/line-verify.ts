@@ -1,5 +1,22 @@
 import "server-only";
 
+/** LINE の verify が IdToken 期限切れを返したとき */
+export class LineIdTokenExpiredError extends Error {
+  constructor() {
+    super("LINE IdToken expired");
+    this.name = "LineIdTokenExpiredError";
+  }
+}
+
+function lineVerifyResponseLooksExpired(bodyText: string): boolean {
+  try {
+    const j = JSON.parse(bodyText) as { error_description?: string };
+    return /expired/i.test(String(j.error_description ?? ""));
+  } catch {
+    return false;
+  }
+}
+
 /** LINE Login の ID トークンを検証し `sub`（ユーザー ID）を返す */
 export async function verifyLineIdToken(
   idToken: string,
@@ -19,6 +36,9 @@ export async function verifyLineIdToken(
   if (!res.ok) {
     const text = await res.text();
     console.error("[line-verify] LINE verify failed:", res.status, text);
+    if (lineVerifyResponseLooksExpired(text)) {
+      throw new LineIdTokenExpiredError();
+    }
     throw new Error(`LINE token verification failed (${res.status})`);
   }
 

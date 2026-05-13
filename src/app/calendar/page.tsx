@@ -10,6 +10,7 @@ import {
   LiffGhostLink,
   LiffLoadingBlock,
   LiffScreen,
+  LiffSessionExpiredPanel,
   LiffStaffBindPanel,
 } from "@/components/liff-chrome";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
@@ -18,6 +19,7 @@ import type {
   CalendarMonthApiItem,
 } from "@/lib/calendar-api-types";
 import { EMPTY_FILL_HOUSING_STATUS_VALUES } from "@/lib/calendar-empty-fill-options";
+import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -144,10 +146,12 @@ function EmptySlotCard({
   item,
   idToken,
   onSaved,
+  onSessionExpired,
 }: {
   item: CalendarMonthApiItem;
   idToken: string | null;
   onSaved: () => Promise<void>;
+  onSessionExpired?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
@@ -183,6 +187,10 @@ function EmptySlotCard({
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) {
+        if (res.status === 401 && isLineSessionExpiredPayload(data)) {
+          onSessionExpired?.();
+          return;
+        }
         setFeedback({
           kind: "err",
           text: data.error ?? "保存に失敗しました",
@@ -331,11 +339,13 @@ function NewConstructionRecordPanel({
   open,
   onToggleOpen,
   onSaved,
+  onSessionExpired,
 }: {
   idToken: string | null;
   open: boolean;
   onToggleOpen: () => void;
   onSaved: () => Promise<void>;
+  onSessionExpired?: () => void;
 }) {
   const [customerName, setCustomerName] = useState("");
   const [housingStatus, setHousingStatus] = useState<string>("");
@@ -368,6 +378,10 @@ function NewConstructionRecordPanel({
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) {
+        if (res.status === 401 && isLineSessionExpiredPayload(data)) {
+          onSessionExpired?.();
+          return;
+        }
         setFeedback({
           kind: "err",
           text: data.error ?? "登録に失敗しました",
@@ -483,7 +497,13 @@ export default function CalendarPage() {
   }));
 
   const [phase, setPhase] = useState<
-    "init" | "need-login" | "loading" | "ready" | "error" | "disabled"
+    | "init"
+    | "need-login"
+    | "loading"
+    | "ready"
+    | "error"
+    | "disabled"
+    | "session-expired"
   >(() => (LIFF_ID ? "init" : "error"));
   const [errorMessage, setErrorMessage] = useState<string | null>(() =>
     LIFF_ID ? null : "NEXT_PUBLIC_LIFF_ID が設定されていません",
@@ -501,6 +521,16 @@ export default function CalendarPage() {
     });
 
     if (res.status === 401) {
+      let body: unknown = null;
+      try {
+        body = await res.json();
+      } catch {
+        /* ignore */
+      }
+      if (isLineSessionExpiredPayload(body)) {
+        setPhase("session-expired");
+        return;
+      }
       setErrorMessage("認証に失敗しました。LINE から開き直してください。");
       setPhase("error");
       return;
@@ -663,6 +693,14 @@ export default function CalendarPage() {
     );
   }
 
+  if (phase === "session-expired" || (phase === "ready" && account.sessionExpired)) {
+    return (
+      <LiffSessionExpiredPanel
+        footer={<LiffGhostLink href="/">メニューへ</LiffGhostLink>}
+      />
+    );
+  }
+
   if (phase === "error" || phase === "disabled") {
     return (
       <LiffScreen>
@@ -779,6 +817,7 @@ export default function CalendarPage() {
               if (!t) return;
               await loadCalendar(t, ym.year, ym.month);
             }}
+            onSessionExpired={() => setPhase("session-expired")}
           />
 
           <div className="flex items-center gap-2 rounded-2xl bg-slate-200/55 p-1.5 shadow-inner">
@@ -1005,6 +1044,9 @@ export default function CalendarPage() {
                                         if (!t) return;
                                         await loadCalendar(t, ym.year, ym.month);
                                       }}
+                                      onSessionExpired={() =>
+                                        setPhase("session-expired")
+                                      }
                                     />
                                   </li>
                                 ))}

@@ -3,8 +3,8 @@
 import liff from "@line/liff";
 import { useCallback, useEffect, useState } from "react";
 
-/** sessionStorage の LIFF プロフィールキャッシュキー（ログページの単発取得と共用） */
-export const LIFF_PROFILE_CACHE_KEY = "liff_profile_cache_v1";
+import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
+import { LIFF_PROFILE_CACHE_KEY } from "@/lib/liff-profile-cache-key";
 
 type StaffApiPayload = {
   staff?: { id: string; name: string; importKey?: string }[];
@@ -22,6 +22,7 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
   const [boundStaffName, setBoundStaffName] = useState<string | null>(null);
   const [staff, setStaff] = useState<{ id: string; name: string; importKey?: string }[]>([]);
   const [bindingEnabled, setBindingEnabled] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   useEffect(() => {
     if (!enabled || !idToken) {
@@ -32,6 +33,7 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
 
     (async () => {
       setLoading(true);
+      setSessionExpired(false);
       try {
         try {
           const raw = sessionStorage.getItem(LIFF_PROFILE_CACHE_KEY);
@@ -74,11 +76,18 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
         });
         const data = (await res.json()) as StaffApiPayload;
         if (cancelled) return;
-        setStaff(res.ok ? (data.staff ?? []) : []);
-        setBindingEnabled(res.ok && Boolean(data.bindingEnabled));
-        setBoundStaffName(
-          res.ok && data.boundStaff?.name ? data.boundStaff.name : null,
-        );
+        if (!res.ok) {
+          if (res.status === 401 && isLineSessionExpiredPayload(data)) {
+            setSessionExpired(true);
+          }
+          setStaff([]);
+          setBindingEnabled(false);
+          setBoundStaffName(null);
+          return;
+        }
+        setStaff(data.staff ?? []);
+        setBindingEnabled(Boolean(data.bindingEnabled));
+        setBoundStaffName(data.boundStaff?.name ? data.boundStaff.name : null);
       } catch {
         if (!cancelled) {
           setBoundStaffName(null);
@@ -124,6 +133,16 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
           boundStaff?: { name?: string };
         };
         if (!res.ok) {
+          if (res.status === 401 && isLineSessionExpiredPayload(payload)) {
+            setSessionExpired(true);
+            return {
+              ok: false,
+              error:
+                typeof payload.error === "string"
+                  ? payload.error
+                  : "ログインの有効期限が切れました",
+            };
+          }
           return {
             ok: false,
             error:
@@ -151,5 +170,6 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
     staff,
     bindingEnabled,
     bindStaff,
+    sessionExpired,
   };
 }
