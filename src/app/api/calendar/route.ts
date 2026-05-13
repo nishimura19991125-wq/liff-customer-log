@@ -144,7 +144,12 @@ export async function GET(request: Request) {
       },
     );
 
-    return NextResponse.json(payload);
+    return NextResponse.json({
+      ...payload,
+      emptyFillConstructionHandlerRequired: Boolean(
+        process.env.CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID?.trim(),
+      ),
+    });
   } catch (e) {
     console.error("[api/calendar]", e);
     return NextResponse.json(

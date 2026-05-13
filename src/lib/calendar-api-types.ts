@@ -20,4 +20,6 @@ export type CalendarApiPayload = {
   month: number;
   holidayKeys: string[];
   byDay: Record<string, CalendarMonthApiItem[]>;
+  /** 工事空枠入力で工事対応者を必須にする（CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID 設定時） */
+  emptyFillConstructionHandlerRequired?: boolean;
 };

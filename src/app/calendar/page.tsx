@@ -147,15 +147,23 @@ function EmptySlotCard({
   idToken,
   onSaved,
   onSessionExpired,
+  constructionHandlerRequired,
 }: {
   item: CalendarMonthApiItem;
   idToken: string | null;
   onSaved: () => Promise<void>;
   onSessionExpired?: () => void;
+  constructionHandlerRequired: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [housingStatus, setHousingStatus] = useState<string>("");
+  const [constructionHandler, setConstructionHandler] = useState("");
+  const [handlerNames, setHandlerNames] = useState<string[]>([]);
+  const [handlerListStatus, setHandlerListStatus] = useState<
+    "idle" | "loading" | "ok" | "err"
+  >("idle");
+  const [handlerListError, setHandlerListError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
     kind: "ok" | "err";
@@ -165,11 +173,73 @@ function EmptySlotCard({
   const rid = item.recordId?.trim();
   const canSubmit = Boolean(rid && idToken);
 
+  useEffect(() => {
+    if (!open || !idToken) return;
+
+    let cancelled = false;
+
+    (async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+      setConstructionHandler("");
+      setHandlerNames([]);
+      setHandlerListStatus("loading");
+      setHandlerListError("");
+
+      try {
+        const res = await fetch("/api/calendar/construction-handlers", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const data = (await res.json()) as {
+          handlers?: string[];
+          error?: string;
+        };
+        if (cancelled) return;
+        if (res.status === 401 && isLineSessionExpiredPayload(data)) {
+          onSessionExpired?.();
+          setHandlerListStatus("err");
+          setHandlerListError(
+            "ログインの有効期限が切れました。画面を更新してください。",
+          );
+          setHandlerNames([]);
+          return;
+        }
+        if (!res.ok) {
+          setHandlerListStatus("err");
+          setHandlerListError(
+            typeof data.error === "string"
+              ? data.error
+              : "工事対応者リストを取得できませんでした",
+          );
+          setHandlerNames([]);
+          return;
+        }
+        setHandlerNames(Array.isArray(data.handlers) ? data.handlers : []);
+        setHandlerListStatus("ok");
+      } catch {
+        if (!cancelled) {
+          setHandlerListStatus("err");
+          setHandlerListError("通信に失敗しました");
+          setHandlerNames([]);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, idToken, onSessionExpired]);
+
   async function handleSubmit() {
     if (!rid || !idToken) return;
     const name = customerName.trim();
     const hs = housingStatus.trim();
+    const handler = constructionHandler.trim();
     if (!name || !hs) return;
+    if (constructionHandlerRequired) {
+      if (!handler) return;
+      if (handlerListStatus !== "ok" || handlerNames.length === 0) return;
+    }
     setSubmitting(true);
     setFeedback(null);
     try {
@@ -183,6 +253,7 @@ function EmptySlotCard({
           recordId: rid,
           customerName: name,
           housingStatus: hs,
+          constructionHandler: handler,
         }),
       });
       const data = (await res.json()) as { error?: string };
@@ -199,6 +270,7 @@ function EmptySlotCard({
       }
       setCustomerName("");
       setHousingStatus("");
+      setConstructionHandler("");
       setOpen(false);
       await onSaved();
       setFeedback({
@@ -269,7 +341,8 @@ function EmptySlotCard({
       {open ? (
         <div className="mt-4 border-t border-slate-200/90 pt-4">
           <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
-            住宅ステータスとお客様名を登録すると、@pocket のレコードが更新され、カレンダーでは「案件」として表示されます。
+            住宅ステータス・お客様名・工事対応者を登録すると、@pocket
+            のレコードが更新され、カレンダーでは「案件」として表示されます。工事対応者はスタッフ名簿のうち、工事対応稼働状況が「稼働」の社員から選択します。
           </p>
           <label className="block">
             <span className="mb-1 block text-[12px] font-bold text-slate-700">
@@ -305,6 +378,56 @@ function EmptySlotCard({
               disabled={submitting || !canSubmit}
             />
           </label>
+          <label className="mt-3 block">
+            <span className="mb-1 block text-[12px] font-bold text-slate-700">
+              工事対応者{" "}
+              {constructionHandlerRequired ? (
+                <span className="font-semibold text-red-600">必須</span>
+              ) : (
+                <span className="font-semibold text-slate-500">任意</span>
+              )}
+            </span>
+            <select
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
+              value={constructionHandler}
+              onChange={(e) => setConstructionHandler(e.target.value)}
+              disabled={
+                submitting ||
+                !canSubmit ||
+                handlerListStatus === "loading" ||
+                handlerListStatus === "idle"
+              }
+            >
+              <option value="">
+                {handlerListStatus === "loading" || handlerListStatus === "idle"
+                  ? "リストを読み込み中…"
+                  : handlerListStatus === "err"
+                    ? "リストを取得できませんでした"
+                    : "選択してください"}
+              </option>
+              {handlerNames.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            {handlerListStatus === "ok" && handlerNames.length === 0 ? (
+              <p className="mt-1 text-[11px] font-semibold leading-snug text-amber-800">
+                工事対応稼働状況が「稼働」の社員がありません。@pocket
+                のスタッフ名簿を確認してください。
+              </p>
+            ) : null}
+            {handlerListStatus === "err" && handlerListError ? (
+              <p className="mt-1 text-[11px] leading-snug text-red-700">
+                {handlerListError}
+              </p>
+            ) : null}
+            {!constructionHandlerRequired ? (
+              <p className="mt-1 text-[11px] leading-snug text-slate-500">
+                プルダウンは稼働中の社員のみです。工事への保存は別設定後に有効になります。
+              </p>
+            ) : null}
+          </label>
           <button
             type="button"
             className="mt-4 w-full rounded-xl bg-slate-800 py-3 text-[14px] font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
@@ -312,7 +435,11 @@ function EmptySlotCard({
               submitting ||
               !customerName.trim() ||
               !housingStatus.trim() ||
-              !canSubmit
+              !canSubmit ||
+              (constructionHandlerRequired &&
+                (handlerListStatus !== "ok" ||
+                  !constructionHandler.trim() ||
+                  handlerNames.length === 0))
             }
             onClick={() => void handleSubmit()}
           >
@@ -1039,6 +1166,9 @@ export default function CalendarPage() {
                                     <EmptySlotCard
                                       item={item}
                                       idToken={idToken}
+                                      constructionHandlerRequired={Boolean(
+                                        data?.emptyFillConstructionHandlerRequired,
+                                      )}
                                       onSaved={async () => {
                                         const t = idToken;
                                         if (!t) return;

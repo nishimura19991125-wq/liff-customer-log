@@ -22,9 +22,10 @@ type Body = {
   recordId?: string;
   customerName?: string;
   housingStatus?: string;
+  constructionHandler?: string;
 };
 
-/** GET/PUT に載せるフィールドはこの3つのみ（それ以外を PUT すると「有効なフィールドではありません」になることがある） */
+/** GET/PUT に載せるフィールドは必要なもののみ（それ以外を PUT すると「有効なフィールドではありません」になることがある） */
 function uniqueFieldsCsv(...uids: (string | undefined)[]): string {
   const seen = new Set<string>();
   const parts: string[] = [];
@@ -55,6 +56,8 @@ export async function POST(request: Request) {
     process.env.CALENDAR_EMPTY_FILL_TITLE_FIELD_ID?.trim();
   const housingField =
     process.env.CALENDAR_EMPTY_FILL_HOUSING_STATUS_FIELD_ID?.trim();
+  const constructionHandlerField =
+    process.env.CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID?.trim();
 
   if (!customerField || !housingField) {
     return NextResponse.json(
@@ -76,10 +79,18 @@ export async function POST(request: Request) {
   const recordId = body.recordId?.trim();
   const customerName = body.customerName?.trim();
   const housingRaw = body.housingStatus?.trim() ?? "";
+  const constructionHandlerRaw = body.constructionHandler?.trim() ?? "";
 
   if (!recordId || !customerName || !housingRaw) {
     return NextResponse.json(
       { error: "recordId・お客様名・住宅ステータスはすべて必須です" },
+      { status: 400 },
+    );
+  }
+
+  if (constructionHandlerField && !constructionHandlerRaw) {
+    return NextResponse.json(
+      { error: "工事対応者は必須です" },
       { status: 400 },
     );
   }
@@ -117,6 +128,7 @@ export async function POST(request: Request) {
       customerField,
       housingField,
       tNumberField,
+      constructionHandlerField,
     );
 
     let recRow: Awaited<ReturnType<typeof fetchRecordById>> = null;
@@ -157,12 +169,15 @@ export async function POST(request: Request) {
       );
     }
 
-    /** PUT はこの3キーのみ（GET で返った T番号はそのままの形で送る） */
+    /** PUT は GET で取得したキーのみ（GET で返った T番号はそのままの形で送る） */
     const patch: Record<string, unknown> = {
       [tNumberField]: existingT,
       [customerField]: customerName,
       [housingField]: housingRaw,
     };
+    if (constructionHandlerField) {
+      patch[constructionHandlerField] = constructionHandlerRaw;
+    }
 
     await updateRecord(calAppId, recordId, patch, pocketAuth);
 
