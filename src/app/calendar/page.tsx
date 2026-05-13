@@ -185,17 +185,20 @@ function EmptySlotCard({
   onSaved,
   onSessionExpired,
   constructionHandlerRequired,
+  constructionHandlerNameOnly,
 }: {
   item: CalendarMonthApiItem;
   idToken: string | null;
   onSaved: () => Promise<void>;
   onSessionExpired?: () => void;
   constructionHandlerRequired: boolean;
+  constructionHandlerNameOnly: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [housingStatus, setHousingStatus] = useState<string>("");
   const [handlerChoiceIndex, setHandlerChoiceIndex] = useState("");
+  const [handlerDisplayNameInput, setHandlerDisplayNameInput] = useState("");
   const [handlerOptions, setHandlerOptions] = useState<HandlerDropdownOption[]>(
     [],
   );
@@ -214,6 +217,15 @@ function EmptySlotCard({
 
   useEffect(() => {
     if (!open || !idToken) return;
+
+    if (constructionHandlerNameOnly) {
+      setHandlerChoiceIndex("");
+      setHandlerDisplayNameInput("");
+      setHandlerOptions([]);
+      setHandlerListStatus("ok");
+      setHandlerListError("");
+      return;
+    }
 
     let cancelled = false;
 
@@ -267,7 +279,7 @@ function EmptySlotCard({
     return () => {
       cancelled = true;
     };
-  }, [open, idToken, onSessionExpired]);
+  }, [open, idToken, constructionHandlerNameOnly, onSessionExpired]);
 
   async function handleSubmit() {
     if (!rid || !idToken) return;
@@ -283,18 +295,27 @@ function EmptySlotCard({
         ? handlerOptions[idx]
         : undefined;
     const handlerDisplay = selectedOpt?.name ?? "";
+    const handlerText = constructionHandlerNameOnly
+      ? handlerDisplayNameInput.trim()
+      : handlerDisplay;
     if (!name || !hs) return;
     if (constructionHandlerRequired) {
-      if (!selectedOpt) return;
-      if (handlerListStatus !== "ok" || handlerOptions.length === 0) return;
+      if (constructionHandlerNameOnly) {
+        if (!handlerText) return;
+      } else {
+        if (!selectedOpt) return;
+        if (handlerListStatus !== "ok" || handlerOptions.length === 0) return;
+      }
     }
     setSubmitting(true);
     setFeedback(null);
     try {
       const handlerPayload =
-        selectedOpt?.employeeId !== undefined && selectedOpt.employeeId !== ""
+        !constructionHandlerNameOnly &&
+        selectedOpt?.employeeId !== undefined &&
+        selectedOpt.employeeId !== ""
           ? { constructionHandlerEmployeeId: selectedOpt.employeeId }
-          : selectedOpt?.staffRecordId
+          : !constructionHandlerNameOnly && selectedOpt?.staffRecordId
             ? { constructionHandlerStaffRecordId: selectedOpt.staffRecordId }
             : {};
 
@@ -308,7 +329,7 @@ function EmptySlotCard({
           recordId: rid,
           customerName: name,
           housingStatus: hs,
-          constructionHandler: handlerDisplay,
+          constructionHandler: handlerText,
           ...handlerPayload,
         }),
       });
@@ -327,6 +348,7 @@ function EmptySlotCard({
       setCustomerName("");
       setHousingStatus("");
       setHandlerChoiceIndex("");
+      setHandlerDisplayNameInput("");
       setOpen(false);
       await onSaved();
       setFeedback({
@@ -397,8 +419,19 @@ function EmptySlotCard({
       {open ? (
         <div className="mt-4 border-t border-slate-200/90 pt-4">
           <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
-            住宅ステータス・お客様名・工事対応者を登録すると、@pocket
-            のレコードが更新され、カレンダーでは「案件」として表示されます。工事対応者はスタッフ名簿のうち、工事対応稼働状況が「稼働」の社員から選択します（連携項目のためスタッフレコード参照として保存します）。
+            {constructionHandlerNameOnly ? (
+              <>
+                住宅ステータス・お客様名・工事対応者を登録すると、@pocket
+                のレコードが更新され、カレンダーでは「案件」として表示されます。工事対応者は
+                <strong className="font-bold text-slate-800">氏名をそのまま</strong>
+                入力して転記します（スタッフ名簿の一覧取得は行いません）。
+              </>
+            ) : (
+              <>
+                住宅ステータス・お客様名・工事対応者を登録すると、@pocket
+                のレコードが更新され、カレンダーでは「案件」として表示されます。工事対応者はスタッフ名簿のうち、工事対応稼働状況が「稼働」の社員から選択します（連携項目のためスタッフレコード参照として保存します）。
+              </>
+            )}
           </p>
           <label className="block">
             <span className="mb-1 block text-[12px] font-bold text-slate-700">
@@ -443,48 +476,67 @@ function EmptySlotCard({
                 <span className="font-semibold text-slate-500">任意</span>
               )}
             </span>
-            <select
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
-              value={handlerChoiceIndex}
-              onChange={(e) => setHandlerChoiceIndex(e.target.value)}
-              disabled={
-                submitting ||
-                !canSubmit ||
-                handlerListStatus === "loading" ||
-                handlerListStatus === "idle"
-              }
-            >
-              <option value="">
-                {handlerListStatus === "loading" || handlerListStatus === "idle"
-                  ? "リストを読み込み中…"
-                  : handlerListStatus === "err"
-                    ? "リストを取得できませんでした"
-                    : "選択してください"}
-              </option>
-              {handlerOptions.map((o, i) => (
-                <option
-                  key={`${i}-${o.staffRecordId}-${o.name}-${o.employeeId ?? ""}`}
-                  value={String(i)}
-                >
-                  {o.name}
-                  {o.employeeId ? ` （社員ID: ${o.employeeId}）` : ""}
+            {constructionHandlerNameOnly ? (
+              <input
+                type="text"
+                autoComplete="name"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
+                value={handlerDisplayNameInput}
+                onChange={(e) => setHandlerDisplayNameInput(e.target.value)}
+                placeholder="例：山田太郎（氏名を入力）"
+                disabled={submitting || !canSubmit}
+              />
+            ) : (
+              <select
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
+                value={handlerChoiceIndex}
+                onChange={(e) => setHandlerChoiceIndex(e.target.value)}
+                disabled={
+                  submitting ||
+                  !canSubmit ||
+                  handlerListStatus === "loading" ||
+                  handlerListStatus === "idle"
+                }
+              >
+                <option value="">
+                  {handlerListStatus === "loading" ||
+                  handlerListStatus === "idle"
+                    ? "リストを読み込み中…"
+                    : handlerListStatus === "err"
+                      ? "リストを取得できませんでした"
+                      : "選択してください"}
                 </option>
-              ))}
-            </select>
-            {handlerListStatus === "ok" && handlerOptions.length === 0 ? (
+                {handlerOptions.map((o, i) => (
+                  <option
+                    key={`${i}-${o.staffRecordId}-${o.name}-${o.employeeId ?? ""}`}
+                    value={String(i)}
+                  >
+                    {o.name}
+                    {o.employeeId ? ` （社員ID: ${o.employeeId}）` : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+            {!constructionHandlerNameOnly &&
+            handlerListStatus === "ok" &&
+            handlerOptions.length === 0 ? (
               <p className="mt-1 text-[11px] font-semibold leading-snug text-amber-800">
                 工事対応稼働状況が「稼働」の社員がありません。@pocket
                 のスタッフ名簿を確認してください。
               </p>
             ) : null}
-            {handlerListStatus === "err" && handlerListError ? (
+            {!constructionHandlerNameOnly &&
+            handlerListStatus === "err" &&
+            handlerListError ? (
               <p className="mt-1 text-[11px] leading-snug text-red-700">
                 {handlerListError}
               </p>
             ) : null}
             {!constructionHandlerRequired ? (
               <p className="mt-1 text-[11px] leading-snug text-slate-500">
-                プルダウンは稼働中の社員のみです。工事への保存は別設定後に有効になります。
+                {constructionHandlerNameOnly
+                  ? "名前のみサーバーへ転記します（項目タイプが連携のみの場合は @pocket が拒否することがあります）。"
+                  : "プルダウンは稼働中の社員のみです。工事への保存は別設定後に有効になります。"}
               </p>
             ) : null}
           </label>
@@ -497,9 +549,11 @@ function EmptySlotCard({
               !housingStatus.trim() ||
               !canSubmit ||
               (constructionHandlerRequired &&
-                (handlerListStatus !== "ok" ||
-                  handlerChoiceIndex.trim() === "" ||
-                  handlerOptions.length === 0))
+                (constructionHandlerNameOnly
+                  ? !handlerDisplayNameInput.trim()
+                  : handlerListStatus !== "ok" ||
+                    handlerChoiceIndex.trim() === "" ||
+                    handlerOptions.length === 0))
             }
             onClick={() => void handleSubmit()}
           >
@@ -1228,6 +1282,9 @@ export default function CalendarPage() {
                                       idToken={idToken}
                                       constructionHandlerRequired={Boolean(
                                         data?.emptyFillConstructionHandlerRequired,
+                                      )}
+                                      constructionHandlerNameOnly={Boolean(
+                                        data?.emptyFillConstructionHandlerNameOnly,
                                       )}
                                       onSaved={async () => {
                                         const t = idToken;

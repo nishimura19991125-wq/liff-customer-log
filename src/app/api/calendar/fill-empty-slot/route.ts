@@ -58,6 +58,14 @@ function uniqueFieldsCsv(...uids: (string | undefined)[]): string {
   return parts.join(",");
 }
 
+/** true のとき工事対応者フィールドには氏名文字列のみ PUT（連携・社員ID解決・候補試行を行わない） */
+function handlerPutDisplayNameOnly(): boolean {
+  return (
+    process.env.CALENDAR_EMPTY_FILL_HANDLER_PUT_DISPLAY_NAME_ONLY?.trim() ===
+    "true"
+  );
+}
+
 /** @pocket が「工事対応者ID」としてテキストの社員番号等を要求するとき（CALENDAR_EMPTY_FILL_HANDLER_LINK_FORMAT） */
 function handlerPutWantsEmployeeIdString(): boolean {
   const r =
@@ -288,6 +296,7 @@ export async function POST(request: Request) {
         (f) => f.uniqueId?.trim() === resolvedHandlerField,
       );
       if (
+        !handlerPutDisplayNameOnly() &&
         handlerPutWantsEmployeeIdString() &&
         pocketFieldLooksLikeLinkage(handlerFieldRow)
       ) {
@@ -382,102 +391,112 @@ export async function POST(request: Request) {
       [resolvedHousing]: housingRaw,
     };
     if (resolvedHandlerField) {
-      let linkageStaffRecordId = constructionHandlerStaffRecordId;
-      if (!linkageStaffRecordId && constructionHandlerEmployeeId) {
-        if (!staffImportKeyFieldIdResolved()) {
+      if (handlerPutDisplayNameOnly()) {
+        const nameOnly = constructionHandlerRaw.trim();
+        if (!nameOnly) {
           return NextResponse.json(
-            {
-              error:
-                "社員 ID で保存するには、スタッフ名簿の「社員 ID」列の uniqueId を STAFF_IMPORT_KEY_FIELD_ID（または BIND 設定から自動解決できる状態）に設定してください。",
-            },
-            { status: 500 },
+            { error: "工事対応者（名前）は必須です。" },
+            { status: 400 },
           );
         }
-        const staffAppId = process.env.STAFF_APP_ID?.trim();
-        const nameFieldId = process.env.STAFF_NAME_FIELD_ID?.trim();
-        const availabilityFieldId =
-          process.env.STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID?.trim();
-        const activeLabel =
-          process.env.STAFF_CONSTRUCTION_AVAILABILITY_ACTIVE_LABEL?.trim() ||
-          "稼働";
-        if (!staffAppId || !nameFieldId || !availabilityFieldId) {
-          return NextResponse.json(
-            {
-              error:
-                "社員 ID からレコードを解決できません。STAFF_APP_ID・STAFF_NAME_FIELD_ID・STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID を設定してください。",
-            },
-            { status: 500 },
+        patch[resolvedHandlerField] = nameOnly;
+      } else {
+        let linkageStaffRecordId = constructionHandlerStaffRecordId;
+        if (!linkageStaffRecordId && constructionHandlerEmployeeId) {
+          if (!staffImportKeyFieldIdResolved()) {
+            return NextResponse.json(
+              {
+                error:
+                  "社員 ID で保存するには、スタッフ名簿の「社員 ID」列の uniqueId を STAFF_IMPORT_KEY_FIELD_ID（または BIND 設定から自動解決できる状態）に設定してください。",
+              },
+              { status: 500 },
+            );
+          }
+          const staffAppId = process.env.STAFF_APP_ID?.trim();
+          const nameFieldId = process.env.STAFF_NAME_FIELD_ID?.trim();
+          const availabilityFieldId =
+            process.env.STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID?.trim();
+          const activeLabel =
+            process.env.STAFF_CONSTRUCTION_AVAILABILITY_ACTIVE_LABEL?.trim() ||
+            "稼働";
+          if (!staffAppId || !nameFieldId || !availabilityFieldId) {
+            return NextResponse.json(
+              {
+                error:
+                  "社員 ID からレコードを解決できません。STAFF_APP_ID・STAFF_NAME_FIELD_ID・STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID を設定してください。",
+              },
+              { status: 500 },
+            );
+          }
+          const resolved =
+            await resolveStaffRecordIdByEmployeeIdForConstructionHandler({
+              staffAppId,
+              employeeIdSearch: constructionHandlerEmployeeId,
+              nameFieldId,
+              availabilityFieldId,
+              activeLabel,
+            });
+          if (!resolved) {
+            return NextResponse.json(
+              {
+                error:
+                  "入力された社員 ID に一致する、工事対応稼働中の担当者が見つかりません。@pocket のスタッフ名簿を確認してください。",
+              },
+              { status: 400 },
+            );
+          }
+          linkageStaffRecordId = resolved;
+        }
+
+        const wantsEmployeeIdString = handlerPutWantsEmployeeIdString();
+        let employeeIdForPut = constructionHandlerEmployeeId;
+        if (
+          wantsEmployeeIdString &&
+          linkageStaffRecordId &&
+          !employeeIdForPut.trim()
+        ) {
+          const staffAppId = process.env.STAFF_APP_ID?.trim();
+          if (staffAppId && staffImportKeyFieldIdResolved()) {
+            const fetched = await fetchStaffEmployeeIdByRecordId(
+              staffAppId,
+              linkageStaffRecordId,
+              pocketAuth,
+            );
+            if (fetched) employeeIdForPut = fetched;
+          }
+        }
+
+        if (employeeIdForPut.trim()) {
+          employeeIdForPut = normalizeStaffEmployeeIdSearchInput(
+            employeeIdForPut.trim(),
           );
         }
-        const resolved = await resolveStaffRecordIdByEmployeeIdForConstructionHandler(
-          {
-            staffAppId,
-            employeeIdSearch: constructionHandlerEmployeeId,
-            nameFieldId,
-            availabilityFieldId,
-            activeLabel,
-          },
-        );
-        if (!resolved) {
+
+        if (wantsEmployeeIdString && !employeeIdForPut.trim()) {
           return NextResponse.json(
             {
               error:
-                "入力された社員 ID に一致する、工事対応稼働中の担当者が見つかりません。@pocket のスタッフ名簿を確認してください。",
+                "工事対応者フィールドが「工事対応者ID」を要求しています。.env に CALENDAR_EMPTY_FILL_HANDLER_LINK_FORMAT=employee_id_string と STAFF_IMPORT_KEY_FIELD_ID（スタッフ名簿の社員 ID 列）を確認してください。社員 ID が 000001 のような先頭ゼロ付きなら STAFF_EMPLOYEE_ID_ZERO_PAD_LENGTH=6 も設定してください。プルダウンから選び直してください。",
             },
             { status: 400 },
           );
         }
-        linkageStaffRecordId = resolved;
-      }
 
-      const wantsEmployeeIdString = handlerPutWantsEmployeeIdString();
-      let employeeIdForPut = constructionHandlerEmployeeId;
-      if (
-        wantsEmployeeIdString &&
-        linkageStaffRecordId &&
-        !employeeIdForPut.trim()
-      ) {
-        const staffAppId = process.env.STAFF_APP_ID?.trim();
-        if (staffAppId && staffImportKeyFieldIdResolved()) {
-          const fetched = await fetchStaffEmployeeIdByRecordId(
-            staffAppId,
-            linkageStaffRecordId,
-            pocketAuth,
-          );
-          if (fetched) employeeIdForPut = fetched;
-        }
-      }
+        const linkageOpts: PocketLinkageHandlerPutOptions = {
+          employeeId: employeeIdForPut.trim() || undefined,
+        };
 
-      if (employeeIdForPut.trim()) {
-        employeeIdForPut = normalizeStaffEmployeeIdSearchInput(
-          employeeIdForPut.trim(),
+        await updateFillEmptySlotPocketRecordWithLinkageFallback(
+          calAppId,
+          recordId,
+          pocketAuth,
+          patch,
+          resolvedHandlerField,
+          linkageStaffRecordId || undefined,
+          constructionHandlerRaw,
+          linkageOpts,
         );
       }
-
-      if (wantsEmployeeIdString && !employeeIdForPut.trim()) {
-        return NextResponse.json(
-          {
-            error:
-              "工事対応者フィールドが「工事対応者ID」を要求しています。.env に CALENDAR_EMPTY_FILL_HANDLER_LINK_FORMAT=employee_id_string と STAFF_IMPORT_KEY_FIELD_ID（スタッフ名簿の社員 ID 列）を確認してください。社員 ID が 000001 のような先頭ゼロ付きなら STAFF_EMPLOYEE_ID_ZERO_PAD_LENGTH=6 も設定してください。プルダウンから選び直してください。",
-          },
-          { status: 400 },
-        );
-      }
-
-      const linkageOpts: PocketLinkageHandlerPutOptions = {
-        employeeId: employeeIdForPut.trim() || undefined,
-      };
-
-      await updateFillEmptySlotPocketRecordWithLinkageFallback(
-        calAppId,
-        recordId,
-        pocketAuth,
-        patch,
-        resolvedHandlerField,
-        linkageStaffRecordId || undefined,
-        constructionHandlerRaw,
-        linkageOpts,
-      );
     } else {
       await updateFillEmptySlotPocketRecord(
         calAppId,
@@ -485,6 +504,16 @@ export async function POST(request: Request) {
         pocketAuth,
         patch,
         undefined,
+      );
+    }
+
+    if (resolvedHandlerField && handlerPutDisplayNameOnly()) {
+      await updateFillEmptySlotPocketRecord(
+        calAppId,
+        recordId,
+        pocketAuth,
+        patch,
+        resolvedHandlerField,
       );
     }
 

@@ -149,6 +149,10 @@ export async function GET(request: Request) {
       emptyFillConstructionHandlerRequired: Boolean(
         process.env.CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID?.trim(),
       ),
+      emptyFillConstructionHandlerNameOnly: Boolean(
+        process.env.CALENDAR_EMPTY_FILL_HANDLER_PUT_DISPLAY_NAME_ONLY?.trim() ===
+          "true",
+      ),
     });
   } catch (e) {
     console.error("[api/calendar]", e);
