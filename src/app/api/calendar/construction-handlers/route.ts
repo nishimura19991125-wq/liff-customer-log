@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 
 import { fetchAllRecordsPages } from "@/lib/atpocket";
+import { formatStaffEmployeeIdForApi } from "@/lib/staff-employee-id-format";
+import {
+  staffConstructionAvailabilityIsActive,
+} from "@/lib/staff-construction-availability";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
+import { staffImportKeyFieldIdResolved } from "@/lib/staff-import-key";
 
 export const dynamic = "force-dynamic";
-
-function nfkc(s: string): string {
-  return s.normalize("NFKC").trim();
-}
 
 function uniqueFieldsCsv(...uids: (string | undefined)[]): string {
   const seen = new Set<string>();
@@ -25,31 +26,10 @@ function uniqueFieldsCsv(...uids: (string | undefined)[]): string {
   return parts.join(",");
 }
 
-/** 一覧 API の選択肢・文字列を「稼働」判定用に正規化して比較 */
-function availabilityIsActive(raw: unknown, activeLabel: string): boolean {
-  if (raw === undefined || raw === null) return false;
-  if (Array.isArray(raw)) {
-    return raw.some((x) => availabilityIsActive(x, activeLabel));
-  }
-  const target = nfkc(activeLabel);
-  if (typeof raw === "string") return nfkc(raw) === target;
-  if (typeof raw === "number" || typeof raw === "boolean") {
-    return nfkc(String(raw)) === target;
-  }
-  if (typeof raw === "object") {
-    const o = raw as Record<string, unknown>;
-    const cand =
-      o.label ?? o.name ?? o.text ?? o.value ?? o.caption ?? o.title;
-    if (cand !== undefined && cand !== null) {
-      return nfkc(String(cand)) === target;
-    }
-  }
-  return nfkc(String(raw)) === target;
-}
-
 /**
  * 工事空枠の「工事対応者」プルダウン用。
  * スタッフ名簿アプリで「工事対応稼働状況」が稼働のレコードの社員名のみ返す。
+ * STAFF_IMPORT_KEY_FIELD_ID 等で取込キー「社員ID」列が解決できるときは employeeId も返し、保存時はレコード ID に変換できる。
  */
 export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);
@@ -73,7 +53,12 @@ export async function GET(request: Request) {
     );
   }
 
-  const fieldsCsv = uniqueFieldsCsv(nameFieldId, availabilityFieldId);
+  const importKeyFieldId = staffImportKeyFieldIdResolved();
+  const fieldsCsv = uniqueFieldsCsv(
+    nameFieldId,
+    availabilityFieldId,
+    importKeyFieldId,
+  );
   if (!fieldsCsv) {
     return NextResponse.json(
       { error: "フィールド ID が不正です", handlers: [] },
@@ -83,22 +68,39 @@ export async function GET(request: Request) {
 
   try {
     const rows = await fetchAllRecordsPages(staffAppId, fieldsCsv);
-    const handlers: { staffRecordId: string; name: string }[] = [];
+    const handlers: {
+      staffRecordId: string;
+      name: string;
+      employeeId?: string;
+    }[] = [];
     const seenId = new Set<string>();
     for (const row of rows) {
       const rec = row.record;
       if (!rec || typeof rec !== "object") continue;
       const rawStatus = rec[availabilityFieldId];
-      if (!availabilityIsActive(rawStatus, activeLabel)) continue;
+      if (!staffConstructionAvailabilityIsActive(rawStatus, activeLabel))
+        continue;
       const rawName = rec[nameFieldId];
       if (rawName === undefined || rawName === null) continue;
       const name = String(rawName).trim();
       if (!name) continue;
+      const ridNum = row.recordId ?? row.id;
       const staffRecordId =
-        row.recordId != null ? String(row.recordId) : String(row.uniqueId ?? "").trim();
+        ridNum != null
+          ? String(ridNum)
+          : String(row.uniqueId ?? "").trim();
       if (!staffRecordId || seenId.has(staffRecordId)) continue;
       seenId.add(staffRecordId);
-      handlers.push({ staffRecordId, name });
+      let employeeId: string | undefined;
+      if (importKeyFieldId) {
+        const empFormatted = formatStaffEmployeeIdForApi(rec[importKeyFieldId]);
+        if (empFormatted) employeeId = empFormatted;
+      }
+      handlers.push({
+        staffRecordId,
+        name,
+        ...(employeeId ? { employeeId } : {}),
+      });
     }
     handlers.sort((a, b) => {
       const c = a.name.localeCompare(b.name, "ja");
