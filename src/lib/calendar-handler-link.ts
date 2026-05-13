@@ -80,3 +80,99 @@ export function pocketLinkageHandlerPutValue(
       return [linkagePair()];
   }
 }
+
+/**
+ * 「工事対応者IDの形式が正しくありません」時に順に試す値のリスト（重複除去）。
+ * 先頭は CALENDAR_EMPTY_FILL_HANDLER_LINK_FORMAT に従った pocketLinkageHandlerPutValue の結果。
+ */
+export function pocketLinkageHandlerCandidateValues(
+  staffRecordIdStr: string | undefined,
+  displayNameFallback: string,
+  opts?: PocketLinkageHandlerPutOptions,
+): unknown[] {
+  const primary = pocketLinkageHandlerPutValue(
+    staffRecordIdStr,
+    displayNameFallback,
+    opts,
+  );
+
+  const modeRaw =
+    process.env.CALENDAR_EMPTY_FILL_HANDLER_LINK_FORMAT?.trim().toLowerCase() ||
+    "";
+  const mode =
+    modeRaw === "construction_handler_id_string" || modeRaw === "handler_id_string"
+      ? "employee_id_string"
+      : modeRaw;
+
+  if (mode === "employee_id_string") {
+    return [primary];
+  }
+
+  const expandLinkageVariants =
+    !modeRaw ||
+    mode === "apps_record_array" ||
+    mode === "link_array" ||
+    mode === "apps_record_object" ||
+    mode === "link_single_object";
+
+  if (!expandLinkageVariants) {
+    return [primary];
+  }
+
+  const idTrim = staffRecordIdStr?.trim();
+  if (!idTrim) return [primary];
+
+  const rid = Number(idTrim);
+  if (!Number.isFinite(rid)) return [primary];
+
+  const staffAppRaw = process.env.STAFF_APP_ID?.trim();
+  if (!staffAppRaw) return [primary];
+
+  const aidNum = Number(staffAppRaw);
+  const aidNumericOk = Number.isFinite(aidNum);
+
+  const aids: (number | string)[] = [];
+  const aidSeen = new Set<string>();
+  const pushAid = (v: number | string) => {
+    const k = `${typeof v}:${String(v)}`;
+    if (aidSeen.has(k)) return;
+    aidSeen.add(k);
+    aids.push(v);
+  };
+  if (aidNumericOk) pushAid(aidNum);
+  pushAid(staffAppRaw.trim());
+
+  const recordIds: (number | string)[] = [];
+  const ridSeen = new Set<string>();
+  const pushRid = (v: number | string) => {
+    const k = `${typeof v}:${String(v)}`;
+    if (ridSeen.has(k)) return;
+    ridSeen.add(k);
+    recordIds.push(v);
+  };
+  pushRid(rid);
+  pushRid(idTrim);
+
+  const pairs: { appsId: number | string; recordId: number | string }[] = [];
+  for (const a of aids) {
+    for (const r of recordIds) {
+      pairs.push({ appsId: a, recordId: r });
+    }
+  }
+
+  const out: unknown[] = [];
+  const jsonSeen = new Set<string>();
+  const pushUnique = (v: unknown) => {
+    const key = JSON.stringify(v);
+    if (jsonSeen.has(key)) return;
+    jsonSeen.add(key);
+    out.push(v);
+  };
+
+  pushUnique(primary);
+  for (const p of pairs) {
+    pushUnique([p]);
+    pushUnique(p);
+  }
+  return out;
+}

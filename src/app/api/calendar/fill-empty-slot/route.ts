@@ -16,7 +16,10 @@ import {
   fetchRecordById,
   updateRecord,
 } from "@/lib/atpocket";
-import { pocketLinkageHandlerPutValue } from "@/lib/calendar-handler-link";
+import {
+  pocketLinkageHandlerCandidateValues,
+  type PocketLinkageHandlerPutOptions,
+} from "@/lib/calendar-handler-link";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -101,6 +104,59 @@ async function updateFillEmptySlotPocketRecord(
     patch2[altKey] = handlerVal;
     await updateRecord(calAppId, calendarRecordId, patch2, pocketAuth);
   }
+}
+
+/** 工事対応者ID形式エラー時のみ連携ペイロードの候補を順に試す */
+async function updateFillEmptySlotPocketRecordWithLinkageFallback(
+  calAppId: string,
+  calendarRecordId: string,
+  pocketAuth: { apiKey: string },
+  patch: Record<string, unknown>,
+  resolvedHandlerField: string | undefined,
+  linkageStaffRecordId: string | undefined,
+  displayNameFallback: string,
+  linkageOpts: PocketLinkageHandlerPutOptions | undefined,
+): Promise<void> {
+  if (!resolvedHandlerField) {
+    await updateFillEmptySlotPocketRecord(
+      calAppId,
+      calendarRecordId,
+      pocketAuth,
+      patch,
+      undefined,
+    );
+    return;
+  }
+
+  const candidates = pocketLinkageHandlerCandidateValues(
+    linkageStaffRecordId,
+    displayNameFallback,
+    linkageOpts,
+  );
+
+  let lastErr: unknown;
+  for (let i = 0; i < candidates.length; i++) {
+    const patchTry = { ...patch, [resolvedHandlerField]: candidates[i] };
+    try {
+      await updateFillEmptySlotPocketRecord(
+        calAppId,
+        calendarRecordId,
+        pocketAuth,
+        patchTry,
+        resolvedHandlerField,
+      );
+      return;
+    } catch (e) {
+      lastErr = e;
+      const msg = pocketUpdateRecordErrorMessage(e);
+      const linkageFmtErr =
+        msg.includes("400") && msg.includes("工事対応者IDの形式");
+      if (!linkageFmtErr || i === candidates.length - 1) {
+        throw e;
+      }
+    }
+  }
+  throw lastErr;
 }
 
 export async function POST(request: Request) {
@@ -408,20 +464,29 @@ export async function POST(request: Request) {
         );
       }
 
-      patch[resolvedHandlerField] = pocketLinkageHandlerPutValue(
+      const linkageOpts: PocketLinkageHandlerPutOptions = {
+        employeeId: employeeIdForPut.trim() || undefined,
+      };
+
+      await updateFillEmptySlotPocketRecordWithLinkageFallback(
+        calAppId,
+        recordId,
+        pocketAuth,
+        patch,
+        resolvedHandlerField,
         linkageStaffRecordId || undefined,
         constructionHandlerRaw,
-        { employeeId: employeeIdForPut.trim() || undefined },
+        linkageOpts,
+      );
+    } else {
+      await updateFillEmptySlotPocketRecord(
+        calAppId,
+        recordId,
+        pocketAuth,
+        patch,
+        undefined,
       );
     }
-
-    await updateFillEmptySlotPocketRecord(
-      calAppId,
-      recordId,
-      pocketAuth,
-      patch,
-      resolvedHandlerField,
-    );
 
     return NextResponse.json({ ok: true });
   } catch (e) {
