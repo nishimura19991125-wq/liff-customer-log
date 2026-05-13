@@ -137,14 +137,54 @@ function pickFieldUniqueIdByExactCaption(
 }
 
 /**
- * Web API の PUT で `field-32` が拒否されることがあるため、`field_32` に寄せる。
- * （fields 一覧では hyphen 表記でも、更新時は underscore のみ有効なケース）
+ * GET fields で返った集合に対して、field-N と field_N のどちらかだけでもマッチさせる。
+ * 管理画面の識別名は hyphen が多く、PUT はそれと同一文字列であるべき環境がある。
  */
-export function coercePocketPutFieldUniqueId(key: string): string {
-  const k = key.trim();
-  const m = /^field-(\d+)$/i.exec(k);
-  if (m) return `field_${m[1]}`;
-  return k;
+function pickBestNumericSchemaId(
+  numPart: string,
+  schemaIds: Set<string>,
+): string | null {
+  const n = numPart.trim();
+  if (!n) return null;
+  const hyphen = `field-${n}`;
+  const under = `field_${n}`;
+  if (schemaIds.has(hyphen)) return hyphen;
+  if (schemaIds.has(under)) return under;
+  for (const a of pocketNumericFieldIdVariants(n)) {
+    if (schemaIds.has(a)) return a;
+  }
+  return null;
+}
+
+/**
+ * .env のフィールド識別子を、工事アプリ GET fields の uniqueId に厳密に合わせる（無いものは PUT に載せない）。
+ */
+export function resolveConfiguredFieldToSchemaUniqueId(
+  configuredId: string,
+  fields: AtPocketFieldRow[],
+): string | null {
+  const id = configuredId.trim();
+  if (!id) return null;
+  const schemaIds = new Set(
+    fields
+      .map((f) => f.uniqueId?.trim())
+      .filter((u): u is string => Boolean(u)),
+  );
+
+  if (schemaIds.has(id)) return id;
+
+  const dm = /^field-(\d+)$/i.exec(id);
+  if (dm) {
+    const picked = pickBestNumericSchemaId(dm[1], schemaIds);
+    if (picked) return picked;
+  }
+  const um = /^field_(\d+)$/i.exec(id);
+  if (um) {
+    const picked = pickBestNumericSchemaId(um[1], schemaIds);
+    if (picked) return picked;
+  }
+
+  return null;
 }
 
 /** GET の record が hyphen / underscore のどちらのキーでも値を返せるようにする */
@@ -155,10 +195,16 @@ export function pickRecordValueByFieldAliases(
   const k = configuredFieldId.trim();
   if (!k) return undefined;
   const candidates = new Set<string>([k]);
-  const coerced = coercePocketPutFieldUniqueId(k);
-  if (coerced !== k) candidates.add(coerced);
+  const dm = /^field-(\d+)$/i.exec(k);
+  if (dm) {
+    candidates.add(`field_${dm[1]}`);
+    candidates.add(`field-${dm[1]}`);
+  }
   const um = /^field_(\d+)$/i.exec(k);
-  if (um) candidates.add(`field-${um[1]}`);
+  if (um) {
+    candidates.add(`field-${um[1]}`);
+    candidates.add(`field_${um[1]}`);
+  }
   for (const key of candidates) {
     if (
       Object.prototype.hasOwnProperty.call(recObj, key) &&
@@ -186,45 +232,20 @@ function pocketNumericFieldIdVariants(numPart: string): string[] {
 }
 
 /**
- * .env のフィールド識別子を、工事アプリ GET fields で返る uniqueId に寄せる。
- * 「指定されたフィールド[field-32]は有効なフィールドではありません」を防ぐ。
+ * 工事対応者フィールド用：まずスキーマへ寄せ、無ければ見出しから推定。
  */
 export function resolveEnvFieldUniqueIdForSchema(
   configuredId: string,
   fields: AtPocketFieldRow[],
 ): string | null {
-  const id = configuredId.trim();
-  if (!id) return null;
+  const base = resolveConfiguredFieldToSchemaUniqueId(configuredId, fields);
+  if (base) return base;
+
   const schemaIds = new Set(
     fields
       .map((f) => f.uniqueId?.trim())
       .filter((u): u is string => Boolean(u)),
   );
-
-  const dm = /^field-(\d+)$/i.exec(id);
-  if (dm) {
-    const n = dm[1];
-    const under = `field_${n}`;
-    const hyphen = `field-${n}`;
-    if (schemaIds.has(under)) return under;
-    if (schemaIds.has(hyphen)) return hyphen;
-    for (const a of pocketNumericFieldIdVariants(n)) {
-      if (schemaIds.has(a)) return a;
-    }
-  }
-  const um = /^field_(\d+)$/i.exec(id);
-  if (um) {
-    const n = um[1];
-    const under = `field_${n}`;
-    const hyphen = `field-${n}`;
-    if (schemaIds.has(under)) return under;
-    if (schemaIds.has(hyphen)) return hyphen;
-    for (const a of pocketNumericFieldIdVariants(n)) {
-      if (schemaIds.has(a)) return a;
-    }
-  }
-
-  if (schemaIds.has(id)) return id;
 
   const byCaption =
     pickFieldUniqueIdByExactCaption(fields, "工事対応者") ||

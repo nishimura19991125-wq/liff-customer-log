@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 
 import { isValidEmptyFillHousingStatus } from "@/lib/calendar-empty-fill-options";
 import {
-  coercePocketPutFieldUniqueId,
   constructionTitleFieldIsEmpty,
   pickRecordValueByFieldAliases,
+  resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
   resolveEnvFieldUniqueIdForSchema,
 } from "@/lib/calendar-kojo";
@@ -43,10 +43,6 @@ function uniqueFieldsCsv(...uids: (string | undefined)[]): string {
     }
   }
   return parts.join(",");
-}
-
-function pocketPutFieldKey(fieldId: string): string {
-  return coercePocketPutFieldUniqueId(fieldId.trim());
 }
 
 export async function POST(request: Request) {
@@ -126,6 +122,34 @@ export async function POST(request: Request) {
   try {
     const constructionFields = await fetchAppFields(calAppId, pocketAuth);
 
+    const resolvedCustomer = resolveConfiguredFieldToSchemaUniqueId(
+      customerField,
+      constructionFields,
+    );
+    if (!resolvedCustomer) {
+      return NextResponse.json(
+        {
+          error:
+            `お客様名フィールド「${customerField}」が工事アプリのフィールド定義と一致しません。GET /api/apps/{アプリID}/fields で返る uniqueId を CALENDAR_EMPTY_FILL_CUSTOMER_NAME_FIELD_ID に設定してください。`,
+        },
+        { status: 500 },
+      );
+    }
+
+    const resolvedHousing = resolveConfiguredFieldToSchemaUniqueId(
+      housingField,
+      constructionFields,
+    );
+    if (!resolvedHousing) {
+      return NextResponse.json(
+        {
+          error:
+            `住宅ステータスフィールド「${housingField}」が工事アプリのフィールド定義と一致しません。GET /api/apps/{アプリID}/fields で返る uniqueId を設定してください。`,
+        },
+        { status: 500 },
+      );
+    }
+
     let resolvedHandlerField: string | undefined;
     if (constructionHandlerField) {
       const resolved = resolveEnvFieldUniqueIdForSchema(
@@ -145,11 +169,11 @@ export async function POST(request: Request) {
     }
 
     const fids = resolveConstructionFieldIds(constructionFields);
-    const tNumberField =
+    const tNumberRaw =
       process.env.CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID?.trim() ||
       fids.tNumber?.trim();
 
-    if (!tNumberField) {
+    if (!tNumberRaw) {
       return NextResponse.json(
         {
           error:
@@ -159,11 +183,25 @@ export async function POST(request: Request) {
       );
     }
 
+    const resolvedTNumber = resolveConfiguredFieldToSchemaUniqueId(
+      tNumberRaw,
+      constructionFields,
+    );
+    if (!resolvedTNumber) {
+      return NextResponse.json(
+        {
+          error:
+            `T番号フィールド「${tNumberRaw}」が工事アプリのフィールド定義と一致しません。GET /api/apps/{アプリID}/fields で返る uniqueId を設定してください。`,
+        },
+        { status: 500 },
+      );
+    }
+
     const fieldsCsv = uniqueFieldsCsv(
-      pocketPutFieldKey(customerField),
-      pocketPutFieldKey(housingField),
-      pocketPutFieldKey(tNumberField),
-      resolvedHandlerField ? pocketPutFieldKey(resolvedHandlerField) : undefined,
+      resolvedCustomer,
+      resolvedHousing,
+      resolvedTNumber,
+      resolvedHandlerField,
     );
 
     let recRow: Awaited<ReturnType<typeof fetchRecordById>> = null;
@@ -183,7 +221,7 @@ export async function POST(request: Request) {
     }
 
     const recObj = recRow.record as Record<string, unknown>;
-    if (!constructionTitleFieldIsEmpty(recObj, customerField)) {
+    if (!constructionTitleFieldIsEmpty(recObj, resolvedCustomer)) {
       return NextResponse.json(
         {
           error:
@@ -193,29 +231,28 @@ export async function POST(request: Request) {
       );
     }
 
-    const existingT = pickRecordValueByFieldAliases(recObj, tNumberField);
+    const existingT = pickRecordValueByFieldAliases(recObj, resolvedTNumber);
     if (existingT === undefined || existingT === null) {
       return NextResponse.json(
         {
           error:
-            "このレコードから T番号 を取得できませんでした。@pocket で空枠に T番号 が入っているか、CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID が正しい uniqueId か確認してください。",
+            "このレコードから T番号 を取得できませんでした。@pocket で空枠に T番号 が入っているか、フィールド設定を確認してください。",
         },
         { status: 409 },
       );
     }
 
-    /** PUT は field_N（アンダースコア）を期待する環境がある（field-N は 400 になる） */
+    /** GET fields で返る uniqueId をそのまま PUT に使う（hyphen / underscore はスキーマに合わせて解決済み） */
     const patch: Record<string, unknown> = {
-      [pocketPutFieldKey(tNumberField)]: existingT,
-      [pocketPutFieldKey(customerField)]: customerName,
-      [pocketPutFieldKey(housingField)]: housingRaw,
+      [resolvedTNumber]: existingT,
+      [resolvedCustomer]: customerName,
+      [resolvedHousing]: housingRaw,
     };
     if (resolvedHandlerField) {
-      patch[pocketPutFieldKey(resolvedHandlerField)] =
-        pocketLinkageHandlerPutValue(
-          constructionHandlerStaffRecordId || undefined,
-          constructionHandlerRaw,
-        );
+      patch[resolvedHandlerField] = pocketLinkageHandlerPutValue(
+        constructionHandlerStaffRecordId || undefined,
+        constructionHandlerRaw,
+      );
     }
 
     await updateRecord(calAppId, recordId, patch, pocketAuth);
