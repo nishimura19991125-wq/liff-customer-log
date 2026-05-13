@@ -16,6 +16,8 @@ export type AtPocketListResponse = {
 export type AtPocketFieldRow = {
   uniqueId?: string;
   caption?: string;
+  /** GET /api/apps/{appsId}/fields が返す項目タイプ（連携項目の判定など） */
+  fieldType?: string;
 };
 
 function baseUrl(): string {

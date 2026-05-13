@@ -187,6 +187,27 @@ export function resolveConfiguredFieldToSchemaUniqueId(
   return null;
 }
 
+/**
+ * PUT 時に uniqueId の hyphen / underscore を切り替える（field-52 ↔ field_52）。
+ */
+export function alternateNumericFieldUniqueId(uniqueId: string): string | null {
+  const t = uniqueId.trim();
+  const dm = /^field-(\d+)$/i.exec(t);
+  if (dm) return `field_${dm[1]}`;
+  const um = /^field_(\d+)$/i.exec(t);
+  if (um) return `field-${um[1]}`;
+  return null;
+}
+
+/** GET fields の fieldType から連携項目か粗く判定する */
+export function pocketFieldLooksLikeLinkage(
+  field: AtPocketFieldRow | undefined,
+): boolean {
+  if (!field) return false;
+  const ft = field.fieldType?.trim() ?? "";
+  return Boolean(ft && /連携|relation|link|参照|reference/i.test(ft));
+}
+
 /** GET の record が hyphen / underscore のどちらのキーでも値を返せるようにする */
 export function pickRecordValueByFieldAliases(
   recObj: Record<string, unknown>,
@@ -248,6 +269,7 @@ export function resolveEnvFieldUniqueIdForSchema(
   );
 
   const byCaption =
+    pickFieldUniqueIdByExactCaption(fields, "工事対応者ID") ||
     pickFieldUniqueIdByExactCaption(fields, "工事対応者") ||
     pickFieldUniqueId(fields, ["工事対応者", "工事担当者", "対応者"]);
   const capId = byCaption.trim();

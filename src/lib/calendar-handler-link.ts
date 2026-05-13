@@ -14,7 +14,7 @@ export type PocketLinkageHandlerPutOptions = {
  * - record_id_string: 文字列のレコード ID
  * - apps_record_object: { appsId, recordId }
  * - name_string: 表示名のみ（テキスト項目向け・連携では通常不可）
- * - employee_id_string: 「工事対応者 ID」などテキストで社員 ID を要求するフィールド向け（opts.employeeId を優先）
+ * - employee_id_string: テキスト項目のみ向け（連携項目では不可。連携は apps_record_array 等）
  */
 export function pocketLinkageHandlerPutValue(
   staffRecordIdStr: string | undefined,
@@ -45,8 +45,20 @@ export function pocketLinkageHandlerPutValue(
     return displayNameFallback.trim() || displayNameFallback;
   }
 
+  const recordIdForLink = idTrim;
+
   const staffAppRaw = process.env.STAFF_APP_ID?.trim();
   const aid = staffAppRaw ? Number(staffAppRaw) : NaN;
+
+  function linkagePair(): { appsId: number | string; recordId: number | string } {
+    const strIds =
+      process.env.CALENDAR_EMPTY_FILL_HANDLER_LINK_IDS_AS_STRING?.trim() ===
+      "true";
+    if (strIds && Number.isFinite(aid)) {
+      return { appsId: String(aid), recordId: recordIdForLink };
+    }
+    return { appsId: aid, recordId: rid };
+  }
 
   switch (mode) {
     case "record_id":
@@ -58,13 +70,13 @@ export function pocketLinkageHandlerPutValue(
     case "apps_record_object":
     case "link_single_object":
       if (!Number.isFinite(aid)) return rid;
-      return { appsId: aid, recordId: rid };
+      return linkagePair();
     case "name_string":
       return displayNameFallback.trim() || displayNameFallback;
     case "apps_record_array":
     case "link_array":
     default:
       if (!Number.isFinite(aid)) return rid;
-      return [{ appsId: aid, recordId: rid }];
+      return [linkagePair()];
   }
 }

@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 
 import { isValidEmptyFillHousingStatus } from "@/lib/calendar-empty-fill-options";
 import {
+  alternateNumericFieldUniqueId,
   constructionTitleFieldIsEmpty,
   pickRecordValueByFieldAliases,
+  pocketFieldLooksLikeLinkage,
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
   resolveEnvFieldUniqueIdForSchema,
@@ -63,6 +65,42 @@ function handlerPutWantsEmployeeIdString(): boolean {
     r === "construction_handler_id_string" ||
     r === "handler_id_string"
   );
+}
+
+function pocketUpdateRecordErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** PUT が同一項目で hyphen / underscore の別キーを要求するときに1回だけ差し替え試行する */
+async function updateFillEmptySlotPocketRecord(
+  calAppId: string,
+  calendarRecordId: string,
+  pocketAuth: { apiKey: string },
+  patch: Record<string, unknown>,
+  handlerSchemaKey: string | undefined,
+): Promise<void> {
+  try {
+    await updateRecord(calAppId, calendarRecordId, patch, pocketAuth);
+    return;
+  } catch (e) {
+    const msg = pocketUpdateRecordErrorMessage(e);
+    const handlerVal =
+      handlerSchemaKey !== undefined ? patch[handlerSchemaKey] : undefined;
+    if (
+      handlerSchemaKey === undefined ||
+      handlerVal === undefined ||
+      !msg.includes("400") ||
+      !msg.includes("有効なフィールドではありません")
+    ) {
+      throw e;
+    }
+    const altKey = alternateNumericFieldUniqueId(handlerSchemaKey);
+    if (!altKey || altKey === handlerSchemaKey) throw e;
+    const patch2 = { ...patch };
+    delete patch2[handlerSchemaKey];
+    patch2[altKey] = handlerVal;
+    await updateRecord(calAppId, calendarRecordId, patch2, pocketAuth);
+  }
 }
 
 export async function POST(request: Request) {
@@ -189,6 +227,22 @@ export async function POST(request: Request) {
         );
       }
       resolvedHandlerField = resolved;
+
+      const handlerFieldRow = constructionFields.find(
+        (f) => f.uniqueId?.trim() === resolvedHandlerField,
+      );
+      if (
+        handlerPutWantsEmployeeIdString() &&
+        pocketFieldLooksLikeLinkage(handlerFieldRow)
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "工事対応者の項目は「連携項目」（スタッフ名簿と紐づく）のため、プレーンな社員ID文字列を送る CALENDAR_EMPTY_FILL_HANDLER_LINK_FORMAT=employee_id_string は使えません。その設定を削除または空にして既定の連携形式（apps_record_array）にしてください。CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID は画面の識別名どおり API の uniqueId（例: field-52）を設定してください。単一行連携のみのときは apps_record_object を試すこともできます。",
+          },
+          { status: 400 },
+        );
+      }
     }
 
     const fids = resolveConstructionFieldIds(constructionFields);
@@ -361,7 +415,13 @@ export async function POST(request: Request) {
       );
     }
 
-    await updateRecord(calAppId, recordId, patch, pocketAuth);
+    await updateFillEmptySlotPocketRecord(
+      calAppId,
+      recordId,
+      pocketAuth,
+      patch,
+      resolvedHandlerField,
+    );
 
     return NextResponse.json({ ok: true });
   } catch (e) {
