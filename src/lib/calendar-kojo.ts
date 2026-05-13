@@ -136,6 +136,105 @@ function pickFieldUniqueIdByExactCaption(
   return "";
 }
 
+/**
+ * Web API の PUT で `field-32` が拒否されることがあるため、`field_32` に寄せる。
+ * （fields 一覧では hyphen 表記でも、更新時は underscore のみ有効なケース）
+ */
+export function coercePocketPutFieldUniqueId(key: string): string {
+  const k = key.trim();
+  const m = /^field-(\d+)$/i.exec(k);
+  if (m) return `field_${m[1]}`;
+  return k;
+}
+
+/** GET の record が hyphen / underscore のどちらのキーでも値を返せるようにする */
+export function pickRecordValueByFieldAliases(
+  recObj: Record<string, unknown>,
+  configuredFieldId: string,
+): unknown {
+  const k = configuredFieldId.trim();
+  if (!k) return undefined;
+  const candidates = new Set<string>([k]);
+  const coerced = coercePocketPutFieldUniqueId(k);
+  if (coerced !== k) candidates.add(coerced);
+  const um = /^field_(\d+)$/i.exec(k);
+  if (um) candidates.add(`field-${um[1]}`);
+  for (const key of candidates) {
+    if (
+      Object.prototype.hasOwnProperty.call(recObj, key) &&
+      recObj[key] !== undefined &&
+      recObj[key] !== null
+    ) {
+      return recObj[key];
+    }
+  }
+  return undefined;
+}
+
+/** field-32 と field_32 のような表記ゆれを試す（数字部分で対応） */
+function pocketNumericFieldIdVariants(numPart: string): string[] {
+  const n = numPart.trim();
+  if (!n) return [];
+  const hyphen = `field-${n}`;
+  const under = `field_${n}`;
+  return [
+    hyphen,
+    under,
+    hyphen.replace(/^field-/i, "Field-"),
+    under.replace(/^field_/i, "Field_"),
+  ];
+}
+
+/**
+ * .env のフィールド識別子を、工事アプリ GET fields で返る uniqueId に寄せる。
+ * 「指定されたフィールド[field-32]は有効なフィールドではありません」を防ぐ。
+ */
+export function resolveEnvFieldUniqueIdForSchema(
+  configuredId: string,
+  fields: AtPocketFieldRow[],
+): string | null {
+  const id = configuredId.trim();
+  if (!id) return null;
+  const schemaIds = new Set(
+    fields
+      .map((f) => f.uniqueId?.trim())
+      .filter((u): u is string => Boolean(u)),
+  );
+
+  const dm = /^field-(\d+)$/i.exec(id);
+  if (dm) {
+    const n = dm[1];
+    const under = `field_${n}`;
+    const hyphen = `field-${n}`;
+    if (schemaIds.has(under)) return under;
+    if (schemaIds.has(hyphen)) return hyphen;
+    for (const a of pocketNumericFieldIdVariants(n)) {
+      if (schemaIds.has(a)) return a;
+    }
+  }
+  const um = /^field_(\d+)$/i.exec(id);
+  if (um) {
+    const n = um[1];
+    const under = `field_${n}`;
+    const hyphen = `field-${n}`;
+    if (schemaIds.has(under)) return under;
+    if (schemaIds.has(hyphen)) return hyphen;
+    for (const a of pocketNumericFieldIdVariants(n)) {
+      if (schemaIds.has(a)) return a;
+    }
+  }
+
+  if (schemaIds.has(id)) return id;
+
+  const byCaption =
+    pickFieldUniqueIdByExactCaption(fields, "工事対応者") ||
+    pickFieldUniqueId(fields, ["工事対応者", "工事担当者", "対応者"]);
+  const capId = byCaption.trim();
+  if (capId && schemaIds.has(capId)) return capId;
+
+  return null;
+}
+
 /** @pocket の工事登録アプリからフィールド uniqueId を推定（見出し名／キーワード） */
 export function resolveConstructionFieldIds(
   fields: AtPocketFieldRow[],
@@ -315,7 +414,9 @@ export function constructionTitleFieldIsEmpty(
   titleFieldUniqueId: string,
 ): boolean {
   if (!titleFieldUniqueId) return false;
-  const nameRaw = extractValue(recObj[titleFieldUniqueId]);
+  const nameRaw = extractValue(
+    pickRecordValueByFieldAliases(recObj, titleFieldUniqueId),
+  );
   const nameTrim =
     nameRaw != null && !isBlankDisplayStr(nameRaw)
       ? String(nameRaw).trim()

@@ -2,8 +2,11 @@ import { NextResponse } from "next/server";
 
 import { isValidEmptyFillHousingStatus } from "@/lib/calendar-empty-fill-options";
 import {
+  coercePocketPutFieldUniqueId,
   constructionTitleFieldIsEmpty,
+  pickRecordValueByFieldAliases,
   resolveConstructionFieldIds,
+  resolveEnvFieldUniqueIdForSchema,
 } from "@/lib/calendar-kojo";
 import {
   apiKeyForCalendarPocket,
@@ -11,6 +14,7 @@ import {
   fetchRecordById,
   updateRecord,
 } from "@/lib/atpocket";
+import { pocketLinkageHandlerPutValue } from "@/lib/calendar-handler-link";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -23,6 +27,8 @@ type Body = {
   customerName?: string;
   housingStatus?: string;
   constructionHandler?: string;
+  /** スタッフ名簿のレコード ID（連携項目・工事対応者向け） */
+  constructionHandlerStaffRecordId?: string;
 };
 
 /** GET/PUT に載せるフィールドは必要なもののみ（それ以外を PUT すると「有効なフィールドではありません」になることがある） */
@@ -37,6 +43,10 @@ function uniqueFieldsCsv(...uids: (string | undefined)[]): string {
     }
   }
   return parts.join(",");
+}
+
+function pocketPutFieldKey(fieldId: string): string {
+  return coercePocketPutFieldUniqueId(fieldId.trim());
 }
 
 export async function POST(request: Request) {
@@ -80,6 +90,8 @@ export async function POST(request: Request) {
   const customerName = body.customerName?.trim();
   const housingRaw = body.housingStatus?.trim() ?? "";
   const constructionHandlerRaw = body.constructionHandler?.trim() ?? "";
+  const constructionHandlerStaffRecordId =
+    body.constructionHandlerStaffRecordId?.trim() ?? "";
 
   if (!recordId || !customerName || !housingRaw) {
     return NextResponse.json(
@@ -88,7 +100,11 @@ export async function POST(request: Request) {
     );
   }
 
-  if (constructionHandlerField && !constructionHandlerRaw) {
+  if (
+    constructionHandlerField &&
+    !constructionHandlerStaffRecordId &&
+    !constructionHandlerRaw
+  ) {
     return NextResponse.json(
       { error: "工事対応者は必須です" },
       { status: 400 },
@@ -109,6 +125,25 @@ export async function POST(request: Request) {
 
   try {
     const constructionFields = await fetchAppFields(calAppId, pocketAuth);
+
+    let resolvedHandlerField: string | undefined;
+    if (constructionHandlerField) {
+      const resolved = resolveEnvFieldUniqueIdForSchema(
+        constructionHandlerField,
+        constructionFields,
+      );
+      if (!resolved) {
+        return NextResponse.json(
+          {
+            error:
+              `工事対応者フィールド「${constructionHandlerField}」が工事アプリのフィールド定義と一致しません。@pocket の Web API（GET /api/apps/{アプリID}/fields）で返る uniqueId を CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID に設定してください。管理画面の「field-32」と API の「field_32」など表記が異なる場合は自動で読み替えますが、それ以外の ID の場合は API の値をそのまま設定してください。`,
+          },
+          { status: 500 },
+        );
+      }
+      resolvedHandlerField = resolved;
+    }
+
     const fids = resolveConstructionFieldIds(constructionFields);
     const tNumberField =
       process.env.CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID?.trim() ||
@@ -125,10 +160,10 @@ export async function POST(request: Request) {
     }
 
     const fieldsCsv = uniqueFieldsCsv(
-      customerField,
-      housingField,
-      tNumberField,
-      constructionHandlerField,
+      pocketPutFieldKey(customerField),
+      pocketPutFieldKey(housingField),
+      pocketPutFieldKey(tNumberField),
+      resolvedHandlerField ? pocketPutFieldKey(resolvedHandlerField) : undefined,
     );
 
     let recRow: Awaited<ReturnType<typeof fetchRecordById>> = null;
@@ -158,7 +193,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const existingT = recObj[tNumberField];
+    const existingT = pickRecordValueByFieldAliases(recObj, tNumberField);
     if (existingT === undefined || existingT === null) {
       return NextResponse.json(
         {
@@ -169,14 +204,18 @@ export async function POST(request: Request) {
       );
     }
 
-    /** PUT は GET で取得したキーのみ（GET で返った T番号はそのままの形で送る） */
+    /** PUT は field_N（アンダースコア）を期待する環境がある（field-N は 400 になる） */
     const patch: Record<string, unknown> = {
-      [tNumberField]: existingT,
-      [customerField]: customerName,
-      [housingField]: housingRaw,
+      [pocketPutFieldKey(tNumberField)]: existingT,
+      [pocketPutFieldKey(customerField)]: customerName,
+      [pocketPutFieldKey(housingField)]: housingRaw,
     };
-    if (constructionHandlerField) {
-      patch[constructionHandlerField] = constructionHandlerRaw;
+    if (resolvedHandlerField) {
+      patch[pocketPutFieldKey(resolvedHandlerField)] =
+        pocketLinkageHandlerPutValue(
+          constructionHandlerStaffRecordId || undefined,
+          constructionHandlerRaw,
+        );
     }
 
     await updateRecord(calAppId, recordId, patch, pocketAuth);

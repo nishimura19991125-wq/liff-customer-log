@@ -83,7 +83,8 @@ export async function GET(request: Request) {
 
   try {
     const rows = await fetchAllRecordsPages(staffAppId, fieldsCsv);
-    const names: string[] = [];
+    const handlers: { staffRecordId: string; name: string }[] = [];
+    const seenId = new Set<string>();
     for (const row of rows) {
       const rec = row.record;
       if (!rec || typeof rec !== "object") continue;
@@ -92,12 +93,18 @@ export async function GET(request: Request) {
       const rawName = rec[nameFieldId];
       if (rawName === undefined || rawName === null) continue;
       const name = String(rawName).trim();
-      if (name) names.push(name);
+      if (!name) continue;
+      const staffRecordId =
+        row.recordId != null ? String(row.recordId) : String(row.uniqueId ?? "").trim();
+      if (!staffRecordId || seenId.has(staffRecordId)) continue;
+      seenId.add(staffRecordId);
+      handlers.push({ staffRecordId, name });
     }
-    const uniqueSorted = [...new Set(names)].sort((a, b) =>
-      a.localeCompare(b, "ja"),
-    );
-    return NextResponse.json({ handlers: uniqueSorted });
+    handlers.sort((a, b) => {
+      const c = a.name.localeCompare(b.name, "ja");
+      return c !== 0 ? c : a.staffRecordId.localeCompare(b.staffRecordId);
+    });
+    return NextResponse.json({ handlers });
   } catch (e) {
     console.error("[api/calendar/construction-handlers]", e);
     return NextResponse.json(
