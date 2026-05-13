@@ -422,9 +422,9 @@ function EmptySlotCard({
             {constructionHandlerNameOnly ? (
               <>
                 住宅ステータス・お客様名・工事対応者を登録すると、@pocket
-                のレコードが更新され、カレンダーでは「案件」として表示されます。工事対応者は
+                のレコードが更新され、カレンダーでは「案件」として表示されます。工事対応者は連携項目でも、
                 <strong className="font-bold text-slate-800">氏名をそのまま</strong>
-                入力して転記します（スタッフ名簿の一覧取得は行いません）。
+                入力して転記します（編集画面と同様の直接入力。スタッフ一覧APIは呼びません）。
               </>
             ) : (
               <>
@@ -535,7 +535,7 @@ function EmptySlotCard({
             {!constructionHandlerRequired ? (
               <p className="mt-1 text-[11px] leading-snug text-slate-500">
                 {constructionHandlerNameOnly
-                  ? "名前のみサーバーへ転記します（項目タイプが連携のみの場合は @pocket が拒否することがあります）。"
+                  ? "連携項目でも、@pocket で氏名の直接入力が許可されている場合はこの値がそのまま設定されます。"
                   : "プルダウンは稼働中の社員のみです。工事への保存は別設定後に有効になります。"}
               </p>
             ) : null}

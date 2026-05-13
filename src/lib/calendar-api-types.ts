@@ -22,6 +22,6 @@ export type CalendarApiPayload = {
   byDay: Record<string, CalendarMonthApiItem[]>;
   /** 工事空枠入力で工事対応者を必須にする（CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID 設定時） */
   emptyFillConstructionHandlerRequired?: boolean;
-  /** true のとき工事対応者は名前文字列のみ転記（スタッフ一覧取得・連携解決をしない） */
+  /** true のとき工事対応者は入力氏名のみ転記（一覧取得・レコード解決をしない。連携項目でも直接入力可能な環境向け） */
   emptyFillConstructionHandlerNameOnly?: boolean;
 };

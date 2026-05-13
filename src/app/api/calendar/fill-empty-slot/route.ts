@@ -58,7 +58,7 @@ function uniqueFieldsCsv(...uids: (string | undefined)[]): string {
   return parts.join(",");
 }
 
-/** true のとき工事対応者フィールドには氏名文字列のみ PUT（連携・社員ID解決・候補試行を行わない） */
+/** true のとき工事対応者には入力氏名のみ PUT（スタッフ解決・連携ペイロードの試行を行わない。連携項目でも氏名直接入力が通る @pocket 構成向け） */
 function handlerPutDisplayNameOnly(): boolean {
   return (
     process.env.CALENDAR_EMPTY_FILL_HANDLER_PUT_DISPLAY_NAME_ONLY?.trim() ===

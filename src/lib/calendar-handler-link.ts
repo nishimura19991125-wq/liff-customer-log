@@ -13,8 +13,8 @@ export type PocketLinkageHandlerPutOptions = {
  * - record_id: number のみ
  * - record_id_string: 文字列のレコード ID
  * - apps_record_object: { appsId, recordId }
- * - name_string: 表示名のみ（テキスト項目向け・連携では通常不可）
- * - employee_id_string: テキスト項目のみ向け（連携項目では不可。連携は apps_record_array 等）
+ * - name_string: 表示名のみ（項目によっては連携項目でも直接入力と同等に受け付ける）
+ * - employee_id_string: 社員IDなどプレーン文字列（連携キーがテキストのときのみ）
  */
 export function pocketLinkageHandlerPutValue(
   staffRecordIdStr: string | undefined,
