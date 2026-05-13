@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 import { isValidEmptyFillHousingStatus } from "@/lib/calendar-empty-fill-options";
 import {
-  alternateNumericFieldUniqueId,
   constructionTitleFieldIsEmpty,
   pickRecordValueByFieldAliases,
   pocketFieldLooksLikeLinkage,
@@ -82,36 +81,14 @@ function pocketUpdateRecordErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** PUT が同一項目で hyphen / underscore の別キーを要求するときに1回だけ差し替え試行する */
+/** @pocket へレコード PUT（フィールドキーは GET fields で解決した uniqueId をそのまま使う） */
 async function updateFillEmptySlotPocketRecord(
   calAppId: string,
   calendarRecordId: string,
   pocketAuth: { apiKey: string },
   patch: Record<string, unknown>,
-  handlerSchemaKey: string | undefined,
 ): Promise<void> {
-  try {
-    await updateRecord(calAppId, calendarRecordId, patch, pocketAuth);
-    return;
-  } catch (e) {
-    const msg = pocketUpdateRecordErrorMessage(e);
-    const handlerVal =
-      handlerSchemaKey !== undefined ? patch[handlerSchemaKey] : undefined;
-    if (
-      handlerSchemaKey === undefined ||
-      handlerVal === undefined ||
-      !msg.includes("400") ||
-      !msg.includes("有効なフィールドではありません")
-    ) {
-      throw e;
-    }
-    const altKey = alternateNumericFieldUniqueId(handlerSchemaKey);
-    if (!altKey || altKey === handlerSchemaKey) throw e;
-    const patch2 = { ...patch };
-    delete patch2[handlerSchemaKey];
-    patch2[altKey] = handlerVal;
-    await updateRecord(calAppId, calendarRecordId, patch2, pocketAuth);
-  }
+  await updateRecord(calAppId, calendarRecordId, patch, pocketAuth);
 }
 
 /** 工事対応者ID形式エラー時のみ連携ペイロードの候補を順に試す */
@@ -131,7 +108,6 @@ async function updateFillEmptySlotPocketRecordWithLinkageFallback(
       calendarRecordId,
       pocketAuth,
       patch,
-      undefined,
     );
     return;
   }
@@ -151,7 +127,6 @@ async function updateFillEmptySlotPocketRecordWithLinkageFallback(
         calendarRecordId,
         pocketAuth,
         patchTry,
-        resolvedHandlerField,
       );
       return;
     } catch (e) {
@@ -285,7 +260,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              `工事対応者フィールド「${constructionHandlerField}」が工事アプリのフィールド定義と一致しません。@pocket の Web API（GET /api/apps/{アプリID}/fields）で返る uniqueId を CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID に設定してください。管理画面の「field-32」と API の「field_32」など表記が異なる場合は自動で読み替えますが、それ以外の ID の場合は API の値をそのまま設定してください。`,
+              `工事対応者フィールド「${constructionHandlerField}」が工事アプリのフィールド定義と一致しません。@pocket の Web API（GET /api/apps/{アプリID}/fields）で返る uniqueId を CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID にそのまま設定してください（例: field-52）。`,
           },
           { status: 500 },
         );
@@ -503,7 +478,6 @@ export async function POST(request: Request) {
         recordId,
         pocketAuth,
         patch,
-        undefined,
       );
     }
 
@@ -513,7 +487,6 @@ export async function POST(request: Request) {
         recordId,
         pocketAuth,
         patch,
-        resolvedHandlerField,
       );
     }
 

@@ -187,18 +187,6 @@ export function resolveConfiguredFieldToSchemaUniqueId(
   return null;
 }
 
-/**
- * PUT 時に uniqueId の hyphen / underscore を切り替える（field-52 ↔ field_52）。
- */
-export function alternateNumericFieldUniqueId(uniqueId: string): string | null {
-  const t = uniqueId.trim();
-  const dm = /^field-(\d+)$/i.exec(t);
-  if (dm) return `field_${dm[1]}`;
-  const um = /^field_(\d+)$/i.exec(t);
-  if (um) return `field-${um[1]}`;
-  return null;
-}
-
 /** GET fields の fieldType から連携項目か粗く判定する */
 export function pocketFieldLooksLikeLinkage(
   field: AtPocketFieldRow | undefined,
