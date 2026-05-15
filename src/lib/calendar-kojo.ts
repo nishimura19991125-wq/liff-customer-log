@@ -232,15 +232,18 @@ function pocketNumericFieldIdVariants(numPart: string): string[] {
   ];
 }
 
-/** @pocket の工事登録アプリからフィールド uniqueId を推定（見出し名／キーワード） */
+/** @pocket の工事登録アプリからフィールド uniqueId を推定（見出し名／キーワード）。
+ * 施工業者は CALENDAR_CONTRACTOR_FIELD_ID があれば GET fields の uniqueId に正規化して最優先する。
+ */
 export function resolveConstructionFieldIds(
   fields: AtPocketFieldRow[],
 ): ConstructionFieldIds {
-  return {
+  const base: ConstructionFieldIds = {
     title:
       pickFieldUniqueIdByExactCaption(fields, "お客様名") ||
       pickFieldUniqueId(fields, [...KW.title]),
     contractor:
+      pickFieldUniqueIdByExactCaption(fields, "施工業者") ||
       pickFieldUniqueIdByExactCaption(fields, "施工会社") ||
       pickFieldUniqueIdByExactCaption(fields, "施工店") ||
       pickFieldUniqueIdByExactCaption(fields, "工務店") ||
@@ -285,6 +288,17 @@ export function resolveConstructionFieldIds(
       pickFieldUniqueIdByExactCaption(fields, "残工日") ||
       pickFieldUniqueId(fields, KW.zankoDay),
   };
+
+  const envContractor = process.env.CALENDAR_CONTRACTOR_FIELD_ID?.trim();
+  if (envContractor) {
+    const resolved = resolveConfiguredFieldToSchemaUniqueId(
+      envContractor,
+      fields,
+    );
+    if (resolved) return { ...base, contractor: resolved };
+  }
+
+  return base;
 }
 
 export function resolveReportFieldIds(
