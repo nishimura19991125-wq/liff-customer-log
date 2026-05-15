@@ -415,20 +415,22 @@ function EmptySlotCard({
   }
 
   return (
-    <div className="rounded-2xl border-2 border-dashed border-slate-400 bg-slate-50 px-4 py-4 shadow-sm ring-1 ring-slate-200/80">
+    <div className="rounded-2xl border-2 border-dashed border-slate-400/75 bg-slate-50/95 px-4 py-4 shadow-inner shadow-slate-200/40 ring-1 ring-slate-200/70">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <span className="inline-flex rounded-lg border border-dashed border-slate-400 bg-white px-2 py-0.5 text-[11px] font-extrabold tracking-wide text-slate-700">
+        <span className="inline-flex rounded-full border border-dashed border-slate-400/70 bg-slate-200/90 px-2 py-0.5 text-[9px] font-extrabold tracking-wide text-slate-700 ring-1 ring-white/80">
           工事空枠
         </span>
       </div>
-      <p className="text-[15px] font-bold leading-snug text-slate-900">
+      <p className="text-[17px] font-bold leading-snug text-slate-900 sm:text-lg">
         {item.line1}
         {item.showKankoCheck ? (
-          <span className="ml-1 text-emerald-600">✅</span>
+          <span className="ml-1 text-xl text-emerald-600 sm:text-[1.35rem]">
+            ✅
+          </span>
         ) : null}
       </p>
       {item.line2 ? (
-        <p className="mt-2 text-[13px] font-semibold leading-relaxed text-slate-600">
+        <p className="mt-2 text-[15px] font-semibold leading-relaxed text-slate-600 sm:text-base">
           {item.line2}
         </p>
       ) : null}
@@ -1126,18 +1128,24 @@ export default function CalendarPage() {
             }
           >
             <div className="mb-4 flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-            <span className="inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 ring-1 ring-slate-200/80">
-              <span className="size-2 rounded-full bg-[#06C755]" aria-hidden />
-              今日
+          <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-600">
+            <span className="inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 ring-1 ring-slate-200/80">
+              <span className="size-1.5 rounded-full bg-[#06C755]" aria-hidden />
+              <span className="font-bold text-slate-700">今日</span>
             </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800 ring-1 ring-emerald-100">
-              緑
-              <span className="font-normal text-emerald-700/90">案件の件数</span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-bold text-emerald-900 ring-1 ring-emerald-100">
+              <span className="rounded-full bg-emerald-600 px-1 py-px text-[8px] font-extrabold text-white">
+                緑
+              </span>
+              <span className="font-semibold text-emerald-800/95">
+                案件の件数
+              </span>
             </span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-slate-400 bg-slate-50 px-2.5 py-1 font-semibold text-slate-700">
+            <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-slate-400/80 bg-slate-100/90 px-2 py-0.5 text-[10px] font-bold text-slate-700 ring-1 ring-slate-200/60">
               点線枠
-              <span className="font-normal text-slate-600">工事空枠の件数</span>
+              <span className="font-semibold text-slate-600">
+                工事空枠がある日
+              </span>
             </span>
           </div>
 
@@ -1196,7 +1204,7 @@ export default function CalendarPage() {
               ))}
               {grid.map((cell, idx) => {
                 const accent = cellAccent(cell.date, holidaySet);
-                const accentCls =
+                const accentClsBase =
                   accent === "hol"
                     ? "bg-red-50/98 text-red-800"
                     : accent === "sun"
@@ -1216,12 +1224,27 @@ export default function CalendarPage() {
                 const { cases: caseCount, emptySlots: emptyCount } =
                   countCasesAndSlots(dayItems);
 
+                const hasEmptySlots = cell.inMonth && emptyCount > 0;
+                const accentCls = hasEmptySlots
+                  ? accent === "hol"
+                    ? "bg-red-50/88 text-red-900"
+                    : accent === "sun"
+                      ? "bg-rose-50/88 text-rose-900"
+                      : accent === "sat"
+                        ? "bg-sky-50/88 text-sky-900"
+                        : "bg-slate-100/98 text-slate-800"
+                  : accentClsBase;
+
+                const cellFrameCls = hasEmptySlots
+                  ? "border-2 border-dashed border-slate-400/70 shadow-inner shadow-slate-200/30"
+                  : "shadow-sm ring-1 ring-slate-200/70";
+
                 return (
                   <div
                     key={`${idx}-${cell.dayKey ?? "x"}`}
                     role="button"
                     tabIndex={cell.inMonth ? 0 : -1}
-                    className={`flex min-h-[3.25rem] min-w-0 flex-col rounded-lg p-0.5 shadow-sm ring-1 ring-slate-200/70 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#06C755] sm:min-h-[4.25rem] sm:rounded-xl sm:p-1 ${accentCls} ${cell.inMonth ? "cursor-pointer active:brightness-[0.97]" : "cursor-default opacity-[0.42]"} ${isSelected ? "z-[1] ring-2 ring-[#06C755] ring-offset-1 ring-offset-white" : ""}`}
+                    className={`flex min-h-[3.25rem] min-w-0 flex-col rounded-lg p-0.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#06C755] sm:min-h-[4.25rem] sm:rounded-xl sm:p-1 ${accentCls} ${cellFrameCls} ${cell.inMonth ? "cursor-pointer active:brightness-[0.97]" : "cursor-default opacity-[0.42]"} ${isSelected ? "z-[1] ring-2 ring-[#06C755] ring-offset-1 ring-offset-white" : ""}`}
                     onClick={() => selectDay(cell)}
                     onKeyDown={(e) => {
                       if (!cell.inMonth) return;
@@ -1241,7 +1264,7 @@ export default function CalendarPage() {
                     <div className="mt-auto flex min-h-[18px] flex-col items-center justify-end gap-0.5 pb-0.5 sm:min-h-[22px] sm:gap-1">
                       {caseCount > 0 ? (
                         <span
-                          className="inline-flex max-w-full items-center justify-center rounded-full bg-emerald-600 px-1 py-px text-[8px] font-extrabold tabular-nums leading-none text-white ring-1 ring-emerald-700/20 sm:text-[9px]"
+                          className="inline-flex max-w-full items-center justify-center rounded-full bg-emerald-600 px-1.5 py-[2px] text-[7px] font-extrabold tabular-nums leading-none text-white shadow-sm ring-1 ring-emerald-800/15 sm:text-[8px]"
                           title={`案件（お客様名のある工事）${caseCount}件`}
                         >
                           案件{caseCount}
@@ -1249,7 +1272,7 @@ export default function CalendarPage() {
                       ) : null}
                       {emptyCount > 0 ? (
                         <span
-                          className="inline-flex max-w-full items-center justify-center rounded border border-dashed border-slate-500 bg-white px-1 py-px text-[8px] font-extrabold tabular-nums leading-none text-slate-700 sm:text-[9px]"
+                          className="inline-flex max-w-full items-center justify-center rounded-full border border-dashed border-slate-500/55 bg-slate-200/95 px-1.5 py-[2px] text-[7px] font-extrabold tabular-nums leading-none text-slate-700 ring-1 ring-white/60 sm:text-[8px]"
                           title={`工事空枠${emptyCount}件`}
                         >
                           空枠{emptyCount}
@@ -1305,25 +1328,25 @@ export default function CalendarPage() {
                               onClick={() => openExternal(item.accessEditUrl)}
                             >
                               <div className="mb-2 flex flex-wrap items-center gap-2">
-                                <span className="inline-flex rounded-lg bg-emerald-600 px-2 py-0.5 text-[11px] font-extrabold tracking-wide text-white shadow-sm">
+                                <span className="inline-flex rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-extrabold tracking-wide text-white shadow-sm ring-1 ring-emerald-800/20">
                                   案件
                                 </span>
                                 {item.housingShort ? (
-                                  <span className="text-[11px] font-bold text-slate-500">
+                                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 ring-1 ring-slate-200/80">
                                     {item.housingShort}
                                   </span>
                                 ) : null}
                               </div>
-                              <p className="text-[15px] font-bold leading-snug text-slate-900">
+                              <p className="text-[17px] font-bold leading-snug text-slate-900 sm:text-lg">
                                 {item.line1}
                                 {item.showKankoCheck ? (
-                                  <span className="ml-1 text-emerald-600">
+                                  <span className="ml-1 text-xl text-emerald-600 sm:text-[1.35rem]">
                                     ✅
                                   </span>
                                 ) : null}
                               </p>
                               {item.line2 ? (
-                                <p className="mt-2 text-[13px] font-semibold leading-relaxed text-slate-600">
+                                <p className="mt-2 text-[15px] font-semibold leading-relaxed text-slate-600 sm:text-base">
                                   {item.line2}
                                 </p>
                               ) : null}
@@ -1344,12 +1367,14 @@ export default function CalendarPage() {
                         <>
                           {caseItems.length > 0 ? (
                             <div>
-                              <h3 className="mb-2 flex items-center gap-2 px-0.5 text-[12px] font-extrabold uppercase tracking-wider text-emerald-800">
-                                <span
-                                  className="size-2 rounded-full bg-emerald-600"
-                                  aria-hidden
-                                />
-                                案件（お客様名のある工事）
+                              <h3 className="mb-2 px-0.5">
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-extrabold tracking-wide text-emerald-900 ring-1 ring-emerald-200/90">
+                                  <span
+                                    className="size-1.5 shrink-0 rounded-full bg-emerald-600"
+                                    aria-hidden
+                                  />
+                                  案件（お客様名のある工事）
+                                </span>
                               </h3>
                               <ul className="flex flex-col gap-3">
                                 {caseItems.map((item, i) =>
@@ -1361,12 +1386,14 @@ export default function CalendarPage() {
 
                           {emptyItems.length > 0 ? (
                             <div>
-                              <h3 className="mb-2 flex items-center gap-2 px-0.5 text-[12px] font-extrabold uppercase tracking-wider text-slate-600">
-                                <span
-                                  className="size-2 rounded border border-dashed border-slate-500 bg-slate-100"
-                                  aria-hidden
-                                />
-                                工事空枠
+                              <h3 className="mb-2 px-0.5">
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-slate-400/70 bg-slate-200/85 px-2.5 py-1 text-[10px] font-extrabold tracking-wide text-slate-700 ring-1 ring-white/70">
+                                  <span
+                                    className="size-1.5 shrink-0 rounded-sm border border-dashed border-slate-500 bg-white"
+                                    aria-hidden
+                                  />
+                                  工事空枠
+                                </span>
                               </h3>
                               <ul className="flex flex-col gap-3">
                                 {emptyItems.map((item, i) => (
