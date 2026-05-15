@@ -187,15 +187,6 @@ export function resolveConfiguredFieldToSchemaUniqueId(
   return null;
 }
 
-/** GET fields の fieldType から連携項目か粗く判定する */
-export function pocketFieldLooksLikeLinkage(
-  field: AtPocketFieldRow | undefined,
-): boolean {
-  if (!field) return false;
-  const ft = field.fieldType?.trim() ?? "";
-  return Boolean(ft && /連携|relation|link|参照|reference/i.test(ft));
-}
-
 /** GET の record が hyphen / underscore のどちらのキーでも値を返せるようにする */
 export function pickRecordValueByFieldAliases(
   recObj: Record<string, unknown>,
@@ -238,32 +229,6 @@ function pocketNumericFieldIdVariants(numPart: string): string[] {
     hyphen.replace(/^field-/i, "Field-"),
     under.replace(/^field_/i, "Field_"),
   ];
-}
-
-/**
- * 工事対応者フィールド用：まずスキーマへ寄せ、無ければ見出しから推定。
- */
-export function resolveEnvFieldUniqueIdForSchema(
-  configuredId: string,
-  fields: AtPocketFieldRow[],
-): string | null {
-  const base = resolveConfiguredFieldToSchemaUniqueId(configuredId, fields);
-  if (base) return base;
-
-  const schemaIds = new Set(
-    fields
-      .map((f) => f.uniqueId?.trim())
-      .filter((u): u is string => Boolean(u)),
-  );
-
-  const byCaption =
-    pickFieldUniqueIdByExactCaption(fields, "工事対応者ID") ||
-    pickFieldUniqueIdByExactCaption(fields, "工事対応者") ||
-    pickFieldUniqueId(fields, ["工事対応者", "工事担当者", "対応者"]);
-  const capId = byCaption.trim();
-  if (capId && schemaIds.has(capId)) return capId;
-
-  return null;
 }
 
 /** @pocket の工事登録アプリからフィールド uniqueId を推定（見出し名／キーワード） */

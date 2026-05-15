@@ -142,70 +142,20 @@ function countCasesAndSlots(items: CalendarMonthApiItem[]): {
   return { cases, emptySlots };
 }
 
-/** GET /api/calendar/construction-handlers の handlers をパース（オブジェクト／レガシーの文字列配列） */
-type HandlerDropdownOption = {
-  staffRecordId: string;
-  name: string;
-  /** 取込キー「社員 ID」列の値（あるときのみ保存時にこれでレコード ID に解決） */
-  employeeId?: string;
-};
-
-function parseConstructionHandlersPayload(handlers: unknown): HandlerDropdownOption[] {
-  if (!Array.isArray(handlers)) return [];
-  const out: HandlerDropdownOption[] = [];
-  for (const item of handlers) {
-    if (typeof item === "string") {
-      const name = item.trim();
-      if (name) out.push({ staffRecordId: "", name });
-      continue;
-    }
-    if (typeof item === "object" && item !== null) {
-      const o = item as Record<string, unknown>;
-      const name = typeof o.name === "string" ? o.name.trim() : "";
-      let sid = "";
-      if (typeof o.staffRecordId === "string") sid = o.staffRecordId.trim();
-      else if (o.staffRecordId != null) sid = String(o.staffRecordId).trim();
-      let emp = "";
-      if (typeof o.employeeId === "string") emp = o.employeeId.trim();
-      if (!name) continue;
-      if (!sid && !emp) continue;
-      out.push({
-        staffRecordId: sid,
-        name,
-        ...(emp ? { employeeId: emp } : {}),
-      });
-    }
-  }
-  return out;
-}
-
 function EmptySlotCard({
   item,
   idToken,
   onSaved,
   onSessionExpired,
-  constructionHandlerRequired,
-  constructionHandlerNameOnly,
 }: {
   item: CalendarMonthApiItem;
   idToken: string | null;
   onSaved: () => Promise<void>;
   onSessionExpired?: () => void;
-  constructionHandlerRequired: boolean;
-  constructionHandlerNameOnly: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [housingStatus, setHousingStatus] = useState<string>("");
-  const [handlerChoiceIndex, setHandlerChoiceIndex] = useState("");
-  const [handlerDisplayNameInput, setHandlerDisplayNameInput] = useState("");
-  const [handlerOptions, setHandlerOptions] = useState<HandlerDropdownOption[]>(
-    [],
-  );
-  const [handlerListStatus, setHandlerListStatus] = useState<
-    "idle" | "loading" | "ok" | "err"
-  >("idle");
-  const [handlerListError, setHandlerListError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
     kind: "ok" | "err";
@@ -215,110 +165,14 @@ function EmptySlotCard({
   const rid = item.recordId?.trim();
   const canSubmit = Boolean(rid && idToken);
 
-  useEffect(() => {
-    if (!open || !idToken) return;
-
-    if (constructionHandlerNameOnly) {
-      setHandlerChoiceIndex("");
-      setHandlerDisplayNameInput("");
-      setHandlerOptions([]);
-      setHandlerListStatus("ok");
-      setHandlerListError("");
-      return;
-    }
-
-    let cancelled = false;
-
-    (async () => {
-      await Promise.resolve();
-      if (cancelled) return;
-      setHandlerChoiceIndex("");
-      setHandlerOptions([]);
-      setHandlerListStatus("loading");
-      setHandlerListError("");
-
-      try {
-        const res = await fetch("/api/calendar/construction-handlers", {
-          headers: { Authorization: `Bearer ${idToken}` },
-        });
-        const data = (await res.json()) as {
-          handlers?: unknown;
-          error?: string;
-        };
-        if (cancelled) return;
-        if (res.status === 401 && isLineSessionExpiredPayload(data)) {
-          onSessionExpired?.();
-          setHandlerListStatus("err");
-          setHandlerListError(
-            "ログインの有効期限が切れました。画面を更新してください。",
-          );
-          setHandlerOptions([]);
-          return;
-        }
-        if (!res.ok) {
-          setHandlerListStatus("err");
-          setHandlerListError(
-            typeof data.error === "string"
-              ? data.error
-              : "工事対応者リストを取得できませんでした",
-          );
-          setHandlerOptions([]);
-          return;
-        }
-        setHandlerOptions(parseConstructionHandlersPayload(data.handlers));
-        setHandlerListStatus("ok");
-      } catch {
-        if (!cancelled) {
-          setHandlerListStatus("err");
-          setHandlerListError("通信に失敗しました");
-          setHandlerOptions([]);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, idToken, constructionHandlerNameOnly, onSessionExpired]);
-
   async function handleSubmit() {
     if (!rid || !idToken) return;
     const name = customerName.trim();
     const hs = housingStatus.trim();
-    const idxRaw = handlerChoiceIndex.trim();
-    const idx = Number.parseInt(idxRaw, 10);
-    const selectedOpt =
-      Number.isFinite(idx) &&
-      idx >= 0 &&
-      idx < handlerOptions.length &&
-      idxRaw !== ""
-        ? handlerOptions[idx]
-        : undefined;
-    const handlerDisplay = selectedOpt?.name ?? "";
-    const handlerText = constructionHandlerNameOnly
-      ? handlerDisplayNameInput.trim()
-      : handlerDisplay;
     if (!name || !hs) return;
-    if (constructionHandlerRequired) {
-      if (constructionHandlerNameOnly) {
-        if (!handlerText) return;
-      } else {
-        if (!selectedOpt) return;
-        if (handlerListStatus !== "ok" || handlerOptions.length === 0) return;
-      }
-    }
     setSubmitting(true);
     setFeedback(null);
     try {
-      const handlerPayload =
-        !constructionHandlerNameOnly &&
-        selectedOpt?.employeeId !== undefined &&
-        selectedOpt.employeeId !== ""
-          ? { constructionHandlerEmployeeId: selectedOpt.employeeId }
-          : !constructionHandlerNameOnly && selectedOpt?.staffRecordId
-            ? { constructionHandlerStaffRecordId: selectedOpt.staffRecordId }
-            : {};
-
       const res = await fetch("/api/calendar/fill-empty-slot", {
         method: "POST",
         headers: {
@@ -329,8 +183,6 @@ function EmptySlotCard({
           recordId: rid,
           customerName: name,
           housingStatus: hs,
-          constructionHandler: handlerText,
-          ...handlerPayload,
         }),
       });
       const data = (await res.json()) as { error?: string };
@@ -347,8 +199,6 @@ function EmptySlotCard({
       }
       setCustomerName("");
       setHousingStatus("");
-      setHandlerChoiceIndex("");
-      setHandlerDisplayNameInput("");
       setOpen(false);
       await onSaved();
       setFeedback({
@@ -419,19 +269,7 @@ function EmptySlotCard({
       {open ? (
         <div className="mt-4 border-t border-slate-200/90 pt-4">
           <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
-            {constructionHandlerNameOnly ? (
-              <>
-                住宅ステータス・お客様名・工事対応者を登録すると、@pocket
-                のレコードが更新され、カレンダーでは「案件」として表示されます。工事対応者は連携項目でも、
-                <strong className="font-bold text-slate-800">氏名をそのまま</strong>
-                入力して転記します（編集画面と同様の直接入力。スタッフ一覧APIは呼びません）。
-              </>
-            ) : (
-              <>
-                住宅ステータス・お客様名・工事対応者を登録すると、@pocket
-                のレコードが更新され、カレンダーでは「案件」として表示されます。工事対応者はスタッフ名簿のうち、工事対応稼働状況が「稼働」の社員から選択します（連携項目のためスタッフレコード参照として保存します）。
-              </>
-            )}
+            住宅ステータスとお客様名を登録すると、@pocket のレコードが更新され、カレンダーでは「案件」として表示されます。工事対応者などその他の項目は @pocket の編集画面で入力してください。
           </p>
           <label className="block">
             <span className="mb-1 block text-[12px] font-bold text-slate-700">
@@ -467,79 +305,6 @@ function EmptySlotCard({
               disabled={submitting || !canSubmit}
             />
           </label>
-          <label className="mt-3 block">
-            <span className="mb-1 block text-[12px] font-bold text-slate-700">
-              工事対応者{" "}
-              {constructionHandlerRequired ? (
-                <span className="font-semibold text-red-600">必須</span>
-              ) : (
-                <span className="font-semibold text-slate-500">任意</span>
-              )}
-            </span>
-            {constructionHandlerNameOnly ? (
-              <input
-                type="text"
-                autoComplete="name"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
-                value={handlerDisplayNameInput}
-                onChange={(e) => setHandlerDisplayNameInput(e.target.value)}
-                placeholder="例：山田太郎（氏名を入力）"
-                disabled={submitting || !canSubmit}
-              />
-            ) : (
-              <select
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
-                value={handlerChoiceIndex}
-                onChange={(e) => setHandlerChoiceIndex(e.target.value)}
-                disabled={
-                  submitting ||
-                  !canSubmit ||
-                  handlerListStatus === "loading" ||
-                  handlerListStatus === "idle"
-                }
-              >
-                <option value="">
-                  {handlerListStatus === "loading" ||
-                  handlerListStatus === "idle"
-                    ? "リストを読み込み中…"
-                    : handlerListStatus === "err"
-                      ? "リストを取得できませんでした"
-                      : "選択してください"}
-                </option>
-                {handlerOptions.map((o, i) => (
-                  <option
-                    key={`${i}-${o.staffRecordId}-${o.name}-${o.employeeId ?? ""}`}
-                    value={String(i)}
-                  >
-                    {o.name}
-                    {o.employeeId ? ` （社員ID: ${o.employeeId}）` : ""}
-                  </option>
-                ))}
-              </select>
-            )}
-            {!constructionHandlerNameOnly &&
-            handlerListStatus === "ok" &&
-            handlerOptions.length === 0 ? (
-              <p className="mt-1 text-[11px] font-semibold leading-snug text-amber-800">
-                工事対応稼働状況が「稼働」の社員がありません。@pocket
-                のスタッフ名簿を確認してください。
-              </p>
-            ) : null}
-            {!constructionHandlerNameOnly &&
-            handlerListStatus === "err" &&
-            handlerListError ? (
-              <p className="mt-1 text-[11px] leading-snug text-red-700">
-                {handlerListError}
-              </p>
-            ) : null}
-            {!constructionHandlerRequired ? (
-              <p className="mt-1 text-[11px] leading-snug text-slate-500">
-                {constructionHandlerNameOnly
-                  ? "連携項目でも、@pocket で氏名の直接入力が許可されている場合はこの値がそのまま設定されます。"
-                  : "プルダウンは稼働中の社員のみです。工事への保存は別設定後に有効になります。"}
-              </p>
-            ) : null}
-          </label>
           <button
             type="button"
             className="mt-4 w-full rounded-xl bg-slate-800 py-3 text-[14px] font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
@@ -547,13 +312,7 @@ function EmptySlotCard({
               submitting ||
               !customerName.trim() ||
               !housingStatus.trim() ||
-              !canSubmit ||
-              (constructionHandlerRequired &&
-                (constructionHandlerNameOnly
-                  ? !handlerDisplayNameInput.trim()
-                  : handlerListStatus !== "ok" ||
-                    handlerChoiceIndex.trim() === "" ||
-                    handlerOptions.length === 0))
+              !canSubmit
             }
             onClick={() => void handleSubmit()}
           >
@@ -1280,12 +1039,6 @@ export default function CalendarPage() {
                                     <EmptySlotCard
                                       item={item}
                                       idToken={idToken}
-                                      constructionHandlerRequired={Boolean(
-                                        data?.emptyFillConstructionHandlerRequired,
-                                      )}
-                                      constructionHandlerNameOnly={Boolean(
-                                        data?.emptyFillConstructionHandlerNameOnly,
-                                      )}
                                       onSaved={async () => {
                                         const t = idToken;
                                         if (!t) return;

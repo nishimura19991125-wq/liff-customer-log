@@ -144,16 +144,7 @@ export async function GET(request: Request) {
       },
     );
 
-    return NextResponse.json({
-      ...payload,
-      emptyFillConstructionHandlerRequired: Boolean(
-        process.env.CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID?.trim(),
-      ),
-      emptyFillConstructionHandlerNameOnly: Boolean(
-        process.env.CALENDAR_EMPTY_FILL_HANDLER_PUT_DISPLAY_NAME_ONLY?.trim() ===
-          "true",
-      ),
-    });
+    return NextResponse.json(payload);
   } catch (e) {
     console.error("[api/calendar]", e);
     return NextResponse.json(
