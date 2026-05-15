@@ -80,6 +80,7 @@ const NFKC = (s: string) => s.normalize("NFKC");
 const KW = {
   title: ["お客様名", "顧客名", "顧客", "件名", "施主", "名"],
   contractor: [
+    "施工業者",
     "施工会社",
     "施工者",
     "施工店",
@@ -814,11 +815,15 @@ function displayNameLine1OnChipWithReport(row: CalendarMonthRow): string {
 
 function displayNameLine2OnChip(row: CalendarMonthRow): string {
   if (!row || row.category === "empty") return "";
-  const s =
-    row.chipSpecLine2 != null && String(row.chipSpecLine2) !== ""
-      ? String(row.chipSpecLine2)
+  const parts: string[] = [];
+  const spec =
+    row.chipSpecLine2 != null && String(row.chipSpecLine2).trim() !== ""
+      ? String(row.chipSpecLine2).trim()
       : "";
-  return s;
+  if (spec) parts.push(spec);
+  const co = row.contractorNameForColor?.trim();
+  if (co) parts.push(`施工: ${co}`);
+  return parts.join("｜");
 }
 
 function rowShowsPostponedPrefix(row: CalendarMonthRow): boolean {
