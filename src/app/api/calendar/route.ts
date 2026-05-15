@@ -17,11 +17,12 @@ import {
   fetchAllRecordsPages,
   fetchAppFields,
 } from "@/lib/atpocket";
+import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
-import { constructionRegistrantStaffConfigReady } from "@/lib/staff-registrant-candidates";
+import { constructionHandlerStaffConfigReady } from "@/lib/staff-construction-handler-candidates";
 
 export const dynamic = "force-dynamic";
 
@@ -145,18 +146,17 @@ export async function GET(request: Request) {
       },
     );
 
-    const registrantFieldId =
-      process.env.CALENDAR_EMPTY_FILL_CONSTRUCTION_REGISTRANT_FIELD_ID?.trim();
-    const withRegistrant: CalendarApiPayload =
-      registrantFieldId
+    const handlerFieldId = calendarConstructionHandlerFieldIdFromEnv();
+    const withHandler: CalendarApiPayload =
+      handlerFieldId
         ? {
             ...payload,
-            emptyFillConstructionRegistrantUsesStaffDirectory:
-              constructionRegistrantStaffConfigReady(),
+            emptyFillConstructionHandlerUsesStaffDirectory:
+              constructionHandlerStaffConfigReady(),
           }
         : payload;
 
-    return NextResponse.json(withRegistrant);
+    return NextResponse.json(withHandler);
   } catch (e) {
     console.error("[api/calendar]", e);
     return NextResponse.json(

@@ -13,7 +13,7 @@ import {
   staffConstructionAvailabilityIsActive,
 } from "@/lib/staff-construction-availability";
 
-export type ConstructionRegistrantStaffCandidate = {
+export type ConstructionHandlerStaffCandidate = {
   staffRecordId: string;
   /** @pocket 名簿フィールド由来・工事アプリへの PUT に使う値 */
   name: string;
@@ -21,11 +21,11 @@ export type ConstructionRegistrantStaffCandidate = {
   label: string;
 };
 
-export function constructionRegistrantStaffConfigReady(): boolean {
-  return constructionRegistrantStaffConfig() !== null;
+export function constructionHandlerStaffConfigReady(): boolean {
+  return constructionHandlerStaffConfig() !== null;
 }
 
-function constructionRegistrantStaffConfig(): {
+function constructionHandlerStaffConfig(): {
   staffAppId: string;
   nameFieldId: string;
   availabilityFieldId: string;
@@ -56,10 +56,10 @@ function uniqueFieldsCsv(...uids: (string | undefined)[]): string {
 }
 
 /** 工事対応が「稼働」のスタッフのみ。表示ラベルは同名時に社員 ID などで区別 */
-export async function fetchConstructionRegistrantCandidates(): Promise<
-  ConstructionRegistrantStaffCandidate[]
+export async function fetchConstructionHandlerStaffCandidates(): Promise<
+  ConstructionHandlerStaffCandidate[]
 > {
-  const cfg = constructionRegistrantStaffConfig();
+  const cfg = constructionHandlerStaffConfig();
   if (!cfg) return [];
 
   const importKeyId = staffImportKeyFieldIdResolved();
@@ -120,13 +120,13 @@ export async function fetchConstructionRegistrantCandidates(): Promise<
   });
 }
 
-export async function resolveRegistrantNameForActiveStaff(
+export async function resolveConstructionHandlerNameForActiveStaff(
   staffRecordId: string,
 ): Promise<
   | { ok: true; name: string }
   | { ok: false; reason: "not_configured" | "not_found" | "no_name" | "not_active" }
 > {
-  const cfg = constructionRegistrantStaffConfig();
+  const cfg = constructionHandlerStaffConfig();
   if (!cfg) return { ok: false, reason: "not_configured" };
 
   const csv = uniqueFieldsCsv(cfg.nameFieldId, cfg.availabilityFieldId);

@@ -21,16 +21,20 @@ import type {
 import { EMPTY_FILL_HOUSING_STATUS_VALUES } from "@/lib/calendar-empty-fill-options";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 
-type RegistrantStaffRow = {
+type HandlerStaffRow = {
   staffRecordId: string;
   name: string;
   label: string;
 };
 
-function parseRegistrantStaffApiPayload(registrants: unknown): RegistrantStaffRow[] {
-  if (!Array.isArray(registrants)) return [];
-  const out: RegistrantStaffRow[] = [];
-  for (const x of registrants) {
+function parseConstructionHandlerStaffApiPayload(payload: {
+  handlers?: unknown;
+  registrants?: unknown;
+}): HandlerStaffRow[] {
+  const raw = payload.handlers ?? payload.registrants;
+  if (!Array.isArray(raw)) return [];
+  const out: HandlerStaffRow[] = [];
+  for (const x of raw) {
     if (typeof x !== "object" || x === null) continue;
     const o = x as Record<string, unknown>;
     const sid =
@@ -46,6 +50,83 @@ function parseRegistrantStaffApiPayload(registrants: unknown): RegistrantStaffRo
     out.push({ staffRecordId: sid, name, label: label || name });
   }
   return out;
+}
+
+const HANDLER_STAFF_SELECT_CLASS =
+  "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200";
+
+function ConstructionHandlerStaffSelect({
+  submitting,
+  canSubmit,
+  handlerListStatus,
+  handlerListError,
+  handlerRows,
+  selectedHandlerStaffId,
+  setSelectedHandlerStaffId,
+}: {
+  submitting: boolean;
+  canSubmit: boolean;
+  handlerListStatus: "idle" | "loading" | "ok" | "err";
+  handlerListError: string;
+  handlerRows: HandlerStaffRow[];
+  selectedHandlerStaffId: string;
+  setSelectedHandlerStaffId: (id: string) => void;
+}) {
+  const selectDisabled =
+    submitting ||
+    !canSubmit ||
+    handlerListStatus === "idle" ||
+    handlerListStatus === "loading" ||
+    handlerListStatus === "err" ||
+    (handlerListStatus === "ok" && handlerRows.length === 0);
+
+  let placeholder = "選択してください";
+  if (handlerListStatus === "idle" || handlerListStatus === "loading") {
+    placeholder = "読み込み中…";
+  } else if (handlerListStatus === "err") {
+    placeholder = "取得できませんでした";
+  } else if (handlerRows.length === 0) {
+    placeholder = "該当する社員がありません";
+  }
+
+  return (
+    <label className="mt-3 block">
+      <span className="mb-1 block text-[12px] font-bold text-slate-700">
+        工事対応者{" "}
+        <span className="font-semibold text-red-600">必須</span>
+        <span className="block text-[11px] font-normal leading-snug text-slate-500">
+          スタッフ名簿のうち、工事対応稼働状況が「稼働」の社員のみ表示します。
+        </span>
+      </span>
+      <select
+        className={HANDLER_STAFF_SELECT_CLASS}
+        aria-label="工事対応者"
+        value={selectedHandlerStaffId}
+        onChange={(e) => setSelectedHandlerStaffId(e.target.value)}
+        disabled={selectDisabled}
+      >
+        <option value="">{placeholder}</option>
+        {handlerListStatus === "ok"
+          ? handlerRows.map((row) => (
+              <option key={row.staffRecordId} value={row.staffRecordId}>
+                {row.label}
+              </option>
+            ))
+          : null}
+      </select>
+      {handlerListStatus === "err" && handlerListError ? (
+        <p className="mt-1 text-[12px] leading-relaxed text-red-700">
+          {handlerListError}
+        </p>
+      ) : null}
+      {handlerListStatus === "ok" && handlerRows.length === 0 ? (
+        <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-900 ring-1 ring-amber-100">
+          工事対応稼働状況が「稼働」の社員がありません。@pocket
+          のスタッフ名簿を確認してください。
+        </p>
+      ) : null}
+    </label>
+  );
 }
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
@@ -174,48 +255,46 @@ function EmptySlotCard({
   idToken,
   onSaved,
   onSessionExpired,
-  constructionRegistrantUsesStaffDirectory,
+  constructionHandlerUsesStaffDirectory,
 }: {
   item: CalendarMonthApiItem;
   idToken: string | null;
   onSaved: () => Promise<void>;
   onSessionExpired?: () => void;
-  /** undefined: 工事登録者なし。true: スタッフ名簿。false: 工事登録者フィールドのみ設定でスタッフ側不足 */
-  constructionRegistrantUsesStaffDirectory?: boolean;
+  /** undefined: 工事対応者なし。true: スタッフ名簿。false: 工事対応者フィールドのみ設定でスタッフ側不足 */
+  constructionHandlerUsesStaffDirectory?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [housingStatus, setHousingStatus] = useState<string>("");
-  const [selectedRegistrantStaffId, setSelectedRegistrantStaffId] =
+  const [selectedHandlerStaffId, setSelectedHandlerStaffId] =
     useState("");
-  const [registrantRows, setRegistrantRows] = useState<RegistrantStaffRow[]>(
-    [],
-  );
-  const [registrantListStatus, setRegistrantListStatus] = useState<
+  const [handlerRows, setHandlerRows] = useState<HandlerStaffRow[]>([]);
+  const [handlerListStatus, setHandlerListStatus] = useState<
     "idle" | "loading" | "ok" | "err"
   >("idle");
-  const [registrantListError, setRegistrantListError] = useState("");
+  const [handlerListError, setHandlerListError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
     kind: "ok" | "err";
     text: string;
   } | null>(null);
 
-  const registrantFromStaff =
-    constructionRegistrantUsesStaffDirectory === true;
-  const registrantMisconfigured =
-    constructionRegistrantUsesStaffDirectory === false;
+  const handlerFromStaff =
+    constructionHandlerUsesStaffDirectory === true;
+  const handlerMisconfigured =
+    constructionHandlerUsesStaffDirectory === false;
 
   const rid = item.recordId?.trim();
   const canSubmit = Boolean(rid && idToken);
 
   useEffect(() => {
-    if (!open || !idToken || !registrantFromStaff) {
+    if (!open || !idToken || !handlerFromStaff) {
       if (!open) {
-        setSelectedRegistrantStaffId("");
-        setRegistrantRows([]);
-        setRegistrantListStatus("idle");
-        setRegistrantListError("");
+        setSelectedHandlerStaffId("");
+        setHandlerRows([]);
+        setHandlerListStatus("idle");
+        setHandlerListError("");
       }
       return;
     }
@@ -223,42 +302,43 @@ function EmptySlotCard({
     let cancelled = false;
 
     (async () => {
-      setSelectedRegistrantStaffId("");
-      setRegistrantRows([]);
-      setRegistrantListStatus("loading");
-      setRegistrantListError("");
+      setSelectedHandlerStaffId("");
+      setHandlerRows([]);
+      setHandlerListStatus("loading");
+      setHandlerListError("");
       try {
-        const res = await fetch("/api/calendar/registrant-staff", {
+        const res = await fetch("/api/calendar/construction-handler-staff", {
           headers: { Authorization: `Bearer ${idToken}` },
         });
         const data = (await res.json()) as {
+          handlers?: unknown;
           registrants?: unknown;
           error?: string;
         };
         if (cancelled) return;
         if (res.status === 401 && isLineSessionExpiredPayload(data)) {
           onSessionExpired?.();
-          setRegistrantListStatus("err");
-          setRegistrantListError(
+          setHandlerListStatus("err");
+          setHandlerListError(
             "ログインの有効期限が切れました。画面を更新してください。",
           );
           return;
         }
         if (!res.ok) {
-          setRegistrantListStatus("err");
-          setRegistrantListError(
+          setHandlerListStatus("err");
+          setHandlerListError(
             typeof data.error === "string"
               ? data.error
-              : "工事登録者リストを取得できませんでした",
+              : "工事対応者リストを取得できませんでした",
           );
           return;
         }
-        setRegistrantRows(parseRegistrantStaffApiPayload(data.registrants));
-        setRegistrantListStatus("ok");
+        setHandlerRows(parseConstructionHandlerStaffApiPayload(data));
+        setHandlerListStatus("ok");
       } catch {
         if (!cancelled) {
-          setRegistrantListStatus("err");
-          setRegistrantListError("通信に失敗しました");
+          setHandlerListStatus("err");
+          setHandlerListError("通信に失敗しました");
         }
       }
     })();
@@ -266,25 +346,25 @@ function EmptySlotCard({
     return () => {
       cancelled = true;
     };
-  }, [open, idToken, registrantFromStaff, onSessionExpired]);
+  }, [open, idToken, handlerFromStaff, onSessionExpired]);
 
-  const registrantBlocking =
-    registrantMisconfigured ||
-    (registrantFromStaff &&
-      (registrantListStatus !== "ok" ||
-        registrantRows.length === 0 ||
-        !selectedRegistrantStaffId.trim()));
+  const handlerBlocking =
+    handlerMisconfigured ||
+    (handlerFromStaff &&
+      (handlerListStatus !== "ok" ||
+        handlerRows.length === 0 ||
+        !selectedHandlerStaffId.trim()));
 
   async function handleSubmit() {
     if (!rid || !idToken) return;
     const name = customerName.trim();
     const hs = housingStatus.trim();
     if (!name || !hs) return;
-    if (registrantFromStaff) {
-      if (registrantListStatus !== "ok" || registrantRows.length === 0) return;
-      if (!selectedRegistrantStaffId.trim()) return;
+    if (handlerFromStaff) {
+      if (handlerListStatus !== "ok" || handlerRows.length === 0) return;
+      if (!selectedHandlerStaffId.trim()) return;
     }
-    if (registrantMisconfigured) return;
+    if (handlerMisconfigured) return;
     setSubmitting(true);
     setFeedback(null);
     try {
@@ -298,10 +378,10 @@ function EmptySlotCard({
           recordId: rid,
           customerName: name,
           housingStatus: hs,
-          ...(registrantFromStaff
+          ...(handlerFromStaff
             ? {
-                constructionRegistrantStaffRecordId:
-                  selectedRegistrantStaffId.trim(),
+                constructionHandlerStaffRecordId:
+                  selectedHandlerStaffId.trim(),
               }
             : {}),
         }),
@@ -320,7 +400,7 @@ function EmptySlotCard({
       }
       setCustomerName("");
       setHousingStatus("");
-      setSelectedRegistrantStaffId("");
+      setSelectedHandlerStaffId("");
       setOpen(false);
       await onSaved();
       setFeedback({
@@ -391,7 +471,7 @@ function EmptySlotCard({
       {open ? (
         <div className="mt-4 border-t border-slate-200/90 pt-4">
           <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
-            住宅ステータス・お客様名・工事登録者（設定時）を登録すると、@pocket
+            住宅ステータス・お客様名・工事対応者（設定時）を登録すると、@pocket
             のレコードが更新され、カレンダーでは「案件」として表示されます。その他の項目は
             @pocket の編集画面で入力してください。
           </p>
@@ -429,71 +509,22 @@ function EmptySlotCard({
               disabled={submitting || !canSubmit}
             />
           </label>
-          {registrantMisconfigured ? (
+          {handlerMisconfigured ? (
             <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-amber-900 ring-1 ring-amber-100">
-              工事登録者にスタッフ名簿を使うには、STAFF_APP_ID・STAFF_NAME_FIELD_ID・STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID
+              工事対応者にスタッフ名簿を使うには、STAFF_APP_ID・STAFF_NAME_FIELD_ID・STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID
               を設定してください。
             </p>
           ) : null}
-          {registrantFromStaff ? (
-            <div className="mt-3">
-              <span className="mb-2 block text-[12px] font-bold text-slate-700">
-                工事登録者{" "}
-                <span className="font-semibold text-red-600">必須</span>
-                <span className="block text-[11px] font-normal leading-snug text-slate-500">
-                  スタッフ名簿のうち、工事対応稼働状況が「稼働」の社員のみ表示します。
-                </span>
-              </span>
-              {(registrantListStatus === "loading" ||
-                registrantListStatus === "idle") ? (
-                <p className="text-[12px] font-semibold text-slate-500">
-                  リストを読み込み中…
-                </p>
-              ) : null}
-              {registrantListStatus === "err" && registrantListError ? (
-                <p className="text-[12px] leading-relaxed text-red-700">
-                  {registrantListError}
-                </p>
-              ) : null}
-              {registrantListStatus === "ok" && registrantRows.length === 0 ? (
-                <p className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-900 ring-1 ring-amber-100">
-                  工事対応稼働状況が「稼働」の社員がありません。@pocket
-                  のスタッフ名簿を確認してください。
-                </p>
-              ) : null}
-              {registrantListStatus === "ok" && registrantRows.length > 0 ? (
-                <ul
-                  className="flex max-h-56 flex-col gap-1.5 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 ring-1 ring-slate-100"
-                  role="radiogroup"
-                  aria-label="工事登録者"
-                >
-                  {registrantRows.map((row) => {
-                    const selected =
-                      selectedRegistrantStaffId === row.staffRecordId;
-                    return (
-                      <li key={row.staffRecordId}>
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={selected}
-                          disabled={submitting || !canSubmit}
-                          onClick={() =>
-                            setSelectedRegistrantStaffId(row.staffRecordId)
-                          }
-                          className={`flex w-full rounded-lg px-3 py-2.5 text-left text-[15px] font-semibold transition active:scale-[0.995] disabled:opacity-50 ${
-                            selected
-                              ? "bg-emerald-600 text-white shadow-inner ring-2 ring-emerald-300"
-                              : "bg-slate-50 text-slate-900 hover:bg-slate-100"
-                          }`}
-                        >
-                          {row.label}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : null}
-            </div>
+          {handlerFromStaff ? (
+            <ConstructionHandlerStaffSelect
+              submitting={submitting}
+              canSubmit={canSubmit}
+              handlerListStatus={handlerListStatus}
+              handlerListError={handlerListError}
+              handlerRows={handlerRows}
+              selectedHandlerStaffId={selectedHandlerStaffId}
+              setSelectedHandlerStaffId={setSelectedHandlerStaffId}
+            />
           ) : null}
           <button
             type="button"
@@ -503,7 +534,7 @@ function EmptySlotCard({
               !customerName.trim() ||
               !housingStatus.trim() ||
               !canSubmit ||
-              registrantBlocking
+              handlerBlocking
             }
             onClick={() => void handleSubmit()}
           >
@@ -531,46 +562,44 @@ function NewConstructionRecordPanel({
   onToggleOpen,
   onSaved,
   onSessionExpired,
-  constructionRegistrantUsesStaffDirectory,
+  constructionHandlerUsesStaffDirectory,
 }: {
   idToken: string | null;
   open: boolean;
   onToggleOpen: () => void;
   onSaved: () => Promise<void>;
   onSessionExpired?: () => void;
-  constructionRegistrantUsesStaffDirectory?: boolean;
+  constructionHandlerUsesStaffDirectory?: boolean;
 }) {
   const [customerName, setCustomerName] = useState("");
   const [housingStatus, setHousingStatus] = useState<string>("");
-  const [selectedRegistrantStaffId, setSelectedRegistrantStaffId] =
+  const [selectedHandlerStaffId, setSelectedHandlerStaffId] =
     useState("");
-  const [registrantRows, setRegistrantRows] = useState<RegistrantStaffRow[]>(
-    [],
-  );
-  const [registrantListStatus, setRegistrantListStatus] = useState<
+  const [handlerRows, setHandlerRows] = useState<HandlerStaffRow[]>([]);
+  const [handlerListStatus, setHandlerListStatus] = useState<
     "idle" | "loading" | "ok" | "err"
   >("idle");
-  const [registrantListError, setRegistrantListError] = useState("");
+  const [handlerListError, setHandlerListError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
     kind: "ok" | "err";
     text: string;
   } | null>(null);
 
-  const registrantFromStaff =
-    constructionRegistrantUsesStaffDirectory === true;
-  const registrantMisconfigured =
-    constructionRegistrantUsesStaffDirectory === false;
+  const handlerFromStaff =
+    constructionHandlerUsesStaffDirectory === true;
+  const handlerMisconfigured =
+    constructionHandlerUsesStaffDirectory === false;
 
   const canSubmit = Boolean(idToken);
 
   useEffect(() => {
-    if (!open || !idToken || !registrantFromStaff) {
+    if (!open || !idToken || !handlerFromStaff) {
       if (!open) {
-        setSelectedRegistrantStaffId("");
-        setRegistrantRows([]);
-        setRegistrantListStatus("idle");
-        setRegistrantListError("");
+        setSelectedHandlerStaffId("");
+        setHandlerRows([]);
+        setHandlerListStatus("idle");
+        setHandlerListError("");
       }
       return;
     }
@@ -578,42 +607,43 @@ function NewConstructionRecordPanel({
     let cancelled = false;
 
     (async () => {
-      setSelectedRegistrantStaffId("");
-      setRegistrantRows([]);
-      setRegistrantListStatus("loading");
-      setRegistrantListError("");
+      setSelectedHandlerStaffId("");
+      setHandlerRows([]);
+      setHandlerListStatus("loading");
+      setHandlerListError("");
       try {
-        const res = await fetch("/api/calendar/registrant-staff", {
+        const res = await fetch("/api/calendar/construction-handler-staff", {
           headers: { Authorization: `Bearer ${idToken}` },
         });
         const data = (await res.json()) as {
+          handlers?: unknown;
           registrants?: unknown;
           error?: string;
         };
         if (cancelled) return;
         if (res.status === 401 && isLineSessionExpiredPayload(data)) {
           onSessionExpired?.();
-          setRegistrantListStatus("err");
-          setRegistrantListError(
+          setHandlerListStatus("err");
+          setHandlerListError(
             "ログインの有効期限が切れました。画面を更新してください。",
           );
           return;
         }
         if (!res.ok) {
-          setRegistrantListStatus("err");
-          setRegistrantListError(
+          setHandlerListStatus("err");
+          setHandlerListError(
             typeof data.error === "string"
               ? data.error
-              : "工事登録者リストを取得できませんでした",
+              : "工事対応者リストを取得できませんでした",
           );
           return;
         }
-        setRegistrantRows(parseRegistrantStaffApiPayload(data.registrants));
-        setRegistrantListStatus("ok");
+        setHandlerRows(parseConstructionHandlerStaffApiPayload(data));
+        setHandlerListStatus("ok");
       } catch {
         if (!cancelled) {
-          setRegistrantListStatus("err");
-          setRegistrantListError("通信に失敗しました");
+          setHandlerListStatus("err");
+          setHandlerListError("通信に失敗しました");
         }
       }
     })();
@@ -621,25 +651,25 @@ function NewConstructionRecordPanel({
     return () => {
       cancelled = true;
     };
-  }, [open, idToken, registrantFromStaff, onSessionExpired]);
+  }, [open, idToken, handlerFromStaff, onSessionExpired]);
 
-  const registrantBlocking =
-    registrantMisconfigured ||
-    (registrantFromStaff &&
-      (registrantListStatus !== "ok" ||
-        registrantRows.length === 0 ||
-        !selectedRegistrantStaffId.trim()));
+  const handlerBlocking =
+    handlerMisconfigured ||
+    (handlerFromStaff &&
+      (handlerListStatus !== "ok" ||
+        handlerRows.length === 0 ||
+        !selectedHandlerStaffId.trim()));
 
   async function handleSubmit() {
     if (!idToken) return;
     const name = customerName.trim();
     const hs = housingStatus.trim();
     if (!name || !hs) return;
-    if (registrantFromStaff) {
-      if (registrantListStatus !== "ok" || registrantRows.length === 0) return;
-      if (!selectedRegistrantStaffId.trim()) return;
+    if (handlerFromStaff) {
+      if (handlerListStatus !== "ok" || handlerRows.length === 0) return;
+      if (!selectedHandlerStaffId.trim()) return;
     }
-    if (registrantMisconfigured) return;
+    if (handlerMisconfigured) return;
     setSubmitting(true);
     setFeedback(null);
     try {
@@ -652,10 +682,10 @@ function NewConstructionRecordPanel({
         body: JSON.stringify({
           customerName: name,
           housingStatus: hs,
-          ...(registrantFromStaff
+          ...(handlerFromStaff
             ? {
-                constructionRegistrantStaffRecordId:
-                  selectedRegistrantStaffId.trim(),
+                constructionHandlerStaffRecordId:
+                  selectedHandlerStaffId.trim(),
               }
             : {}),
         }),
@@ -674,7 +704,7 @@ function NewConstructionRecordPanel({
       }
       setCustomerName("");
       setHousingStatus("");
-      setSelectedRegistrantStaffId("");
+      setSelectedHandlerStaffId("");
       await onSaved();
       setFeedback({
         kind: "ok",
@@ -703,7 +733,7 @@ function NewConstructionRecordPanel({
       {open ? (
         <div className="mt-4 border-t border-slate-200/90 pt-4">
           <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
-            住宅ステータス・お客様名・工事登録者（設定時）を入力して登録します。T番号は
+            住宅ステータス・お客様名・工事対応者（設定時）を入力して登録します。T番号は
             @pocket の自動採番により付与されます（空枠の更新と同じ項目です）。
           </p>
           <label className="block">
@@ -740,71 +770,22 @@ function NewConstructionRecordPanel({
               disabled={submitting || !canSubmit}
             />
           </label>
-          {registrantMisconfigured ? (
+          {handlerMisconfigured ? (
             <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-amber-900 ring-1 ring-amber-100">
-              工事登録者にスタッフ名簿を使うには、STAFF_APP_ID・STAFF_NAME_FIELD_ID・STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID
+              工事対応者にスタッフ名簿を使うには、STAFF_APP_ID・STAFF_NAME_FIELD_ID・STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID
               を設定してください。
             </p>
           ) : null}
-          {registrantFromStaff ? (
-            <div className="mt-3">
-              <span className="mb-2 block text-[12px] font-bold text-slate-700">
-                工事登録者{" "}
-                <span className="font-semibold text-red-600">必須</span>
-                <span className="block text-[11px] font-normal leading-snug text-slate-500">
-                  スタッフ名簿のうち、工事対応稼働状況が「稼働」の社員のみ表示します。
-                </span>
-              </span>
-              {(registrantListStatus === "loading" ||
-                registrantListStatus === "idle") ? (
-                <p className="text-[12px] font-semibold text-slate-500">
-                  リストを読み込み中…
-                </p>
-              ) : null}
-              {registrantListStatus === "err" && registrantListError ? (
-                <p className="text-[12px] leading-relaxed text-red-700">
-                  {registrantListError}
-                </p>
-              ) : null}
-              {registrantListStatus === "ok" && registrantRows.length === 0 ? (
-                <p className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-900 ring-1 ring-amber-100">
-                  工事対応稼働状況が「稼働」の社員がありません。@pocket
-                  のスタッフ名簿を確認してください。
-                </p>
-              ) : null}
-              {registrantListStatus === "ok" && registrantRows.length > 0 ? (
-                <ul
-                  className="flex max-h-56 flex-col gap-1.5 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 ring-1 ring-slate-100"
-                  role="radiogroup"
-                  aria-label="工事登録者"
-                >
-                  {registrantRows.map((row) => {
-                    const selected =
-                      selectedRegistrantStaffId === row.staffRecordId;
-                    return (
-                      <li key={row.staffRecordId}>
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={selected}
-                          disabled={submitting || !canSubmit}
-                          onClick={() =>
-                            setSelectedRegistrantStaffId(row.staffRecordId)
-                          }
-                          className={`flex w-full rounded-lg px-3 py-2.5 text-left text-[15px] font-semibold transition active:scale-[0.995] disabled:opacity-50 ${
-                            selected
-                              ? "bg-emerald-600 text-white shadow-inner ring-2 ring-emerald-300"
-                              : "bg-slate-50 text-slate-900 hover:bg-slate-100"
-                          }`}
-                        >
-                          {row.label}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : null}
-            </div>
+          {handlerFromStaff ? (
+            <ConstructionHandlerStaffSelect
+              submitting={submitting}
+              canSubmit={canSubmit}
+              handlerListStatus={handlerListStatus}
+              handlerListError={handlerListError}
+              handlerRows={handlerRows}
+              selectedHandlerStaffId={selectedHandlerStaffId}
+              setSelectedHandlerStaffId={setSelectedHandlerStaffId}
+            />
           ) : null}
           {!idToken ? (
             <p className="mt-3 text-[12px] font-semibold text-amber-800">
@@ -819,7 +800,7 @@ function NewConstructionRecordPanel({
               !customerName.trim() ||
               !housingStatus.trim() ||
               !canSubmit ||
-              registrantBlocking
+              handlerBlocking
             }
             onClick={() => void handleSubmit()}
           >
@@ -1164,7 +1145,8 @@ export default function CalendarPage() {
             idToken={idToken}
             open={newRecordOpen}
             onToggleOpen={() => setNewRecordOpen((o) => !o)}
-            constructionRegistrantUsesStaffDirectory={
+            constructionHandlerUsesStaffDirectory={
+              data?.emptyFillConstructionHandlerUsesStaffDirectory ??
               data?.emptyFillConstructionRegistrantUsesStaffDirectory
             }
             onSaved={async () => {
@@ -1394,7 +1376,8 @@ export default function CalendarPage() {
                                     <EmptySlotCard
                                       item={item}
                                       idToken={idToken}
-                                      constructionRegistrantUsesStaffDirectory={
+                                      constructionHandlerUsesStaffDirectory={
+                                        data?.emptyFillConstructionHandlerUsesStaffDirectory ??
                                         data?.emptyFillConstructionRegistrantUsesStaffDirectory
                                       }
                                       onSaved={async () => {

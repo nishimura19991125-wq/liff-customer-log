@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import { isValidEmptyFillHousingStatus } from "@/lib/calendar-empty-fill-options";
 import { createRecord } from "@/lib/atpocket";
 import {
@@ -7,15 +8,16 @@ import {
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
 import {
-  constructionRegistrantStaffConfigReady,
-  resolveRegistrantNameForActiveStaff,
-} from "@/lib/staff-registrant-candidates";
+  constructionHandlerStaffConfigReady,
+  resolveConstructionHandlerNameForActiveStaff,
+} from "@/lib/staff-construction-handler-candidates";
 
 export const dynamic = "force-dynamic";
 
 type Body = {
   customerName?: string;
   housingStatus?: string;
+  constructionHandlerStaffRecordId?: string;
   constructionRegistrantStaffRecordId?: string;
 };
 
@@ -60,8 +62,10 @@ export async function POST(request: Request) {
 
   const customerName = body.customerName?.trim();
   const housingRaw = body.housingStatus?.trim() ?? "";
-  const constructionRegistrantStaffRecordId =
-    body.constructionRegistrantStaffRecordId?.trim() ?? "";
+  const constructionHandlerStaffRecordId =
+    body.constructionHandlerStaffRecordId?.trim() ||
+    body.constructionRegistrantStaffRecordId?.trim() ||
+    "";
 
   if (!customerName || !housingRaw) {
     return NextResponse.json(
@@ -80,29 +84,28 @@ export async function POST(request: Request) {
     );
   }
 
-  const registrantField =
-    process.env.CALENDAR_EMPTY_FILL_CONSTRUCTION_REGISTRANT_FIELD_ID?.trim();
+  const handlerField = calendarConstructionHandlerFieldIdFromEnv();
 
-  let registrantPutValue: string | undefined;
+  let handlerPutValue: string | undefined;
 
-  if (registrantField) {
-    if (!constructionRegistrantStaffConfigReady()) {
+  if (handlerField) {
+    if (!constructionHandlerStaffConfigReady()) {
       return NextResponse.json(
         {
           error:
-            "工事登録者はスタッフ名簿と連携する必要があります。STAFF_APP_ID・STAFF_NAME_FIELD_ID・STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID を設定してください。",
+            "工事対応者はスタッフ名簿と連携する必要があります。STAFF_APP_ID・STAFF_NAME_FIELD_ID・STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID を設定してください。",
         },
         { status: 503 },
       );
     }
-    if (!constructionRegistrantStaffRecordId) {
+    if (!constructionHandlerStaffRecordId) {
       return NextResponse.json(
-        { error: "工事登録者を一覧から選択してください" },
+        { error: "工事対応者を選択してください" },
         { status: 400 },
       );
     }
-    const resolvedName = await resolveRegistrantNameForActiveStaff(
-      constructionRegistrantStaffRecordId,
+    const resolvedName = await resolveConstructionHandlerNameForActiveStaff(
+      constructionHandlerStaffRecordId,
     );
     if (!resolvedName.ok) {
       const msg =
@@ -112,18 +115,18 @@ export async function POST(request: Request) {
             ? "選択した社員は工事対応が「稼働」ではありません。一覧を更新して選び直してください。"
             : resolvedName.reason === "no_name"
               ? "スタッフ名簿に氏名が入っていません。"
-              : "工事登録者を検証できませんでした。";
+              : "工事対応者を検証できませんでした。";
       return NextResponse.json({ error: msg }, { status: 400 });
     }
-    registrantPutValue = resolvedName.name;
+    handlerPutValue = resolvedName.name;
   }
 
   const record: Record<string, unknown> = {
     [customerField]: customerName,
     [housingField]: housingRaw,
   };
-  if (registrantField && registrantPutValue) {
-    record[registrantField] = registrantPutValue;
+  if (handlerField && handlerPutValue) {
+    record[handlerField] = handlerPutValue;
   }
 
   try {

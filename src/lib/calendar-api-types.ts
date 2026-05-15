@@ -21,8 +21,10 @@ export type CalendarApiPayload = {
   holidayKeys: string[];
   byDay: Record<string, CalendarMonthApiItem[]>;
   /**
-   * 工事登録者フィールド設定時、スタッフ名簿＋工事対応稼働でリスト取得できるか。
+   * 工事対応者フィールド設定時、スタッフ名簿＋工事対応稼働でリスト取得できるか。
    * false のときは STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID 等が未設定。
    */
+  emptyFillConstructionHandlerUsesStaffDirectory?: boolean;
+  /** @deprecated emptyFillConstructionHandlerUsesStaffDirectory を参照してください */
   emptyFillConstructionRegistrantUsesStaffDirectory?: boolean;
 };
