@@ -21,6 +21,7 @@ import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
+import { constructionRegistrantStaffConfigReady } from "@/lib/staff-registrant-candidates";
 
 export const dynamic = "force-dynamic";
 
@@ -144,7 +145,18 @@ export async function GET(request: Request) {
       },
     );
 
-    return NextResponse.json(payload);
+    const registrantFieldId =
+      process.env.CALENDAR_EMPTY_FILL_CONSTRUCTION_REGISTRANT_FIELD_ID?.trim();
+    const withRegistrant: CalendarApiPayload =
+      registrantFieldId
+        ? {
+            ...payload,
+            emptyFillConstructionRegistrantUsesStaffDirectory:
+              constructionRegistrantStaffConfigReady(),
+          }
+        : payload;
+
+    return NextResponse.json(withRegistrant);
   } catch (e) {
     console.error("[api/calendar]", e);
     return NextResponse.json(

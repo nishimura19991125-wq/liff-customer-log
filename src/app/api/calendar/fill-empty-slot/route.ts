@@ -17,6 +17,10 @@ import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
+import {
+  constructionRegistrantStaffConfigReady,
+  resolveRegistrantNameForActiveStaff,
+} from "@/lib/staff-registrant-candidates";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +28,8 @@ type Body = {
   recordId?: string;
   customerName?: string;
   housingStatus?: string;
+  /** スタッフ名簿レコード ID（工事対応稼働の行のみサーバーで名前に解決） */
+  constructionRegistrantStaffRecordId?: string;
 };
 
 /** GET/PUT に載せるフィールドは必要なもののみ（それ以外を PUT すると「有効なフィールドではありません」になることがある） */
@@ -88,6 +94,8 @@ export async function POST(request: Request) {
   const recordId = body.recordId?.trim();
   const customerName = body.customerName?.trim();
   const housingRaw = body.housingStatus?.trim() ?? "";
+  const constructionRegistrantStaffRecordId =
+    body.constructionRegistrantStaffRecordId?.trim() ?? "";
 
   if (!recordId || !customerName || !housingRaw) {
     return NextResponse.json(
@@ -137,6 +145,58 @@ export async function POST(request: Request) {
         },
         { status: 500 },
       );
+    }
+
+    const registrantFieldEnv =
+      process.env.CALENDAR_EMPTY_FILL_CONSTRUCTION_REGISTRANT_FIELD_ID?.trim();
+    let resolvedRegistrant: string | undefined;
+    let registrantValueToPut: string | undefined;
+
+    if (registrantFieldEnv) {
+      if (!constructionRegistrantStaffConfigReady()) {
+        return NextResponse.json(
+          {
+            error:
+              "工事登録者はスタッフ名簿と連携する必要があります。STAFF_APP_ID・STAFF_NAME_FIELD_ID・STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID を設定してください。",
+          },
+          { status: 503 },
+        );
+      }
+      const resolved = resolveConfiguredFieldToSchemaUniqueId(
+        registrantFieldEnv,
+        constructionFields,
+      );
+      if (!resolved) {
+        return NextResponse.json(
+          {
+            error:
+              `工事登録者フィールド「${registrantFieldEnv}」が工事アプリのフィールド定義と一致しません。GET /api/apps/{アプリID}/fields の uniqueId を CALENDAR_EMPTY_FILL_CONSTRUCTION_REGISTRANT_FIELD_ID に設定してください。`,
+          },
+          { status: 500 },
+        );
+      }
+      resolvedRegistrant = resolved;
+      if (!constructionRegistrantStaffRecordId) {
+        return NextResponse.json(
+          { error: "工事登録者を一覧から選択してください" },
+          { status: 400 },
+        );
+      }
+      const resolvedName = await resolveRegistrantNameForActiveStaff(
+        constructionRegistrantStaffRecordId,
+      );
+      if (!resolvedName.ok) {
+        const msg =
+          resolvedName.reason === "not_found"
+            ? "選択したスタッフが見つかりません。"
+            : resolvedName.reason === "not_active"
+              ? "選択した社員は工事対応が「稼働」ではありません。一覧を更新して選び直してください。"
+              : resolvedName.reason === "no_name"
+                ? "スタッフ名簿に氏名が入っていません。"
+                : "工事登録者を検証できませんでした。";
+        return NextResponse.json({ error: msg }, { status: 400 });
+      }
+      registrantValueToPut = resolvedName.name;
     }
 
     const fids = resolveConstructionFieldIds(constructionFields);
@@ -217,6 +277,9 @@ export async function POST(request: Request) {
       [resolvedCustomer]: customerName,
       [resolvedHousing]: housingRaw,
     };
+    if (resolvedRegistrant != null && registrantValueToPut != null) {
+      patch[resolvedRegistrant] = registrantValueToPut;
+    }
 
     await updateFillEmptySlotPocketRecord(
       calAppId,

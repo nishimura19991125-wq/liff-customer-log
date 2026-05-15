@@ -20,4 +20,9 @@ export type CalendarApiPayload = {
   month: number;
   holidayKeys: string[];
   byDay: Record<string, CalendarMonthApiItem[]>;
+  /**
+   * 工事登録者フィールド設定時、スタッフ名簿＋工事対応稼働でリスト取得できるか。
+   * false のときは STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID 等が未設定。
+   */
+  emptyFillConstructionRegistrantUsesStaffDirectory?: boolean;
 };
