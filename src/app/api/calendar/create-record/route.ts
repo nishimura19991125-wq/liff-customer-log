@@ -1,8 +1,19 @@
 import { NextResponse } from "next/server";
 
+import {
+  apiKeyForCalendarPocket,
+  createRecord,
+  fetchAppFields,
+} from "@/lib/atpocket";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
-import { isValidEmptyFillHousingStatus } from "@/lib/calendar-empty-fill-options";
-import { createRecord } from "@/lib/atpocket";
+import {
+  EMPTY_FILL_HOUSING_STATUS_NEW_BUILD,
+  isValidEmptyFillHousingStatus,
+} from "@/lib/calendar-empty-fill-options";
+import {
+  resolveConfiguredFieldToSchemaUniqueId,
+  resolveConstructionFieldIds,
+} from "@/lib/calendar-kojo";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -14,12 +25,33 @@ import {
 
 export const dynamic = "force-dynamic";
 
+/** 新築案件の任意日程（YYYY-MM-DD）。未送信・空は書き込まない */
 type Body = {
   customerName?: string;
   housingStatus?: string;
   constructionHandlerStaffRecordId?: string;
   constructionRegistrantStaffRecordId?: string;
+  shigumiDate?: string;
+  panelWorkDate?: string;
+  electricWorkDate?: string;
+  appSettingsDayDate?: string;
 };
+
+function optionalYmd(raw: string | undefined): string | null {
+  const s = raw?.trim();
+  if (!s) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  if (
+    dt.getFullYear() !== y ||
+    dt.getMonth() !== m - 1 ||
+    dt.getDate() !== d
+  ) {
+    return null;
+  }
+  return s;
+}
 
 /**
  * 工事アプリに新規レコードを追加（空枠更新と同じフィールド設定を利用）。
@@ -84,11 +116,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const handlerField = calendarConstructionHandlerFieldIdFromEnv();
+  const handlerFieldEnv = calendarConstructionHandlerFieldIdFromEnv();
 
   let handlerPutValue: string | undefined;
+  let resolvedHandlerField: string | undefined;
 
-  if (handlerField) {
+  if (handlerFieldEnv) {
     if (!constructionHandlerStaffConfigReady()) {
       return NextResponse.json(
         {
@@ -121,15 +154,80 @@ export async function POST(request: Request) {
     handlerPutValue = resolvedName.name;
   }
 
-  const record: Record<string, unknown> = {
-    [customerField]: customerName,
-    [housingField]: housingRaw,
-  };
-  if (handlerField && handlerPutValue) {
-    record[handlerField] = handlerPutValue;
-  }
+  const pocketAuth = { apiKey: apiKeyForCalendarPocket() };
 
   try {
+    const constructionFields = await fetchAppFields(calAppId, pocketAuth);
+
+    const resolvedCustomer = resolveConfiguredFieldToSchemaUniqueId(
+      customerField,
+      constructionFields,
+    );
+    if (!resolvedCustomer) {
+      return NextResponse.json(
+        {
+          error:
+            `お客様名フィールド「${customerField}」が工事アプリのフィールド定義と一致しません。GET /api/apps/{アプリID}/fields で返る uniqueId を CALENDAR_EMPTY_FILL_CUSTOMER_NAME_FIELD_ID に設定してください。`,
+        },
+        { status: 500 },
+      );
+    }
+
+    const resolvedHousing = resolveConfiguredFieldToSchemaUniqueId(
+      housingField,
+      constructionFields,
+    );
+    if (!resolvedHousing) {
+      return NextResponse.json(
+        {
+          error:
+            `住宅ステータスフィールド「${housingField}」が工事アプリのフィールド定義と一致しません。`,
+        },
+        { status: 500 },
+      );
+    }
+
+    if (handlerFieldEnv && handlerPutValue != null) {
+      const resolved = resolveConfiguredFieldToSchemaUniqueId(
+        handlerFieldEnv,
+        constructionFields,
+      );
+      if (!resolved) {
+        return NextResponse.json(
+          {
+            error:
+              `工事対応者フィールド「${handlerFieldEnv}」が工事アプリのフィールド定義と一致しません。CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID を確認してください。`,
+          },
+          { status: 500 },
+        );
+      }
+      resolvedHandlerField = resolved;
+    }
+
+    const record: Record<string, unknown> = {
+      [resolvedCustomer]: customerName,
+      [resolvedHousing]: housingRaw,
+    };
+    if (resolvedHandlerField != null && handlerPutValue != null) {
+      record[resolvedHandlerField] = handlerPutValue;
+    }
+
+    if (housingRaw === EMPTY_FILL_HOUSING_STATUS_NEW_BUILD) {
+      const fids = resolveConstructionFieldIds(constructionFields);
+      const quad: Array<[fieldId: string | undefined, raw: string | undefined]> =
+        [
+          [fids.shigumi, body.shigumiDate],
+          [fids.panelWork, body.panelWorkDate],
+          [fids.electricWork, body.electricWorkDate],
+          [fids.appSettingsDay, body.appSettingsDayDate],
+        ];
+      for (const [fid, raw] of quad) {
+        const ymd = optionalYmd(raw);
+        const id = fid?.trim();
+        if (ymd && id) record[id] = ymd;
+      }
+    }
+
     await createRecord(calAppId, record);
     return NextResponse.json({ ok: true });
   } catch (e) {

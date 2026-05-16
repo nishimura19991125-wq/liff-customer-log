@@ -18,7 +18,10 @@ import type {
   CalendarApiPayload,
   CalendarMonthApiItem,
 } from "@/lib/calendar-api-types";
-import { EMPTY_FILL_HOUSING_STATUS_VALUES } from "@/lib/calendar-empty-fill-options";
+import {
+  EMPTY_FILL_HOUSING_STATUS_NEW_BUILD,
+  EMPTY_FILL_HOUSING_STATUS_VALUES,
+} from "@/lib/calendar-empty-fill-options";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 
 type HandlerStaffRow = {
@@ -587,6 +590,10 @@ function NewConstructionRecordPanel({
     kind: "ok" | "err";
     text: string;
   } | null>(null);
+  const [shigumiDate, setShigumiDate] = useState("");
+  const [panelWorkDate, setPanelWorkDate] = useState("");
+  const [electricWorkDate, setElectricWorkDate] = useState("");
+  const [appSettingsDayDate, setAppSettingsDayDate] = useState("");
 
   const handlerFromStaff =
     constructionHandlerUsesStaffDirectory === true;
@@ -594,6 +601,18 @@ function NewConstructionRecordPanel({
     constructionHandlerUsesStaffDirectory === false;
 
   const canSubmit = Boolean(idToken);
+
+  const isNewBuildHousing =
+    housingStatus === EMPTY_FILL_HOUSING_STATUS_NEW_BUILD;
+
+  useEffect(() => {
+    if (housingStatus !== EMPTY_FILL_HOUSING_STATUS_NEW_BUILD) {
+      setShigumiDate("");
+      setPanelWorkDate("");
+      setElectricWorkDate("");
+      setAppSettingsDayDate("");
+    }
+  }, [housingStatus]);
 
   useEffect(() => {
     if (!open || !idToken || !handlerFromStaff) {
@@ -690,6 +709,22 @@ function NewConstructionRecordPanel({
                   selectedHandlerStaffId.trim(),
               }
             : {}),
+          ...(hs === EMPTY_FILL_HOUSING_STATUS_NEW_BUILD
+            ? {
+                ...(shigumiDate.trim()
+                  ? { shigumiDate: shigumiDate.trim() }
+                  : {}),
+                ...(panelWorkDate.trim()
+                  ? { panelWorkDate: panelWorkDate.trim() }
+                  : {}),
+                ...(electricWorkDate.trim()
+                  ? { electricWorkDate: electricWorkDate.trim() }
+                  : {}),
+                ...(appSettingsDayDate.trim()
+                  ? { appSettingsDayDate: appSettingsDayDate.trim() }
+                  : {}),
+              }
+            : {}),
         }),
       });
       const data = (await res.json()) as { error?: string };
@@ -707,6 +742,10 @@ function NewConstructionRecordPanel({
       setCustomerName("");
       setHousingStatus("");
       setSelectedHandlerStaffId("");
+      setShigumiDate("");
+      setPanelWorkDate("");
+      setElectricWorkDate("");
+      setAppSettingsDayDate("");
       await onSaved();
       setFeedback({
         kind: "ok",
@@ -735,8 +774,17 @@ function NewConstructionRecordPanel({
       {open ? (
         <div className="mt-4 border-t border-slate-200/90 pt-4">
           <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
-            住宅ステータス・お客様名・工事対応者（設定時）を入力して登録します。T番号は
-            @pocket の自動採番により付与されます（空枠の更新と同じ項目です）。
+            {isNewBuildHousing ? (
+              <>
+                住宅ステータスが「新築案件」のときは、お客様名に加えて工事日程を任意で指定できます（未入力でも登録できます）。工事対応者フィールドが有効な場合のみ工事対応者は必須です。T番号は
+                @pocket の自動採番により付与されます。
+              </>
+            ) : (
+              <>
+                住宅ステータス・お客様名・工事対応者（設定時）を入力して登録します。T番号は
+                @pocket の自動採番により付与されます（空枠の更新と同じ項目です）。
+              </>
+            )}
           </p>
           <label className="block">
             <span className="mb-1 block text-[12px] font-bold text-slate-700">
@@ -772,6 +820,63 @@ function NewConstructionRecordPanel({
               disabled={submitting || !canSubmit}
             />
           </label>
+          {isNewBuildHousing ? (
+            <div className="mt-4 rounded-xl border border-slate-200/90 bg-slate-50/90 px-3 py-3 ring-1 ring-slate-100">
+              <p className="mb-2 text-[11px] font-bold leading-snug text-slate-600">
+                工事日程（すべて任意・カレンダーから選択）
+              </p>
+              <div className="flex flex-col gap-3">
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-semibold text-slate-700">
+                    仕込日
+                  </span>
+                  <input
+                    type="date"
+                    className={HANDLER_STAFF_SELECT_CLASS}
+                    value={shigumiDate}
+                    onChange={(e) => setShigumiDate(e.target.value)}
+                    disabled={submitting || !canSubmit}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-semibold text-slate-700">
+                    パネル工事日
+                  </span>
+                  <input
+                    type="date"
+                    className={HANDLER_STAFF_SELECT_CLASS}
+                    value={panelWorkDate}
+                    onChange={(e) => setPanelWorkDate(e.target.value)}
+                    disabled={submitting || !canSubmit}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-semibold text-slate-700">
+                    電気工事日
+                  </span>
+                  <input
+                    type="date"
+                    className={HANDLER_STAFF_SELECT_CLASS}
+                    value={electricWorkDate}
+                    onChange={(e) => setElectricWorkDate(e.target.value)}
+                    disabled={submitting || !canSubmit}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-semibold text-slate-700">
+                    アプリ設定日
+                  </span>
+                  <input
+                    type="date"
+                    className={HANDLER_STAFF_SELECT_CLASS}
+                    value={appSettingsDayDate}
+                    onChange={(e) => setAppSettingsDayDate(e.target.value)}
+                    disabled={submitting || !canSubmit}
+                  />
+                </label>
+              </div>
+            </div>
+          ) : null}
           {handlerMisconfigured ? (
             <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-amber-900 ring-1 ring-amber-100">
               工事対応者にスタッフ名簿を使うには、STAFF_APP_ID・STAFF_NAME_FIELD_ID・STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID
