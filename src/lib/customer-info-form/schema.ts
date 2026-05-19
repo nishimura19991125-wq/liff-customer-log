@@ -64,7 +64,8 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   },
   {
     key: "panelModel1",
-    caption: "太陽光パネル品番",
+    caption: "太陽光パネル品番①",
+    formLabel: "パネル品番①",
     type: "select",
     options: [],
     optionsPending: true,
@@ -72,6 +73,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   {
     key: "panelModel2",
     caption: "太陽光パネル品番②",
+    formLabel: "パネル品番②",
     type: "select",
     options: [],
     optionsPending: true,
