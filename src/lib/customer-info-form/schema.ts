@@ -101,12 +101,14 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   {
     key: "powerConCount",
     caption: "パワーコンディショナー台数",
+    formLabel: "パワコン設置台数",
     type: "select",
     options: ["1", "2"],
   },
   {
     key: "powerConModel1",
     caption: "パワーコンディショナー品番①",
+    formLabel: "パワコン品番①",
     type: "select",
     options: [],
     optionsPending: true,
@@ -114,6 +116,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   {
     key: "powerConModel2",
     caption: "パワーコンディショナー品番②",
+    formLabel: "パワコン品番②",
     type: "select",
     options: [],
     optionsPending: true,

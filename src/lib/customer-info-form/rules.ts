@@ -46,8 +46,8 @@ export function isCustomerInfoFormFieldVisible(
     case "panelCount2":
       return panelCombo === "有";
     case "powerConModel2":
-      // 台数が 2 のときは品番②は非表示（@pocket には "-"）
-      return powerConCount !== "2";
+      // 台数が 2 のときのみ品番②を表示（1 台のときは非表示で @pocket には "-"）
+      return powerConCount === "2";
     case "batteryCapacity2":
       return batteryMulti === "有";
     case "ecoCuteModel":
