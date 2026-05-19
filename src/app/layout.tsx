@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+
+import { LiffScrollReset } from "@/components/liff-scroll-reset";
+
 import "./globals.css";
 
 const geistSans = Geist({
@@ -28,9 +31,10 @@ export default function RootLayout({
   return (
     <html
       lang="ja"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full overflow-x-hidden antialiased`}
     >
-      <body className="flex min-h-dvh flex-col font-sans antialiased">
+      <body className="flex min-h-dvh min-w-0 flex-col overflow-x-hidden font-sans antialiased">
+        <LiffScrollReset />
         {children}
       </body>
     </html>

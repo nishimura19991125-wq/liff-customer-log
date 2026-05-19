@@ -9,8 +9,8 @@ import { LIFF_PROFILE_CACHE_KEY } from "@/lib/liff-profile-cache-key";
 /** LIFF / モバイル WebView 向け：背景・セーフエリア・最大幅 */
 export function LiffScreen({ children }: { children: ReactNode }) {
   return (
-    <div className="liff-screen min-h-dvh flex flex-col text-slate-900">
-      <div className="flex flex-1 flex-col px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-5">
+    <div className="liff-screen flex min-h-dvh min-w-0 flex-col text-slate-900">
+      <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-5">
         {children}
       </div>
     </div>
@@ -56,7 +56,7 @@ export function LiffPageHeader({ title, subtitle, action }: LiffPageHeaderProps)
 
 export function LiffCard({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-[1.35rem] border border-white/70 bg-white/85 shadow-[0_12px_40px_-12px_rgba(15,23,42,0.12)] ring-1 ring-slate-200/60 backdrop-blur-md">
+    <div className="min-w-0 max-w-full overflow-hidden rounded-[1.35rem] border border-white/70 bg-white/85 shadow-[0_12px_40px_-12px_rgba(15,23,42,0.12)] ring-1 ring-slate-200/60 backdrop-blur-md">
       {children}
     </div>
   );

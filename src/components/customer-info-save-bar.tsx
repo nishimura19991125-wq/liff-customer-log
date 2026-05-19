@@ -27,7 +27,7 @@ export const CustomerInfoSaveBar = forwardRef<
   return (
     <div
       ref={ref}
-      className="sticky bottom-0 z-20 -mx-4 mt-5 border-t border-slate-200/90 bg-white/95 px-4 py-3 shadow-[0_-10px_28px_rgba(15,23,42,0.1)] backdrop-blur-md pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+      className="sticky bottom-0 z-20 mt-5 min-w-0 max-w-full border-t border-slate-200/90 bg-white/95 px-4 py-3 shadow-[0_-10px_28px_rgba(15,23,42,0.1)] backdrop-blur-md pb-[max(0.75rem,env(safe-area-inset-bottom))]"
     >
       {saving ? (
         <p

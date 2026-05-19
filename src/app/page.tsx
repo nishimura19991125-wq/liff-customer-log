@@ -142,7 +142,7 @@ export default function HomeHubPage() {
 
   return (
     <LiffScreen>
-      <main className="mx-auto w-full max-w-lg flex-1 py-6">
+      <main className="liff-page-main mx-auto w-full max-w-lg flex-1 py-6">
         <LiffPageHeader
           title="情報確認くん"
           subtitle={

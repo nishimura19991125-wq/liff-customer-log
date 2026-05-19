@@ -1352,7 +1352,7 @@ export default function CalendarPage() {
 
   return (
     <LiffScreen>
-      <div className="mx-auto w-full max-w-xl flex-1 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2">
+      <div className="liff-page-main mx-auto w-full max-w-xl flex-1 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2">
         <div className="mb-4 flex flex-col gap-4">
           <div>
             <Link

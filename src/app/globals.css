@@ -12,9 +12,19 @@
   --font-mono: var(--font-geist-mono);
 }
 
+html {
+  overflow-x: hidden;
+  max-width: 100%;
+  overscroll-behavior-x: none;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
+  overflow-x: hidden;
+  max-width: 100%;
+  min-width: 0;
+  overscroll-behavior-x: none;
   font-family:
     var(--font-geist-sans),
     "Hiragino Sans",
@@ -27,7 +37,20 @@ body {
 }
 
 .liff-screen {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
   background: linear-gradient(165deg, #e8eef5 0%, #f8fafc 42%, #e8f7ef 100%);
+}
+
+/** LIFF 各ページの main：横はみ出しを抑え縦スクロールのみ */
+.liff-page-main {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 /**

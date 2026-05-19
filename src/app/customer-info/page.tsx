@@ -14,6 +14,7 @@ import {
   LiffSessionExpiredPanel,
   LiffStaffBindPanel,
 } from "@/components/liff-chrome";
+import { resetLiffScroll } from "@/components/liff-scroll-reset";
 import {
   CustomerInfoEditForm,
   type CustomerInfoFormFieldApi,
@@ -171,6 +172,10 @@ export default function CustomerInfoPage() {
   }, [idToken, searchQuery]);
 
   useEffect(() => {
+    resetLiffScroll();
+  }, [view]);
+
+  useEffect(() => {
     if (!saveFeedback || !saveBarRef.current) return;
     saveBarRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [saveFeedback]);
@@ -299,7 +304,7 @@ export default function CustomerInfoPage() {
   if (phase === "error" || phase === "disabled") {
     return (
       <LiffScreen>
-        <main className="mx-auto w-full max-w-lg flex-1 py-6">
+        <main className="liff-page-main mx-auto w-full max-w-lg flex-1 py-6">
           <Link
             href="/"
             className="mb-4 inline-flex items-center gap-1 text-[13px] font-semibold text-emerald-800"
@@ -316,7 +321,7 @@ export default function CustomerInfoPage() {
 
   return (
     <LiffScreen>
-      <main className="mx-auto w-full max-w-lg flex-1 py-6">
+      <main className="liff-page-main mx-auto w-full max-w-lg flex-1 py-6">
         <nav className="mb-3 flex items-center justify-between gap-2">
           <Link
             href="/"
