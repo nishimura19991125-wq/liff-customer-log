@@ -160,9 +160,58 @@ export function inferPanelComboFromRecord(
   return "無";
 }
 
+/** 蓄電池容量②から蓄電池複数台設置（LIFF 専用）を推定 */
+export function inferBatteryMultiFromRecord(
+  recObj: Record<string, unknown>,
+  resolved: CustomerInfoFormFieldResolved[],
+): "無" | "有" {
+  const field = resolved.find((f) => f.key === "batteryCapacity2");
+  if (!field?.fieldId) return "無";
+  if (pocketValuePresent(readCustomerInfoFieldValue(recObj, field.fieldId))) {
+    return "有";
+  }
+  return "無";
+}
+
+/** APPT/CLPT から PT（LIFF 専用）を推定 */
+export function inferPtFromRecord(
+  recObj: Record<string, unknown>,
+  transferResolved: CustomerInfoFormFieldResolved[],
+): string {
+  const clptField = transferResolved.find((f) => f.key === "clpt");
+  const apptField = transferResolved.find((f) => f.key === "appt");
+  if (!clptField?.fieldId) return "";
+
+  const clptRaw = readCustomerInfoFieldValue(recObj, clptField.fieldId);
+  if (!pocketValuePresent(clptRaw)) return "";
+
+  const clptDigits = parsePtDigitsOnly(clptRaw);
+  if (!clptDigits) return "";
+
+  const apptRaw = apptField?.fieldId
+    ? readCustomerInfoFieldValue(recObj, apptField.fieldId)
+    : "";
+  if (!pocketValuePresent(apptRaw) || apptRaw.trim() === "-") {
+    return formatPtWithCommas(clptDigits);
+  }
+
+  const apptDigits = parsePtDigitsOnly(apptRaw);
+  if (!apptDigits) return formatPtWithCommas(clptDigits);
+
+  if (apptDigits === clptDigits) {
+    const n = Number(apptDigits);
+    if (Number.isFinite(n)) {
+      return formatPtWithCommas(String(n * 2));
+    }
+  }
+
+  return formatPtWithCommas(clptDigits);
+}
+
 export function readCustomerInfoFormValuesFromRecord(
   recObj: Record<string, unknown>,
   resolved: CustomerInfoFormFieldResolved[],
+  transferResolved: CustomerInfoFormFieldResolved[] = [],
 ): CustomerInfoFormValues {
   const values: CustomerInfoFormValues = {};
   for (const field of resolved) {
@@ -185,6 +234,14 @@ export function readCustomerInfoFormValuesFromRecord(
   const panelCombo = resolved.find((f) => f.key === "panelCombo");
   if (panelCombo?.liffOnly) {
     values.panelCombo = inferPanelComboFromRecord(recObj, resolved);
+  }
+  const batteryMulti = resolved.find((f) => f.key === "batteryMulti");
+  if (batteryMulti?.liffOnly) {
+    values.batteryMulti = inferBatteryMultiFromRecord(recObj, resolved);
+  }
+  const ptField = resolved.find((f) => f.key === "pt");
+  if (ptField?.liffOnly) {
+    values.pt = inferPtFromRecord(recObj, transferResolved);
   }
   return values;
 }

@@ -146,7 +146,11 @@ export async function GET(request: Request, ctx: RouteCtx) {
         );
       }
       const recObj = row.record as Record<string, unknown>;
-      const values = readCustomerInfoFormValuesFromRecord(recObj, resolved);
+      const values = readCustomerInfoFormValuesFromRecord(
+        recObj,
+        resolved,
+        transferResolve.resolved,
+      );
       const formFields = resolved.map((f) => ({
         key: f.key,
         fieldId: f.fieldId,

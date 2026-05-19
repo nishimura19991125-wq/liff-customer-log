@@ -11,10 +11,7 @@ import {
   customerInfoPutValue,
   readCustomerInfoImportKeyFromRecord,
 } from "@/lib/customer-info-record";
-import {
-  computePtTransfer,
-  ptFieldValueForPocket,
-} from "@/lib/customer-info-form/pt-transfer";
+import { computePtTransfer } from "@/lib/customer-info-form/pt-transfer";
 import { buildCustomerInfoFormPayload } from "@/lib/customer-info-form/rules";
 import { resolveCustomerInfoPtTransferFields } from "@/lib/customer-info-form/resolve-fields";
 import type {
@@ -78,17 +75,6 @@ export async function attachCustomerInfoImportKeyToPayload(
   return { ok: true };
 }
 
-function applyPtToFormPayload(
-  values: CustomerInfoFormValues,
-  resolved: CustomerInfoFormFieldResolved[],
-  payload: Record<string, string>,
-): void {
-  const ptField = resolved.find((f) => f.key === "pt");
-  if (ptField) {
-    payload[ptField.fieldId] = ptFieldValueForPocket(values.pt ?? "");
-  }
-}
-
 function applyPtTransferToPayload(
   values: CustomerInfoFormValues,
   transferResolved: CustomerInfoFormFieldResolved[],
@@ -107,7 +93,6 @@ export function formPayloadFromValues(
   appFields: AtPocketFieldRow[],
 ): Record<string, unknown> {
   const stringPayload = buildCustomerInfoFormPayload(values, resolved);
-  applyPtToFormPayload(values, resolved, stringPayload);
   const { resolved: transferResolved } =
     resolveCustomerInfoPtTransferFields(appFields);
   applyPtTransferToPayload(values, transferResolved, stringPayload);

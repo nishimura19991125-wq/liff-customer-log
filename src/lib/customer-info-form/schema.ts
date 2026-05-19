@@ -33,7 +33,13 @@ export const COSMETIC_COVER_OPTIONS = [
 /** お客様情報入力フォーム定義（見出しは @pocket 列名と一致させる） */
 export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   { key: "customerName", caption: "お客様名", type: "text" },
-  { key: "pt", caption: "PT", type: "pt-integer" },
+  {
+    key: "pt",
+    caption: "",
+    formLabel: "PT",
+    type: "pt-integer",
+    liffOnly: true,
+  },
   { key: "apStaff", caption: "AP担当者", type: "text" },
   { key: "clStaff", caption: "CL担当者", type: "text" },
   { key: "introduction", caption: "導入経緯", type: "text" },
@@ -100,7 +106,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   },
   {
     key: "powerConModel1",
-    caption: "パワーコンディショナー品番",
+    caption: "パワーコンディショナー品番①",
     type: "select",
     options: [],
     optionsPending: true,
@@ -114,13 +120,15 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   },
   {
     key: "batteryMulti",
-    caption: "蓄電池複数台設置",
+    caption: "",
+    formLabel: "蓄電池複数台設置",
     type: "select",
     options: [...YES_NO],
+    liffOnly: true,
   },
   {
     key: "batteryCapacity1",
-    caption: "蓄電池容量(kWh)",
+    caption: "蓄電池容量(kWh)①",
     type: "select",
     options: [],
     optionsPending: true,
