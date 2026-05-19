@@ -48,7 +48,7 @@ export type PtTransferResult = {
 };
 
 /**
- * AP担当者とCL担当者が同一なら CLPT に PT 全体、APPT は "-"。
+ * AP担当者とCL担当者が同一なら CLPT に PT 全体、APPT は 0。
  * 異なる場合は PT÷2（小数点以下切り捨て）を APPT・CLPT にそれぞれ転記。
  */
 export function computePtTransfer(values: CustomerInfoFormValues): PtTransferResult {
@@ -63,7 +63,7 @@ export function computePtTransfer(values: CustomerInfoFormValues): PtTransferRes
   const ptNum = Number(ptStr);
 
   if (ap && cl && ap === cl) {
-    return { clpt: ptStr, appt: dash };
+    return { clpt: ptStr, appt: "0" };
   }
 
   const half = Math.floor(ptNum / 2);

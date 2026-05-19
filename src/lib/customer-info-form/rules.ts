@@ -11,6 +11,31 @@ import type {
 
 const HIDDEN_DASH = "-";
 
+/** 未入力時に @pocket へ 0 を送るフィールド */
+const POCKET_ZERO_WHEN_EMPTY_KEYS = new Set([
+  "panelCount1",
+  "panelCount2",
+  "extraPartsAmount",
+]);
+
+function isEmptyPocketInput(raw: string): boolean {
+  const t = raw.trim();
+  return t === "" || t === "-";
+}
+
+function pocketFieldValueForPut(
+  key: string,
+  raw: string,
+  visible: boolean,
+  hiddenFallback: string,
+): string {
+  if (!visible) return hiddenFallback;
+  if (POCKET_ZERO_WHEN_EMPTY_KEYS.has(key) && isEmptyPocketInput(raw)) {
+    return "0";
+  }
+  return raw.trim();
+}
+
 const ROOF_MATERIAL_MODEL_VISIBLE = new Set([
   "平板瓦",
   "洋瓦",
@@ -98,11 +123,13 @@ export function buildCustomerInfoFormPayload(
         : [];
       continue;
     }
-    if (visible) {
-      payload[field.fieldId] = norm(values[field.key]);
-    } else {
-      payload[field.fieldId] = hiddenPayloadValue(field);
-    }
+    const hiddenFallback = hiddenPayloadValue(field);
+    payload[field.fieldId] = pocketFieldValueForPut(
+      field.key,
+      norm(values[field.key]),
+      visible,
+      hiddenFallback,
+    );
   }
   return payload;
 }

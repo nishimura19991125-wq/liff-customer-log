@@ -195,7 +195,12 @@ export function inferPtFromRecord(
   const apptRaw = apptField?.fieldId
     ? readCustomerInfoFieldValue(recObj, apptField.fieldId)
     : "";
-  if (!pocketValuePresent(apptRaw) || apptRaw.trim() === "-") {
+  const apptTrim = apptRaw.trim();
+  if (
+    !pocketValuePresent(apptRaw) ||
+    apptTrim === "-" ||
+    apptTrim === "0"
+  ) {
     return formatPtWithCommas(clptDigits);
   }
 
