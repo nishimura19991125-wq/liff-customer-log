@@ -3,18 +3,25 @@ import { NextResponse } from "next/server";
 import {
   customerInfoConfigReady,
   customerInfoEditableFieldIds,
-  customerInfoImportKeyFieldId,
-  customerInfoImportKeySourceFieldIds,
   customerInfoPocketAuth,
   customerInfoSubtitleFieldId,
+  customerInfoUsesLegacyEditableList,
 } from "@/lib/customer-info-config";
+import { attachCustomerInfoImportKeyToPayload } from "@/lib/customer-info-form/put-payload";
+import { formPayloadFromValues } from "@/lib/customer-info-form/put-payload";
+import {
+  customerInfoFormFieldsCsv,
+  formValuesFromPutBody,
+  readCustomerInfoFormValuesFromRecord,
+  resolveCustomerInfoFormFields,
+} from "@/lib/customer-info-form/resolve-fields";
 import {
   customerInfoPutValue,
   fieldCaptionByUniqueId,
   readCustomerInfoFieldValue,
-  readCustomerInfoImportKeyFromRecord,
   resolveCustomerInfoFieldIds,
 } from "@/lib/customer-info-record";
+import type { AtPocketFetchAuth } from "@/lib/atpocket";
 import { fetchAppFields, fetchRecordById, updateRecord } from "@/lib/atpocket";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
 import {
@@ -26,23 +33,32 @@ export const dynamic = "force-dynamic";
 
 type RouteCtx = { params: Promise<{ recordId: string }> };
 
-function displayFieldIds(
-  nameSchemaId: string,
-  subtitleSchemaId: string | null,
-  editableSchemaIds: string[],
-): string[] {
-  const seen = new Set<string>();
-  const ordered: string[] = [];
-  const push = (id: string) => {
-    const t = id.trim();
-    if (!t || seen.has(t)) return;
-    seen.add(t);
-    ordered.push(t);
-  };
-  push(nameSchemaId);
-  if (subtitleSchemaId) push(subtitleSchemaId);
-  for (const id of editableSchemaIds) push(id);
-  return ordered;
+async function attachImportKeyAndUpdate(
+  appId: string,
+  recordId: string,
+  pocketAuth: AtPocketFetchAuth,
+  appFields: Awaited<ReturnType<typeof fetchAppFields>>,
+  payload: Record<string, unknown>,
+): Promise<NextResponse | null> {
+  const keyResult = await attachCustomerInfoImportKeyToPayload(
+    appId,
+    recordId,
+    pocketAuth,
+    appFields,
+    payload,
+  );
+  if (!keyResult.ok) {
+    return NextResponse.json(
+      { error: keyResult.error },
+      { status: keyResult.status },
+    );
+  }
+  const normalized: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(payload)) {
+    normalized[k] = customerInfoPutValue(v);
+  }
+  await updateRecord(appId, recordId, normalized, pocketAuth);
+  return null;
 }
 
 export async function GET(request: Request, ctx: RouteCtx) {
@@ -85,17 +101,81 @@ export async function GET(request: Request, ctx: RouteCtx) {
       ? resolveConfiguredFieldToSchemaUniqueId(subtitleEnv, fields)
       : null;
 
+    const displayIds = [nameSchema, ...(subtitleSchema ? [subtitleSchema] : [])];
+    const displayCsv = displayIds.join(",");
+
+    if (!customerInfoUsesLegacyEditableList()) {
+      const { resolved, missingCaptions } = resolveCustomerInfoFormFields(fields);
+      if (resolved.length === 0) {
+        return NextResponse.json(
+          {
+            error:
+              "お客様情報フォームの列が @pocket と一致しません。列見出し（お客様名・PT 等）を確認するか、CUSTOMER_INFO_FIELD_* で uniqueId を指定してください。",
+            missingCaptions,
+          },
+          { status: 500 },
+        );
+      }
+
+      const fetchCsv = [
+        displayCsv,
+        customerInfoFormFieldsCsv(resolved),
+      ]
+        .filter(Boolean)
+        .join(",");
+
+      let row = await fetchRecordById(
+        cfg.appId,
+        recordId,
+        pocketAuth,
+        fetchCsv,
+      );
+      if (!row?.record) {
+        row = await fetchRecordById(cfg.appId, recordId, pocketAuth);
+      }
+      if (!row?.record || typeof row.record !== "object") {
+        return NextResponse.json(
+          { error: "レコードが見つかりません" },
+          { status: 404 },
+        );
+      }
+      const recObj = row.record as Record<string, unknown>;
+      const values = readCustomerInfoFormValuesFromRecord(recObj, resolved);
+      const formFields = resolved.map((f) => ({
+        key: f.key,
+        fieldId: f.fieldId,
+        label: f.label,
+        type: f.type,
+        options: f.options ? [...f.options] : undefined,
+        optionsPending: f.optionsPending,
+        value: values[f.key] ?? "",
+      }));
+
+      const display = displayIds.map((schemaId) => ({
+        fieldId: schemaId,
+        label: fieldCaptionByUniqueId(fields, schemaId),
+        value: readCustomerInfoFieldValue(recObj, schemaId),
+      }));
+
+      return NextResponse.json({
+        recordId,
+        usesFormSchema: true,
+        display,
+        formFields,
+        missingCaptions:
+          missingCaptions.length > 0 ? missingCaptions : undefined,
+      });
+    }
+
     const editableResolved = resolveCustomerInfoFieldIds(
       customerInfoEditableFieldIds(),
       fields,
     );
-
-    const schemaIds = displayFieldIds(
-      nameSchema,
-      subtitleSchema,
-      editableResolved.map((f) => f.schemaId),
-    );
-    const fieldsCsv = schemaIds.join(",");
+    const schemaIds = [
+      ...displayIds,
+      ...editableResolved.map((f) => f.schemaId),
+    ];
+    const fieldsCsv = [...new Set(schemaIds)].join(",");
 
     let row = await fetchRecordById(
       cfg.appId,
@@ -114,13 +194,11 @@ export async function GET(request: Request, ctx: RouteCtx) {
     }
 
     const recObj = row.record as Record<string, unknown>;
-
-    const display = schemaIds.map((schemaId) => ({
+    const display = displayIds.map((schemaId) => ({
       fieldId: schemaId,
       label: fieldCaptionByUniqueId(fields, schemaId),
       value: readCustomerInfoFieldValue(recObj, schemaId),
     }));
-
     const editableFields = editableResolved.map((f) => ({
       fieldId: f.schemaId,
       label: f.caption,
@@ -129,6 +207,7 @@ export async function GET(request: Request, ctx: RouteCtx) {
 
     return NextResponse.json({
       recordId,
+      usesFormSchema: false,
       display,
       editableFields,
       editableFieldIdsConfigured: editableResolved.length > 0,
@@ -160,17 +239,26 @@ export async function PUT(request: Request, ctx: RouteCtx) {
     return NextResponse.json({ error: "recordId が必要です" }, { status: 400 });
   }
 
-  let body: { fields?: Record<string, unknown> };
+  let body: {
+    fields?: Record<string, unknown>;
+    formValues?: Record<string, unknown>;
+  };
   try {
-    body = (await request.json()) as { fields?: Record<string, unknown> };
+    body = (await request.json()) as {
+      fields?: Record<string, unknown>;
+      formValues?: Record<string, unknown>;
+    };
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const incoming = body.fields;
+  const incoming =
+    body.formValues && typeof body.formValues === "object"
+      ? body.formValues
+      : body.fields;
   if (!incoming || typeof incoming !== "object") {
     return NextResponse.json(
-      { error: "fields オブジェクトが必要です" },
+      { error: "formValues または fields オブジェクトが必要です" },
       { status: 400 },
     );
   }
@@ -179,6 +267,46 @@ export async function PUT(request: Request, ctx: RouteCtx) {
 
   try {
     const appFields = await fetchAppFields(cfg.appId, pocketAuth);
+
+    if (!customerInfoUsesLegacyEditableList()) {
+      const { resolved } = resolveCustomerInfoFormFields(appFields);
+      if (resolved.length === 0) {
+        return NextResponse.json(
+          { error: "お客様情報フォームの列定義を解決できません" },
+          { status: 503 },
+        );
+      }
+
+      const values = formValuesFromPutBody(
+        incoming as Record<string, unknown>,
+        resolved,
+      );
+      if (!values) {
+        return NextResponse.json(
+          { error: "フォームの項目キーが認識できません" },
+          { status: 400 },
+        );
+      }
+
+      const payload = formPayloadFromValues(values, resolved);
+      if (Object.keys(payload).length === 0) {
+        return NextResponse.json(
+          { error: "更新する項目がありません" },
+          { status: 400 },
+        );
+      }
+
+      const keyErr = await attachImportKeyAndUpdate(
+        cfg.appId,
+        recordId,
+        pocketAuth,
+        appFields,
+        payload,
+      );
+      if (keyErr) return keyErr;
+      return NextResponse.json({ ok: true });
+    }
+
     const editableResolved = resolveCustomerInfoFieldIds(
       customerInfoEditableFieldIds(),
       appFields,
@@ -196,7 +324,6 @@ export async function PUT(request: Request, ctx: RouteCtx) {
     const allowed = new Map(
       editableResolved.map((f) => [f.schemaId, f] as const),
     );
-
     const patch: Record<string, unknown> = {};
     for (const [key, raw] of Object.entries(incoming)) {
       const schemaId = resolveConfiguredFieldToSchemaUniqueId(key, appFields);
@@ -206,70 +333,22 @@ export async function PUT(request: Request, ctx: RouteCtx) {
 
     if (Object.keys(patch).length === 0) {
       return NextResponse.json(
-        { error: "更新する項目がありません（許可されたフィールド ID を確認してください）" },
+        {
+          error:
+            "更新する項目がありません（許可されたフィールド ID を確認してください）",
+        },
         { status: 400 },
       );
     }
 
-    const payload: Record<string, unknown> = { ...patch };
-
-    const importKeyEnv = customerInfoImportKeyFieldId();
-    if (importKeyEnv) {
-      const importKeySchema = resolveConfiguredFieldToSchemaUniqueId(
-        importKeyEnv,
-        appFields,
-      );
-      if (!importKeySchema) {
-        return NextResponse.json(
-          {
-            error: `取込キー（T番号）フィールド「${importKeyEnv}」がアプリ定義と一致しません。CUSTOMER_INFO_CONSTRUCTION_UNIQUE_KEY_FIELD_ID を確認してください。`,
-          },
-          { status: 500 },
-        );
-      }
-
-      if (!Object.prototype.hasOwnProperty.call(payload, importKeySchema)) {
-        const fieldsCsv = [
-          importKeySchema,
-          ...customerInfoImportKeySourceFieldIds(),
-        ].join(",");
-        let row = await fetchRecordById(
-          cfg.appId,
-          recordId,
-          pocketAuth,
-          fieldsCsv,
-        );
-        if (!row?.record) {
-          row = await fetchRecordById(cfg.appId, recordId, pocketAuth);
-        }
-        if (!row?.record || typeof row.record !== "object") {
-          return NextResponse.json(
-            { error: "レコードが見つかりません" },
-            { status: 404 },
-          );
-        }
-        const recObj = row.record as Record<string, unknown>;
-        const keyValue = readCustomerInfoImportKeyFromRecord(
-          recObj,
-          importKeySchema,
-          customerInfoImportKeySourceFieldIds(),
-        );
-        if (!keyValue) {
-          return NextResponse.json(
-            {
-              error:
-                "このレコードの T番号（取込キー）を取得できませんでした。@pocket に T番号 が入っているか、CUSTOMER_INFO_CONSTRUCTION_UNIQUE_KEY_FIELD_ID が「T番号」列の識別名と一致しているか確認してください。",
-            },
-            { status: 400 },
-          );
-        }
-        payload[importKeySchema] = keyValue;
-      }
-    }
-
-    // 変更項目 + 取込キーのみ PUT（GET 全体を載せると field-数字 で 400 になる）
-    await updateRecord(cfg.appId, recordId, payload, pocketAuth);
-
+    const keyErr = await attachImportKeyAndUpdate(
+      cfg.appId,
+      recordId,
+      pocketAuth,
+      appFields,
+      patch,
+    );
+    if (keyErr) return keyErr;
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("[api/customer-info/records/[recordId] PUT]", e);

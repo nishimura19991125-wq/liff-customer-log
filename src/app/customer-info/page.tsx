@@ -14,8 +14,13 @@ import {
   LiffSessionExpiredPanel,
   LiffStaffBindPanel,
 } from "@/components/liff-chrome";
+import {
+  CustomerInfoEditForm,
+  type CustomerInfoFormFieldApi,
+} from "@/components/customer-info-edit-form";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
+import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -36,9 +41,12 @@ type EditableField = {
 
 type RecordDetail = {
   recordId: string;
+  usesFormSchema?: boolean;
   display: Array<{ fieldId: string; label: string; value: string }>;
-  editableFields: EditableField[];
-  editableFieldIdsConfigured: boolean;
+  formFields?: CustomerInfoFormFieldApi[];
+  missingCaptions?: string[];
+  editableFields?: EditableField[];
+  editableFieldIdsConfigured?: boolean;
 };
 
 type View = "search" | "edit";
@@ -64,7 +72,9 @@ export default function CustomerInfoPage() {
   const [searchFeedback, setSearchFeedback] = useState<string | null>(null);
   const [loadingRecord, setLoadingRecord] = useState(false);
   const [detail, setDetail] = useState<RecordDetail | null>(null);
-  const [editValues, setEditValues] = useState<Record<string, string>>({});
+  const [editValues, setEditValues] = useState<CustomerInfoFormValues>({});
+  const [formFields, setFormFields] = useState<CustomerInfoFormFieldApi[]>([]);
+  const [missingCaptions, setMissingCaptions] = useState<string[] | undefined>();
   const [saving, setSaving] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<{
     kind: "ok" | "err";
@@ -179,11 +189,23 @@ export default function CustomerInfoPage() {
           setSearchFeedback(data.error ?? "レコードの取得に失敗しました");
           return;
         }
-        const initial: Record<string, string> = {};
-        for (const f of data.editableFields) {
-          initial[f.fieldId] = f.value;
+        if (data.usesFormSchema && data.formFields?.length) {
+          const initial: CustomerInfoFormValues = {};
+          for (const f of data.formFields) {
+            initial[f.key] = f.value;
+          }
+          setEditValues(initial);
+          setFormFields(data.formFields);
+          setMissingCaptions(data.missingCaptions);
+        } else {
+          const initial: CustomerInfoFormValues = {};
+          for (const f of data.editableFields ?? []) {
+            initial[f.fieldId] = f.value;
+          }
+          setEditValues(initial);
+          setFormFields([]);
+          setMissingCaptions(undefined);
         }
-        setEditValues(initial);
         setDetail(data);
         setView("edit");
       } catch {
@@ -209,7 +231,11 @@ export default function CustomerInfoPage() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ fields: editValues }),
+          body: JSON.stringify(
+            detail.usesFormSchema
+              ? { formValues: editValues }
+              : { fields: editValues },
+          ),
         },
       );
       const data = (await res.json()) as { error?: string; ok?: boolean };
@@ -400,15 +426,24 @@ export default function CustomerInfoPage() {
                 <p className="mb-2 text-[12px] font-bold text-slate-700">
                   編集
                 </p>
-                {detail.editableFields.length === 0 ? (
+                {detail.usesFormSchema && formFields.length > 0 ? (
+                  <CustomerInfoEditForm
+                    formFields={formFields}
+                    values={editValues}
+                    saving={saving}
+                    missingCaptions={missingCaptions}
+                    onChange={(key, value) =>
+                      setEditValues((prev) => ({ ...prev, [key]: value }))
+                    }
+                  />
+                ) : (detail.editableFields?.length ?? 0) === 0 ? (
                   <p className="text-[13px] leading-relaxed text-slate-500">
-                    編集可能な項目はまだ設定されていません。環境変数
-                    CUSTOMER_INFO_EDITABLE_FIELD_IDS
-                    で指定すると、ここに入力欄が表示されます（未設定時はお客様名のみ編集可能です）。
+                    編集可能な項目を読み込めませんでした。@pocket
+                    の列見出しがフォーム定義と一致しているか確認してください。
                   </p>
                 ) : (
                   <div className="flex flex-col gap-3">
-                    {detail.editableFields.map((field) => (
+                    {(detail.editableFields ?? []).map((field) => (
                       <label key={field.fieldId} className="block">
                         <span className="mb-1 block text-[12px] font-semibold text-slate-700">
                           {field.label}
@@ -435,7 +470,9 @@ export default function CustomerInfoPage() {
                     disabled={
                       saving ||
                       needsStaffBind ||
-                      detail.editableFields.length === 0
+                      (detail.usesFormSchema
+                        ? formFields.length === 0
+                        : (detail.editableFields?.length ?? 0) === 0)
                     }
                     onClick={() => void handleSave()}
                   >

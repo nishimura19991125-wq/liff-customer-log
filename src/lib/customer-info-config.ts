@@ -37,7 +37,12 @@ export function customerInfoImportKeySourceFieldIds(): string[] {
   return csv.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-/** 未設定時はお客様名のみ編集可（後から CUSTOMER_INFO_EDITABLE_FIELD_IDS で追加） */
+/** true のとき CUSTOMER_INFO_EDITABLE_FIELD_IDS のみ（旧方式） */
+export function customerInfoUsesLegacyEditableList(): boolean {
+  return Boolean(process.env.CUSTOMER_INFO_EDITABLE_FIELD_IDS?.trim());
+}
+
+/** 未設定時は組み込みフォーム全項目。旧方式時は CSV のみ */
 export function customerInfoEditableFieldIds(): string[] {
   const csv = process.env.CUSTOMER_INFO_EDITABLE_FIELD_IDS?.trim();
   if (csv) {
