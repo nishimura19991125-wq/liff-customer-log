@@ -10,7 +10,7 @@ export const INSTALLATION_TYPE_OPTIONS = [
 ] as const;
 
 export const ROOF_MATERIAL_OPTIONS = [
-  "金属縦平葺き",
+  "金属縦平葺",
   "カラーベスト",
   "アスファルトシングル",
   "平板瓦",
