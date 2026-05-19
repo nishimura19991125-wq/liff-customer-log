@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import {
   customerInfoConfigReady,
   customerInfoEditableFieldIds,
+  customerInfoImportKeyFieldId,
+  customerInfoImportKeySourceFieldIds,
   customerInfoPocketAuth,
   customerInfoSubtitleFieldId,
 } from "@/lib/customer-info-config";
@@ -10,6 +12,7 @@ import {
   customerInfoPutValue,
   fieldCaptionByUniqueId,
   readCustomerInfoFieldValue,
+  readCustomerInfoImportKeyFromRecord,
   resolveCustomerInfoFieldIds,
 } from "@/lib/customer-info-record";
 import { fetchAppFields, fetchRecordById, updateRecord } from "@/lib/atpocket";
@@ -208,13 +211,73 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       );
     }
 
-    // 変更した項目のみ PUT（GET の record に混ざる field-数字 等を載せると 400 になる）
-    await updateRecord(cfg.appId, recordId, patch, pocketAuth);
+    const payload: Record<string, unknown> = { ...patch };
+
+    const importKeyEnv = customerInfoImportKeyFieldId();
+    if (importKeyEnv) {
+      const importKeySchema = resolveConfiguredFieldToSchemaUniqueId(
+        importKeyEnv,
+        appFields,
+      );
+      if (!importKeySchema) {
+        return NextResponse.json(
+          {
+            error: `取込キー（T番号）フィールド「${importKeyEnv}」がアプリ定義と一致しません。CUSTOMER_INFO_CONSTRUCTION_UNIQUE_KEY_FIELD_ID を確認してください。`,
+          },
+          { status: 500 },
+        );
+      }
+
+      if (!Object.prototype.hasOwnProperty.call(payload, importKeySchema)) {
+        const fieldsCsv = [
+          importKeySchema,
+          ...customerInfoImportKeySourceFieldIds(),
+        ].join(",");
+        let row = await fetchRecordById(
+          cfg.appId,
+          recordId,
+          pocketAuth,
+          fieldsCsv,
+        );
+        if (!row?.record) {
+          row = await fetchRecordById(cfg.appId, recordId, pocketAuth);
+        }
+        if (!row?.record || typeof row.record !== "object") {
+          return NextResponse.json(
+            { error: "レコードが見つかりません" },
+            { status: 404 },
+          );
+        }
+        const recObj = row.record as Record<string, unknown>;
+        const keyValue = readCustomerInfoImportKeyFromRecord(
+          recObj,
+          importKeySchema,
+          customerInfoImportKeySourceFieldIds(),
+        );
+        if (!keyValue) {
+          return NextResponse.json(
+            {
+              error:
+                "このレコードの T番号（取込キー）を取得できませんでした。@pocket に T番号 が入っているか、CUSTOMER_INFO_CONSTRUCTION_UNIQUE_KEY_FIELD_ID が「T番号」列の識別名と一致しているか確認してください。",
+            },
+            { status: 400 },
+          );
+        }
+        payload[importKeySchema] = keyValue;
+      }
+    }
+
+    // 変更項目 + 取込キーのみ PUT（GET 全体を載せると field-数字 で 400 になる）
+    await updateRecord(cfg.appId, recordId, payload, pocketAuth);
 
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("[api/customer-info/records/[recordId] PUT]", e);
-    const msg = e instanceof Error ? e.message : "更新に失敗しました";
+    let msg = e instanceof Error ? e.message : "更新に失敗しました";
+    if (msg.includes("T番号") && msg.includes("取込設定")) {
+      msg =
+        "@pocket: 取込キー「T番号」を認識できませんでした。お客様情報アプリの取込設定に「T番号」がキー項目として含まれているか、CUSTOMER_INFO_CONSTRUCTION_UNIQUE_KEY_FIELD_ID が管理画面の「T番号」列の識別名（field-1 など）と一致しているか確認してください。";
+    }
     return NextResponse.json({ error: msg }, { status: 502 });
   }
 }

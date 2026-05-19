@@ -84,6 +84,27 @@ export function readCustomerInfoFieldValue(
   );
 }
 
+/** 取込キー（T番号）の表示値。正式 uniqueId 以外のキー（field-数字 等）からも拾う */
+export function readCustomerInfoImportKeyFromRecord(
+  recObj: Record<string, unknown>,
+  schemaId: string,
+  sourceFieldIds: string[] = [],
+): string {
+  const direct = readCustomerInfoFieldValue(recObj, schemaId);
+  if (direct) return direct;
+  for (const sk of sourceFieldIds) {
+    const v = readCustomerInfoFieldValue(recObj, sk);
+    if (v) return v;
+  }
+  const legacy = Object.entries(recObj).filter(
+    ([k, v]) => /^field-\d+$/i.test(k) && coerceCustomerInfoDisplayString(v),
+  );
+  if (legacy.length === 1) {
+    return coerceCustomerInfoDisplayString(legacy[0][1]);
+  }
+  return "";
+}
+
 /** PUT 用: 文字列・数値程度に正規化 */
 export function customerInfoPutValue(raw: unknown): unknown {
   if (raw == null) return "";

@@ -25,6 +25,18 @@ export function customerInfoSubtitleFieldId(): string | null {
   return id || null;
 }
 
+/** 取込キー（T番号）。PUT 更新時に既存値を載せるために使用 */
+export function customerInfoImportKeyFieldId(): string | null {
+  return process.env.CUSTOMER_INFO_CONSTRUCTION_UNIQUE_KEY_FIELD_ID?.trim() || null;
+}
+
+/** GET が field-数字 のみ返すときの T番号読み取り元（カンマ区切り・任意） */
+export function customerInfoImportKeySourceFieldIds(): string[] {
+  const csv = process.env.CUSTOMER_INFO_IMPORT_KEY_SOURCE_FIELD_IDS?.trim();
+  if (!csv) return [];
+  return csv.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
 /** 未設定時はお客様名のみ編集可（後から CUSTOMER_INFO_EDITABLE_FIELD_IDS で追加） */
 export function customerInfoEditableFieldIds(): string[] {
   const csv = process.env.CUSTOMER_INFO_EDITABLE_FIELD_IDS?.trim();
