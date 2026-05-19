@@ -77,6 +77,15 @@ export function resolveCustomerInfoFormFields(
   const missingCaptions: string[] = [];
 
   for (const def of CUSTOMER_INFO_FORM_FIELDS) {
+    if (def.liffOnly) {
+      resolved.push({
+        ...def,
+        fieldId: "",
+        label: def.formLabel ?? def.caption,
+        value: "",
+      });
+      continue;
+    }
     const fieldId = resolveCustomerInfoFormFieldId(
       def.key,
       def.caption,
@@ -89,7 +98,9 @@ export function resolveCustomerInfoFormFields(
     resolved.push({
       ...def,
       fieldId,
-      label: fieldCaptionByUniqueId(appFields, fieldId) || def.caption,
+      label:
+        (def.formLabel ?? fieldCaptionByUniqueId(appFields, fieldId)) ||
+        def.caption,
       value: "",
     });
   }
@@ -129,12 +140,33 @@ export function resolveCustomerInfoPtTransferFields(
   return { resolved, missingCaptions };
 }
 
+function pocketValuePresent(raw: string): boolean {
+  const t = raw.trim();
+  return t !== "" && t !== "-";
+}
+
+/** 品番②・枚数②からパネルの組み合わせ（LIFF 専用）を推定 */
+export function inferPanelComboFromRecord(
+  recObj: Record<string, unknown>,
+  resolved: CustomerInfoFormFieldResolved[],
+): "無" | "有" {
+  for (const key of ["panelModel2", "panelCount2"] as const) {
+    const field = resolved.find((f) => f.key === key);
+    if (!field?.fieldId) continue;
+    if (pocketValuePresent(readCustomerInfoFieldValue(recObj, field.fieldId))) {
+      return "有";
+    }
+  }
+  return "無";
+}
+
 export function readCustomerInfoFormValuesFromRecord(
   recObj: Record<string, unknown>,
   resolved: CustomerInfoFormFieldResolved[],
 ): CustomerInfoFormValues {
   const values: CustomerInfoFormValues = {};
   for (const field of resolved) {
+    if (field.liffOnly) continue;
     const raw = readCustomerInfoFieldValue(recObj, field.fieldId);
     if (field.type === "checkbox-group") {
       values[field.key] = raw
@@ -149,6 +181,10 @@ export function readCustomerInfoFormValuesFromRecord(
     } else {
       values[field.key] = raw;
     }
+  }
+  const panelCombo = resolved.find((f) => f.key === "panelCombo");
+  if (panelCombo?.liffOnly) {
+    values.panelCombo = inferPanelComboFromRecord(recObj, resolved);
   }
   return values;
 }
@@ -172,7 +208,10 @@ export function customerInfoFormFieldsCsv(
   resolved: CustomerInfoFormFieldResolved[],
 ): string {
   const ids = new Set<string>();
-  for (const f of resolved) ids.add(f.fieldId);
+  for (const f of resolved) {
+    if (f.liffOnly || !f.fieldId) continue;
+    ids.add(f.fieldId);
+  }
   return [...ids].join(",");
 }
 
@@ -190,7 +229,10 @@ export function formValuesFromPutBody(
       hasKey = true;
       byKey[field.key] = String(body[field.key] ?? "").trim();
     }
-    if (Object.prototype.hasOwnProperty.call(body, field.fieldId)) {
+    if (
+      field.fieldId &&
+      Object.prototype.hasOwnProperty.call(body, field.fieldId)
+    ) {
       hasFieldId = true;
       byFieldId[field.key] = String(body[field.fieldId] ?? "").trim();
     }

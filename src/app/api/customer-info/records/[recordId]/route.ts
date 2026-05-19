@@ -154,6 +154,7 @@ export async function GET(request: Request, ctx: RouteCtx) {
         type: f.type,
         options: f.options ? [...f.options] : undefined,
         optionsPending: f.optionsPending,
+        liffOnly: f.liffOnly === true,
         value: values[f.key] ?? "",
       }));
 

@@ -86,6 +86,7 @@ export function buildCustomerInfoFormPayload(
 ): Record<string, string> {
   const payload: Record<string, string> = {};
   for (const field of resolved) {
+    if (field.liffOnly) continue;
     const visible = isCustomerInfoFormFieldVisible(field.key, values);
     if (visible) {
       payload[field.fieldId] = norm(values[field.key]);

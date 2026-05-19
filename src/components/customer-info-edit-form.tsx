@@ -26,6 +26,7 @@ export type CustomerInfoFormFieldApi = {
   type: CustomerInfoFieldType;
   options?: string[];
   optionsPending?: boolean;
+  liffOnly?: boolean;
   value: string;
 };
 
