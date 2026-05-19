@@ -2,7 +2,7 @@
 
 import liff from "@line/liff";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   LiffAccountBar,
@@ -18,6 +18,10 @@ import {
   CustomerInfoEditForm,
   type CustomerInfoFormFieldApi,
 } from "@/components/customer-info-edit-form";
+import {
+  CustomerInfoSaveBar,
+  type CustomerInfoSaveFeedback,
+} from "@/components/customer-info-save-bar";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
@@ -76,10 +80,9 @@ export default function CustomerInfoPage() {
   const [formFields, setFormFields] = useState<CustomerInfoFormFieldApi[]>([]);
   const [missingCaptions, setMissingCaptions] = useState<string[] | undefined>();
   const [saving, setSaving] = useState(false);
-  const [saveFeedback, setSaveFeedback] = useState<{
-    kind: "ok" | "err";
-    text: string;
-  } | null>(null);
+  const [saveFeedback, setSaveFeedback] =
+    useState<CustomerInfoSaveFeedback | null>(null);
+  const saveBarRef = useRef<HTMLDivElement>(null);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -167,12 +170,22 @@ export default function CustomerInfoPage() {
     }
   }, [idToken, searchQuery]);
 
+  useEffect(() => {
+    if (!saveFeedback || !saveBarRef.current) return;
+    saveBarRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [saveFeedback]);
+
   const openRecord = useCallback(
-    async (recordId: string) => {
+    async (
+      recordId: string,
+      opts?: { clearSaveFeedback?: boolean },
+    ) => {
       const token = idToken;
       if (!token) return;
       setLoadingRecord(true);
-      setSaveFeedback(null);
+      if (opts?.clearSaveFeedback !== false) {
+        setSaveFeedback(null);
+      }
       try {
         const res = await fetch(
           `/api/customer-info/records/${encodeURIComponent(recordId)}`,
@@ -250,8 +263,16 @@ export default function CustomerInfoPage() {
         });
         return;
       }
-      setSaveFeedback({ kind: "ok", text: "保存しました。@pocket に反映済みです。" });
-      await openRecord(detail.recordId);
+      const savedAt = new Date().toLocaleTimeString("ja-JP", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      setSaveFeedback({
+        kind: "ok",
+        text: "お客様情報を @pocket に保存しました",
+        savedAt,
+      });
+      await openRecord(detail.recordId, { clearSaveFeedback: false });
     } catch {
       setSaveFeedback({ kind: "err", text: "通信に失敗しました" });
     } finally {
@@ -464,32 +485,18 @@ export default function CustomerInfoPage() {
                     ))}
                   </div>
                 )}
-                <div className="mt-4">
-                  <LiffPrimaryButton
-                    type="button"
-                    disabled={
-                      saving ||
-                      needsStaffBind ||
-                      (detail.usesFormSchema
-                        ? formFields.length === 0
-                        : (detail.editableFields?.length ?? 0) === 0)
-                    }
-                    onClick={() => void handleSave()}
-                  >
-                    {saving ? "保存中…" : "保存して @pocket に反映"}
-                  </LiffPrimaryButton>
-                </div>
-                {saveFeedback ? (
-                  <p
-                    className={`mt-3 text-[13px] font-semibold leading-relaxed ${
-                      saveFeedback.kind === "ok"
-                        ? "text-emerald-800"
-                        : "text-red-700"
-                    }`}
-                  >
-                    {saveFeedback.text}
-                  </p>
-                ) : null}
+                <CustomerInfoSaveBar
+                  ref={saveBarRef}
+                  saving={saving}
+                  disabled={
+                    needsStaffBind ||
+                    (detail.usesFormSchema
+                      ? formFields.length === 0
+                      : (detail.editableFields?.length ?? 0) === 0)
+                  }
+                  feedback={saveFeedback}
+                  onSave={() => void handleSave()}
+                />
               </div>
             </LiffCard>
           ) : null}
