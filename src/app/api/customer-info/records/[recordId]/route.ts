@@ -12,12 +12,7 @@ import {
   readCustomerInfoFieldValue,
   resolveCustomerInfoFieldIds,
 } from "@/lib/customer-info-record";
-import {
-  fetchAppFields,
-  fetchRecordById,
-  pickRecordFieldsForSchema,
-  updateRecord,
-} from "@/lib/atpocket";
+import { fetchAppFields, fetchRecordById, updateRecord } from "@/lib/atpocket";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
 import {
   lineAuthUnauthorizedResponse,
@@ -213,29 +208,8 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       );
     }
 
-    const schemaSet = new Set(
-      appFields
-        .map((f) => f.uniqueId?.trim())
-        .filter((u): u is string => Boolean(u)),
-    );
-
-    const existing = await fetchRecordById(cfg.appId, recordId, pocketAuth);
-    if (!existing?.record || typeof existing.record !== "object") {
-      return NextResponse.json(
-        { error: "レコードが見つかりません" },
-        { status: 404 },
-      );
-    }
-
-    const merged = {
-      ...pickRecordFieldsForSchema(
-        existing.record as Record<string, unknown>,
-        schemaSet,
-      ),
-      ...patch,
-    };
-
-    await updateRecord(cfg.appId, recordId, merged, pocketAuth);
+    // 変更した項目のみ PUT（GET の record に混ざる field-数字 等を載せると 400 になる）
+    await updateRecord(cfg.appId, recordId, patch, pocketAuth);
 
     return NextResponse.json({ ok: true });
   } catch (e) {
