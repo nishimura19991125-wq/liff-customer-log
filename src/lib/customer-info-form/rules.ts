@@ -1,3 +1,4 @@
+import { checkboxGroupValueToPocketArray } from "@/lib/customer-info-form/checkbox-pocket";
 import {
   CUSTOMER_INFO_FORM_FIELDS,
   INSTALLATION_TYPE_OPTIONS,
@@ -83,11 +84,20 @@ function hiddenPayloadValue(
 export function buildCustomerInfoFormPayload(
   values: CustomerInfoFormValues,
   resolved: CustomerInfoFormFieldResolved[],
-): Record<string, string> {
-  const payload: Record<string, string> = {};
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
   for (const field of resolved) {
     if (field.liffOnly) continue;
     const visible = isCustomerInfoFormFieldVisible(field.key, values);
+    if (field.type === "checkbox-group") {
+      payload[field.fieldId] = visible
+        ? checkboxGroupValueToPocketArray(
+            norm(values[field.key]),
+            field.options,
+          )
+        : [];
+      continue;
+    }
     if (visible) {
       payload[field.fieldId] = norm(values[field.key]);
     } else {

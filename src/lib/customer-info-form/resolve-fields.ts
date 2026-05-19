@@ -1,12 +1,16 @@
 import "server-only";
 
 import type { AtPocketFieldRow } from "@/lib/atpocket";
-import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
+import {
+  pickRecordValueByFieldAliases,
+  resolveConfiguredFieldToSchemaUniqueId,
+} from "@/lib/calendar-kojo";
 import { customerInfoNameFieldId } from "@/lib/customer-info-config";
 import {
   fieldCaptionByUniqueId,
   readCustomerInfoFieldValue,
 } from "@/lib/customer-info-record";
+import { checkboxGroupValueFromPocket } from "@/lib/customer-info-form/checkbox-pocket";
 import {
   CUSTOMER_INFO_PT_TRANSFER_FIELDS,
   formatPtWithCommas,
@@ -218,11 +222,9 @@ export function readCustomerInfoFormValuesFromRecord(
     if (field.liffOnly) continue;
     const raw = readCustomerInfoFieldValue(recObj, field.fieldId);
     if (field.type === "checkbox-group") {
-      values[field.key] = raw
-        .split(/[,、\n]/)
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .join(",");
+      values[field.key] = checkboxGroupValueFromPocket(
+        pickRecordValueByFieldAliases(recObj, field.fieldId),
+      );
     } else if (field.type === "date") {
       values[field.key] = normalizeDateForInput(raw);
     } else if (field.type === "pt-integer") {

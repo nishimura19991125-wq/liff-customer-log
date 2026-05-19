@@ -78,7 +78,7 @@ export async function attachCustomerInfoImportKeyToPayload(
 function applyPtTransferToPayload(
   values: CustomerInfoFormValues,
   transferResolved: CustomerInfoFormFieldResolved[],
-  payload: Record<string, string>,
+  payload: Record<string, unknown>,
 ): void {
   const { clpt, appt } = computePtTransfer(values);
   for (const field of transferResolved) {

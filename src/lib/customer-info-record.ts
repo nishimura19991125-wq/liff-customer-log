@@ -108,6 +108,7 @@ export function readCustomerInfoImportKeyFromRecord(
 /** PUT 用: 文字列・数値程度に正規化 */
 export function customerInfoPutValue(raw: unknown): unknown {
   if (raw == null) return "";
+  if (Array.isArray(raw)) return raw;
   if (typeof raw === "string") return raw;
   if (typeof raw === "number" || typeof raw === "boolean") return raw;
   return coerceCustomerInfoDisplayString(raw);
