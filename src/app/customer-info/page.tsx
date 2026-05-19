@@ -29,8 +29,9 @@ import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
+/** iOS Safari は 16px 未満の input フォーカスで自動ズームするため text-base を使う */
 const INPUT_CLASS =
-  "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200";
+  "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200";
 
 type SearchHit = {
   recordId: string;
@@ -366,7 +367,10 @@ export default function CustomerInfoPage() {
                     お客様名で検索
                   </span>
                   <input
-                    type="search"
+                    type="text"
+                    inputMode="search"
+                    autoComplete="off"
+                    enterKeyHint="search"
                     className={INPUT_CLASS}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}

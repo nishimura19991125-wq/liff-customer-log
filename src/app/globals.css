@@ -68,7 +68,7 @@ body {
   }
 
   .construction-schedule-date-field .calendar-date-input {
-    @apply w-full max-w-full min-w-0 rounded-xl border border-slate-200 bg-white py-2.5 pl-3 pr-11 text-left text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-inset ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-inset focus:ring-emerald-200;
+    @apply w-full max-w-full min-w-0 rounded-xl border border-slate-200 bg-white py-2.5 pl-3 pr-11 text-left text-base text-slate-900 shadow-inner outline-none ring-1 ring-inset ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-inset focus:ring-emerald-200;
 
     position: relative;
     box-sizing: border-box;
