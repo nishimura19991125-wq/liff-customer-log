@@ -9,7 +9,11 @@ import {
   resolveConstructionFieldIds,
   resolveReportFieldIds,
 } from "@/lib/calendar-kojo";
-import { getOrComputeCalendarPayload } from "@/lib/calendar-response-cache";
+import {
+  buildCalendarPayloadCacheKey,
+  getOrComputeCalendarPayload,
+  invalidateCalendarPayloadCacheForMonth,
+} from "@/lib/calendar-response-cache";
 import {
   type AtPocketRecordRow,
   apiKeyForCalendarPocket,
@@ -74,22 +78,19 @@ export async function GET(request: Request) {
   const recordsQueryFilterEnabled =
     process.env.CALENDAR_RECORDS_QUERY_FILTER?.trim() === "true";
 
-  /** 認証済みユーザー間で同一の組織カレンダーを共有する前提のキャッシュキー（ユーザー ID は含めない） */
-  const cacheKey = JSON.stringify({
-    v: 3,
-    calAppId,
-    reportAppId,
-    extra: extraHolidayKeys.slice().sort().join(","),
-    sandwich: includeSandwich,
-    recordsQueryFilter: recordsQueryFilterEnabled,
-    year,
-    month,
-  });
+  const refresh =
+    url.searchParams.get("refresh") === "1" ||
+    url.searchParams.get("nocache") === "1";
+  if (refresh) {
+    invalidateCalendarPayloadCacheForMonth(year, month);
+  }
+
+  const cacheKey = buildCalendarPayloadCacheKey(year, month);
 
   try {
     const payload = await getOrComputeCalendarPayload(
       cacheKey,
-      calendarCacheTtlMs(),
+      refresh ? 0 : calendarCacheTtlMs(),
       async (): Promise<CalendarApiPayload> => {
         const calAuth = { apiKey: apiKeyForCalendarPocket() };
         const reportAuth = { apiKey: apiKeyForCalendarReportPocket() };

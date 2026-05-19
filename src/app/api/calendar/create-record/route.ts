@@ -6,6 +6,7 @@ import {
   createRecord,
   fetchAppFields,
 } from "@/lib/atpocket";
+import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { syncConstructionRecordToCustomerInfoApp } from "@/lib/sync-construction-to-customer-info";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import {
@@ -219,6 +220,7 @@ export async function POST(request: Request) {
 
     const createdRow = await createRecord(calAppId, record, pocketAuth);
     constructionSaved = true;
+    invalidateAllCalendarPayloadCache();
 
     if (process.env.CUSTOMER_INFO_APP_ID?.trim()) {
       const constructionRecordId = atPocketRecordIdFromRow(createdRow);

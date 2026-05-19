@@ -18,6 +18,7 @@ import {
   updateRecord,
 } from "@/lib/atpocket";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
+import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { syncConstructionRecordToCustomerInfoApp } from "@/lib/sync-construction-to-customer-info";
 import {
   lineAuthUnauthorizedResponse,
@@ -318,6 +319,7 @@ export async function POST(request: Request) {
       patch,
     );
     constructionUpdated = true;
+    invalidateAllCalendarPayloadCache();
 
     const customerSync = await syncConstructionRecordToCustomerInfoApp({
       calAppId,

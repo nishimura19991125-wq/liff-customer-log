@@ -1118,10 +1118,19 @@ export default function CalendarPage() {
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
   const [newRecordOpen, setNewRecordOpen] = useState(false);
 
-  const loadCalendar = useCallback(async (idToken: string, year: number, month: number) => {
-    setPhase("loading");
-    setErrorMessage(null);
+  const loadCalendar = useCallback(
+    async (
+      idToken: string,
+      year: number,
+      month: number,
+      options?: { refresh?: boolean },
+    ) => {
+    if (!options?.refresh) {
+      setPhase("loading");
+      setErrorMessage(null);
+    }
     const qs = new URLSearchParams({ year: String(year), month: String(month) });
+    if (options?.refresh) qs.set("refresh", "1");
     const res = await fetch(`/api/calendar?${qs}`, {
       headers: { Authorization: `Bearer ${idToken}` },
     });
@@ -1172,7 +1181,8 @@ export default function CalendarPage() {
     const payload = (await res.json()) as CalendarApiPayload;
     setData(payload);
     setPhase("ready");
-  }, []);
+  },
+  []);
 
   const [idToken, setIdToken] = useState<string | null>(null);
 
@@ -1431,7 +1441,7 @@ export default function CalendarPage() {
             onSaved={async () => {
               const t = idToken;
               if (!t) return;
-              await loadCalendar(t, ym.year, ym.month);
+              await loadCalendar(t, ym.year, ym.month, { refresh: true });
             }}
             onSessionExpired={() => setPhase("session-expired")}
           />
@@ -1681,7 +1691,9 @@ export default function CalendarPage() {
                                       onSaved={async () => {
                                         const t = idToken;
                                         if (!t) return;
-                                        await loadCalendar(t, ym.year, ym.month);
+                                        await loadCalendar(t, ym.year, ym.month, {
+                                          refresh: true,
+                                        });
                                       }}
                                       onSessionExpired={() =>
                                         setPhase("session-expired")
