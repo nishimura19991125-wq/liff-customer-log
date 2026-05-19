@@ -33,7 +33,7 @@ export const COSMETIC_COVER_OPTIONS = [
 /** お客様情報入力フォーム定義（見出しは @pocket 列名と一致させる） */
 export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   { key: "customerName", caption: "お客様名", type: "text" },
-  { key: "pt", caption: "PT", type: "text" },
+  { key: "pt", caption: "PT", type: "pt-integer" },
   { key: "apStaff", caption: "AP担当者", type: "text" },
   { key: "clStaff", caption: "CL担当者", type: "text" },
   { key: "introduction", caption: "導入経緯", type: "text" },

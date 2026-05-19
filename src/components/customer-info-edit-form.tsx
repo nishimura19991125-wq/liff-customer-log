@@ -3,8 +3,12 @@
 import { useMemo } from "react";
 
 import {
-  isCustomerInfoFormFieldVisible,
-} from "@/lib/customer-info-form/rules";
+  computePtTransfer,
+  formatPtWithCommas,
+  isSameApClStaff,
+  parsePtDigitsOnly,
+} from "@/lib/customer-info-form/pt-transfer";
+import { isCustomerInfoFormFieldVisible } from "@/lib/customer-info-form/rules";
 import type {
   CustomerInfoFieldType,
   CustomerInfoFormValues,
@@ -107,6 +111,23 @@ function FieldControl({
     );
   }
 
+  if (field.type === "pt-integer") {
+    return (
+      <input
+        type="text"
+        inputMode="numeric"
+        className={INPUT_CLASS}
+        value={value}
+        disabled={disabled}
+        placeholder="例：1,234"
+        onChange={(e) => {
+          const digits = parsePtDigitsOnly(e.target.value);
+          onChange(formatPtWithCommas(digits));
+        }}
+      />
+    );
+  }
+
   if (field.type === "date") {
     return (
       <input
@@ -130,6 +151,32 @@ function FieldControl({
       }
       onChange={(e) => onChange(e.target.value)}
     />
+  );
+}
+
+function PtTransferHint({ values }: { values: CustomerInfoFormValues }) {
+  const digits = parsePtDigitsOnly(values.pt ?? "");
+  if (!digits) return null;
+  const { clpt, appt } = computePtTransfer(values);
+  const same = isSameApClStaff(values);
+  return (
+    <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+      転記プレビュー:{" "}
+      {same ? (
+        <>
+          CLPT に <span className="font-semibold text-slate-700">{clpt}</span>
+          （AP・CL 同一担当）
+        </>
+      ) : (
+        <>
+          APPT <span className="font-semibold text-slate-700">{appt}</span>
+          {" / "}
+          CLPT <span className="font-semibold text-slate-700">{clpt}</span>
+          （PT÷2・切り捨て）
+        </>
+      )}
+      ・保存時はカンマなし
+    </p>
   );
 }
 
@@ -176,6 +223,7 @@ export function CustomerInfoEditForm({
             disabled={saving}
             onChange={(next) => onChange(field.key, next)}
           />
+          {field.key === "pt" ? <PtTransferHint values={values} /> : null}
         </label>
       ))}
     </div>

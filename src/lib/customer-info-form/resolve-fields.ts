@@ -8,6 +8,11 @@ import {
   readCustomerInfoFieldValue,
 } from "@/lib/customer-info-record";
 import {
+  CUSTOMER_INFO_PT_TRANSFER_FIELDS,
+  formatPtWithCommas,
+  parsePtDigitsOnly,
+} from "@/lib/customer-info-form/pt-transfer";
+import {
   CUSTOMER_INFO_FORM_FIELDS,
   CUSTOMER_INFO_FORM_FIELD_MAP,
 } from "@/lib/customer-info-form/schema";
@@ -92,6 +97,38 @@ export function resolveCustomerInfoFormFields(
   return { resolved, missingCaptions };
 }
 
+export function resolveCustomerInfoPtTransferFields(
+  appFields: AtPocketFieldRow[],
+): {
+  resolved: CustomerInfoFormFieldResolved[];
+  missingCaptions: string[];
+} {
+  const resolved: CustomerInfoFormFieldResolved[] = [];
+  const missingCaptions: string[] = [];
+
+  for (const def of CUSTOMER_INFO_PT_TRANSFER_FIELDS) {
+    const fieldId = resolveCustomerInfoFormFieldId(
+      def.key,
+      def.caption,
+      appFields,
+    );
+    if (!fieldId) {
+      missingCaptions.push(def.caption);
+      continue;
+    }
+    resolved.push({
+      key: def.key,
+      caption: def.caption,
+      type: "text",
+      fieldId,
+      label: fieldCaptionByUniqueId(appFields, fieldId) || def.caption,
+      value: "",
+    });
+  }
+
+  return { resolved, missingCaptions };
+}
+
 export function readCustomerInfoFormValuesFromRecord(
   recObj: Record<string, unknown>,
   resolved: CustomerInfoFormFieldResolved[],
@@ -107,6 +144,8 @@ export function readCustomerInfoFormValuesFromRecord(
         .join(",");
     } else if (field.type === "date") {
       values[field.key] = normalizeDateForInput(raw);
+    } else if (field.type === "pt-integer") {
+      values[field.key] = formatPtWithCommas(parsePtDigitsOnly(raw));
     } else {
       values[field.key] = raw;
     }

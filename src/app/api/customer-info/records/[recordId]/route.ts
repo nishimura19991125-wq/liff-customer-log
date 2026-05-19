@@ -14,6 +14,7 @@ import {
   formValuesFromPutBody,
   readCustomerInfoFormValuesFromRecord,
   resolveCustomerInfoFormFields,
+  resolveCustomerInfoPtTransferFields,
 } from "@/lib/customer-info-form/resolve-fields";
 import {
   customerInfoPutValue,
@@ -106,6 +107,11 @@ export async function GET(request: Request, ctx: RouteCtx) {
 
     if (!customerInfoUsesLegacyEditableList()) {
       const { resolved, missingCaptions } = resolveCustomerInfoFormFields(fields);
+      const transferResolve = resolveCustomerInfoPtTransferFields(fields);
+      const allMissing = [
+        ...missingCaptions,
+        ...transferResolve.missingCaptions,
+      ];
       if (resolved.length === 0) {
         return NextResponse.json(
           {
@@ -162,8 +168,7 @@ export async function GET(request: Request, ctx: RouteCtx) {
         usesFormSchema: true,
         display,
         formFields,
-        missingCaptions:
-          missingCaptions.length > 0 ? missingCaptions : undefined,
+        missingCaptions: allMissing.length > 0 ? allMissing : undefined,
       });
     }
 
@@ -288,7 +293,7 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         );
       }
 
-      const payload = formPayloadFromValues(values, resolved);
+      const payload = formPayloadFromValues(values, resolved, appFields);
       if (Object.keys(payload).length === 0) {
         return NextResponse.json(
           { error: "更新する項目がありません" },
