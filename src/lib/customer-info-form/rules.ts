@@ -29,10 +29,11 @@ function pocketFieldValueForPut(
   visible: boolean,
   hiddenFallback: string,
 ): string {
-  if (!visible) return hiddenFallback;
-  if (POCKET_ZERO_WHEN_EMPTY_KEYS.has(key) && isEmptyPocketInput(raw)) {
-    return "0";
+  if (POCKET_ZERO_WHEN_EMPTY_KEYS.has(key)) {
+    if (!visible || isEmptyPocketInput(raw)) return "0";
+    return raw.trim();
   }
+  if (!visible) return hiddenFallback;
   return raw.trim();
 }
 
