@@ -14,6 +14,7 @@ import {
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
 } from "@/lib/calendar-kojo";
+import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -36,22 +37,6 @@ type Body = {
   electricWorkDate?: string;
   appSettingsDayDate?: string;
 };
-
-function optionalYmd(raw: string | undefined): string | null {
-  const s = raw?.trim();
-  if (!s) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
-  const [y, m, d] = s.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  if (
-    dt.getFullYear() !== y ||
-    dt.getMonth() !== m - 1 ||
-    dt.getDate() !== d
-  ) {
-    return null;
-  }
-  return s;
-}
 
 /**
  * 工事アプリに新規レコードを追加（空枠更新と同じフィールド設定を利用）。
@@ -222,7 +207,7 @@ export async function POST(request: Request) {
           [fids.appSettingsDay, body.appSettingsDayDate],
         ];
       for (const [fid, raw] of quad) {
-        const ymd = optionalYmd(raw);
+        const ymd = optionalCalendarYmd(raw);
         const id = fid?.trim();
         if (ymd && id) record[id] = ymd;
       }

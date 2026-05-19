@@ -58,6 +58,9 @@ function parseConstructionHandlerStaffApiPayload(payload: {
 const HANDLER_STAFF_SELECT_CLASS =
   "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200";
 
+/** `type="date"` 専用（見た目は HANDLER_STAFF_SELECT_CLASS と揃え、globals.css で iOS/Android 調整） */
+const CALENDAR_DATE_INPUT_CLASS = "calendar-date-input";
+
 function ConstructionHandlerStaffSelect({
   submitting,
   canSubmit,
@@ -282,6 +285,10 @@ function EmptySlotCard({
     kind: "ok" | "err";
     text: string;
   } | null>(null);
+  const [shigumiDate, setShigumiDate] = useState("");
+  const [panelWorkDate, setPanelWorkDate] = useState("");
+  const [electricWorkDate, setElectricWorkDate] = useState("");
+  const [appSettingsDayDate, setAppSettingsDayDate] = useState("");
 
   const handlerFromStaff =
     constructionHandlerUsesStaffDirectory === true;
@@ -290,6 +297,18 @@ function EmptySlotCard({
 
   const rid = item.recordId?.trim();
   const canSubmit = Boolean(rid && idToken);
+
+  const isNewBuildHousing =
+    housingStatus === EMPTY_FILL_HOUSING_STATUS_NEW_BUILD;
+
+  useEffect(() => {
+    if (housingStatus !== EMPTY_FILL_HOUSING_STATUS_NEW_BUILD) {
+      setShigumiDate("");
+      setPanelWorkDate("");
+      setElectricWorkDate("");
+      setAppSettingsDayDate("");
+    }
+  }, [housingStatus]);
 
   useEffect(() => {
     if (!open || !idToken || !handlerFromStaff) {
@@ -387,6 +406,22 @@ function EmptySlotCard({
                   selectedHandlerStaffId.trim(),
               }
             : {}),
+          ...(hs === EMPTY_FILL_HOUSING_STATUS_NEW_BUILD
+            ? {
+                ...(shigumiDate.trim()
+                  ? { shigumiDate: shigumiDate.trim() }
+                  : {}),
+                ...(panelWorkDate.trim()
+                  ? { panelWorkDate: panelWorkDate.trim() }
+                  : {}),
+                ...(electricWorkDate.trim()
+                  ? { electricWorkDate: electricWorkDate.trim() }
+                  : {}),
+                ...(appSettingsDayDate.trim()
+                  ? { appSettingsDayDate: appSettingsDayDate.trim() }
+                  : {}),
+              }
+            : {}),
         }),
       });
       const data = (await res.json()) as { error?: string };
@@ -404,6 +439,10 @@ function EmptySlotCard({
       setCustomerName("");
       setHousingStatus("");
       setSelectedHandlerStaffId("");
+      setShigumiDate("");
+      setPanelWorkDate("");
+      setElectricWorkDate("");
+      setAppSettingsDayDate("");
       setOpen(false);
       await onSaved();
       setFeedback({
@@ -418,7 +457,7 @@ function EmptySlotCard({
   }
 
   return (
-    <div className="rounded-2xl border-2 border-dashed border-slate-400/75 bg-slate-50/95 px-4 py-4 shadow-inner shadow-slate-200/40 ring-1 ring-slate-200/70">
+    <div className="min-w-0 rounded-2xl border-2 border-dashed border-slate-400/75 bg-slate-50/95 px-4 py-4 shadow-inner shadow-slate-200/40 ring-1 ring-slate-200/70">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <span className="inline-flex rounded-full border border-dashed border-slate-400/70 bg-slate-200/90 px-2 py-0.5 text-[9px] font-extrabold tracking-wide text-slate-700 ring-1 ring-white/80">
           工事空枠
@@ -474,11 +513,20 @@ function EmptySlotCard({
       ) : null}
 
       {open ? (
-        <div className="mt-4 border-t border-slate-200/90 pt-4">
+        <div className="mt-4 min-w-0 border-t border-slate-200/90 pt-4">
           <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
-            住宅ステータス・お客様名・工事対応者（設定時）を登録すると、@pocket
-            のレコードが更新され、カレンダーでは「案件」として表示されます。その他の項目は
-            @pocket の編集画面で入力してください。
+            {isNewBuildHousing ? (
+              <>
+                住宅ステータスが「新築案件」のときは、お客様名に加えて工事日程を任意で指定できます（未入力でも保存できます）。工事対応者フィールドが有効な場合のみ工事対応者は必須です。その他は
+                @pocket の編集画面で入力してください。
+              </>
+            ) : (
+              <>
+                住宅ステータス・お客様名・工事対応者（設定時）を登録すると、@pocket
+                のレコードが更新され、カレンダーでは「案件」として表示されます。その他の項目は
+                @pocket の編集画面で入力してください。
+              </>
+            )}
           </p>
           <label className="block">
             <span className="mb-1 block text-[12px] font-bold text-slate-700">
@@ -514,6 +562,73 @@ function EmptySlotCard({
               disabled={submitting || !canSubmit}
             />
           </label>
+          {isNewBuildHousing ? (
+            <>
+              <p className="mt-4 mb-2 text-[12px] font-bold text-slate-700">
+                工事日程
+                <span className="font-medium text-slate-500">
+                  {" "}
+                  （すべて任意・カレンダーから選択）
+                </span>
+              </p>
+              <label className="block">
+                <span className="mb-1 block text-[12px] font-bold text-slate-700">
+                  仕込日
+                </span>
+                <div className="construction-schedule-date-field">
+                  <input
+                    type="date"
+                    className={CALENDAR_DATE_INPUT_CLASS}
+                    value={shigumiDate}
+                    onChange={(e) => setShigumiDate(e.target.value)}
+                    disabled={submitting || !canSubmit}
+                  />
+                </div>
+              </label>
+              <label className="mt-3 block">
+                <span className="mb-1 block text-[12px] font-bold text-slate-700">
+                  パネル工事日
+                </span>
+                <div className="construction-schedule-date-field">
+                  <input
+                    type="date"
+                    className={CALENDAR_DATE_INPUT_CLASS}
+                    value={panelWorkDate}
+                    onChange={(e) => setPanelWorkDate(e.target.value)}
+                    disabled={submitting || !canSubmit}
+                  />
+                </div>
+              </label>
+              <label className="mt-3 block">
+                <span className="mb-1 block text-[12px] font-bold text-slate-700">
+                  電気工事日
+                </span>
+                <div className="construction-schedule-date-field">
+                  <input
+                    type="date"
+                    className={CALENDAR_DATE_INPUT_CLASS}
+                    value={electricWorkDate}
+                    onChange={(e) => setElectricWorkDate(e.target.value)}
+                    disabled={submitting || !canSubmit}
+                  />
+                </div>
+              </label>
+              <label className="mt-3 block">
+                <span className="mb-1 block text-[12px] font-bold text-slate-700">
+                  アプリ設定日
+                </span>
+                <div className="construction-schedule-date-field">
+                  <input
+                    type="date"
+                    className={CALENDAR_DATE_INPUT_CLASS}
+                    value={appSettingsDayDate}
+                    onChange={(e) => setAppSettingsDayDate(e.target.value)}
+                    disabled={submitting || !canSubmit}
+                  />
+                </div>
+              </label>
+            </>
+          ) : null}
           {handlerMisconfigured ? (
             <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-amber-900 ring-1 ring-amber-100">
               工事対応者にスタッフ名簿を使うには、STAFF_APP_ID・STAFF_NAME_FIELD_ID・STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID
@@ -759,7 +874,7 @@ function NewConstructionRecordPanel({
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm ring-1 ring-slate-100">
+    <div className="min-w-0 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm ring-1 ring-slate-100">
       <button
         type="button"
         className="w-full rounded-xl bg-[#06C755] py-3 text-[14px] font-bold text-white shadow-sm transition active:scale-[0.99]"
@@ -772,7 +887,7 @@ function NewConstructionRecordPanel({
       </button>
 
       {open ? (
-        <div className="mt-4 border-t border-slate-200/90 pt-4">
+        <div className="mt-4 min-w-0 border-t border-slate-200/90 pt-4">
           <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
             {isNewBuildHousing ? (
               <>
@@ -821,61 +936,71 @@ function NewConstructionRecordPanel({
             />
           </label>
           {isNewBuildHousing ? (
-            <div className="mt-4 rounded-xl border border-slate-200/90 bg-slate-50/90 px-3 py-3 ring-1 ring-slate-100">
-              <p className="mb-2 text-[11px] font-bold leading-snug text-slate-600">
-                工事日程（すべて任意・カレンダーから選択）
+            <>
+              <p className="mt-4 mb-2 text-[12px] font-bold text-slate-700">
+                工事日程
+                <span className="font-medium text-slate-500">
+                  {" "}
+                  （すべて任意・カレンダーから選択）
+                </span>
               </p>
-              <div className="flex flex-col gap-3">
-                <label className="block">
-                  <span className="mb-1 block text-[12px] font-semibold text-slate-700">
-                    仕込日
-                  </span>
+              <label className="block">
+                <span className="mb-1 block text-[12px] font-bold text-slate-700">
+                  仕込日
+                </span>
+                <div className="construction-schedule-date-field">
                   <input
                     type="date"
-                    className={HANDLER_STAFF_SELECT_CLASS}
+                    className={CALENDAR_DATE_INPUT_CLASS}
                     value={shigumiDate}
                     onChange={(e) => setShigumiDate(e.target.value)}
                     disabled={submitting || !canSubmit}
                   />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-[12px] font-semibold text-slate-700">
-                    パネル工事日
-                  </span>
+                </div>
+              </label>
+              <label className="mt-3 block">
+                <span className="mb-1 block text-[12px] font-bold text-slate-700">
+                  パネル工事日
+                </span>
+                <div className="construction-schedule-date-field">
                   <input
                     type="date"
-                    className={HANDLER_STAFF_SELECT_CLASS}
+                    className={CALENDAR_DATE_INPUT_CLASS}
                     value={panelWorkDate}
                     onChange={(e) => setPanelWorkDate(e.target.value)}
                     disabled={submitting || !canSubmit}
                   />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-[12px] font-semibold text-slate-700">
-                    電気工事日
-                  </span>
+                </div>
+              </label>
+              <label className="mt-3 block">
+                <span className="mb-1 block text-[12px] font-bold text-slate-700">
+                  電気工事日
+                </span>
+                <div className="construction-schedule-date-field">
                   <input
                     type="date"
-                    className={HANDLER_STAFF_SELECT_CLASS}
+                    className={CALENDAR_DATE_INPUT_CLASS}
                     value={electricWorkDate}
                     onChange={(e) => setElectricWorkDate(e.target.value)}
                     disabled={submitting || !canSubmit}
                   />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-[12px] font-semibold text-slate-700">
-                    アプリ設定日
-                  </span>
+                </div>
+              </label>
+              <label className="mt-3 block">
+                <span className="mb-1 block text-[12px] font-bold text-slate-700">
+                  アプリ設定日
+                </span>
+                <div className="construction-schedule-date-field">
                   <input
                     type="date"
-                    className={HANDLER_STAFF_SELECT_CLASS}
+                    className={CALENDAR_DATE_INPUT_CLASS}
                     value={appSettingsDayDate}
                     onChange={(e) => setAppSettingsDayDate(e.target.value)}
                     disabled={submitting || !canSubmit}
                   />
-                </label>
-              </div>
-            </div>
+                </div>
+              </label>
+            </>
           ) : null}
           {handlerMisconfigured ? (
             <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-amber-900 ring-1 ring-amber-100">

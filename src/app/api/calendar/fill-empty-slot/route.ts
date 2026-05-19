@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { isValidEmptyFillHousingStatus } from "@/lib/calendar-empty-fill-options";
+import {
+  EMPTY_FILL_HOUSING_STATUS_NEW_BUILD,
+  isValidEmptyFillHousingStatus,
+} from "@/lib/calendar-empty-fill-options";
+import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
 import {
   constructionTitleFieldIsEmpty,
   pickRecordValueByFieldAliases,
@@ -32,6 +36,11 @@ type Body = {
   constructionHandlerStaffRecordId?: string;
   /** 後方互換（工事登録者API名） */
   constructionRegistrantStaffRecordId?: string;
+  /** 新築案件の任意日程（YYYY-MM-DD）。未送信・空は書き込まない */
+  shigumiDate?: string;
+  panelWorkDate?: string;
+  electricWorkDate?: string;
+  appSettingsDayDate?: string;
 };
 
 /** GET/PUT に載せるフィールドは必要なもののみ（それ以外を PUT すると「有効なフィールドではありません」になることがある） */
@@ -282,6 +291,21 @@ export async function POST(request: Request) {
     };
     if (resolvedHandlerField != null && handlerValueToPut != null) {
       patch[resolvedHandlerField] = handlerValueToPut;
+    }
+
+    if (housingRaw === EMPTY_FILL_HOUSING_STATUS_NEW_BUILD) {
+      const quad: Array<[fieldId: string | undefined, raw: string | undefined]> =
+        [
+          [fids.shigumi, body.shigumiDate],
+          [fids.panelWork, body.panelWorkDate],
+          [fids.electricWork, body.electricWorkDate],
+          [fids.appSettingsDay, body.appSettingsDayDate],
+        ];
+      for (const [fid, raw] of quad) {
+        const ymd = optionalCalendarYmd(raw);
+        const id = fid?.trim();
+        if (ymd && id) patch[id] = ymd;
+      }
     }
 
     await updateFillEmptySlotPocketRecord(
