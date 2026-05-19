@@ -143,6 +143,8 @@ export async function POST(request: Request) {
 
   const pocketAuth = { apiKey: apiKeyForCalendarPocket() };
 
+  let constructionSaved = false;
+
   try {
     const constructionFields = await fetchAppFields(calAppId, pocketAuth);
 
@@ -216,6 +218,7 @@ export async function POST(request: Request) {
     }
 
     const createdRow = await createRecord(calAppId, record, pocketAuth);
+    constructionSaved = true;
 
     if (process.env.CUSTOMER_INFO_APP_ID?.trim()) {
       const constructionRecordId = atPocketRecordIdFromRow(createdRow);
@@ -254,6 +257,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("[api/calendar/create-record]", e);
+    const detail = e instanceof Error ? e.message : String(e);
+    if (constructionSaved) {
+      return NextResponse.json(
+        {
+          error: `${detail}（工事アプリへの登録は完了しています）`,
+          constructionSaved: true,
+        },
+        { status: 502 },
+      );
+    }
     return NextResponse.json(
       {
         error:

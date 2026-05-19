@@ -130,6 +130,8 @@ export async function POST(request: Request) {
 
   const pocketAuth = { apiKey: apiKeyForCalendarPocket() };
 
+  let constructionUpdated = false;
+
   try {
     const constructionFields = await fetchAppFields(calAppId, pocketAuth);
 
@@ -315,6 +317,7 @@ export async function POST(request: Request) {
       pocketAuth,
       patch,
     );
+    constructionUpdated = true;
 
     const customerSync = await syncConstructionRecordToCustomerInfoApp({
       calAppId,
@@ -339,10 +342,22 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     console.error("[api/calendar/fill-empty-slot]", e);
+    const detail = e instanceof Error ? e.message : String(e);
+    if (constructionUpdated) {
+      return NextResponse.json(
+        {
+          error: `${detail}（工事アプリへの更新は完了しています）`,
+          constructionSaved: true,
+        },
+        { status: 502 },
+      );
+    }
     return NextResponse.json(
       {
         error:
-          "レコードの更新に失敗しました。しばらくしてから再度お試しください。",
+          detail.includes("list fields failed") || detail.includes("403")
+            ? `工事アプリの設定取得に失敗しました。CALENDAR_ATPOCKET_API_KEY と CALENDAR_APP_ID を確認してください。(${detail})`
+            : "レコードの更新に失敗しました。しばらくしてから再度お試しください。",
       },
       { status: 502 },
     );

@@ -427,15 +427,31 @@ function EmptySlotCard({
       const data = (await res.json()) as {
         error?: string;
         customerInfoSynced?: boolean;
+        constructionSaved?: boolean;
       };
       if (!res.ok) {
         if (res.status === 401 && isLineSessionExpiredPayload(data)) {
           onSessionExpired?.();
           return;
         }
+        if (data.constructionSaved) {
+          setCustomerName("");
+          setHousingStatus("");
+          setSelectedHandlerStaffId("");
+          setShigumiDate("");
+          setPanelWorkDate("");
+          setElectricWorkDate("");
+          setAppSettingsDayDate("");
+          setOpen(false);
+          await onSaved();
+        }
         setFeedback({
           kind: "err",
-          text: data.error ?? "保存に失敗しました",
+          text:
+            data.error ??
+            (data.constructionSaved
+              ? "工事アプリへの保存は完了しましたが、お客様情報アプリへの連携に失敗しました。"
+              : "保存に失敗しました"),
         });
         return;
       }
@@ -850,15 +866,30 @@ function NewConstructionRecordPanel({
       const data = (await res.json()) as {
         error?: string;
         customerInfoSynced?: boolean;
+        constructionSaved?: boolean;
       };
       if (!res.ok) {
         if (res.status === 401 && isLineSessionExpiredPayload(data)) {
           onSessionExpired?.();
           return;
         }
+        if (data.constructionSaved) {
+          setCustomerName("");
+          setHousingStatus("");
+          setSelectedHandlerStaffId("");
+          setShigumiDate("");
+          setPanelWorkDate("");
+          setElectricWorkDate("");
+          setAppSettingsDayDate("");
+          await onSaved();
+        }
         setFeedback({
           kind: "err",
-          text: data.error ?? "登録に失敗しました",
+          text:
+            data.error ??
+            (data.constructionSaved
+              ? "工事アプリへの登録は完了しましたが、お客様情報アプリへの連携に失敗しました。"
+              : "登録に失敗しました"),
         });
         return;
       }

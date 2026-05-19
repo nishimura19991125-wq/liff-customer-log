@@ -23,6 +23,29 @@ function customerInfoAppConfigured(): boolean {
   return Boolean(process.env.CUSTOMER_INFO_APP_ID?.trim());
 }
 
+function pocketSyncErrorMessage(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  if (raw.includes("403")) {
+    return (
+      "お客様情報アプリのフィールド一覧を取得できません（403 Forbidden）。" +
+      "CUSTOMER_INFO_ATPOCKET_API_KEY が CUSTOMER_INFO_APP_ID のお客様情報アプリに対して「参照」権限を持っているか確認してください。"
+    );
+  }
+  if (raw.includes("401")) {
+    return (
+      "お客様情報アプリへの認証に失敗しました（401）。" +
+      "CUSTOMER_INFO_ATPOCKET_API_KEY を確認してください。"
+    );
+  }
+  if (raw.includes("list fields failed")) {
+    return `お客様情報アプリのフィールド定義を取得できません。${raw}`;
+  }
+  if (raw.includes("create record failed")) {
+    return `お客様情報アプリへのレコード登録に失敗しました。${raw}`;
+  }
+  return raw || "お客様情報アプリへの連携に失敗しました。";
+}
+
 function coercePocketPlainString(raw: unknown): string {
   if (raw == null) return "";
   if (typeof raw === "string") return raw.trim();
@@ -66,6 +89,21 @@ function constructionUniqueKeyFieldConfigured(
  * CUSTOMER_INFO_APP_ID 未設定時は何もしない（skipped）。
  */
 export async function syncConstructionRecordToCustomerInfoApp(opts: {
+  calAppId: string;
+  constructionRecordId: string;
+  customerName: string;
+  constructionFields: AtPocketFieldRow[];
+  calendarAuth: AtPocketFetchAuth;
+}): Promise<CustomerInfoSyncResult> {
+  try {
+    return await syncConstructionRecordToCustomerInfoAppInner(opts);
+  } catch (e) {
+    console.error("[sync-construction-to-customer-info]", e);
+    return { kind: "failed", error: pocketSyncErrorMessage(e) };
+  }
+}
+
+async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   calAppId: string;
   constructionRecordId: string;
   customerName: string;
