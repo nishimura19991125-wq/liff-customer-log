@@ -424,7 +424,10 @@ function EmptySlotCard({
             : {}),
         }),
       });
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as {
+        error?: string;
+        customerInfoSynced?: boolean;
+      };
       if (!res.ok) {
         if (res.status === 401 && isLineSessionExpiredPayload(data)) {
           onSessionExpired?.();
@@ -447,7 +450,9 @@ function EmptySlotCard({
       await onSaved();
       setFeedback({
         kind: "ok",
-        text: "保存しました。@pocket にも反映済みです。",
+        text: data.customerInfoSynced
+          ? "保存しました。@pocket に反映し、お客様情報アプリにも連携しました。"
+          : "保存しました。@pocket にも反映済みです。",
       });
     } catch {
       setFeedback({ kind: "err", text: "通信に失敗しました" });
@@ -842,7 +847,10 @@ function NewConstructionRecordPanel({
             : {}),
         }),
       });
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as {
+        error?: string;
+        customerInfoSynced?: boolean;
+      };
       if (!res.ok) {
         if (res.status === 401 && isLineSessionExpiredPayload(data)) {
           onSessionExpired?.();
@@ -864,7 +872,9 @@ function NewConstructionRecordPanel({
       await onSaved();
       setFeedback({
         kind: "ok",
-        text: "登録しました。@pocket で T番号が採番されています。カレンダーを更新しました。",
+        text: data.customerInfoSynced
+          ? "登録しました。@pocket で T番号が採番され、お客様情報アプリにも連携しました。カレンダーを更新しました。"
+          : "登録しました。@pocket で T番号が採番されています。カレンダーを更新しました。",
       });
     } catch {
       setFeedback({ kind: "err", text: "通信に失敗しました" });

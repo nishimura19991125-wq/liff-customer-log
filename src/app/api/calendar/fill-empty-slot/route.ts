@@ -18,6 +18,7 @@ import {
   updateRecord,
 } from "@/lib/atpocket";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
+import { syncConstructionRecordToCustomerInfoApp } from "@/lib/sync-construction-to-customer-info";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -315,7 +316,27 @@ export async function POST(request: Request) {
       patch,
     );
 
-    return NextResponse.json({ ok: true });
+    const customerSync = await syncConstructionRecordToCustomerInfoApp({
+      calAppId,
+      constructionRecordId: recordId,
+      customerName,
+      constructionFields,
+      calendarAuth: pocketAuth,
+    });
+    if (customerSync.kind === "failed") {
+      return NextResponse.json(
+        {
+          error: `${customerSync.error}（工事アプリへの更新は完了しています）`,
+          constructionSaved: true,
+        },
+        { status: 502 },
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      customerInfoSynced: customerSync.kind === "synced",
+    });
   } catch (e) {
     console.error("[api/calendar/fill-empty-slot]", e);
     return NextResponse.json(

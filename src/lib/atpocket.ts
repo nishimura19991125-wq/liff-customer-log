@@ -71,6 +71,13 @@ export function apiKeyForStaffWrite(): string {
   return apiKey();
 }
 
+/** お客様情報アプリの読み取り・登録とも同じキー（未設定時は ATPOCKET_API_KEY） */
+export function apiKeyForCustomerInfoPocket(): string {
+  const k = process.env.CUSTOMER_INFO_ATPOCKET_API_KEY?.trim();
+  if (k) return k;
+  return apiKey();
+}
+
 export type AtPocketFetchAuth = {
   apiKey?: string;
 };
@@ -85,6 +92,10 @@ function apiKeyForCreateRecord(appsId: string): string {
   const calAppId = process.env.CALENDAR_APP_ID?.trim();
   if (calAppId && appsId === calAppId) {
     return apiKeyForCalendarPocket();
+  }
+  const customerInfoAppId = process.env.CUSTOMER_INFO_APP_ID?.trim();
+  if (customerInfoAppId && appsId === customerInfoAppId) {
+    return apiKeyForCustomerInfoPocket();
   }
   return apiKey();
 }
@@ -353,14 +364,16 @@ export async function fetchRecordById(
 export async function createRecord(
   appsId: string,
   record: Record<string, unknown>,
-): Promise<void> {
+  auth?: AtPocketFetchAuth,
+): Promise<AtPocketRecordRow> {
   const url = `${baseUrl()}/api/apps/${appsId}/records`;
+  const key = auth?.apiKey ?? apiKeyForCreateRecord(appsId);
   const res = await fetch(url, {
     method: "POST",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      [authHeaderName()]: apiKeyForCreateRecord(appsId),
+      [authHeaderName()]: key,
     },
     body: JSON.stringify({ record }),
   });
@@ -369,6 +382,8 @@ export async function createRecord(
   if (!res.ok) {
     throw new Error(`@pocket create record failed: ${res.status} ${text}`);
   }
+  if (!text) return {};
+  return JSON.parse(text) as AtPocketRecordRow;
 }
 
 /** レコード更新 PUT /api/apps/{appsId}/records/{recordId} */

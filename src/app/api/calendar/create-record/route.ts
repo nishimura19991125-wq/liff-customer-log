@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 
+import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
 import {
   apiKeyForCalendarPocket,
   createRecord,
   fetchAppFields,
 } from "@/lib/atpocket";
+import { syncConstructionRecordToCustomerInfoApp } from "@/lib/sync-construction-to-customer-info";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import {
   EMPTY_FILL_HOUSING_STATUS_NEW_BUILD,
@@ -213,7 +215,42 @@ export async function POST(request: Request) {
       }
     }
 
-    await createRecord(calAppId, record);
+    const createdRow = await createRecord(calAppId, record, pocketAuth);
+
+    if (process.env.CUSTOMER_INFO_APP_ID?.trim()) {
+      const constructionRecordId = atPocketRecordIdFromRow(createdRow);
+      if (!constructionRecordId) {
+        return NextResponse.json(
+          {
+            error:
+              "工事レコードは登録されましたが、レコード ID を取得できませんでした。お客様情報アプリへの連携は行えません。@pocket の登録 API 応答を確認してください。",
+            constructionSaved: true,
+          },
+          { status: 502 },
+        );
+      }
+      const customerSync = await syncConstructionRecordToCustomerInfoApp({
+        calAppId,
+        constructionRecordId,
+        customerName,
+        constructionFields,
+        calendarAuth: pocketAuth,
+      });
+      if (customerSync.kind === "failed") {
+        return NextResponse.json(
+          {
+            error: `${customerSync.error}（工事アプリへの登録は完了しています）`,
+            constructionSaved: true,
+          },
+          { status: 502 },
+        );
+      }
+      return NextResponse.json({
+        ok: true,
+        customerInfoSynced: customerSync.kind === "synced",
+      });
+    }
+
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("[api/calendar/create-record]", e);
