@@ -1,7 +1,21 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 
+import {
+  applyCustomerInfoFormChange,
+  isContractAmountDerived,
+  syncContractAmountFromPayment,
+} from "@/lib/customer-info-form/form-change";
+import {
+  formatCommaInteger,
+  parseCommaIntegerDigits,
+} from "@/lib/customer-info-form/numeric-comma";
+import {
+  formatPostalCodeInput,
+  isValidPostalCodeFormat,
+  lookupPostalCodeAddress,
+} from "@/lib/customer-info-form/postal-code";
 import {
   computePtTransfer,
   formatPtWithCommas,
@@ -48,11 +62,13 @@ function FieldControl({
   value,
   disabled,
   onChange,
+  onBlur,
 }: {
   field: CustomerInfoFormFieldApi;
   value: string;
   disabled: boolean;
   onChange: (next: string) => void;
+  onBlur?: () => void;
 }) {
   if (field.type === "checkbox-group" && field.options?.length) {
     const selected = parseCheckboxValue(value);
@@ -100,6 +116,7 @@ function FieldControl({
         className={SELECT_CLASS}
         value={value}
         disabled={disabled}
+        onBlur={onBlur}
         onChange={(e) => onChange(e.target.value)}
       >
         <option value="">選択してください</option>
@@ -112,7 +129,7 @@ function FieldControl({
     );
   }
 
-  if (field.type === "pt-integer") {
+  if (field.type === "pt-integer" || field.type === "comma-integer") {
     return (
       <input
         type="text"
@@ -121,10 +138,28 @@ function FieldControl({
         value={value}
         disabled={disabled}
         placeholder="例：1,234"
+        onBlur={onBlur}
         onChange={(e) => {
-          const digits = parsePtDigitsOnly(e.target.value);
-          onChange(formatPtWithCommas(digits));
+          const digits = parseCommaIntegerDigits(e.target.value);
+          onChange(formatCommaInteger(digits));
         }}
+      />
+    );
+  }
+
+  if (field.type === "postal-code") {
+    return (
+      <input
+        type="text"
+        inputMode="numeric"
+        autoComplete="postal-code"
+        className={INPUT_CLASS}
+        value={value}
+        disabled={disabled}
+        placeholder="000-0000"
+        maxLength={8}
+        onBlur={onBlur}
+        onChange={(e) => onChange(formatPostalCodeInput(e.target.value))}
       />
     );
   }
@@ -136,6 +171,7 @@ function FieldControl({
         className={`${INPUT_CLASS} calendar-date-input`}
         value={value}
         disabled={disabled}
+        onBlur={onBlur}
         onChange={(e) => onChange(e.target.value)}
       />
     );
@@ -150,6 +186,7 @@ function FieldControl({
       placeholder={
         field.optionsPending ? "一覧連携前のため直接入力" : undefined
       }
+      onBlur={onBlur}
       onChange={(e) => onChange(e.target.value)}
     />
   );
@@ -181,6 +218,15 @@ function PtTransferHint({ values }: { values: CustomerInfoFormValues }) {
   );
 }
 
+function ContractAmountHint({ values }: { values: CustomerInfoFormValues }) {
+  if (!isContractAmountDerived(values.paymentMethod ?? "")) return null;
+  return (
+    <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+      現金とローン金額の合計を契約金額に自動反映します（保存時はカンマなし）
+    </p>
+  );
+}
+
 export function CustomerInfoEditForm({
   formFields,
   values,
@@ -194,11 +240,45 @@ export function CustomerInfoEditForm({
   missingCaptions?: string[];
   onChange: (key: string, value: string) => void;
 }) {
+  const displayValues = useMemo(
+    () => syncContractAmountFromPayment(values),
+    [values],
+  );
+
   const visibleFields = useMemo(() => {
     return formFields.filter((f) =>
-      isCustomerInfoFormFieldVisible(f.key, values),
+      isCustomerInfoFormFieldVisible(f.key, displayValues),
     );
-  }, [formFields, values]);
+  }, [formFields, displayValues]);
+
+  const propagateValues = useCallback(
+    (next: CustomerInfoFormValues) => {
+      for (const [k, v] of Object.entries(next)) {
+        if (values[k] !== v) onChange(k, v);
+      }
+    },
+    [onChange, values],
+  );
+
+  const handleFieldChange = useCallback(
+    (key: string, value: string) => {
+      propagateValues(applyCustomerInfoFormChange(values, key, value));
+    },
+    [propagateValues, values],
+  );
+
+  const handlePostalBlur = useCallback(async () => {
+    const code = (values.postalCode ?? "").trim();
+    if (!isValidPostalCodeFormat(code)) return;
+    const hit = await lookupPostalCodeAddress(code);
+    if (!hit) return;
+    propagateValues({
+      ...values,
+      prefecture: hit.prefecture,
+      city: hit.city,
+      address: hit.address,
+    });
+  }, [propagateValues, values]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -220,11 +300,31 @@ export function CustomerInfoEditForm({
           </span>
           <FieldControl
             field={field}
-            value={values[field.key] ?? ""}
-            disabled={saving}
-            onChange={(next) => onChange(field.key, next)}
+            value={
+              field.key === "contractAmount" &&
+              isContractAmountDerived(displayValues.paymentMethod ?? "")
+                ? (displayValues.contractAmount ?? "")
+                : (displayValues[field.key] ?? "")
+            }
+            disabled={
+              saving ||
+              (field.key === "contractAmount" &&
+                isContractAmountDerived(displayValues.paymentMethod ?? ""))
+            }
+            onChange={(next) => handleFieldChange(field.key, next)}
+            onBlur={
+              field.key === "postalCode" ? () => void handlePostalBlur() : undefined
+            }
           />
-          {field.key === "pt" ? <PtTransferHint values={values} /> : null}
+          {field.key === "pt" ? <PtTransferHint values={displayValues} /> : null}
+          {field.key === "contractAmount" ? (
+            <ContractAmountHint values={displayValues} />
+          ) : null}
+          {field.key === "postalCode" ? (
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+              000-0000 形式で入力すると都道府県・市区郡・町村+番地を自動入力します
+            </p>
+          ) : null}
         </label>
       ))}
     </div>

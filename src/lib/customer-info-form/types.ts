@@ -7,7 +7,11 @@ export type CustomerInfoFieldType =
   | "select"
   | "checkbox-group"
   /** 整数のみ・画面はカンマ区切り表示 */
-  | "pt-integer";
+  | "pt-integer"
+  /** 整数のみ・画面はカンマ区切り・@pocket はカンマなし */
+  | "comma-integer"
+  /** 000-0000 形式の郵便番号 */
+  | "postal-code";
 
 export type CustomerInfoFormFieldDef = {
   key: CustomerInfoFormKey;

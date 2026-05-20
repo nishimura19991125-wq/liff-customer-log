@@ -12,10 +12,15 @@ import {
 } from "@/lib/customer-info-record";
 import { checkboxGroupValueFromPocket } from "@/lib/customer-info-form/checkbox-pocket";
 import {
+  formatCommaInteger,
+  parseCommaIntegerDigits,
+} from "@/lib/customer-info-form/numeric-comma";
+import {
   CUSTOMER_INFO_PT_TRANSFER_FIELDS,
   formatPtWithCommas,
   parsePtDigitsOnly,
 } from "@/lib/customer-info-form/pt-transfer";
+import { formatPostalCodeInput } from "@/lib/customer-info-form/postal-code";
 import {
   CUSTOMER_INFO_FORM_FIELDS,
   CUSTOMER_INFO_FORM_FIELD_MAP,
@@ -234,6 +239,11 @@ export function readCustomerInfoFormValuesFromRecord(
       values[field.key] = normalizeDateForInput(raw);
     } else if (field.type === "pt-integer") {
       values[field.key] = formatPtWithCommas(parsePtDigitsOnly(raw));
+    } else if (field.type === "comma-integer") {
+      values[field.key] = formatCommaInteger(parseCommaIntegerDigits(raw));
+    } else if (field.type === "postal-code") {
+      const digits = raw.replace(/[^\d]/g, "");
+      values[field.key] = digits.length > 0 ? formatPostalCodeInput(digits) : "";
     } else {
       values[field.key] = raw;
     }

@@ -1,4 +1,13 @@
 import { checkboxGroupValueToPocketArray } from "@/lib/customer-info-form/checkbox-pocket";
+import { contractAmountForPocket } from "@/lib/customer-info-form/form-change";
+import { commaIntegerForPocket } from "@/lib/customer-info-form/numeric-comma";
+import {
+  PAYMENT_METHODS_WITH_CASH,
+  PAYMENT_METHODS_WITH_LOAN,
+  subsidyIncludesCity,
+  subsidyIncludesOther,
+  subsidyIncludesPrefecture,
+} from "@/lib/customer-info-form/options";
 import {
   CUSTOMER_INFO_FORM_FIELDS,
   INSTALLATION_TYPE_OPTIONS,
@@ -18,6 +27,14 @@ const POCKET_ZERO_WHEN_EMPTY_KEYS = new Set([
   "extraPartsAmount",
 ]);
 
+const COMMA_INTEGER_KEYS = new Set([
+  "panelCount1",
+  "panelCount2",
+  "contractAmount",
+  "cashAmount",
+  "loanAmount",
+]);
+
 function isEmptyPocketInput(raw: string): boolean {
   const t = raw.trim();
   return t === "" || t === "-";
@@ -28,7 +45,22 @@ function pocketFieldValueForPut(
   raw: string,
   visible: boolean,
   hiddenFallback: string,
+  values?: CustomerInfoFormValues,
 ): string {
+  if (key === "contractAmount" && values) {
+    if (!visible) return hiddenFallback;
+    return contractAmountForPocket(values) || hiddenFallback;
+  }
+  if (COMMA_INTEGER_KEYS.has(key)) {
+    if (!visible) {
+      if (POCKET_ZERO_WHEN_EMPTY_KEYS.has(key)) return "0";
+      return hiddenFallback;
+    }
+    const pocket = commaIntegerForPocket(raw);
+    if (pocket !== null) return pocket;
+    if (POCKET_ZERO_WHEN_EMPTY_KEYS.has(key)) return "0";
+    return hiddenFallback;
+  }
   if (POCKET_ZERO_WHEN_EMPTY_KEYS.has(key)) {
     if (!visible || isEmptyPocketInput(raw)) return "0";
     return raw.trim();
@@ -67,6 +99,9 @@ export function isCustomerInfoFormFieldVisible(
   const installationType = norm(values.installationType);
   const roofMaterial = norm(values.roofMaterial);
   const extraParts = norm(values.extraParts);
+  const paymentMethod = norm(values.paymentMethod);
+  const subsidy = norm(values.subsidy);
+  const indoorSurveyStatus = norm(values.indoorSurveyStatus);
 
   switch (key) {
     case "panelModel2":
@@ -92,6 +127,20 @@ export function isCustomerInfoFormFieldVisible(
     case "extraPartsName":
     case "extraPartsAmount":
       return extraParts === "有";
+    case "creditCompany":
+      return PAYMENT_METHODS_WITH_LOAN.has(paymentMethod);
+    case "cashAmount":
+      return PAYMENT_METHODS_WITH_CASH.has(paymentMethod);
+    case "loanAmount":
+      return PAYMENT_METHODS_WITH_LOAN.has(paymentMethod);
+    case "prefectureSubsidy":
+      return subsidyIncludesPrefecture(subsidy);
+    case "citySubsidy":
+      return subsidyIncludesCity(subsidy);
+    case "otherSubsidy":
+      return subsidyIncludesOther(subsidy);
+    case "indoorSurveyScheduledDate":
+      return indoorSurveyStatus === "未実施";
     default:
       return true;
   }
@@ -130,6 +179,7 @@ export function buildCustomerInfoFormPayload(
       norm(values[field.key]),
       visible,
       hiddenFallback,
+      values,
     );
   }
   return payload;

@@ -11,6 +11,7 @@ import {
   customerInfoPutValue,
   readCustomerInfoImportKeyFromRecord,
 } from "@/lib/customer-info-record";
+import { syncContractAmountFromPayment } from "@/lib/customer-info-form/form-change";
 import { computePtTransfer } from "@/lib/customer-info-form/pt-transfer";
 import { buildCustomerInfoFormPayload } from "@/lib/customer-info-form/rules";
 import { resolveCustomerInfoPtTransferFields } from "@/lib/customer-info-form/resolve-fields";
@@ -92,7 +93,8 @@ export function formPayloadFromValues(
   resolved: CustomerInfoFormFieldResolved[],
   appFields: AtPocketFieldRow[],
 ): Record<string, unknown> {
-  const stringPayload = buildCustomerInfoFormPayload(values, resolved);
+  const synced = syncContractAmountFromPayment(values);
+  const stringPayload = buildCustomerInfoFormPayload(synced, resolved);
   const { resolved: transferResolved } =
     resolveCustomerInfoPtTransferFields(appFields);
   applyPtTransferToPayload(values, transferResolved, stringPayload);

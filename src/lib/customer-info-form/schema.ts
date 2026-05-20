@@ -1,3 +1,9 @@
+import {
+  FIT_TYPE_OPTIONS,
+  INDOOR_SURVEY_STATUS_OPTIONS,
+  PAYMENT_METHOD_OPTIONS,
+  SUBSIDY_OR_PREAPPLICATION_OPTIONS,
+} from "@/lib/customer-info-form/options";
 import type { CustomerInfoFormFieldDef } from "@/lib/customer-info-form/types";
 
 const YES_NO = ["無", "有"] as const;
@@ -47,6 +53,10 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   { key: "contractDate", caption: "契約日", type: "date" },
   { key: "furigana", caption: "フリガナ", type: "text" },
   { key: "phone", caption: "電話番号", type: "text" },
+  { key: "postalCode", caption: "郵便番号", type: "postal-code" },
+  { key: "prefecture", caption: "都道府県", type: "text" },
+  { key: "city", caption: "市区郡", type: "text" },
+  { key: "address", caption: "町村+番地", type: "text" },
   {
     key: "installationType",
     caption: "設置種別",
@@ -84,20 +94,8 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     options: [],
     optionsPending: true,
   },
-  {
-    key: "panelCount1",
-    caption: "パネル枚数①",
-    type: "select",
-    options: [],
-    optionsPending: true,
-  },
-  {
-    key: "panelCount2",
-    caption: "パネル枚数②",
-    type: "select",
-    options: [],
-    optionsPending: true,
-  },
+  { key: "panelCount1", caption: "パネル枚数①", type: "comma-integer" },
+  { key: "panelCount2", caption: "パネル枚数②", type: "comma-integer" },
   {
     key: "powerConCount",
     caption: "パワーコンディショナー台数",
@@ -182,6 +180,61 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   { key: "extraPartsUrl", caption: "追加部材URL", type: "text" },
   { key: "extraPartsName", caption: "追加部材の商品名", type: "text" },
   { key: "extraPartsAmount", caption: "追加部材の金額", type: "text" },
+  {
+    key: "paymentMethod",
+    caption: "支払方法",
+    type: "select",
+    options: [...PAYMENT_METHOD_OPTIONS],
+  },
+  {
+    key: "creditCompany",
+    caption: "信販会社",
+    type: "select",
+    options: [],
+    optionsPending: true,
+  },
+  { key: "contractAmount", caption: "契約金額", type: "comma-integer" },
+  { key: "cashAmount", caption: "現金", type: "comma-integer" },
+  { key: "loanAmount", caption: "ローン金額", type: "comma-integer" },
+  {
+    key: "fitType",
+    caption: "FIT or 非FIT",
+    type: "select",
+    options: [...FIT_TYPE_OPTIONS],
+  },
+  {
+    key: "subsidy",
+    caption: "補助金有無",
+    formLabel: "補助金",
+    type: "select",
+    options: [...SUBSIDY_OR_PREAPPLICATION_OPTIONS],
+  },
+  { key: "prefectureSubsidy", caption: "都道府県補助金", type: "text" },
+  { key: "citySubsidy", caption: "市区町村補助金", type: "text" },
+  { key: "otherSubsidy", caption: "その他補助金", type: "text" },
+  {
+    key: "preApplication",
+    caption: "事前申請有無",
+    formLabel: "事前申請",
+    type: "select",
+    options: [...SUBSIDY_OR_PREAPPLICATION_OPTIONS],
+  },
+  {
+    key: "indoorSurveyStatus",
+    caption: "室内現地調査実施状況",
+    type: "select",
+    options: [...INDOOR_SURVEY_STATUS_OPTIONS],
+  },
+  {
+    key: "indoorSurveyScheduledDate",
+    caption: "室内現調予定日",
+    type: "date",
+  },
+  {
+    key: "pinpointAddress",
+    caption: "ピンポイント住所",
+    type: "text",
+  },
 ];
 
 export const CUSTOMER_INFO_FORM_FIELD_MAP = new Map(
