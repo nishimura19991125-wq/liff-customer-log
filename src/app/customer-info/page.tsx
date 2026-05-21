@@ -25,6 +25,7 @@ import {
 } from "@/components/customer-info-save-bar";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
+import { inferPanelComboFromValues } from "@/lib/customer-info-form/panel-combo";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
@@ -206,6 +207,7 @@ export default function CustomerInfoPage() {
           for (const f of data.formFields) {
             initial[f.key] = f.value;
           }
+          initial.panelCombo = inferPanelComboFromValues(initial);
           setEditValues(initial);
           setFormFields(data.formFields);
           setMissingCaptions(data.missingCaptions);

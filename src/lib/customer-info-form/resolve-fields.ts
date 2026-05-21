@@ -21,6 +21,7 @@ import {
   parsePtDigitsOnly,
 } from "@/lib/customer-info-form/pt-transfer";
 import { formatPostalCodeInput } from "@/lib/customer-info-form/postal-code";
+import { inferPanelComboFromPanelModel2 } from "@/lib/customer-info-form/panel-combo";
 import {
   CUSTOMER_INFO_FORM_FIELDS,
   CUSTOMER_INFO_FORM_FIELD_MAP,
@@ -154,19 +155,15 @@ function pocketValuePresent(raw: string): boolean {
   return t !== "" && t !== "-";
 }
 
-/** 品番②・枚数②からパネルの組み合わせ（LIFF 専用）を推定 */
+/** パネル品番②に「-」以外があれば「有」、なければ「無」（LIFF 専用） */
 export function inferPanelComboFromRecord(
   recObj: Record<string, unknown>,
   resolved: CustomerInfoFormFieldResolved[],
 ): "無" | "有" {
-  for (const key of ["panelModel2", "panelCount2"] as const) {
-    const field = resolved.find((f) => f.key === key);
-    if (!field?.fieldId) continue;
-    if (pocketValuePresent(readCustomerInfoFieldValue(recObj, field.fieldId))) {
-      return "有";
-    }
-  }
-  return "無";
+  const field = resolved.find((f) => f.key === "panelModel2");
+  if (!field?.fieldId) return "無";
+  const raw = readCustomerInfoFieldValue(recObj, field.fieldId);
+  return inferPanelComboFromPanelModel2(raw);
 }
 
 /** 蓄電池容量②から蓄電池複数台設置（LIFF 専用）を推定 */

@@ -22,6 +22,7 @@ import {
   isSameApClStaff,
   parsePtDigitsOnly,
 } from "@/lib/customer-info-form/pt-transfer";
+import { inferPanelComboFromValues } from "@/lib/customer-info-form/panel-combo";
 import { isCustomerInfoFormFieldVisible } from "@/lib/customer-info-form/rules";
 import type {
   CustomerInfoFieldType,
@@ -424,12 +425,16 @@ export function CustomerInfoEditForm({
           batteryCapacity1: "",
           batteryCapacity2: "",
         };
+        next = { ...next, panelCombo: inferPanelComboFromValues(next) };
       }
       if (key === "powerConCount" && value !== "2") {
         next = { ...next, powerConModel2: "" };
       }
       if (key === "batteryMulti" && value !== "有") {
         next = { ...next, batteryCapacity2: "" };
+      }
+      if (key === "panelModel2") {
+        next = { ...next, panelCombo: inferPanelComboFromValues(next) };
       }
       propagateValues(next);
     },
@@ -473,7 +478,11 @@ export function CustomerInfoEditForm({
               field.key === "contractAmount" &&
               isContractAmountDerived(displayValues.paymentMethod ?? "")
                 ? (displayValues.contractAmount ?? "")
-                : (displayValues[field.key] ?? "")
+                : field.key === "panelCombo"
+                  ? displayValues.panelCombo === "有"
+                    ? "有"
+                    : "無"
+                  : (displayValues[field.key] ?? "")
             }
             disabled={
               saving ||
