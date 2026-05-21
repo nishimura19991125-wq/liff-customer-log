@@ -21,6 +21,7 @@ import {
   parsePtDigitsOnly,
 } from "@/lib/customer-info-form/pt-transfer";
 import { formatPostalCodeInput } from "@/lib/customer-info-form/postal-code";
+import { isWritableAtPocketField } from "@/lib/customer-info-form/pocket-writable-fields";
 import { inferPanelComboFromPanelModel2 } from "@/lib/customer-info-form/panel-combo";
 import {
   CUSTOMER_INFO_FORM_FIELDS,
@@ -105,6 +106,11 @@ export function resolveCustomerInfoFormFields(
       missingCaptions.push(def.caption);
       continue;
     }
+    const fieldRow = appFields.find((f) => f.uniqueId?.trim() === fieldId);
+    if (fieldRow && !isWritableAtPocketField(fieldRow)) {
+      missingCaptions.push(def.caption);
+      continue;
+    }
     resolved.push({
       ...def,
       fieldId,
@@ -134,6 +140,11 @@ export function resolveCustomerInfoPtTransferFields(
       appFields,
     );
     if (!fieldId) {
+      missingCaptions.push(def.caption);
+      continue;
+    }
+    const fieldRow = appFields.find((f) => f.uniqueId?.trim() === fieldId);
+    if (fieldRow && !isWritableAtPocketField(fieldRow)) {
       missingCaptions.push(def.caption);
       continue;
     }

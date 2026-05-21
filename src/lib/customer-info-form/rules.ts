@@ -14,6 +14,7 @@ import {
   INSTALLATION_TYPE_OPTIONS,
   ROOF_MATERIAL_OPTIONS,
 } from "@/lib/customer-info-form/schema";
+import { dateValueForPocket } from "@/lib/customer-info-form/date-pocket";
 import type {
   CustomerInfoFormFieldResolved,
   CustomerInfoFormValues,
@@ -27,6 +28,9 @@ const POCKET_ZERO_WHEN_EMPTY_KEYS = new Set([
   "panelCount2",
   "extraPartsAmount",
 ]);
+
+/** 非表示時に @pocket へ 0 を送る金額フィールド（"-" は半角数字エラーになる） */
+const POCKET_ZERO_WHEN_HIDDEN_KEYS = new Set(["cashAmount", "loanAmount"]);
 
 /** 未入力・非表示時に @pocket へ "-" を送るフィールド */
 const POCKET_DASH_WHEN_EMPTY_KEYS = new Set([
@@ -64,7 +68,12 @@ function pocketFieldValueForPut(
   }
   if (COMMA_INTEGER_KEYS.has(key)) {
     if (!visible) {
-      if (POCKET_ZERO_WHEN_EMPTY_KEYS.has(key)) return "0";
+      if (
+        POCKET_ZERO_WHEN_HIDDEN_KEYS.has(key) ||
+        POCKET_ZERO_WHEN_EMPTY_KEYS.has(key)
+      ) {
+        return "0";
+      }
       return hiddenFallback;
     }
     const pocket = commaIntegerForPocket(raw);
@@ -195,6 +204,12 @@ export function buildCustomerInfoFormPayload(
         : [];
       continue;
     }
+    if (field.type === "date") {
+      if (!visible) continue;
+      const pocketDate = dateValueForPocket(norm(values[field.key]));
+      if (pocketDate) payload[field.fieldId] = pocketDate;
+      continue;
+    }
     const hiddenFallback = hiddenPayloadValue(field);
     payload[field.fieldId] = pocketFieldValueForPut(
       field.key,
@@ -223,7 +238,13 @@ export function applyCustomerInfoHiddenDefaultsToValues(
   const next = { ...values };
   for (const def of CUSTOMER_INFO_FORM_FIELDS) {
     if (!isCustomerInfoFormFieldVisible(def.key, next)) {
-      next[def.key] = hiddenPayloadValue(def);
+      if (POCKET_ZERO_WHEN_HIDDEN_KEYS.has(def.key)) {
+        next[def.key] = "0";
+      } else if (def.type === "date") {
+        next[def.key] = "";
+      } else {
+        next[def.key] = hiddenPayloadValue(def);
+      }
     }
   }
   return next;

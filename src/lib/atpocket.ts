@@ -281,6 +281,13 @@ async function fetchAppFieldsOnce(
   return json.fields ?? [];
 }
 
+/** 列定義キャッシュを破棄（@pocket で列追加直後の PUT 向け） */
+export function invalidateAppFieldsCache(appsId: string): void {
+  const key = appsId.trim();
+  appFieldsStore.delete(key);
+  appFieldsInflight.delete(key);
+}
+
 export async function fetchAppFields(
   appsId: string,
   auth?: AtPocketFetchAuth,

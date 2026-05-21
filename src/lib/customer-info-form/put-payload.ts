@@ -13,6 +13,7 @@ import {
 } from "@/lib/customer-info-record";
 import { syncContractAmountFromPayment } from "@/lib/customer-info-form/form-change";
 import { computePtTransfer } from "@/lib/customer-info-form/pt-transfer";
+import { filterCustomerInfoPutPayload } from "@/lib/customer-info-form/pocket-writable-fields";
 import { buildCustomerInfoFormPayload } from "@/lib/customer-info-form/rules";
 import { resolveCustomerInfoPtTransferFields } from "@/lib/customer-info-form/resolve-fields";
 import type {
@@ -135,9 +136,21 @@ export async function formPayloadFromValues(
     resolveCustomerInfoPtTransferFields(appFields);
   applyPtTransferToPayload(values, transferResolved, stringPayload);
   await applyStaffBranchesToPayload(values, resolved, stringPayload);
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(stringPayload)) {
-    out[k] = v;
+  const { payload: filtered, dropped } = filterCustomerInfoPutPayload(
+    stringPayload,
+    appFields,
+    resolved,
+  );
+  if (dropped.length > 0) {
+    console.warn(
+      "[customer-info put-payload]",
+      dropped.map((d) => ({
+        fieldId: d.fieldId,
+        formKey: d.formKey,
+        label: d.label,
+        reason: d.reason,
+      })),
+    );
   }
-  return out;
+  return filtered;
 }

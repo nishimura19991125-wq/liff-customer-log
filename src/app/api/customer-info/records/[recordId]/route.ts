@@ -27,7 +27,12 @@ import {
   resolveCustomerInfoFieldIds,
 } from "@/lib/customer-info-record";
 import type { AtPocketFetchAuth } from "@/lib/atpocket";
-import { fetchAppFields, fetchRecordById, updateRecord } from "@/lib/atpocket";
+import {
+  fetchAppFields,
+  fetchRecordById,
+  invalidateAppFieldsCache,
+  updateRecord,
+} from "@/lib/atpocket";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
 import {
   lineAuthUnauthorizedResponse,
@@ -288,6 +293,7 @@ export async function PUT(request: Request, ctx: RouteCtx) {
   const pocketAuth = customerInfoPocketAuth();
 
   try {
+    invalidateAppFieldsCache(cfg.appId);
     const appFields = await fetchAppFields(cfg.appId, pocketAuth, {
       operation: "customer-info:レコード保存(列定義)",
       appEnv: "CUSTOMER_INFO_APP_ID",
@@ -403,6 +409,10 @@ export async function PUT(request: Request, ctx: RouteCtx) {
     if (msg.includes("T番号") && msg.includes("取込設定")) {
       msg =
         "@pocket: 取込キー「T番号」を認識できませんでした。お客様情報アプリの取込設定に「T番号」がキー項目として含まれているか、CUSTOMER_INFO_CONSTRUCTION_UNIQUE_KEY_FIELD_ID が管理画面の「T番号」列の識別名（field-1 など）と一致しているか確認してください。";
+    } else if (msg.includes("有効なフィールドではありません")) {
+      const m = /\[field-[^\]]+\]/i.exec(msg);
+      const fid = m?.[0] ?? "該当列";
+      msg = `@pocket: ${fid} は更新できない列です。管理画面の列識別名と CUSTOMER_INFO_FIELD_* の設定が一致しているか、計算・表示専用列を指定していないか確認してください。詳細: ${msg}`;
     }
     return NextResponse.json({ error: msg }, { status: 502 });
   }

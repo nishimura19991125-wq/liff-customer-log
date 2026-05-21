@@ -1,3 +1,4 @@
+import { dateValueForPocket } from "@/lib/customer-info-form/date-pocket";
 import {
   isContractAmountDerived,
   syncContractAmountFromPayment,
@@ -58,6 +59,8 @@ export function isCustomerInfoVisibleFieldValueMissing(
       return !parsePtDigitsOnly(raw);
     case "postal-code":
       return !isValidPostalCodeFormat(raw);
+    case "date":
+      return !dateValueForPocket(raw);
     default:
       return isBlankText(raw);
   }

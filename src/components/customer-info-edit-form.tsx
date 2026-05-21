@@ -490,7 +490,11 @@ export function CustomerInfoEditForm({
       if (key === "panelModel2") {
         next = { ...next, panelCombo: inferPanelComboFromValues(next) };
       }
-      if (key === "paymentMethod" || key === "installationType") {
+      if (
+        key === "paymentMethod" ||
+        key === "installationType" ||
+        key === "indoorSurveyStatus"
+      ) {
         next = applyCustomerInfoHiddenDefaultsToValues(next);
       }
       propagateValues(next);
