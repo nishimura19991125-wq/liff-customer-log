@@ -4,7 +4,7 @@ import type { AtPocketFetchAuth, AtPocketFieldRow } from "@/lib/atpocket";
 import {
   apiKeyForCustomerInfoPocket,
   fetchAllRecordsPages,
-  fetchAppFields,
+  fetchAppFieldsTryKeys,
 } from "@/lib/atpocket";
 import {
   pickRecordValueByFieldAliases,
@@ -73,6 +73,18 @@ export type TradingPartnerFieldIds = {
   tradeStatus: string;
   companyName: string;
 };
+
+/** 3列とも環境変数で指定済みなら fields API を呼ばずに使う（403 回避） */
+export function tradingPartnerFieldIdsFromEnv(): TradingPartnerFieldIds | null {
+  const companyType =
+    process.env.TRADING_PARTNER_COMPANY_TYPE_FIELD_ID?.trim();
+  const tradeStatus =
+    process.env.TRADING_PARTNER_TRADE_STATUS_FIELD_ID?.trim();
+  const companyName =
+    process.env.TRADING_PARTNER_COMPANY_NAME_FIELD_ID?.trim();
+  if (!companyType || !tradeStatus || !companyName) return null;
+  return { companyType, tradeStatus, companyName };
+}
 
 export function resolveTradingPartnerFieldIds(
   appFields: AtPocketFieldRow[],
@@ -187,17 +199,48 @@ function collectManufacturerNames(
   return [...names].sort((a, b) => a.localeCompare(b, "ja"));
 }
 
+function pocketApiKeysForTradingPartner(): string[] {
+  const dedup = new Set<string>();
+  const keys: string[] = [];
+  for (const k of [
+    process.env.TRADING_PARTNER_ATPOCKET_API_KEY?.trim(),
+    process.env.CUSTOMER_INFO_ATPOCKET_API_KEY?.trim(),
+    process.env.ATPOCKET_API_KEY?.trim(),
+  ]) {
+    if (k && !dedup.has(k)) {
+      dedup.add(k);
+      keys.push(k);
+    }
+  }
+  return keys;
+}
+
+async function resolveTradingPartnerIdsForFetch(
+  appId: string,
+): Promise<TradingPartnerFieldIds | null> {
+  const fromEnv = tradingPartnerFieldIdsFromEnv();
+  if (fromEnv) return fromEnv;
+
+  const appFields = await fetchAppFieldsTryKeys(
+    appId,
+    pocketApiKeysForTradingPartner(),
+  );
+  if (!appFields) {
+    console.warn(
+      "[trading-partner-manufacturers] 取引先会社一覧の fields API が 403 等で失敗しました。TRADING_PARTNER_*_FIELD_ID を3つとも設定するか、取引先アプリ参照権限のある API キーを TRADING_PARTNER_ATPOCKET_API_KEY に指定してください。",
+    );
+    return null;
+  }
+  return resolveTradingPartnerFieldIds(appFields);
+}
+
 async function fetchManufacturerOptionsUncached(): Promise<string[] | null> {
   const appId = tradingPartnerAppId();
   if (!appId) return null;
 
   const auth = tradingPartnerPocketAuth();
-  const appFields = await fetchAppFields(appId, auth);
-  const ids = resolveTradingPartnerFieldIds(appFields);
+  const ids = await resolveTradingPartnerIdsForFetch(appId);
   if (!ids) {
-    console.warn(
-      "[trading-partner-manufacturers] 取引先会社一覧の列（会社種別・取引状況・取引会社名）を解決できません",
-    );
     return [];
   }
 
