@@ -29,6 +29,7 @@ import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
+import { enrichCustomerInfoFormFieldsWithManufacturers } from "@/lib/trading-partner-manufacturers";
 
 export const dynamic = "force-dynamic";
 
@@ -151,7 +152,7 @@ export async function GET(request: Request, ctx: RouteCtx) {
         resolved,
         transferResolve.resolved,
       );
-      const formFields = resolved.map((f) => ({
+      const formFieldsBase = resolved.map((f) => ({
         key: f.key,
         fieldId: f.fieldId,
         label: f.label,
@@ -161,6 +162,10 @@ export async function GET(request: Request, ctx: RouteCtx) {
         liffOnly: f.liffOnly === true,
         value: values[f.key] ?? "",
       }));
+      const formFields = await enrichCustomerInfoFormFieldsWithManufacturers(
+        formFieldsBase,
+        values.manufacturer,
+      );
 
       const display = displayIds.map((schemaId) => ({
         fieldId: schemaId,

@@ -68,6 +68,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     caption: "メーカー",
     type: "select",
     options: [],
+    /** 取引先会社一覧アプリから API 取得時に options を差し替え */
     optionsPending: true,
   },
   {
