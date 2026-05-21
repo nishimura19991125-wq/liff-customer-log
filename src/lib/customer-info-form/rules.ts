@@ -155,6 +155,9 @@ export function isCustomerInfoFormFieldVisible(
       return subsidyIncludesOther(subsidy);
     case "indoorSurveyScheduledDate":
       return indoorSurveyStatus === "未実施";
+    case "apBranch":
+    case "clBranch":
+      return false;
     default:
       return true;
   }

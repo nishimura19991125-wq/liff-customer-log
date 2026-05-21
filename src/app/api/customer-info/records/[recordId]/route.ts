@@ -324,7 +324,12 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         );
       }
 
-      const payload = formPayloadFromValues(values, resolved, appFields);
+      const payload = await formPayloadFromValues(
+        values,
+        resolved,
+        appFields,
+        pocketAuth,
+      );
       if (Object.keys(payload).length === 0) {
         return NextResponse.json(
           { error: "更新する項目がありません" },

@@ -19,6 +19,10 @@ import type {
   CustomerInfoFormFieldResolved,
   CustomerInfoFormValues,
 } from "@/lib/customer-info-form/types";
+import {
+  lookupStaffWorkplaceByStaffName,
+  resolveStaffWorkplaceLookupConfig,
+} from "@/lib/staff-workplace-lookup";
 
 /** 取込キー（T番号）を payload に付与 */
 export async function attachCustomerInfoImportKeyToPayload(
@@ -88,16 +92,55 @@ function applyPtTransferToPayload(
   }
 }
 
-export function formPayloadFromValues(
+const BRANCH_FALLBACK = "-";
+
+/** AP/CL所属支店＝担当者名簿の勤務場所（フォーム非表示） */
+async function applyStaffBranchesToPayload(
+  values: CustomerInfoFormValues,
+  resolved: CustomerInfoFormFieldResolved[],
+  payload: Record<string, unknown>,
+  pocketAuth: AtPocketFetchAuth,
+): Promise<void> {
+  const apBranchField = resolved.find((f) => f.key === "apBranch");
+  const clBranchField = resolved.find((f) => f.key === "clBranch");
+  if (!apBranchField?.fieldId && !clBranchField?.fieldId) return;
+
+  const staffCfg = await resolveStaffWorkplaceLookupConfig(pocketAuth);
+  if (!staffCfg) return;
+
+  if (apBranchField?.fieldId) {
+    const workplace = await lookupStaffWorkplaceByStaffName(
+      values.apStaff,
+      staffCfg,
+    );
+    payload[apBranchField.fieldId] = workplace?.trim() || BRANCH_FALLBACK;
+  }
+  if (clBranchField?.fieldId) {
+    const workplace = await lookupStaffWorkplaceByStaffName(
+      values.clStaff,
+      staffCfg,
+    );
+    payload[clBranchField.fieldId] = workplace?.trim() || BRANCH_FALLBACK;
+  }
+}
+
+export async function formPayloadFromValues(
   values: CustomerInfoFormValues,
   resolved: CustomerInfoFormFieldResolved[],
   appFields: AtPocketFieldRow[],
-): Record<string, unknown> {
+  pocketAuth: AtPocketFetchAuth,
+): Promise<Record<string, unknown>> {
   const synced = syncContractAmountFromPayment(values);
   const stringPayload = buildCustomerInfoFormPayload(synced, resolved);
   const { resolved: transferResolved } =
     resolveCustomerInfoPtTransferFields(appFields);
   applyPtTransferToPayload(values, transferResolved, stringPayload);
+  await applyStaffBranchesToPayload(
+    values,
+    resolved,
+    stringPayload,
+    pocketAuth,
+  );
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(stringPayload)) {
     out[k] = v;
