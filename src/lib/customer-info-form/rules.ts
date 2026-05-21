@@ -28,7 +28,12 @@ const POCKET_ZERO_WHEN_EMPTY_KEYS = new Set([
 ]);
 
 /** 未入力・非表示時に @pocket へ "-" を送るフィールド */
-const POCKET_DASH_WHEN_EMPTY_KEYS = new Set(["panelModel1", "panelModel2"]);
+const POCKET_DASH_WHEN_EMPTY_KEYS = new Set([
+  "panelModel1",
+  "panelModel2",
+  "powerConModel1",
+  "powerConModel2",
+]);
 
 const COMMA_INTEGER_KEYS = new Set([
   "panelCount1",

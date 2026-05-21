@@ -33,7 +33,39 @@ const INPUT_CLASS =
 
 const SELECT_CLASS = INPUT_CLASS;
 
-const PANEL_MODEL_KEYS = ["panelModel1", "panelModel2"] as const;
+const CATALOG_MODEL_GROUPS = {
+  panel: {
+    keys: ["panelModel1", "panelModel2"] as const,
+    apiPath: "/api/customer-info/panel-models",
+    productLabel: "太陽光パネル",
+  },
+  powerCon: {
+    keys: ["powerConModel1", "powerConModel2"] as const,
+    apiPath: "/api/customer-info/power-con-models",
+    productLabel: "パワーコンディショナー",
+  },
+} as const;
+
+type CatalogModelKind = keyof typeof CATALOG_MODEL_GROUPS;
+
+const CATALOG_MODEL_KEY_SET = new Set<string>([
+  ...CATALOG_MODEL_GROUPS.panel.keys,
+  ...CATALOG_MODEL_GROUPS.powerCon.keys,
+]);
+
+function catalogKindForFieldKey(key: string): CatalogModelKind | null {
+  if (
+    (CATALOG_MODEL_GROUPS.panel.keys as readonly string[]).includes(key)
+  ) {
+    return "panel";
+  }
+  if (
+    (CATALOG_MODEL_GROUPS.powerCon.keys as readonly string[]).includes(key)
+  ) {
+    return "powerCon";
+  }
+  return null;
+}
 
 export type CustomerInfoFormFieldApi = {
   key: string;
@@ -244,9 +276,15 @@ export function CustomerInfoEditForm({
   idToken: string | null;
   onChange: (key: string, value: string) => void;
 }) {
-  const [panelModelOptions, setPanelModelOptions] = useState<string[]>([]);
-  const [panelModelsLoading, setPanelModelsLoading] = useState(false);
-  const [panelModelsConfigured, setPanelModelsConfigured] = useState(true);
+  const [catalogOptions, setCatalogOptions] = useState<
+    Record<CatalogModelKind, string[]>
+  >({ panel: [], powerCon: [] });
+  const [catalogLoading, setCatalogLoading] = useState<
+    Record<CatalogModelKind, boolean>
+  >({ panel: false, powerCon: false });
+  const [catalogConfigured, setCatalogConfigured] = useState<
+    Record<CatalogModelKind, boolean>
+  >({ panel: true, powerCon: true });
 
   const displayValues = useMemo(
     () => syncContractAmountFromPayment(values),
@@ -257,74 +295,86 @@ export function CustomerInfoEditForm({
 
   useEffect(() => {
     if (!idToken || !manufacturer) {
-      setPanelModelOptions([]);
-      setPanelModelsLoading(false);
+      setCatalogOptions({ panel: [], powerCon: [] });
+      setCatalogLoading({ panel: false, powerCon: false });
       return;
     }
 
     let cancelled = false;
-    const params = new URLSearchParams({ manufacturer });
-    const keep1 = displayValues.panelModel1 ?? "";
-    const keep2 = displayValues.panelModel2 ?? "";
-    if (keep1) params.set("keep1", keep1);
-    if (keep2) params.set("keep2", keep2);
+    setCatalogLoading({ panel: true, powerCon: true });
 
-    setPanelModelsLoading(true);
-    void (async () => {
+    const fetchKind = async (kind: CatalogModelKind) => {
+      const group = CATALOG_MODEL_GROUPS[kind];
+      const params = new URLSearchParams({ manufacturer });
+      const [k1, k2] = group.keys;
+      const keep1 = displayValues[k1] ?? "";
+      const keep2 = displayValues[k2] ?? "";
+      if (keep1) params.set("keep1", keep1);
+      if (keep2) params.set("keep2", keep2);
+
       try {
-        const res = await fetch(
-          `/api/customer-info/panel-models?${params.toString()}`,
-          { headers: { Authorization: `Bearer ${idToken}` } },
-        );
+        const res = await fetch(`${group.apiPath}?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
         const data = (await res.json()) as {
           options?: string[];
           configured?: boolean;
-          error?: string;
         };
         if (cancelled) return;
         if (!res.ok) {
-          setPanelModelOptions([]);
-          setPanelModelsConfigured(false);
+          setCatalogOptions((prev) => ({ ...prev, [kind]: [] }));
+          setCatalogConfigured((prev) => ({ ...prev, [kind]: false }));
           return;
         }
-        setPanelModelOptions(data.options ?? []);
-        setPanelModelsConfigured(data.configured !== false);
+        setCatalogOptions((prev) => ({
+          ...prev,
+          [kind]: data.options ?? [],
+        }));
+        setCatalogConfigured((prev) => ({
+          ...prev,
+          [kind]: data.configured !== false,
+        }));
       } catch {
         if (!cancelled) {
-          setPanelModelOptions([]);
-          setPanelModelsConfigured(false);
+          setCatalogOptions((prev) => ({ ...prev, [kind]: [] }));
+          setCatalogConfigured((prev) => ({ ...prev, [kind]: false }));
         }
       } finally {
-        if (!cancelled) setPanelModelsLoading(false);
+        if (!cancelled) {
+          setCatalogLoading((prev) => ({ ...prev, [kind]: false }));
+        }
       }
-    })();
+    };
+
+    void Promise.all([
+      fetchKind("panel"),
+      fetchKind("powerCon"),
+    ]);
 
     return () => {
       cancelled = true;
     };
-    // manufacturer 変更時のみ再取得（品番変更では再取得しない）
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keep1/keep2 は初回表示用
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keep は初回表示用
   }, [idToken, manufacturer]);
 
   const visibleFields = useMemo(() => {
     return formFields
       .filter((f) => isCustomerInfoFormFieldVisible(f.key, displayValues))
       .map((f) => {
-        if (!PANEL_MODEL_KEYS.includes(f.key as (typeof PANEL_MODEL_KEYS)[number])) {
-          return f;
-        }
+        const kind = catalogKindForFieldKey(f.key);
+        if (!kind) return f;
         if (!manufacturer) {
           return { ...f, options: [], optionsPending: true };
         }
-        if (panelModelsLoading) {
+        if (catalogLoading[kind]) {
           return { ...f, options: [], optionsPending: true };
         }
-        if (!panelModelsConfigured) {
+        if (!catalogConfigured[kind]) {
           return f;
         }
         return {
           ...f,
-          options: panelModelOptions,
+          options: catalogOptions[kind],
           optionsPending: false,
         };
       });
@@ -332,9 +382,9 @@ export function CustomerInfoEditForm({
     formFields,
     displayValues,
     manufacturer,
-    panelModelOptions,
-    panelModelsLoading,
-    panelModelsConfigured,
+    catalogOptions,
+    catalogLoading,
+    catalogConfigured,
   ]);
 
   const propagateValues = useCallback(
@@ -350,7 +400,16 @@ export function CustomerInfoEditForm({
     (key: string, value: string) => {
       let next = applyCustomerInfoFormChange(values, key, value);
       if (key === "manufacturer") {
-        next = { ...next, panelModel1: "", panelModel2: "" };
+        next = {
+          ...next,
+          panelModel1: "",
+          panelModel2: "",
+          powerConModel1: "",
+          powerConModel2: "",
+        };
+      }
+      if (key === "powerConCount" && value !== "2") {
+        next = { ...next, powerConModel2: "" };
       }
       propagateValues(next);
     },
@@ -415,17 +474,19 @@ export function CustomerInfoEditForm({
               000-0000 形式で入力すると都道府県・市区郡・町村+番地を自動入力します
             </p>
           ) : null}
-          {PANEL_MODEL_KEYS.includes(
-            field.key as (typeof PANEL_MODEL_KEYS)[number],
-          ) ? (
-            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-              {!manufacturer
-                ? "先にメーカーを選択すると、商品一覧から型番を選べます"
-                : panelModelsLoading
-                  ? "型番一覧を読み込み中…"
-                  : "商品一覧（太陽光パネル・現行）から抽出"}
-            </p>
-          ) : null}
+          {(() => {
+            const catalogKind = catalogKindForFieldKey(field.key);
+            if (!catalogKind) return null;
+            return (
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                {!manufacturer
+                  ? "先にメーカーを選択すると、商品一覧から型番を選べます"
+                  : catalogLoading[catalogKind]
+                    ? "型番一覧を読み込み中…"
+                    : `商品一覧（${CATALOG_MODEL_GROUPS[catalogKind].productLabel}・現行）から抽出`}
+              </p>
+            );
+          })()}
         </label>
       ))}
     </div>

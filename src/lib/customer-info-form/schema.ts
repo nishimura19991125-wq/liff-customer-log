@@ -111,6 +111,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     formLabel: "パワコン品番①",
     type: "select",
     options: [],
+    /** 商品一覧(型番詳細)から API 取得（メーカー選択後） */
     optionsPending: true,
   },
   {

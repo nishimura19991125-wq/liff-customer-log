@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import {
-  fetchPanelModelsForManufacturer,
+  fetchPowerConModelsForManufacturer,
   mergeCatalogModelOptions,
 } from "@/lib/product-catalog-models";
 import {
@@ -34,7 +34,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const options = await fetchPanelModelsForManufacturer(manufacturer);
+    const options = await fetchPowerConModelsForManufacturer(manufacturer);
     if (options === null) {
       return NextResponse.json({
         options: [],
@@ -46,9 +46,9 @@ export async function GET(request: Request) {
       configured: true,
     });
   } catch (e) {
-    console.error("[api/customer-info/panel-models]", e);
+    console.error("[api/customer-info/power-con-models]", e);
     return NextResponse.json(
-      { error: "パネル品番一覧の取得に失敗しました" },
+      { error: "パワコン品番一覧の取得に失敗しました" },
       { status: 502 },
     );
   }
