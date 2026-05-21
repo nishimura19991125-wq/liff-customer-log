@@ -2,9 +2,11 @@ import { checkboxGroupValueToPocketArray } from "@/lib/customer-info-form/checkb
 import { contractAmountForPocket } from "@/lib/customer-info-form/form-change";
 import { commaIntegerForPocket } from "@/lib/customer-info-form/numeric-comma";
 import {
+  INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY,
   INSTALLATION_TYPES_WITH_SOLAR_PANEL,
   PAYMENT_METHODS_WITH_CASH,
   PAYMENT_METHODS_WITH_LOAN,
+  preApplicationRequiresDocuments,
   subsidyIncludesCity,
   subsidyIncludesOther,
   subsidyIncludesPrefecture,
@@ -126,6 +128,7 @@ export function isCustomerInfoFormFieldVisible(
   const paymentMethod = norm(values.paymentMethod);
   const subsidy = norm(values.subsidy);
   const indoorSurveyStatus = norm(values.indoorSurveyStatus);
+  const preApplication = norm(values.preApplication);
 
   switch (key) {
     case "panelModel2":
@@ -168,7 +171,18 @@ export function isCustomerInfoFormFieldVisible(
     case "indoorSurveyScheduledDate":
       return indoorSurveyStatus === "未実施";
     case "feedInBankAccountForm":
+    case "powerOfAttorneyStorage":
+    case "equipmentCertConsent":
+    case "operatingCostReportConsent":
+    case "freeUseGenerationConsent":
       return INSTALLATION_TYPES_WITH_SOLAR_PANEL.has(installationType);
+    case "powerOfAttorneyChangeCert":
+    case "powerOfAttorneyIdPassword":
+      return INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY.has(
+        installationType,
+      );
+    case "subsidyPreApplicationDocs":
+      return preApplicationRequiresDocuments(preApplication);
     case "apBranch":
     case "clBranch":
       return false;

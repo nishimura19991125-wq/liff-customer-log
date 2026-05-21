@@ -493,7 +493,8 @@ export function CustomerInfoEditForm({
       if (
         key === "paymentMethod" ||
         key === "installationType" ||
-        key === "indoorSurveyStatus"
+        key === "indoorSurveyStatus" ||
+        key === "preApplication"
       ) {
         next = applyCustomerInfoHiddenDefaultsToValues(next);
       }
