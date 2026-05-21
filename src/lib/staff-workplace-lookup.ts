@@ -1,7 +1,11 @@
 import "server-only";
 
-import type { AtPocketFetchAuth, AtPocketFieldRow } from "@/lib/atpocket";
-import { fetchAllRecordsPages, fetchAppFields } from "@/lib/atpocket";
+import type { AtPocketFieldRow, AtPocketRequestContext } from "@/lib/atpocket";
+import {
+  apiKeyForStaffPocketRead,
+  fetchAllRecordsPages,
+  fetchAppFields,
+} from "@/lib/atpocket";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { pocketTableCellToPlainString } from "@/lib/staff-construction-availability";
 
@@ -9,8 +13,11 @@ export type StaffWorkplaceLookupConfig = {
   staffAppId: string;
   nameFieldId: string;
   workplaceFieldId: string;
-  pocketAuth?: AtPocketFetchAuth;
 };
+
+function staffPocketAuth() {
+  return { apiKey: apiKeyForStaffPocketRead() };
+}
 
 function nfkc(s: string): string {
   return s.normalize("NFKC").trim();
@@ -31,16 +38,20 @@ function pickFieldUniqueIdByExactCaption(
   return null;
 }
 
-export async function resolveStaffWorkplaceLookupConfig(
-  pocketAuth?: AtPocketFetchAuth,
-): Promise<StaffWorkplaceLookupConfig | null> {
+export async function resolveStaffWorkplaceLookupConfig(): Promise<StaffWorkplaceLookupConfig | null> {
   const staffAppId = process.env.STAFF_APP_ID?.trim();
   const nameFieldId = process.env.STAFF_NAME_FIELD_ID?.trim();
   if (!staffAppId || !nameFieldId) return null;
 
+  const auth = staffPocketAuth();
+  const fieldsCtx: AtPocketRequestContext = {
+    operation: "customer-info:AP/CL所属支店(勤務場所列解決)",
+    appEnv: "STAFF_APP_ID",
+  };
+
   let workplaceFieldId = process.env.STAFF_WORKPLACE_FIELD_ID?.trim();
   if (!workplaceFieldId) {
-    const appFields = await fetchAppFields(staffAppId, pocketAuth);
+    const appFields = await fetchAppFields(staffAppId, auth, fieldsCtx);
     workplaceFieldId =
       pickFieldUniqueIdByExactCaption(appFields, "勤務場所") ?? undefined;
   }
@@ -50,7 +61,6 @@ export async function resolveStaffWorkplaceLookupConfig(
     staffAppId,
     nameFieldId,
     workplaceFieldId,
-    pocketAuth,
   };
 }
 
@@ -63,11 +73,18 @@ async function staffNameToWorkplaceMap(
   const cacheKey = `${cfg.staffAppId}\0${cfg.nameFieldId}\0${cfg.workplaceFieldId}`;
   if (cachedMap && cachedMapKey === cacheKey) return cachedMap;
 
+  const auth = staffPocketAuth();
+  const listCtx: AtPocketRequestContext = {
+    operation: "customer-info:AP/CL所属支店(名簿一覧)",
+    appEnv: "STAFF_APP_ID",
+  };
   const csv = [cfg.nameFieldId, cfg.workplaceFieldId].join(",");
   const rows = await fetchAllRecordsPages(
     cfg.staffAppId,
     csv,
-    cfg.pocketAuth,
+    auth,
+    null,
+    listCtx,
   );
   const map = new Map<string, string>();
   for (const row of rows) {

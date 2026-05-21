@@ -99,13 +99,12 @@ async function applyStaffBranchesToPayload(
   values: CustomerInfoFormValues,
   resolved: CustomerInfoFormFieldResolved[],
   payload: Record<string, unknown>,
-  pocketAuth: AtPocketFetchAuth,
 ): Promise<void> {
   const apBranchField = resolved.find((f) => f.key === "apBranch");
   const clBranchField = resolved.find((f) => f.key === "clBranch");
   if (!apBranchField?.fieldId && !clBranchField?.fieldId) return;
 
-  const staffCfg = await resolveStaffWorkplaceLookupConfig(pocketAuth);
+  const staffCfg = await resolveStaffWorkplaceLookupConfig();
   if (!staffCfg) return;
 
   if (apBranchField?.fieldId) {
@@ -135,12 +134,7 @@ export async function formPayloadFromValues(
   const { resolved: transferResolved } =
     resolveCustomerInfoPtTransferFields(appFields);
   applyPtTransferToPayload(values, transferResolved, stringPayload);
-  await applyStaffBranchesToPayload(
-    values,
-    resolved,
-    stringPayload,
-    pocketAuth,
-  );
+  await applyStaffBranchesToPayload(values, resolved, stringPayload);
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(stringPayload)) {
     out[k] = v;

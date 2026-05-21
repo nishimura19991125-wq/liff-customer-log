@@ -64,6 +64,13 @@ export function apiKeyForCalendarWrite(): string {
   return apiKeyForCalendarPocket();
 }
 
+/** スタッフ名簿アプリの読み取り用（お客様情報の勤務場所参照など。未設定時は ATPOCKET_API_KEY） */
+export function apiKeyForStaffPocketRead(): string {
+  const k = process.env.STAFF_READ_ATPOCKET_API_KEY?.trim();
+  if (k) return k;
+  return apiKey();
+}
+
 /** スタッフ名簿アプリの LINE 紐付け更新用（未設定時は ATPOCKET_API_KEY・書き込み権限が必要） */
 export function apiKeyForStaffWrite(): string {
   const w = process.env.STAFF_WRITE_ATPOCKET_API_KEY?.trim();
@@ -81,6 +88,57 @@ export function apiKeyForCustomerInfoPocket(): string {
 export type AtPocketFetchAuth = {
   apiKey?: string;
 };
+
+/** ログ・障害調査用（どの環境変数のキーか） */
+export type AtPocketRequestContext = {
+  operation: string;
+  appEnv?: string;
+};
+
+function authKeyEnvLabel(auth?: AtPocketFetchAuth): string {
+  const key = (auth?.apiKey ?? apiKey()).trim();
+  const candidates: Array<[string, string | undefined]> = [
+    ["CUSTOMER_INFO_ATPOCKET_API_KEY", process.env.CUSTOMER_INFO_ATPOCKET_API_KEY?.trim()],
+    ["STAFF_READ_ATPOCKET_API_KEY", process.env.STAFF_READ_ATPOCKET_API_KEY?.trim()],
+    ["STAFF_WRITE_ATPOCKET_API_KEY", process.env.STAFF_WRITE_ATPOCKET_API_KEY?.trim()],
+    ["CALENDAR_ATPOCKET_API_KEY", process.env.CALENDAR_ATPOCKET_API_KEY?.trim()],
+    ["CALENDAR_WRITE_ATPOCKET_API_KEY", process.env.CALENDAR_WRITE_ATPOCKET_API_KEY?.trim()],
+    ["CALENDAR_REPORT_ATPOCKET_API_KEY", process.env.CALENDAR_REPORT_ATPOCKET_API_KEY?.trim()],
+    ["TRADING_PARTNER_ATPOCKET_API_KEY", process.env.TRADING_PARTNER_ATPOCKET_API_KEY?.trim()],
+    ["PRODUCT_CATALOG_ATPOCKET_API_KEY", process.env.PRODUCT_CATALOG_ATPOCKET_API_KEY?.trim()],
+    ["LOG_ATPOCKET_API_KEY", process.env.LOG_ATPOCKET_API_KEY?.trim()],
+    ["ATPOCKET_API_KEY", process.env.ATPOCKET_API_KEY?.trim()],
+  ];
+  for (const [name, envVal] of candidates) {
+    if (envVal && key === envVal) return name;
+  }
+  return auth?.apiKey ? "custom(apiKey)" : "ATPOCKET_API_KEY(default)";
+}
+
+function formatPocketHttpError(
+  kind: string,
+  status: number,
+  text: string,
+  appsId: string,
+  auth?: AtPocketFetchAuth,
+  ctx?: AtPocketRequestContext,
+): string {
+  const segments = [
+    `@pocket ${kind} failed: ${status} ${text}`,
+    `operation=${ctx?.operation ?? "unknown"}`,
+    `appsId=${appsId}`,
+    ctx?.appEnv ? `appsEnv=${ctx.appEnv}` : "",
+    `apiKey=${authKeyEnvLabel(auth)}`,
+  ].filter(Boolean);
+  if (status === 401) {
+    segments.push(
+      "hint=この apiKey に上記 appsId の参照権限があるか @pocket 管理画面で確認",
+    );
+  } else if (status === 429) {
+    segments.push("hint=100秒あたりのAPI上限。間隔を空けて再試行");
+  }
+  return segments.join(" | ");
+}
 
 /** ログアプリ・工事カレンダーアプリへのレコード登録用キー */
 function apiKeyForCreateRecord(appsId: string): string {
@@ -168,6 +226,7 @@ export async function fetchRecordsList(
     query?: string;
   },
   auth?: AtPocketFetchAuth,
+  ctx?: AtPocketRequestContext,
 ): Promise<AtPocketListResponse> {
   const params = new URLSearchParams();
   params.set("limit", searchParams?.limit ?? "1000");
@@ -181,7 +240,16 @@ export async function fetchRecordsList(
 
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`@pocket list records failed: ${res.status} ${text}`);
+    throw new Error(
+      formatPocketHttpError(
+        "list records",
+        res.status,
+        text,
+        appsId,
+        auth,
+        ctx,
+      ),
+    );
   }
   return text ? (JSON.parse(text) as AtPocketListResponse) : { records: [] };
 }
@@ -195,6 +263,7 @@ const appFieldsInflight = new Map<string, Promise<AtPocketFieldRow[]>>();
 async function fetchAppFieldsOnce(
   appsId: string,
   auth?: AtPocketFetchAuth,
+  ctx?: AtPocketRequestContext,
 ): Promise<AtPocketFieldRow[]> {
   const params = new URLSearchParams();
   params.set("limit", "1000");
@@ -203,7 +272,9 @@ async function fetchAppFieldsOnce(
   const res = await fetchWithMethodOverrideWithRetry(path, auth);
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`@pocket list fields failed: ${res.status} ${text}`);
+    throw new Error(
+      formatPocketHttpError("list fields", res.status, text, appsId, auth, ctx),
+    );
   }
   if (!text) return [];
   const json = JSON.parse(text) as { fields?: AtPocketFieldRow[] };
@@ -213,6 +284,7 @@ async function fetchAppFieldsOnce(
 export async function fetchAppFields(
   appsId: string,
   auth?: AtPocketFetchAuth,
+  ctx?: AtPocketRequestContext,
 ): Promise<AtPocketFieldRow[]> {
   const key = appsId.trim();
   const now = Date.now();
@@ -224,7 +296,7 @@ export async function fetchAppFields(
 
   const promise = (async () => {
     try {
-      const fields = await fetchAppFieldsOnce(appsId, auth);
+      const fields = await fetchAppFieldsOnce(appsId, auth, ctx);
       appFieldsStore.set(key, {
         expiresAt: Date.now() + APP_FIELDS_TTL_MS,
         fields,
@@ -319,6 +391,7 @@ export async function fetchAllRecordsPages(
   fieldsCsv: string,
   auth?: AtPocketFetchAuth,
   pocketQuery?: string | null,
+  ctx?: AtPocketRequestContext,
 ): Promise<AtPocketRecordRow[]> {
   const all: AtPocketRecordRow[] = [];
   for (let page = 1; page <= CALENDAR_MAX_PAGES; page++) {
@@ -331,6 +404,7 @@ export async function fetchAllRecordsPages(
         ...(pocketQuery?.trim() ? { query: pocketQuery.trim() } : {}),
       },
       auth,
+      ctx,
     );
     const recs = data.records ?? [];
     all.push(...recs);

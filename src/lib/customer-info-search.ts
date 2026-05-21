@@ -55,7 +55,11 @@ export async function searchCustomerInfoRecordsByName(
   if (!q) return [];
 
   const auth = customerInfoPocketAuth();
-  const fields = await fetchAppFields(appId, auth);
+  const pocketCtx = {
+    operation: "customer-info:お客様名検索",
+    appEnv: "CUSTOMER_INFO_APP_ID",
+  } as const;
+  const fields = await fetchAppFields(appId, auth, pocketCtx);
   const nameField = resolveConfiguredFieldToSchemaUniqueId(
     nameFieldEnv,
     fields,
@@ -92,6 +96,7 @@ export async function searchCustomerInfoRecordsByName(
         fields: fieldsCsv,
       },
       auth,
+      pocketCtx,
     );
     const rows = data.records ?? [];
     if (rows.length === 0) break;

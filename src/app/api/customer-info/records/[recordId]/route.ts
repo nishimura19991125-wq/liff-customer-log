@@ -88,7 +88,10 @@ export async function GET(request: Request, ctx: RouteCtx) {
   const pocketAuth = customerInfoPocketAuth();
 
   try {
-    const fields = await fetchAppFields(cfg.appId, pocketAuth);
+    const fields = await fetchAppFields(cfg.appId, pocketAuth, {
+      operation: "customer-info:レコード取得(列定義)",
+      appEnv: "CUSTOMER_INFO_APP_ID",
+    });
     const nameSchema = resolveConfiguredFieldToSchemaUniqueId(
       cfg.nameFieldId,
       fields,
@@ -285,7 +288,10 @@ export async function PUT(request: Request, ctx: RouteCtx) {
   const pocketAuth = customerInfoPocketAuth();
 
   try {
-    const appFields = await fetchAppFields(cfg.appId, pocketAuth);
+    const appFields = await fetchAppFields(cfg.appId, pocketAuth, {
+      operation: "customer-info:レコード保存(列定義)",
+      appEnv: "CUSTOMER_INFO_APP_ID",
+    });
 
     if (!customerInfoUsesLegacyEditableList()) {
       const { resolved } = resolveCustomerInfoFormFields(appFields);
