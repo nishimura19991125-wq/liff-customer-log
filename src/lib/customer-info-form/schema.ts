@@ -330,7 +330,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     key: "freeUseGenerationConsent",
     caption: "発電設備の無償使用に関する同意書",
     type: "radio",
-    options: [...COLLECTION_STATUS_TWO_OPTIONS],
+    options: [...COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS],
     hiddenValue: DOCUMENT_RADIO_HIDDEN_VALUE,
   },
   {
