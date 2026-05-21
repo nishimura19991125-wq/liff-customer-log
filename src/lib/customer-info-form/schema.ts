@@ -135,6 +135,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     caption: "蓄電池容量(kWh)①",
     type: "select",
     options: [],
+    /** 商品一覧(型番詳細)から API 取得（メーカー選択後・出力または容量） */
     optionsPending: true,
   },
   {

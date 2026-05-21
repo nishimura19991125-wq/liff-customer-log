@@ -20,7 +20,36 @@ import {
 
 export const PRODUCT_CATALOG_TYPE_SOLAR_PANEL = "太陽光パネル";
 export const PRODUCT_CATALOG_TYPE_POWER_CONDITIONER = "パワーコンディショナー";
+export const PRODUCT_CATALOG_TYPE_BATTERY = "蓄電池";
 const STATUS_CURRENT = "現行";
+
+export type CatalogProductConfig = {
+  productTypeLabel: string;
+  displayValueEnvKey: string;
+  displayValueCaption: string;
+  logTag: string;
+};
+
+export const CATALOG_CONFIG_PANEL: CatalogProductConfig = {
+  productTypeLabel: PRODUCT_CATALOG_TYPE_SOLAR_PANEL,
+  displayValueEnvKey: "PRODUCT_CATALOG_MODEL_NUMBER_FIELD_ID",
+  displayValueCaption: "型番",
+  logTag: "panel",
+};
+
+export const CATALOG_CONFIG_POWER_CON: CatalogProductConfig = {
+  productTypeLabel: PRODUCT_CATALOG_TYPE_POWER_CONDITIONER,
+  displayValueEnvKey: "PRODUCT_CATALOG_MODEL_NUMBER_FIELD_ID",
+  displayValueCaption: "型番",
+  logTag: "power-con",
+};
+
+export const CATALOG_CONFIG_BATTERY: CatalogProductConfig = {
+  productTypeLabel: PRODUCT_CATALOG_TYPE_BATTERY,
+  displayValueEnvKey: "PRODUCT_CATALOG_OUTPUT_OR_CAPACITY_FIELD_ID",
+  displayValueCaption: "出力または容量",
+  logTag: "battery",
+};
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
@@ -28,7 +57,7 @@ export type ProductCatalogFieldIds = {
   manufacturerName: string;
   productType: string;
   status: string;
-  modelNumber: string;
+  displayValue: string;
 };
 
 type CatalogRow = { manufacturer: string; model: string };
@@ -82,22 +111,24 @@ function resolveProductCatalogFieldId(
   return pickFieldUniqueIdByExactCaption(appFields, caption);
 }
 
-export function productCatalogFieldIdsFromEnv(): ProductCatalogFieldIds | null {
+export function productCatalogFieldIdsFromEnv(
+  config: CatalogProductConfig,
+): ProductCatalogFieldIds | null {
   const manufacturerName =
     process.env.PRODUCT_CATALOG_MANUFACTURER_NAME_FIELD_ID?.trim();
   const productType =
     process.env.PRODUCT_CATALOG_PRODUCT_TYPE_FIELD_ID?.trim();
   const status = process.env.PRODUCT_CATALOG_STATUS_FIELD_ID?.trim();
-  const modelNumber =
-    process.env.PRODUCT_CATALOG_MODEL_NUMBER_FIELD_ID?.trim();
-  if (!manufacturerName || !productType || !status || !modelNumber) {
+  const displayValue = process.env[config.displayValueEnvKey]?.trim();
+  if (!manufacturerName || !productType || !status || !displayValue) {
     return null;
   }
-  return { manufacturerName, productType, status, modelNumber };
+  return { manufacturerName, productType, status, displayValue };
 }
 
 export function resolveProductCatalogFieldIds(
   appFields: AtPocketFieldRow[],
+  config: CatalogProductConfig,
 ): ProductCatalogFieldIds | null {
   const manufacturerName = resolveProductCatalogFieldId(
     "PRODUCT_CATALOG_MANUFACTURER_NAME_FIELD_ID",
@@ -114,15 +145,15 @@ export function resolveProductCatalogFieldIds(
     "ステータス",
     appFields,
   );
-  const modelNumber = resolveProductCatalogFieldId(
-    "PRODUCT_CATALOG_MODEL_NUMBER_FIELD_ID",
-    "型番",
+  const displayValue = resolveProductCatalogFieldId(
+    config.displayValueEnvKey,
+    config.displayValueCaption,
     appFields,
   );
-  if (!manufacturerName || !productType || !status || !modelNumber) {
+  if (!manufacturerName || !productType || !status || !displayValue) {
     return null;
   }
-  return { manufacturerName, productType, status, modelNumber };
+  return { manufacturerName, productType, status, displayValue };
 }
 
 function pocketApiKeysForProductCatalog(): string[] {
@@ -143,8 +174,9 @@ function pocketApiKeysForProductCatalog(): string[] {
 
 async function resolveProductCatalogIdsForFetch(
   appId: string,
+  config: CatalogProductConfig,
 ): Promise<ProductCatalogFieldIds | null> {
-  const fromEnv = productCatalogFieldIdsFromEnv();
+  const fromEnv = productCatalogFieldIdsFromEnv(config);
   if (fromEnv) return fromEnv;
 
   const appFields = await fetchAppFieldsTryKeys(
@@ -153,11 +185,11 @@ async function resolveProductCatalogIdsForFetch(
   );
   if (!appFields) {
     console.warn(
-      "[product-catalog-models] 商品一覧の fields API が失敗しました。PRODUCT_CATALOG_*_FIELD_ID を4つ設定するか、参照権限のある API キーを指定してください。",
+      `[product-catalog-models:${config.logTag}] 商品一覧の fields API が失敗しました。PRODUCT_CATALOG_*_FIELD_ID を設定するか、参照権限のある API キーを指定してください。`,
     );
     return null;
   }
-  return resolveProductCatalogFieldIds(appFields);
+  return resolveProductCatalogFieldIds(appFields, config);
 }
 
 function readRecordCell(
@@ -179,8 +211,7 @@ function readPlainCell(
 function collectCatalogRows(
   rows: Awaited<ReturnType<typeof fetchAllRecordsPages>>,
   ids: ProductCatalogFieldIds,
-  productTypeLabel: string,
-  logTag: string,
+  config: CatalogProductConfig,
 ): CatalogRow[] {
   const out: CatalogRow[] = [];
   let matched = 0;
@@ -191,7 +222,7 @@ function collectCatalogRows(
     const recObj = rec as Record<string, unknown>;
 
     const typeRaw = readRecordCell(recObj, ids.productType);
-    if (!pocketSelectIncludesLabel(typeRaw, productTypeLabel)) {
+    if (!pocketSelectIncludesLabel(typeRaw, config.productTypeLabel)) {
       continue;
     }
     const statusRaw = readRecordCell(recObj, ids.status);
@@ -199,42 +230,41 @@ function collectCatalogRows(
       continue;
     }
     const manufacturer = readPlainCell(recObj, ids.manufacturerName);
-    const model = readPlainCell(recObj, ids.modelNumber);
+    const model = readPlainCell(recObj, ids.displayValue);
     if (!manufacturer || !model) continue;
     matched += 1;
     out.push({ manufacturer, model });
   }
 
   console.info(
-    `[product-catalog-models:${logTag}] rows=${rows.length} matched=${matched} unique-models=${new Set(out.map((r) => r.model)).size}`,
+    `[product-catalog-models:${config.logTag}] rows=${rows.length} matched=${matched} unique-values=${new Set(out.map((r) => r.model)).size}`,
   );
 
   return out;
 }
 
 async function loadCatalogUncached(
-  productTypeLabel: string,
-  logTag: string,
+  config: CatalogProductConfig,
 ): Promise<CatalogRow[]> {
   const appId = productCatalogAppId();
   if (!appId) return [];
 
   const auth = productCatalogPocketAuth();
-  const ids = await resolveProductCatalogIdsForFetch(appId);
+  const ids = await resolveProductCatalogIdsForFetch(appId, config);
   if (!ids) return [];
 
   const fieldsCsv = [
     ids.manufacturerName,
     ids.productType,
     ids.status,
-    ids.modelNumber,
+    ids.displayValue,
   ].join(",");
   let rows = await fetchAllRecordsPages(appId, fieldsCsv, auth);
-  let catalog = collectCatalogRows(rows, ids, productTypeLabel, logTag);
+  let catalog = collectCatalogRows(rows, ids, config);
 
   if (catalog.length <= 1 && rows.length >= 2) {
     const fullRows = await fetchAllRecordsPages(appId, "", auth);
-    const retry = collectCatalogRows(fullRows, ids, productTypeLabel, logTag);
+    const retry = collectCatalogRows(fullRows, ids, config);
     if (retry.length > catalog.length) catalog = retry;
   }
 
@@ -242,53 +272,52 @@ async function loadCatalogUncached(
 }
 
 async function loadCatalogByProductType(
-  productTypeLabel: string,
-  logTag: string,
+  config: CatalogProductConfig,
 ): Promise<CatalogRow[]> {
+  const cacheKey = config.productTypeLabel;
   const now = Date.now();
-  const cached = catalogCacheByProductType.get(productTypeLabel);
+  const cached = catalogCacheByProductType.get(cacheKey);
   if (cached && cached.expiresAt > now) {
     return cached.rows;
   }
 
-  const inflight = catalogInflightByProductType.get(productTypeLabel);
+  const inflight = catalogInflightByProductType.get(cacheKey);
   if (inflight) return inflight;
 
   const promise = (async () => {
     try {
-      const rows = await loadCatalogUncached(productTypeLabel, logTag);
-      catalogCacheByProductType.set(productTypeLabel, {
+      const rows = await loadCatalogUncached(config);
+      catalogCacheByProductType.set(cacheKey, {
         expiresAt: Date.now() + CACHE_TTL_MS,
         rows,
       });
       return rows;
     } catch (e) {
-      console.error(`[product-catalog-models:${logTag}]`, e);
-      catalogCacheByProductType.set(productTypeLabel, {
+      console.error(`[product-catalog-models:${config.logTag}]`, e);
+      catalogCacheByProductType.set(cacheKey, {
         expiresAt: Date.now() + 60_000,
         rows: [],
       });
       return [];
     } finally {
-      catalogInflightByProductType.delete(productTypeLabel);
+      catalogInflightByProductType.delete(cacheKey);
     }
   })();
 
-  catalogInflightByProductType.set(productTypeLabel, promise);
+  catalogInflightByProductType.set(cacheKey, promise);
   return promise;
 }
 
-async function fetchModelsForManufacturer(
+async function fetchCatalogValuesForManufacturer(
   manufacturer: string,
-  productTypeLabel: string,
-  logTag: string,
+  config: CatalogProductConfig,
 ): Promise<string[] | null> {
   if (!productCatalogAppId()) return null;
 
   const want = nfkcNormalize(manufacturer);
   if (!want) return [];
 
-  const catalog = await loadCatalogByProductType(productTypeLabel, logTag);
+  const catalog = await loadCatalogByProductType(config);
   const models = new Set<string>();
   for (const row of catalog) {
     if (nfkcNormalize(row.manufacturer) !== want) continue;
@@ -301,21 +330,22 @@ async function fetchModelsForManufacturer(
 export async function fetchPanelModelsForManufacturer(
   manufacturer: string,
 ): Promise<string[] | null> {
-  return fetchModelsForManufacturer(
-    manufacturer,
-    PRODUCT_CATALOG_TYPE_SOLAR_PANEL,
-    "panel",
-  );
+  return fetchCatalogValuesForManufacturer(manufacturer, CATALOG_CONFIG_PANEL);
 }
 
 export async function fetchPowerConModelsForManufacturer(
   manufacturer: string,
 ): Promise<string[] | null> {
-  return fetchModelsForManufacturer(
+  return fetchCatalogValuesForManufacturer(
     manufacturer,
-    PRODUCT_CATALOG_TYPE_POWER_CONDITIONER,
-    "power-con",
+    CATALOG_CONFIG_POWER_CON,
   );
+}
+
+export async function fetchBatteryCapacityOptionsForManufacturer(
+  manufacturer: string,
+): Promise<string[] | null> {
+  return fetchCatalogValuesForManufacturer(manufacturer, CATALOG_CONFIG_BATTERY);
 }
 
 export function mergeCatalogModelOptions(

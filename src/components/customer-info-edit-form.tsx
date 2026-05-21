@@ -38,11 +38,19 @@ const CATALOG_MODEL_GROUPS = {
     keys: ["panelModel1", "panelModel2"] as const,
     apiPath: "/api/customer-info/panel-models",
     productLabel: "太陽光パネル",
+    valueFieldLabel: "型番",
   },
   powerCon: {
     keys: ["powerConModel1", "powerConModel2"] as const,
     apiPath: "/api/customer-info/power-con-models",
     productLabel: "パワーコンディショナー",
+    valueFieldLabel: "型番",
+  },
+  battery: {
+    keys: ["batteryCapacity1", "batteryCapacity2"] as const,
+    apiPath: "/api/customer-info/battery-capacity-options",
+    productLabel: "蓄電池",
+    valueFieldLabel: "出力または容量",
   },
 } as const;
 
@@ -51,6 +59,7 @@ type CatalogModelKind = keyof typeof CATALOG_MODEL_GROUPS;
 const CATALOG_MODEL_KEY_SET = new Set<string>([
   ...CATALOG_MODEL_GROUPS.panel.keys,
   ...CATALOG_MODEL_GROUPS.powerCon.keys,
+  ...CATALOG_MODEL_GROUPS.battery.keys,
 ]);
 
 function catalogKindForFieldKey(key: string): CatalogModelKind | null {
@@ -63,6 +72,11 @@ function catalogKindForFieldKey(key: string): CatalogModelKind | null {
     (CATALOG_MODEL_GROUPS.powerCon.keys as readonly string[]).includes(key)
   ) {
     return "powerCon";
+  }
+  if (
+    (CATALOG_MODEL_GROUPS.battery.keys as readonly string[]).includes(key)
+  ) {
+    return "battery";
   }
   return null;
 }
@@ -278,13 +292,13 @@ export function CustomerInfoEditForm({
 }) {
   const [catalogOptions, setCatalogOptions] = useState<
     Record<CatalogModelKind, string[]>
-  >({ panel: [], powerCon: [] });
+  >({ panel: [], powerCon: [], battery: [] });
   const [catalogLoading, setCatalogLoading] = useState<
     Record<CatalogModelKind, boolean>
-  >({ panel: false, powerCon: false });
+  >({ panel: false, powerCon: false, battery: false });
   const [catalogConfigured, setCatalogConfigured] = useState<
     Record<CatalogModelKind, boolean>
-  >({ panel: true, powerCon: true });
+  >({ panel: true, powerCon: true, battery: true });
 
   const displayValues = useMemo(
     () => syncContractAmountFromPayment(values),
@@ -295,13 +309,13 @@ export function CustomerInfoEditForm({
 
   useEffect(() => {
     if (!idToken || !manufacturer) {
-      setCatalogOptions({ panel: [], powerCon: [] });
-      setCatalogLoading({ panel: false, powerCon: false });
+      setCatalogOptions({ panel: [], powerCon: [], battery: [] });
+      setCatalogLoading({ panel: false, powerCon: false, battery: false });
       return;
     }
 
     let cancelled = false;
-    setCatalogLoading({ panel: true, powerCon: true });
+    setCatalogLoading({ panel: true, powerCon: true, battery: true });
 
     const fetchKind = async (kind: CatalogModelKind) => {
       const group = CATALOG_MODEL_GROUPS[kind];
@@ -349,6 +363,7 @@ export function CustomerInfoEditForm({
     void Promise.all([
       fetchKind("panel"),
       fetchKind("powerCon"),
+      fetchKind("battery"),
     ]);
 
     return () => {
@@ -406,10 +421,15 @@ export function CustomerInfoEditForm({
           panelModel2: "",
           powerConModel1: "",
           powerConModel2: "",
+          batteryCapacity1: "",
+          batteryCapacity2: "",
         };
       }
       if (key === "powerConCount" && value !== "2") {
         next = { ...next, powerConModel2: "" };
+      }
+      if (key === "batteryMulti" && value !== "有") {
+        next = { ...next, batteryCapacity2: "" };
       }
       propagateValues(next);
     },
@@ -483,7 +503,7 @@ export function CustomerInfoEditForm({
                   ? "先にメーカーを選択すると、商品一覧から型番を選べます"
                   : catalogLoading[catalogKind]
                     ? "型番一覧を読み込み中…"
-                    : `商品一覧（${CATALOG_MODEL_GROUPS[catalogKind].productLabel}・現行）から抽出`}
+                    : `商品一覧（${CATALOG_MODEL_GROUPS[catalogKind].productLabel}・現行・${CATALOG_MODEL_GROUPS[catalogKind].valueFieldLabel}）から抽出`}
               </p>
             );
           })()}

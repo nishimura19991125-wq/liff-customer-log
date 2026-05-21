@@ -33,6 +33,8 @@ const POCKET_DASH_WHEN_EMPTY_KEYS = new Set([
   "panelModel2",
   "powerConModel1",
   "powerConModel2",
+  "batteryCapacity1",
+  "batteryCapacity2",
 ]);
 
 const COMMA_INTEGER_KEYS = new Set([
