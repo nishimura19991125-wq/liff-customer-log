@@ -27,6 +27,9 @@ const POCKET_ZERO_WHEN_EMPTY_KEYS = new Set([
   "extraPartsAmount",
 ]);
 
+/** 未入力・非表示時に @pocket へ "-" を送るフィールド */
+const POCKET_DASH_WHEN_EMPTY_KEYS = new Set(["panelModel1", "panelModel2"]);
+
 const COMMA_INTEGER_KEYS = new Set([
   "panelCount1",
   "panelCount2",
@@ -63,6 +66,10 @@ function pocketFieldValueForPut(
   }
   if (POCKET_ZERO_WHEN_EMPTY_KEYS.has(key)) {
     if (!visible || isEmptyPocketInput(raw)) return "0";
+    return raw.trim();
+  }
+  if (POCKET_DASH_WHEN_EMPTY_KEYS.has(key)) {
+    if (!visible || isEmptyPocketInput(raw)) return hiddenFallback;
     return raw.trim();
   }
   if (!visible) return hiddenFallback;
