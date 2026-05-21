@@ -10,6 +10,10 @@ import {
 import { attachCustomerInfoImportKeyToPayload } from "@/lib/customer-info-form/put-payload";
 import { formPayloadFromValues } from "@/lib/customer-info-form/put-payload";
 import {
+  findMissingRequiredCustomerInfoFields,
+  formatCustomerInfoRequiredValidationError,
+} from "@/lib/customer-info-form/validate";
+import {
   customerInfoFormFieldsCsv,
   formValuesFromPutBody,
   readCustomerInfoFormValuesFromRecord,
@@ -299,6 +303,23 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       if (!values) {
         return NextResponse.json(
           { error: "フォームの項目キーが認識できません" },
+          { status: 400 },
+        );
+      }
+
+      const missingRequired = findMissingRequiredCustomerInfoFields(
+        resolved.map((f) => ({
+          key: f.key,
+          label: f.label,
+          type: f.type,
+        })),
+        values,
+      );
+      if (missingRequired.length > 0) {
+        return NextResponse.json(
+          {
+            error: formatCustomerInfoRequiredValidationError(missingRequired),
+          },
           { status: 400 },
         );
       }

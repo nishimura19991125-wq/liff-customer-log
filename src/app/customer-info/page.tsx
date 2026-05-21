@@ -27,6 +27,10 @@ import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { inferPanelComboFromValues } from "@/lib/customer-info-form/panel-combo";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
+import {
+  findMissingRequiredCustomerInfoFields,
+  formatCustomerInfoRequiredValidationError,
+} from "@/lib/customer-info-form/validate";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -85,6 +89,9 @@ export default function CustomerInfoPage() {
   const [saving, setSaving] = useState(false);
   const [saveFeedback, setSaveFeedback] =
     useState<CustomerInfoSaveFeedback | null>(null);
+  const [requiredFieldErrors, setRequiredFieldErrors] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
   const saveBarRef = useRef<HTMLDivElement>(null);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
@@ -211,6 +218,7 @@ export default function CustomerInfoPage() {
           setEditValues(initial);
           setFormFields(data.formFields);
           setMissingCaptions(data.missingCaptions);
+          setRequiredFieldErrors(new Set());
         } else {
           const initial: CustomerInfoFormValues = {};
           for (const f of data.editableFields ?? []) {
@@ -234,6 +242,27 @@ export default function CustomerInfoPage() {
   const handleSave = useCallback(async () => {
     const token = idToken;
     if (!token || !detail) return;
+
+    if (detail.usesFormSchema && formFields.length > 0) {
+      const missing = findMissingRequiredCustomerInfoFields(
+        formFields.map((f) => ({
+          key: f.key,
+          label: f.label,
+          type: f.type,
+        })),
+        editValues,
+      );
+      if (missing.length > 0) {
+        setRequiredFieldErrors(new Set(missing.map((f) => f.key)));
+        setSaveFeedback({
+          kind: "err",
+          text: formatCustomerInfoRequiredValidationError(missing),
+        });
+        return;
+      }
+    }
+
+    setRequiredFieldErrors(new Set());
     setSaving(true);
     setSaveFeedback(null);
     try {
@@ -279,7 +308,7 @@ export default function CustomerInfoPage() {
     } finally {
       setSaving(false);
     }
-  }, [idToken, detail, editValues, openRecord]);
+  }, [idToken, detail, editValues, formFields, openRecord]);
 
   if (phase === "init" || phase === "loading") {
     return (
@@ -457,10 +486,17 @@ export default function CustomerInfoPage() {
                     values={editValues}
                     saving={saving}
                     missingCaptions={missingCaptions}
+                    requiredFieldErrors={requiredFieldErrors}
                     idToken={idToken}
-                    onChange={(key, value) =>
-                      setEditValues((prev) => ({ ...prev, [key]: value }))
-                    }
+                    onChange={(key, value) => {
+                      setRequiredFieldErrors((prev) => {
+                        if (!prev.has(key)) return prev;
+                        const next = new Set(prev);
+                        next.delete(key);
+                        return next;
+                      });
+                      setEditValues((prev) => ({ ...prev, [key]: value }));
+                    }}
                   />
                 ) : (detail.editableFields?.length ?? 0) === 0 ? (
                   <p className="text-[13px] leading-relaxed text-slate-500">

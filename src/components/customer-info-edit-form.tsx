@@ -106,23 +106,38 @@ function joinCheckboxValue(selected: Set<string>): string {
   return [...selected].join(",");
 }
 
+const FIELD_INVALID_CLASS =
+  "border-red-300 ring-2 ring-red-200 focus:border-red-400 focus:ring-red-200";
+
 function FieldControl({
   field,
   value,
   disabled,
+  invalid,
   onChange,
   onBlur,
 }: {
   field: CustomerInfoFormFieldApi;
   value: string;
   disabled: boolean;
+  invalid?: boolean;
   onChange: (next: string) => void;
   onBlur?: () => void;
 }) {
+  const controlClass = invalid
+    ? `${INPUT_CLASS} ${FIELD_INVALID_CLASS}`
+    : INPUT_CLASS;
+  const selectClass = invalid
+    ? `${SELECT_CLASS} ${FIELD_INVALID_CLASS}`
+    : SELECT_CLASS;
   if (field.type === "checkbox-group" && field.options?.length) {
     const selected = parseCheckboxValue(value);
     return (
-      <div className="flex flex-wrap gap-2">
+      <div
+        className={`flex flex-wrap gap-2 rounded-xl p-1 ${
+          invalid ? "ring-2 ring-red-200" : ""
+        }`}
+      >
         {field.options.map((opt) => {
           const checked = selected.has(opt);
           return (
@@ -162,7 +177,7 @@ function FieldControl({
   ) {
     return (
       <select
-        className={SELECT_CLASS}
+        className={selectClass}
         value={value}
         disabled={disabled}
         onBlur={onBlur}
@@ -183,7 +198,7 @@ function FieldControl({
       <input
         type="text"
         inputMode="numeric"
-        className={INPUT_CLASS}
+        className={controlClass}
         value={value}
         disabled={disabled}
         placeholder="例：1,234"
@@ -202,7 +217,7 @@ function FieldControl({
         type="text"
         inputMode="numeric"
         autoComplete="postal-code"
-        className={INPUT_CLASS}
+        className={controlClass}
         value={value}
         disabled={disabled}
         placeholder="000-0000"
@@ -217,7 +232,7 @@ function FieldControl({
     return (
       <input
         type="date"
-        className={`${INPUT_CLASS} calendar-date-input`}
+        className={`${controlClass} calendar-date-input`}
         value={value}
         disabled={disabled}
         onBlur={onBlur}
@@ -229,7 +244,7 @@ function FieldControl({
   return (
     <input
       type="text"
-      className={INPUT_CLASS}
+      className={controlClass}
       value={value}
       disabled={disabled}
       placeholder={
@@ -281,6 +296,7 @@ export function CustomerInfoEditForm({
   values,
   saving,
   missingCaptions,
+  requiredFieldErrors,
   idToken,
   onChange,
 }: {
@@ -288,6 +304,7 @@ export function CustomerInfoEditForm({
   values: CustomerInfoFormValues;
   saving: boolean;
   missingCaptions?: string[];
+  requiredFieldErrors?: ReadonlySet<string>;
   idToken: string | null;
   onChange: (key: string, value: string) => void;
 }) {
@@ -462,10 +479,13 @@ export function CustomerInfoEditForm({
           （見出し名が一致するか CUSTOMER_INFO_FIELD_* を確認してください）
         </p>
       ) : null}
-      {visibleFields.map((field) => (
+      {visibleFields.map((field) => {
+        const invalid = requiredFieldErrors?.has(field.key) ?? false;
+        return (
         <label key={field.key} className="block">
           <span className="mb-1 block text-[12px] font-semibold text-slate-700">
             {field.label}
+            <span className="ml-1 text-[11px] font-bold text-red-600">必須</span>
             {field.optionsPending ? (
               <span className="ml-1 font-normal text-slate-400">
                 （一覧は後日連携）
@@ -474,6 +494,7 @@ export function CustomerInfoEditForm({
           </span>
           <FieldControl
             field={field}
+            invalid={invalid}
             value={
               field.key === "contractAmount" &&
               isContractAmountDerived(displayValues.paymentMethod ?? "")
@@ -494,6 +515,11 @@ export function CustomerInfoEditForm({
               field.key === "postalCode" ? () => void handlePostalBlur() : undefined
             }
           />
+          {invalid ? (
+            <p className="mt-1 text-[11px] font-semibold text-red-600">
+              入力してください
+            </p>
+          ) : null}
           {field.key === "pt" ? <PtTransferHint values={displayValues} /> : null}
           {field.key === "contractAmount" ? (
             <ContractAmountHint values={displayValues} />
@@ -517,7 +543,8 @@ export function CustomerInfoEditForm({
             );
           })()}
         </label>
-      ))}
+        );
+      })}
     </div>
   );
 }
