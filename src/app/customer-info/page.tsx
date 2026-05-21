@@ -462,6 +462,7 @@ export default function CustomerInfoPage() {
                     values={editValues}
                     saving={saving}
                     missingCaptions={missingCaptions}
+                    idToken={idToken}
                     onChange={(key, value) =>
                       setEditValues((prev) => ({ ...prev, [key]: value }))
                     }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   applyCustomerInfoFormChange,
@@ -32,6 +32,8 @@ const INPUT_CLASS =
   "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200";
 
 const SELECT_CLASS = INPUT_CLASS;
+
+const PANEL_MODEL_KEYS = ["panelModel1", "panelModel2"] as const;
 
 export type CustomerInfoFormFieldApi = {
   key: string;
@@ -232,24 +234,108 @@ export function CustomerInfoEditForm({
   values,
   saving,
   missingCaptions,
+  idToken,
   onChange,
 }: {
   formFields: CustomerInfoFormFieldApi[];
   values: CustomerInfoFormValues;
   saving: boolean;
   missingCaptions?: string[];
+  idToken: string | null;
   onChange: (key: string, value: string) => void;
 }) {
+  const [panelModelOptions, setPanelModelOptions] = useState<string[]>([]);
+  const [panelModelsLoading, setPanelModelsLoading] = useState(false);
+  const [panelModelsConfigured, setPanelModelsConfigured] = useState(true);
+
   const displayValues = useMemo(
     () => syncContractAmountFromPayment(values),
     [values],
   );
 
+  const manufacturer = (displayValues.manufacturer ?? "").trim();
+
+  useEffect(() => {
+    if (!idToken || !manufacturer) {
+      setPanelModelOptions([]);
+      setPanelModelsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const params = new URLSearchParams({ manufacturer });
+    const keep1 = displayValues.panelModel1 ?? "";
+    const keep2 = displayValues.panelModel2 ?? "";
+    if (keep1) params.set("keep1", keep1);
+    if (keep2) params.set("keep2", keep2);
+
+    setPanelModelsLoading(true);
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/customer-info/panel-models?${params.toString()}`,
+          { headers: { Authorization: `Bearer ${idToken}` } },
+        );
+        const data = (await res.json()) as {
+          options?: string[];
+          configured?: boolean;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok) {
+          setPanelModelOptions([]);
+          setPanelModelsConfigured(false);
+          return;
+        }
+        setPanelModelOptions(data.options ?? []);
+        setPanelModelsConfigured(data.configured !== false);
+      } catch {
+        if (!cancelled) {
+          setPanelModelOptions([]);
+          setPanelModelsConfigured(false);
+        }
+      } finally {
+        if (!cancelled) setPanelModelsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // manufacturer 変更時のみ再取得（品番変更では再取得しない）
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keep1/keep2 は初回表示用
+  }, [idToken, manufacturer]);
+
   const visibleFields = useMemo(() => {
-    return formFields.filter((f) =>
-      isCustomerInfoFormFieldVisible(f.key, displayValues),
-    );
-  }, [formFields, displayValues]);
+    return formFields
+      .filter((f) => isCustomerInfoFormFieldVisible(f.key, displayValues))
+      .map((f) => {
+        if (!PANEL_MODEL_KEYS.includes(f.key as (typeof PANEL_MODEL_KEYS)[number])) {
+          return f;
+        }
+        if (!manufacturer) {
+          return { ...f, options: [], optionsPending: true };
+        }
+        if (panelModelsLoading) {
+          return { ...f, options: [], optionsPending: true };
+        }
+        if (!panelModelsConfigured) {
+          return f;
+        }
+        return {
+          ...f,
+          options: panelModelOptions,
+          optionsPending: false,
+        };
+      });
+  }, [
+    formFields,
+    displayValues,
+    manufacturer,
+    panelModelOptions,
+    panelModelsLoading,
+    panelModelsConfigured,
+  ]);
 
   const propagateValues = useCallback(
     (next: CustomerInfoFormValues) => {
@@ -262,7 +348,11 @@ export function CustomerInfoEditForm({
 
   const handleFieldChange = useCallback(
     (key: string, value: string) => {
-      propagateValues(applyCustomerInfoFormChange(values, key, value));
+      let next = applyCustomerInfoFormChange(values, key, value);
+      if (key === "manufacturer") {
+        next = { ...next, panelModel1: "", panelModel2: "" };
+      }
+      propagateValues(next);
     },
     [propagateValues, values],
   );
@@ -323,6 +413,17 @@ export function CustomerInfoEditForm({
           {field.key === "postalCode" ? (
             <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
               000-0000 形式で入力すると都道府県・市区郡・町村+番地を自動入力します
+            </p>
+          ) : null}
+          {PANEL_MODEL_KEYS.includes(
+            field.key as (typeof PANEL_MODEL_KEYS)[number],
+          ) ? (
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+              {!manufacturer
+                ? "先にメーカーを選択すると、商品一覧から型番を選べます"
+                : panelModelsLoading
+                  ? "型番一覧を読み込み中…"
+                  : "商品一覧（太陽光パネル・現行）から抽出"}
             </p>
           ) : null}
         </label>
