@@ -1,6 +1,10 @@
 import {
+  COLLECTION_STATUS_TWO_OPTIONS,
+  COLLECTION_STATUS_WITH_NONE_OPTIONS,
+  COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS,
   FIT_TYPE_OPTIONS,
   INDOOR_SURVEY_STATUS_OPTIONS,
+  LOAN_PAPER_HIDDEN_VALUE,
   PAYMENT_METHOD_OPTIONS,
   SUBSIDY_OR_PREAPPLICATION_OPTIONS,
 } from "@/lib/customer-info-form/options";
@@ -203,6 +207,20 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   { key: "cashAmount", caption: "現金", type: "comma-integer" },
   { key: "loanAmount", caption: "ローン金額", type: "comma-integer" },
   {
+    key: "loanPaper",
+    caption: "ローン用紙",
+    type: "radio",
+    options: [...COLLECTION_STATUS_TWO_OPTIONS],
+    hiddenValue: LOAN_PAPER_HIDDEN_VALUE,
+  },
+  {
+    key: "groupCreditLifeInsurance",
+    caption: "団体信用生命保険",
+    type: "radio",
+    options: [...COLLECTION_STATUS_WITH_NONE_OPTIONS],
+    hiddenValue: "不要",
+  },
+  {
     key: "fitType",
     caption: "FIT or 非FIT",
     type: "select",
@@ -235,6 +253,25 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     key: "indoorSurveyScheduledDate",
     caption: "室内現調予定日",
     type: "date",
+  },
+  {
+    key: "salesConstructionContract",
+    caption: "商品売買・工事請負契約書",
+    type: "radio",
+    options: [...COLLECTION_STATUS_TWO_OPTIONS],
+  },
+  {
+    key: "powerCompanyForm",
+    caption: "電力会社記入用紙",
+    type: "radio",
+    options: [...COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS],
+  },
+  {
+    key: "feedInBankAccountForm",
+    caption: "売電先振込口座指定依頼書",
+    type: "radio",
+    options: [...COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS],
+    hiddenValue: "不要",
   },
   {
     key: "pinpointAddress",

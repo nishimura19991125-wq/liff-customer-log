@@ -23,7 +23,10 @@ import {
   parsePtDigitsOnly,
 } from "@/lib/customer-info-form/pt-transfer";
 import { inferPanelComboFromValues } from "@/lib/customer-info-form/panel-combo";
-import { isCustomerInfoFormFieldVisible } from "@/lib/customer-info-form/rules";
+import {
+  applyCustomerInfoHiddenDefaultsToValues,
+  isCustomerInfoFormFieldVisible,
+} from "@/lib/customer-info-form/rules";
 import type {
   CustomerInfoFieldType,
   CustomerInfoFormValues,
@@ -130,6 +133,40 @@ function FieldControl({
   const selectClass = invalid
     ? `${SELECT_CLASS} ${FIELD_INVALID_CLASS}`
     : SELECT_CLASS;
+  if (field.type === "radio" && field.options?.length) {
+    return (
+      <div
+        className={`flex flex-col gap-2 rounded-xl p-1 ${
+          invalid ? "ring-2 ring-red-200" : ""
+        }`}
+        role="radiogroup"
+        aria-label={field.label}
+      >
+        {field.options.map((opt) => (
+          <label
+            key={opt}
+            className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-[13px] font-medium ${
+              value === opt
+                ? "border-emerald-400 bg-emerald-50 text-emerald-900"
+                : "border-slate-200 bg-white text-slate-700"
+            }`}
+          >
+            <input
+              type="radio"
+              name={field.key}
+              className="size-4 border-slate-300 text-emerald-600"
+              value={opt}
+              checked={value === opt}
+              disabled={disabled}
+              onChange={() => onChange(opt)}
+            />
+            {opt}
+          </label>
+        ))}
+      </div>
+    );
+  }
+
   if (field.type === "checkbox-group" && field.options?.length) {
     const selected = parseCheckboxValue(value);
     return (
@@ -452,6 +489,9 @@ export function CustomerInfoEditForm({
       }
       if (key === "panelModel2") {
         next = { ...next, panelCombo: inferPanelComboFromValues(next) };
+      }
+      if (key === "paymentMethod" || key === "installationType") {
+        next = applyCustomerInfoHiddenDefaultsToValues(next);
       }
       propagateValues(next);
     },

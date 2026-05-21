@@ -5,6 +5,7 @@ export type CustomerInfoFieldType =
   | "text"
   | "date"
   | "select"
+  | "radio"
   | "checkbox-group"
   /** 整数のみ・画面はカンマ区切り表示 */
   | "pt-integer"

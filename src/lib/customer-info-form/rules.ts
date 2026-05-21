@@ -2,6 +2,7 @@ import { checkboxGroupValueToPocketArray } from "@/lib/customer-info-form/checkb
 import { contractAmountForPocket } from "@/lib/customer-info-form/form-change";
 import { commaIntegerForPocket } from "@/lib/customer-info-form/numeric-comma";
 import {
+  INSTALLATION_TYPES_WITH_SOLAR_PANEL,
   PAYMENT_METHODS_WITH_CASH,
   PAYMENT_METHODS_WITH_LOAN,
   subsidyIncludesCity,
@@ -142,6 +143,8 @@ export function isCustomerInfoFormFieldVisible(
     case "extraPartsAmount":
       return extraParts === "有";
     case "creditCompany":
+    case "loanPaper":
+    case "groupCreditLifeInsurance":
       return PAYMENT_METHODS_WITH_LOAN.has(paymentMethod);
     case "cashAmount":
       return PAYMENT_METHODS_WITH_CASH.has(paymentMethod);
@@ -155,6 +158,8 @@ export function isCustomerInfoFormFieldVisible(
       return subsidyIncludesOther(subsidy);
     case "indoorSurveyScheduledDate":
       return indoorSurveyStatus === "未実施";
+    case "feedInBankAccountForm":
+      return INSTALLATION_TYPES_WITH_SOLAR_PANEL.has(installationType);
     case "apBranch":
     case "clBranch":
       return false;

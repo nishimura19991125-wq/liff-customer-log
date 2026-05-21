@@ -31,6 +31,31 @@ export const PAYMENT_METHODS_WITH_CASH = new Set<string>([
   "現金一括",
 ]);
 
+/** 書類回収状況（2択ラジオ） */
+export const COLLECTION_STATUS_TWO_OPTIONS = ["未回収", "回収済み"] as const;
+
+/** 書類回収状況（無あり） */
+export const COLLECTION_STATUS_WITH_NONE_OPTIONS = [
+  "未回収",
+  "回収済み",
+  "無",
+] as const;
+
+/** 書類回収状況（不要あり） */
+export const COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS = [
+  "未回収",
+  "回収済み",
+  "不要",
+] as const;
+
+export const INSTALLATION_TYPES_WITH_SOLAR_PANEL = new Set<string>([
+  "太陽光パネル+蓄電池",
+  "太陽光パネルのみ",
+]);
+
+/** ローン用紙：非表示時（現金一括系） */
+export const LOAN_PAPER_HIDDEN_VALUE = "現金一括の為、不要";
+
 export function subsidyIncludesPrefecture(s: string): boolean {
   return (
     s === "都道府県+市区町村" ||
