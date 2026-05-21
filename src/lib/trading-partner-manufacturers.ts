@@ -6,8 +6,14 @@ import {
   fetchAllRecordsPages,
   fetchAppFields,
 } from "@/lib/atpocket";
-import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
-import { coerceCustomerInfoDisplayString } from "@/lib/customer-info-record";
+import {
+  pickRecordValueByFieldAliases,
+  resolveConfiguredFieldToSchemaUniqueId,
+} from "@/lib/calendar-kojo";
+import {
+  nfkcNormalize,
+  pocketTableCellToPlainString,
+} from "@/lib/staff-construction-availability";
 
 const COMPANY_TYPE_MANUFACTURER = "メーカー";
 const TRADE_STATUS_ACTIVE = "取引中";
@@ -90,11 +96,95 @@ export function resolveTradingPartnerFieldIds(
   return { companyType, tradeStatus, companyName };
 }
 
-function readSelectCell(
+function readRecordCell(
+  rec: Record<string, unknown>,
+  fieldId: string,
+): unknown {
+  return pickRecordValueByFieldAliases(rec, fieldId);
+}
+
+/** 単一選択・複数選択・オブジェクト形式のセルをトークン列に分解 */
+export function pocketSelectTokens(raw: unknown): string[] {
+  if (raw === undefined || raw === null) return [];
+  if (Array.isArray(raw)) {
+    const out: string[] = [];
+    for (const item of raw) {
+      out.push(...pocketSelectTokens(item));
+    }
+    return [...new Set(out.map(nfkcNormalize).filter(Boolean))];
+  }
+  const cell = pocketTableCellToPlainString(raw);
+  if (!cell) return [];
+  const norm = nfkcNormalize(cell);
+  const parts = norm
+    .split(/[,、/／|]+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length <= 1) return [norm];
+  return [...new Set(parts)];
+}
+
+export function pocketSelectIncludesLabel(
+  raw: unknown,
+  expected: string,
+): boolean {
+  const want = nfkcNormalize(expected);
+  return pocketSelectTokens(raw).includes(want);
+}
+
+function readCompanyNameCell(
   rec: Record<string, unknown>,
   fieldId: string,
 ): string {
-  return nfkc(coerceCustomerInfoDisplayString(rec[fieldId]));
+  return nfkcNormalize(pocketTableCellToPlainString(readRecordCell(rec, fieldId)));
+}
+
+function collectManufacturerNames(
+  rows: Awaited<ReturnType<typeof fetchAllRecordsPages>>,
+  ids: TradingPartnerFieldIds,
+): string[] {
+  const names = new Set<string>();
+  let matched = 0;
+  const typeSamples: string[] = [];
+  const statusSamples: string[] = [];
+
+  for (const row of rows) {
+    const rec = row.record;
+    if (!rec || typeof rec !== "object") continue;
+    const recObj = rec as Record<string, unknown>;
+
+    const typeRaw = readRecordCell(recObj, ids.companyType);
+    const statusRaw = readRecordCell(recObj, ids.tradeStatus);
+    if (typeSamples.length < 5) {
+      typeSamples.push(pocketSelectTokens(typeRaw).join("|") || "(空)");
+    }
+    if (statusSamples.length < 5) {
+      statusSamples.push(pocketSelectTokens(statusRaw).join("|") || "(空)");
+    }
+    if (!pocketSelectIncludesLabel(typeRaw, COMPANY_TYPE_MANUFACTURER)) {
+      continue;
+    }
+    if (!pocketSelectIncludesLabel(statusRaw, TRADE_STATUS_ACTIVE)) {
+      continue;
+    }
+    matched += 1;
+    const name = readCompanyNameCell(recObj, ids.companyName);
+    if (name) names.add(name);
+  }
+
+  console.info(
+    `[trading-partner-manufacturers] rows=${rows.length} matched=${matched} manufacturers=${names.size}`,
+  );
+  if (matched === 0 && rows.length > 0) {
+    console.warn(
+      "[trading-partner-manufacturers] 条件に合致する行がありません。サンプル 会社種別:",
+      typeSamples,
+      "取引状況:",
+      statusSamples,
+    );
+  }
+
+  return [...names].sort((a, b) => a.localeCompare(b, "ja"));
 }
 
 async function fetchManufacturerOptionsUncached(): Promise<string[] | null> {
@@ -114,24 +204,19 @@ async function fetchManufacturerOptionsUncached(): Promise<string[] | null> {
   const fieldsCsv = [ids.companyType, ids.tradeStatus, ids.companyName].join(
     ",",
   );
-  const rows = await fetchAllRecordsPages(appId, fieldsCsv, auth);
-  const names = new Set<string>();
+  let rows = await fetchAllRecordsPages(appId, fieldsCsv, auth);
+  let names = collectManufacturerNames(rows, ids);
 
-  for (const row of rows) {
-    const rec = row.record;
-    if (!rec || typeof rec !== "object") continue;
-    const recObj = rec as Record<string, unknown>;
-    if (readSelectCell(recObj, ids.companyType) !== COMPANY_TYPE_MANUFACTURER) {
-      continue;
+  // fields 指定で値が欠ける・キーがずれる場合に全項目取得で再試行
+  if (names.length <= 1 && rows.length >= 2) {
+    const fullRows = await fetchAllRecordsPages(appId, "", auth);
+    const retryNames = collectManufacturerNames(fullRows, ids);
+    if (retryNames.length > names.length) {
+      names = retryNames;
     }
-    if (readSelectCell(recObj, ids.tradeStatus) !== TRADE_STATUS_ACTIVE) {
-      continue;
-    }
-    const name = readSelectCell(recObj, ids.companyName);
-    if (name) names.add(name);
   }
 
-  return [...names].sort((a, b) => a.localeCompare(b, "ja"));
+  return names;
 }
 
 /** 取引先会社一覧からメーカー（取引中）の会社名リスト。未設定時は null */
