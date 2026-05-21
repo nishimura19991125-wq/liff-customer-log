@@ -23,6 +23,7 @@ import {
   EMPTY_FILL_HOUSING_STATUS_VALUES,
 } from "@/lib/calendar-empty-fill-options";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
+import { initLiffAndGetToken } from "@/lib/liff-session";
 
 type HandlerStaffRow = {
   staffRecordId: string;
@@ -1200,25 +1201,13 @@ export default function CalendarPage() {
 
     (async () => {
       try {
-        await liff.init({ liffId: LIFF_ID });
+        const result = await initLiffAndGetToken(LIFF_ID);
         if (cancelled) return;
-
-        if (!liff.isLoggedIn()) {
+        if (result.status === "redirecting") {
           setPhase("need-login");
-          liff.login();
           return;
         }
-
-        const token = liff.getIDToken();
-        if (!token) {
-          setErrorMessage(
-            "LINE の ID トークンを取得できませんでした。チャネル設定を確認してください。",
-          );
-          setPhase("error");
-          return;
-        }
-
-        setIdToken(token);
+        setIdToken(result.token);
       } catch (e) {
         if (cancelled) return;
         console.error(e);

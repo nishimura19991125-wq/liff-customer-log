@@ -1,6 +1,5 @@
 "use client";
 
-import liff from "@line/liff";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -15,6 +14,7 @@ import {
   LiffStaffBindPanel,
 } from "@/components/liff-chrome";
 import { resetLiffScroll } from "@/components/liff-scroll-reset";
+import { initLiffAndGetToken } from "@/lib/liff-session";
 import {
   CustomerInfoEditForm,
   type CustomerInfoFormFieldApi,
@@ -98,20 +98,13 @@ export default function CustomerInfoPage() {
     let cancelled = false;
     (async () => {
       try {
-        await liff.init({ liffId: LIFF_ID });
+        const result = await initLiffAndGetToken(LIFF_ID);
         if (cancelled) return;
-        if (!liff.isLoggedIn()) {
+        if (result.status === "redirecting") {
           setPhase("need-login");
-          liff.login();
           return;
         }
-        const token = liff.getIDToken();
-        if (!token) {
-          setErrorMessage("LINE の ID トークンを取得できませんでした。");
-          setPhase("error");
-          return;
-        }
-        setIdToken(token);
+        setIdToken(result.token);
         setPhase("ready");
       } catch (e) {
         if (cancelled) return;

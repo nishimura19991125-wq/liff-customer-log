@@ -1,6 +1,5 @@
 "use client";
 
-import liff from "@line/liff";
 import { useEffect, useState } from "react";
 
 import {
@@ -14,6 +13,7 @@ import {
   LiffStaffBindPanel,
 } from "@/components/liff-chrome";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
+import { initLiffAndGetToken } from "@/lib/liff-session";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -68,25 +68,13 @@ export default function HomeHubPage() {
 
     (async () => {
       try {
-        await liff.init({ liffId: LIFF_ID });
+        const result = await initLiffAndGetToken(LIFF_ID);
         if (cancelled) return;
-
-        if (!liff.isLoggedIn()) {
+        if (result.status === "redirecting") {
           setPhase("need-login");
-          liff.login();
           return;
         }
-
-        const token = liff.getIDToken();
-        if (!token) {
-          setErrorMessage(
-            "LINE の ID トークンを取得できませんでした。チャネル設定を確認してください。",
-          );
-          setPhase("error");
-          return;
-        }
-
-        setIdToken(token);
+        setIdToken(result.token);
         setPhase("ready");
       } catch (e) {
         if (cancelled) return;

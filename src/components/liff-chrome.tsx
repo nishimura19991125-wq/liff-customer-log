@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ButtonHTMLAttributes, FormEvent, ReactNode } from "react";
 import { useState } from "react";
 
-import { LIFF_PROFILE_CACHE_KEY } from "@/lib/liff-profile-cache-key";
+import { triggerLiffRelogin } from "@/lib/liff-session";
 
 /** LIFF / モバイル WebView 向け：背景・セーフエリア・最大幅 */
 export function LiffScreen({ children }: { children: ReactNode }) {
@@ -117,7 +117,13 @@ export function LiffLoadingBlock({
 }
 
 /** LINE の ID トークン期限切れなど：エラー表示ではなく再ログインへ誘導 */
-export function LiffSessionExpiredPanel({ footer }: { footer?: ReactNode }) {
+export function LiffSessionExpiredPanel({
+  footer,
+  liffId = process.env.NEXT_PUBLIC_LIFF_ID?.trim(),
+}: {
+  footer?: ReactNode;
+  liffId?: string;
+}) {
   return (
     <LiffScreen>
       <div className="flex flex-1 flex-col justify-center py-10">
@@ -127,22 +133,21 @@ export function LiffSessionExpiredPanel({ footer }: { footer?: ReactNode }) {
               ログインの有効期限が切れました
             </p>
             <p className="mt-3 text-[14px] leading-relaxed text-slate-600">
-              セキュリティのため、定期的に再ログインが必要です。下のボタンで画面を更新すると、LINE
-              から再度ログインできます。
+              セキュリティのため、定期的に再ログインが必要です。下のボタンから LINE
+              に再度ログインしてください。
             </p>
             <div className="mt-8">
               <LiffPrimaryButton
                 type="button"
                 onClick={() => {
-                  try {
-                    sessionStorage.removeItem(LIFF_PROFILE_CACHE_KEY);
-                  } catch {
-                    /* ignore */
+                  if (liffId) {
+                    void triggerLiffRelogin(liffId);
+                    return;
                   }
                   window.location.reload();
                 }}
               >
-                画面を更新して再ログイン
+                LINE で再ログイン
               </LiffPrimaryButton>
             </div>
           </div>
