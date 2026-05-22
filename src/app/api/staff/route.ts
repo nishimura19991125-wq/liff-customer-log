@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { fetchRecordsList } from "@/lib/atpocket";
+import {
+  boundStaffFromRosterRows,
+  fetchStaffRosterRowsCached,
+} from "@/lib/staff-roster-cache";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -14,8 +17,6 @@ import {
   readStaffImportKeyFromRawRecord,
   staffImportKeyFieldIdResolved,
 } from "@/lib/staff-import-key";
-import { staffRecordMatchesLineUser } from "@/lib/staff-line-binding";
-
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
@@ -37,20 +38,10 @@ export async function GET(request: Request) {
 
   try {
     const lineIds = staffLineUserIdFieldIdsFromEnv();
-    const lineField1 = lineIds.lineField1;
-    const lineField2 = lineIds.lineField2;
     const lineBindingOn = staffLineBindingEnabled(lineIds);
     const lineConfigError = staffLineBindingConfigError();
 
-    /** LINE 照合用は fields 無指定でフル record を取得（fields 指定だと値が欠けることがある） */
-    const data = await fetchRecordsList(staffAppId, {
-      limit: "1000",
-      page: "1",
-      ...(!lineBindingOn && staffNameFieldId
-        ? { fields: staffNameFieldId }
-        : {}),
-    });
-    const rows = data.records ?? [];
+    const rows = await fetchStaffRosterRowsCached();
     const includeImportKey = Boolean(staffImportKeyFieldIdResolved());
 
     const staff = rows
@@ -75,32 +66,9 @@ export async function GET(request: Request) {
       })
       .filter((s) => s.id && s.name);
 
-    let boundStaff: { id: string; name: string } | null = null;
-    if (lineBindingOn) {
-      for (const row of rows) {
-        const rec = row.record;
-        if (!rec || typeof rec !== "object") continue;
-        const id =
-          row.recordId != null ? String(row.recordId) : row.uniqueId ?? "";
-        const rawName = rec[staffNameFieldId];
-        const name =
-          rawName === undefined || rawName === null
-            ? ""
-            : String(rawName).trim();
-        if (!id || !name) continue;
-        if (
-          staffRecordMatchesLineUser(
-            rec as Record<string, unknown>,
-            lineField1,
-            lineField2,
-            caller.lineUserId,
-          )
-        ) {
-          boundStaff = { id, name };
-          break;
-        }
-      }
-    }
+    const boundStaff = lineBindingOn
+      ? boundStaffFromRosterRows(rows, caller.lineUserId)
+      : null;
 
     return NextResponse.json({
       staff,

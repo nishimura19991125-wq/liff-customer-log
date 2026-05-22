@@ -9,7 +9,6 @@ import {
   fetchRecordById,
   updateRecord,
 } from "@/lib/atpocket";
-import { findCustomerInfoRecordIdByUniqueKey } from "@/lib/customer-info-key-lookup";
 import { customerInfoPutValue } from "@/lib/customer-info-record";
 import {
   pickRecordValueByFieldAliases,
@@ -21,10 +20,17 @@ import {
   resolveCustomerInfoRegistrationNumberFieldIds,
 } from "@/lib/construction-customer-info-sync-fields";
 import { INPUT_STATUS_PENDING } from "@/lib/customer-info-form/options";
-import { applyCreatorFromLineUserToCustomerRecord } from "@/lib/customer-info-creator-field";
+import {
+  applyCreatorNameToCustomerRecord,
+} from "@/lib/customer-info-creator-field";
+import { findCustomerInfoRecordIdByUniqueKeyCached } from "@/lib/customer-info-key-lookup-cache";
+import { defaultApClStaffNamesForLineUser } from "@/lib/staff-ap-cl-candidates";
+import {
+  boundStaffFromRosterRows,
+  fetchStaffRosterRowsCached,
+} from "@/lib/staff-roster-cache";
 import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
 import { readCustomerInfoFieldValue } from "@/lib/customer-info-record";
-import { defaultApClStaffNamesForLineUser } from "@/lib/staff-ap-cl-candidates";
 import {
   lookupStaffWorkplaceByStaffName,
   resolveStaffWorkplaceLookupConfig,
@@ -136,11 +142,13 @@ async function applyApClStaffFromLineUserToCustomerRecord(
   customerRecord: Record<string, unknown>,
   customerFields: AtPocketFieldRow[],
   lineUserId: string,
+  precomputed?: { apStaff: string | null; clStaff: string | null },
 ): Promise<void> {
   const want = lineUserId.trim();
   if (!want) return;
 
-  const { apStaff, clStaff } = await defaultApClStaffNamesForLineUser(want);
+  const { apStaff, clStaff } =
+    precomputed ?? (await defaultApClStaffNamesForLineUser(want));
   const apStaffFieldId = resolveCustomerInfoFormFieldId(
     "apStaff",
     "AP担当者",
@@ -334,16 +342,26 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   }
 
   if (opts.lineUserId?.trim()) {
+    const lineUserId = opts.lineUserId.trim();
+    const [{ apStaff, clStaff }, rosterRows] = await Promise.all([
+      defaultApClStaffNamesForLineUser(lineUserId),
+      fetchStaffRosterRowsCached(),
+    ]);
     await applyApClStaffFromLineUserToCustomerRecord(
       customerRecord,
       customerFields,
-      opts.lineUserId.trim(),
+      lineUserId,
+      { apStaff, clStaff },
     );
-    await applyCreatorFromLineUserToCustomerRecord(
-      customerRecord,
-      customerFields,
-      opts.lineUserId.trim(),
-    );
+    const bound = boundStaffFromRosterRows(rosterRows, lineUserId);
+    const creatorName = bound?.name ?? apStaff ?? clStaff ?? null;
+    if (creatorName) {
+      applyCreatorNameToCustomerRecord(
+        customerRecord,
+        customerFields,
+        creatorName,
+      );
+    }
   }
 
   const inputStatusFieldId = resolveCustomerInfoFormFieldId(
@@ -360,7 +378,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     pocketPayload[k] = customerInfoPutValue(v);
   }
 
-  const existingId = await findCustomerInfoRecordIdByUniqueKey(
+  const existingId = await findCustomerInfoRecordIdByUniqueKeyCached(
     resolvedCustomerKey,
     uniqueKey,
   );

@@ -1,11 +1,12 @@
 import "server-only";
 
-import type { AtPocketFieldRow, AtPocketRequestContext } from "@/lib/atpocket";
-import {
-  apiKeyForStaffPocketRead,
-  fetchAllRecordsPages,
-  fetchAppFields,
+import type {
+  AtPocketFieldRow,
+  AtPocketRecordRow,
+  AtPocketRequestContext,
 } from "@/lib/atpocket";
+import { apiKeyForStaffPocketRead, fetchAppFields } from "@/lib/atpocket";
+import { fetchStaffRosterRowsCached } from "@/lib/staff-roster-cache";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import {
   pocketTableCellToPlainString,
@@ -53,19 +54,6 @@ function pickFieldUniqueIdByExactCaption(
     }
   }
   return null;
-}
-
-function uniqueFieldsCsv(...uids: (string | undefined)[]): string {
-  const seen = new Set<string>();
-  const parts: string[] = [];
-  for (const u of uids) {
-    const t = u?.trim();
-    if (t && !seen.has(t)) {
-      seen.add(t);
-      parts.push(t);
-    }
-  }
-  return parts.join(",");
 }
 
 function activeAvailabilityLabel(): string {
@@ -123,37 +111,26 @@ const emptyPicker = (): ApClStaffPickerPayload => ({
   cl: { options: [], defaultName: null },
 });
 
-/**
- * AP/CL担当者プルダウン用。
- * AP稼働状況・CL稼働状況が activeLabel（既定「稼働」）の社員名のみ。
- * LINE_USER_ID①・LINE_USER_ID② のいずれかに一致する社員名を defaultName にする（リストに含まれる場合のみ）。
- */
-export async function fetchApClStaffPickerPayload(
+type PickerCacheEntry = {
+  expiresAt: number;
+  payload: ApClStaffPickerPayload;
+};
+
+const pickerCache = new Map<string, PickerCacheEntry>();
+const pickerInflight = new Map<string, Promise<ApClStaffPickerPayload>>();
+
+function pickerCacheTtlMs(): number {
+  const raw = process.env.STAFF_ROSTER_CACHE_TTL_MS?.trim();
+  const n = raw ? Number(raw) : 180_000;
+  if (!Number.isFinite(n) || n < 5_000) return 180_000;
+  return Math.min(600_000, Math.floor(n));
+}
+
+function buildApClPickerPayload(
+  cfg: StaffApClConfig,
+  rows: AtPocketRecordRow[],
   lineUserId: string,
-): Promise<ApClStaffPickerPayload> {
-  const cfg = await resolveStaffApClConfig();
-  if (!cfg) return emptyPicker();
-
-  const auth = { apiKey: apiKeyForStaffPocketRead() };
-  const listCtx: AtPocketRequestContext = {
-    operation: "customer-info:AP/CL担当者(名簿一覧)",
-    appEnv: "STAFF_APP_ID",
-  };
-  const needsLineLookup = Boolean(cfg.lineField1 || cfg.lineField2);
-  const dataCsv = uniqueFieldsCsv(
-    cfg.nameFieldId,
-    cfg.apAvailabilityFieldId,
-    cfg.clAvailabilityFieldId,
-  );
-  /** LINE 列は fields 指定だと値が欠けることがあるため、照合時は全フィールド取得 */
-  const rows = await fetchAllRecordsPages(
-    cfg.staffAppId,
-    needsLineLookup ? "" : dataCsv,
-    auth,
-    null,
-    listCtx,
-  );
-
+): ApClStaffPickerPayload {
   const apNames = new Set<string>();
   const clNames = new Set<string>();
   let boundStaffName: string | null = null;
@@ -208,6 +185,53 @@ export async function fetchApClStaffPickerPayload(
     ap: { options: apOptions, defaultName: apDefault },
     cl: { options: clOptions, defaultName: clDefault },
   };
+}
+
+/**
+ * AP/CL担当者プルダウン用。
+ * AP稼働状況・CL稼働状況が activeLabel（既定「稼働」）の社員名のみ。
+ * LINE_USER_ID①・LINE_USER_ID② のいずれかに一致する社員名を defaultName にする（リストに含まれる場合のみ）。
+ */
+export async function fetchApClStaffPickerPayload(
+  lineUserId: string,
+): Promise<ApClStaffPickerPayload> {
+  const wantLine = nfkc(lineUserId);
+  if (!wantLine) return emptyPicker();
+
+  const now = Date.now();
+  const cached = pickerCache.get(wantLine);
+  if (cached && cached.expiresAt > now) {
+    return cached.payload;
+  }
+
+  const pending = pickerInflight.get(wantLine);
+  if (pending) return pending;
+
+  const promise = (async () => {
+    try {
+      const cfg = await resolveStaffApClConfig();
+      if (!cfg) return emptyPicker();
+
+      const rows = await fetchStaffRosterRowsCached();
+      const payload = buildApClPickerPayload(cfg, rows, wantLine);
+      pickerCache.set(wantLine, {
+        expiresAt: Date.now() + pickerCacheTtlMs(),
+        payload,
+      });
+      return payload;
+    } finally {
+      pickerInflight.delete(wantLine);
+    }
+  })();
+
+  pickerInflight.set(wantLine, promise);
+  return promise;
+}
+
+/** スタッフ紐付け変更後に AP/CL プルダウンキャッシュを破棄 */
+export function invalidateApClStaffPickerCache(): void {
+  pickerCache.clear();
+  pickerInflight.clear();
 }
 
 /**

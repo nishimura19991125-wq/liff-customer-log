@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
-import { findCustomerInfoPendingRecords } from "@/lib/customer-info-continue-shortcut";
+import { findCustomerInfoPendingRecordsCached } from "@/lib/customer-info-pending-cache";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ records: [] });
     }
 
-    const records = await findCustomerInfoPendingRecords(boundStaffName);
+    const records = await findCustomerInfoPendingRecordsCached(boundStaffName);
     return NextResponse.json({ records });
   } catch (e) {
     console.error("[api/customer-info/pending-records]", e);

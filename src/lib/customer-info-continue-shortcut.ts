@@ -13,7 +13,6 @@ import {
 } from "@/lib/customer-info-record";
 import {
   customerInfoFormFieldsCsv,
-  normalizeDateForInput,
   readCustomerInfoFormValuesFromRecord,
   resolveCustomerInfoFormFields,
   resolveCustomerInfoFormFieldId,
@@ -107,24 +106,6 @@ function continueStatusValues(): Set<string> {
   return new Set(parts);
 }
 
-function todayYmdJst(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
-
-function isCreatedTodayJst(
-  recObj: Record<string, unknown>,
-  createdFieldId: string,
-): boolean {
-  const raw = readCustomerInfoFieldValue(recObj, createdFieldId);
-  const ymd = normalizeDateForInput(raw);
-  return ymd.length >= 10 && ymd.slice(0, 10) === todayYmdJst();
-}
-
 function recordMatchesContinueStatus(
   recObj: Record<string, unknown>,
   statusFieldId: string,
@@ -167,20 +148,13 @@ function recordHasIncompleteRequiredForm(
   );
 }
 
-export type CustomerInfoPendingScanOptions = {
-  /** true のとき作成日が本日（JST）のレコードのみ */
-  todayOnly?: boolean;
-};
-
 /**
  * 入力ステータスが未入力（空欄は未入力扱い）のレコード一覧。
- * AP/CL 担当者一致、または担当者未設定で作成者がログイン担当者のとき表示。
+ * 作成日による絞り込みは行わない。AP/CL 担当者一致、または担当者未設定で作成者がログイン担当者のとき表示。
  */
 export async function findCustomerInfoPendingRecords(
   boundStaffName: string,
-  opts: CustomerInfoPendingScanOptions = {},
 ): Promise<CustomerInfoContinueShortcutHit[]> {
-  const todayOnly = opts.todayOnly === true;
   const cfg = customerInfoConfigReady();
   if (!cfg.ok) return [];
 
@@ -208,13 +182,6 @@ export async function findCustomerInfoPendingRecords(
       appFields,
     );
   }
-
-  const createdFieldId = resolveFieldIdFromEnvOrCaptions(
-    "CUSTOMER_INFO_CREATED_DATE_FIELD_ID",
-    ["登録日", "作成日", "作成日時"],
-    appFields,
-  );
-  if (todayOnly && !createdFieldId) return [];
 
   const statusFieldId =
     resolveFieldIdFromEnvOrCaptions(
@@ -252,7 +219,6 @@ export async function findCustomerInfoPendingRecords(
 
   const fieldIdSet = new Set<string>([
     nameField,
-    ...(createdFieldId ? [createdFieldId] : []),
     ...(apFieldId ? [apFieldId] : []),
     ...(clFieldId ? [clFieldId] : []),
     ...(statusFieldId ? [statusFieldId] : []),
@@ -298,13 +264,6 @@ export async function findCustomerInfoPendingRecords(
       const customerName = readCustomerInfoFieldValue(recObj, nameField);
       if (!customerName) continue;
 
-      if (
-        todayOnly &&
-        createdFieldId &&
-        !isCreatedTodayJst(recObj, createdFieldId)
-      ) {
-        continue;
-      }
       const audienceReason = matchCustomerInfoPendingAudience(
         recObj,
         boundStaffName,
@@ -360,9 +319,9 @@ export async function findCustomerInfoPendingRecords(
   return hits;
 }
 
-/** 本日作成の未入力レコード（トップの続き入力ショートカット用） */
+/** 未入力レコード（トップの続き入力ショートカット用。お客様情報の未入力一覧と同条件） */
 export async function findCustomerInfoContinueShortcuts(
   boundStaffName: string,
 ): Promise<CustomerInfoContinueShortcutHit[]> {
-  return findCustomerInfoPendingRecords(boundStaffName, { todayOnly: true });
+  return findCustomerInfoPendingRecords(boundStaffName);
 }

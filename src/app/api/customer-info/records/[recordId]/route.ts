@@ -31,9 +31,10 @@ import type { AtPocketFetchAuth } from "@/lib/atpocket";
 import {
   fetchAppFields,
   fetchRecordById,
-  invalidateAppFieldsCache,
   updateRecord,
 } from "@/lib/atpocket";
+import { invalidateCustomerInfoKeyLookupCache } from "@/lib/customer-info-key-lookup-cache";
+import { invalidateCustomerInfoPendingCache } from "@/lib/customer-info-pending-cache";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
 import { resolveCustomerInfoCreatorFieldId } from "@/lib/customer-info-creator-field";
 import {
@@ -308,7 +309,6 @@ export async function PUT(request: Request, ctx: RouteCtx) {
   const pocketAuth = customerInfoPocketAuth();
 
   try {
-    invalidateAppFieldsCache(cfg.appId);
     const appFields = await fetchAppFields(cfg.appId, pocketAuth, {
       operation: "customer-info:レコード保存(列定義)",
       appEnv: "CUSTOMER_INFO_APP_ID",
@@ -417,6 +417,8 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       patch,
     );
     if (keyErr) return keyErr;
+    invalidateCustomerInfoPendingCache();
+    invalidateCustomerInfoKeyLookupCache();
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("[api/customer-info/records/[recordId] PUT]", e);

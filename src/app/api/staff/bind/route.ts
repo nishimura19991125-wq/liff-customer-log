@@ -9,6 +9,8 @@ import {
   stripLikelyInvalidPocketKeysFromRecord,
   updateRecord,
 } from "@/lib/atpocket";
+import { invalidateApClStaffPickerCache } from "@/lib/staff-ap-cl-candidates";
+import { invalidateStaffRosterCache } from "@/lib/staff-roster-cache";
 import { resolveCallerLineAuth, lineAuthUnauthorizedResponse } from "@/lib/request-auth";
 import {
   enrichCleanedRecordWithImportKey,
@@ -296,6 +298,9 @@ export async function POST(request: Request) {
     }
 
     await updateRecord(staffAppId, staffRecordIdRaw, payload, pocketAuth);
+
+    invalidateStaffRosterCache();
+    invalidateApClStaffPickerCache();
 
     return NextResponse.json({
       ok: true,

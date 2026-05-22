@@ -103,6 +103,20 @@ export function matchCustomerInfoPendingAudience(
   return null;
 }
 
+export function applyCreatorNameToCustomerRecord(
+  customerRecord: Record<string, unknown>,
+  customerFields: AtPocketFieldRow[],
+  staffName: string,
+): void {
+  const name = normApClStaffName(staffName);
+  if (!name) return;
+
+  const creatorFieldId = resolveCustomerInfoCreatorFieldId(customerFields);
+  if (!creatorFieldId) return;
+
+  customerRecord[creatorFieldId] = name;
+}
+
 /** 工事連携などで案件作成者を LINE 紐付け担当者名で記録 */
 export async function applyCreatorFromLineUserToCustomerRecord(
   customerRecord: Record<string, unknown>,
@@ -112,11 +126,8 @@ export async function applyCreatorFromLineUserToCustomerRecord(
   const want = lineUserId.trim();
   if (!want) return;
 
-  const creatorFieldId = resolveCustomerInfoCreatorFieldId(customerFields);
-  if (!creatorFieldId) return;
-
   const name = await resolveBoundStaffNameForLineUser(want);
   if (name) {
-    customerRecord[creatorFieldId] = name;
+    applyCreatorNameToCustomerRecord(customerRecord, customerFields, name);
   }
 }
