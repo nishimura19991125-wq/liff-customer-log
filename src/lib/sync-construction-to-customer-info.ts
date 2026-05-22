@@ -7,7 +7,10 @@ import {
   createRecord,
   fetchAppFields,
   fetchRecordById,
+  updateRecord,
 } from "@/lib/atpocket";
+import { findCustomerInfoRecordIdByUniqueKey } from "@/lib/customer-info-key-lookup";
+import { customerInfoPutValue } from "@/lib/customer-info-record";
 import {
   pickRecordValueByFieldAliases,
   resolveConfiguredFieldToSchemaUniqueId,
@@ -53,6 +56,15 @@ function pocketSyncErrorMessage(e: unknown): string {
   if (raw.includes("create record failed")) {
     return `お客様情報アプリへのレコード登録に失敗しました。${raw}`;
   }
+  if (raw.includes("update record failed")) {
+    return `お客様情報アプリへのレコード更新に失敗しました。${raw}`;
+  }
+  if (raw.includes("キー項目が重複")) {
+    return (
+      "お客様情報アプリに同じキー項目（T番号）のレコードが既にありますが、照合で見つけられませんでした。" +
+      "CUSTOMER_INFO_CONSTRUCTION_UNIQUE_KEY_FIELD_ID が T番号列の uniqueId と一致しているか確認してください。"
+    );
+  }
   return raw || "お客様情報アプリへの連携に失敗しました。";
 }
 
@@ -95,7 +107,7 @@ function constructionUniqueKeyFieldConfigured(
 
 /**
  * 工事アプリへ書き込み済みのレコードを GET し、ユニークキー（T番号等）を取り出して
- * お客様情報アプリに 1 件登録する。
+ * お客様情報アプリに登録する。同一キーが既にあれば更新（PUT）、なければ新規（POST）。
  * CUSTOMER_INFO_APP_ID 未設定時は何もしない（skipped）。
  */
 export async function syncConstructionRecordToCustomerInfoApp(opts: {
@@ -326,9 +338,29 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     );
   }
 
+  const pocketPayload: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(customerRecord)) {
+    pocketPayload[k] = customerInfoPutValue(v);
+  }
+
+  const existingId = await findCustomerInfoRecordIdByUniqueKey(
+    resolvedCustomerKey,
+    uniqueKey,
+  );
+
+  if (existingId) {
+    await updateRecord(
+      customerAppId,
+      existingId,
+      pocketPayload,
+      customerAuth,
+    );
+    return { kind: "synced", customerInfoRecordId: existingId };
+  }
+
   const created = await createRecord(
     customerAppId,
-    customerRecord,
+    pocketPayload,
     customerAuth,
   );
   const customerInfoRecordId = atPocketRecordIdFromRow(created) ?? undefined;
