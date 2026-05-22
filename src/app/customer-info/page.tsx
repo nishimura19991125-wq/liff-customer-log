@@ -489,6 +489,7 @@ export default function CustomerInfoPage() {
                     missingCaptions={missingCaptions}
                     requiredFieldErrors={requiredFieldErrors}
                     idToken={idToken}
+                    formSessionKey={detail.recordId}
                     onChange={(key, value) => {
                       setRequiredFieldErrors((prev) => {
                         if (!prev.has(key)) return prev;

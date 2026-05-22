@@ -1,6 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { mergeStaffNameOptions } from "@/lib/staff-name-options";
+
+type ApClStaffRolePicker = {
+  options: string[];
+  defaultName: string | null;
+};
+
+type ApClStaffPickerPayload = {
+  configured: boolean;
+  ap: ApClStaffRolePicker;
+  cl: ApClStaffRolePicker;
+};
 
 import {
   applyCustomerInfoFormChange,
@@ -328,6 +341,8 @@ function ContractAmountHint({ values }: { values: CustomerInfoFormValues }) {
   );
 }
 
+const AP_CL_STAFF_KEYS = new Set(["apStaff", "clStaff"]);
+
 export function CustomerInfoEditForm({
   formFields,
   values,
@@ -335,6 +350,7 @@ export function CustomerInfoEditForm({
   missingCaptions,
   requiredFieldErrors,
   idToken,
+  formSessionKey,
   onChange,
 }: {
   formFields: CustomerInfoFormFieldApi[];
@@ -343,6 +359,8 @@ export function CustomerInfoEditForm({
   missingCaptions?: string[];
   requiredFieldErrors?: ReadonlySet<string>;
   idToken: string | null;
+  /** レコード切替時に AP/CL デフォルト適用をリセットする */
+  formSessionKey?: string;
   onChange: (key: string, value: string) => void;
 }) {
   const [catalogOptions, setCatalogOptions] = useState<
@@ -354,6 +372,11 @@ export function CustomerInfoEditForm({
   const [catalogConfigured, setCatalogConfigured] = useState<
     Record<CatalogModelKind, boolean>
   >({ panel: true, powerCon: true, battery: true });
+  const [apClStaff, setApClStaff] = useState<ApClStaffPickerPayload | null>(
+    null,
+  );
+  const [apClStaffLoading, setApClStaffLoading] = useState(false);
+  const apClDefaultsAppliedRef = useRef(false);
 
   const displayValues = useMemo(
     () => syncContractAmountFromPayment(values),
@@ -427,10 +450,90 @@ export function CustomerInfoEditForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keep は初回表示用
   }, [idToken, manufacturer]);
 
+  useEffect(() => {
+    apClDefaultsAppliedRef.current = false;
+  }, [formSessionKey]);
+
+  useEffect(() => {
+    if (!idToken) {
+      setApClStaff(null);
+      setApClStaffLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setApClStaffLoading(true);
+    void (async () => {
+      try {
+        const res = await fetch("/api/customer-info/ap-cl-staff", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const data = (await res.json()) as ApClStaffPickerPayload & {
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok) {
+          setApClStaff(null);
+          return;
+        }
+        setApClStaff(data);
+      } catch {
+        if (!cancelled) setApClStaff(null);
+      } finally {
+        if (!cancelled) setApClStaffLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [idToken]);
+
+  const propagateValues = useCallback(
+    (next: CustomerInfoFormValues) => {
+      for (const [k, v] of Object.entries(next)) {
+        if (values[k] !== v) onChange(k, v);
+      }
+    },
+    [onChange, values],
+  );
+
+  useEffect(() => {
+    if (apClStaffLoading || !apClStaff?.configured || apClDefaultsAppliedRef.current) {
+      return;
+    }
+    apClDefaultsAppliedRef.current = true;
+    const next = { ...values };
+    let changed = false;
+    if (!(values.apStaff ?? "").trim() && apClStaff.ap.defaultName) {
+      next.apStaff = apClStaff.ap.defaultName;
+      changed = true;
+    }
+    if (!(values.clStaff ?? "").trim() && apClStaff.cl.defaultName) {
+      next.clStaff = apClStaff.cl.defaultName;
+      changed = true;
+    }
+    if (changed) propagateValues(next);
+  }, [apClStaff, apClStaffLoading, propagateValues, values]);
+
   const visibleFields = useMemo(() => {
     return formFields
       .filter((f) => isCustomerInfoFormFieldVisible(f.key, displayValues))
       .map((f) => {
+        if (f.key === "apStaff" || f.key === "clStaff") {
+          const role = f.key === "apStaff" ? "ap" : "cl";
+          if (apClStaffLoading || !apClStaff?.configured) {
+            return { ...f, options: [], optionsPending: true };
+          }
+          const picker = apClStaff[role];
+          return {
+            ...f,
+            type: "select" as const,
+            options: mergeStaffNameOptions(
+              picker.options,
+              displayValues[f.key],
+            ),
+            optionsPending: false,
+          };
+        }
         const kind = catalogKindForFieldKey(f.key);
         if (!kind) return f;
         if (!manufacturer) {
@@ -455,16 +558,9 @@ export function CustomerInfoEditForm({
     catalogOptions,
     catalogLoading,
     catalogConfigured,
+    apClStaff,
+    apClStaffLoading,
   ]);
-
-  const propagateValues = useCallback(
-    (next: CustomerInfoFormValues) => {
-      for (const [k, v] of Object.entries(next)) {
-        if (values[k] !== v) onChange(k, v);
-      }
-    },
-    [onChange, values],
-  );
 
   const handleFieldChange = useCallback(
     (key: string, value: string) => {
@@ -531,7 +627,7 @@ export function CustomerInfoEditForm({
           <span className="mb-1 block text-[12px] font-semibold text-slate-700">
             {field.label}
             <span className="ml-1 text-[11px] font-bold text-red-600">必須</span>
-            {field.optionsPending ? (
+            {field.optionsPending && !AP_CL_STAFF_KEYS.has(field.key) ? (
               <span className="ml-1 font-normal text-slate-400">
                 （一覧は後日連携）
               </span>
@@ -575,6 +671,18 @@ export function CustomerInfoEditForm({
             </p>
           ) : null}
           {(() => {
+            if (field.key === "apStaff" || field.key === "clStaff") {
+              const roleLabel = field.key === "apStaff" ? "AP" : "CL";
+              return (
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                  {apClStaffLoading
+                    ? `${roleLabel}担当者一覧を読み込み中…`
+                    : apClStaff?.configured
+                      ? `スタッフ名簿の${roleLabel}稼働状況が「稼働」の社員から選択（LINE紐付け名が該当する場合は初期値に設定）`
+                      : "スタッフ名簿の設定（STAFF_APP_ID・氏名列・AP/CL稼働状況）を確認してください"}
+                </p>
+              );
+            }
             const catalogKind = catalogKindForFieldKey(field.key);
             if (!catalogKind) return null;
             return (
