@@ -11,6 +11,7 @@ import {
   pocketTableCellToPlainString,
   staffConstructionAvailabilityIsActive,
 } from "@/lib/staff-construction-availability";
+import { staffLineUserIdFieldIdsFromEnv } from "@/lib/staff-line-field-config";
 import { staffRecordMatchesLineUser } from "@/lib/staff-line-binding";
 
 export type ApClStaffRolePicker = {
@@ -103,8 +104,7 @@ async function resolveStaffApClConfig(): Promise<StaffApClConfig | null> {
 
   if (!apAvailabilityFieldId || !clAvailabilityFieldId) return null;
 
-  const lineField1 = process.env.STAFF_LINE_USER_ID_FIELD_ID?.trim();
-  const lineField2 = process.env.STAFF_LINE_USER_ID_FIELD_ID_2?.trim();
+  const lineIds = staffLineUserIdFieldIdsFromEnv();
 
   return {
     staffAppId,
@@ -112,8 +112,8 @@ async function resolveStaffApClConfig(): Promise<StaffApClConfig | null> {
     apAvailabilityFieldId,
     clAvailabilityFieldId,
     activeLabel: activeAvailabilityLabel(),
-    lineField1: lineField1 || undefined,
-    lineField2: lineField2 || undefined,
+    lineField1: lineIds.lineField1,
+    lineField2: lineIds.lineField2,
   };
 }
 
@@ -126,7 +126,7 @@ const emptyPicker = (): ApClStaffPickerPayload => ({
 /**
  * AP/CL担当者プルダウン用。
  * AP稼働状況・CL稼働状況が activeLabel（既定「稼働」）の社員名のみ。
- * LINE_USER_ID / LINE_USER_ID② に一致する社員名を defaultName にする（リストに含まれる場合のみ）。
+ * LINE_USER_ID①・LINE_USER_ID② のいずれかに一致する社員名を defaultName にする（リストに含まれる場合のみ）。
  */
 export async function fetchApClStaffPickerPayload(
   lineUserId: string,
@@ -139,16 +139,16 @@ export async function fetchApClStaffPickerPayload(
     operation: "customer-info:AP/CL担当者(名簿一覧)",
     appEnv: "STAFF_APP_ID",
   };
-  const csv = uniqueFieldsCsv(
+  const needsLineLookup = Boolean(cfg.lineField1 || cfg.lineField2);
+  const dataCsv = uniqueFieldsCsv(
     cfg.nameFieldId,
     cfg.apAvailabilityFieldId,
     cfg.clAvailabilityFieldId,
-    cfg.lineField1,
-    cfg.lineField2,
   );
+  /** LINE 列は fields 指定だと値が欠けることがあるため、照合時は全フィールド取得 */
   const rows = await fetchAllRecordsPages(
     cfg.staffAppId,
-    csv,
+    needsLineLookup ? "" : dataCsv,
     auth,
     null,
     listCtx,
@@ -188,13 +188,8 @@ export async function fetchApClStaffPickerPayload(
     if (
       !boundStaffName &&
       wantLine &&
-      cfg.lineField1 &&
-      staffRecordMatchesLineUser(
-        ro,
-        cfg.lineField1,
-        cfg.lineField2,
-        wantLine,
-      )
+      (cfg.lineField1 || cfg.lineField2) &&
+      staffRecordMatchesLineUser(ro, cfg.lineField1, cfg.lineField2, wantLine)
     ) {
       boundStaffName = name;
     }

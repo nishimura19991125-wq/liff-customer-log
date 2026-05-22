@@ -148,7 +148,7 @@ export function enrichCleanedRecordWithImportKey(
 /** 単体 GET の fields に渡す CSV（欠けやすい列を明示取得） */
 export function staffRecordRefreshFieldsCsv(opts: {
   staffNameFieldId: string;
-  lineField1: string;
+  lineField1?: string;
   lineField2?: string;
 }): string {
   const ids = new Set<string>();

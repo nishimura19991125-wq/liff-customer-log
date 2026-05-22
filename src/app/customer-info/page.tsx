@@ -12,6 +12,7 @@ import {
   LiffScreen,
   LiffSessionExpiredPanel,
   LiffStaffBindPanel,
+  LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
 import { resetLiffScroll } from "@/components/liff-scroll-reset";
 import { initLiffAndGetToken } from "@/lib/liff-session";
@@ -369,6 +370,7 @@ export default function CustomerInfoPage() {
           subtitle="お客様名で検索し、該当レコードを編集して @pocket に保存します。"
         />
 
+        <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
         <LiffStaffBindPanel
           staff={account.staff}
           bindingEnabled={account.bindingEnabled}

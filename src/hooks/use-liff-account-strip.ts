@@ -11,6 +11,7 @@ type StaffApiPayload = {
   boundStaff?: { id: string; name: string } | null;
   lineUserId?: string;
   bindingEnabled?: boolean;
+  bindingConfigError?: string;
 };
 
 /** LIFF プロフィール取得（セッションキャッシュ）＋スタッフ名簿との紐付け API */
@@ -22,6 +23,9 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
   const [boundStaffName, setBoundStaffName] = useState<string | null>(null);
   const [staff, setStaff] = useState<{ id: string; name: string; importKey?: string }[]>([]);
   const [bindingEnabled, setBindingEnabled] = useState(false);
+  const [bindingConfigError, setBindingConfigError] = useState<string | null>(
+    null,
+  );
   const [sessionExpired, setSessionExpired] = useState(false);
 
   useEffect(() => {
@@ -83,16 +87,23 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
           setStaff([]);
           setBindingEnabled(false);
           setBoundStaffName(null);
+          setBindingConfigError(null);
           return;
         }
         setStaff(data.staff ?? []);
         setBindingEnabled(Boolean(data.bindingEnabled));
         setBoundStaffName(data.boundStaff?.name ? data.boundStaff.name : null);
+        setBindingConfigError(
+          typeof data.bindingConfigError === "string"
+            ? data.bindingConfigError
+            : null,
+        );
       } catch {
         if (!cancelled) {
           setBoundStaffName(null);
           setStaff([]);
           setBindingEnabled(false);
+          setBindingConfigError(null);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -169,6 +180,7 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
     boundStaffName,
     staff,
     bindingEnabled,
+    bindingConfigError,
     bindStaff,
     sessionExpired,
   };

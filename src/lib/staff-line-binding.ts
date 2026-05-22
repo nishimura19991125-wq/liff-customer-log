@@ -85,18 +85,21 @@ export function normalizeStaffLineUserId(raw: unknown): string {
   return stripSpaces(coercePocketFieldToPlainString(raw));
 }
 
-/** 1レコードあたり最大2つの LINE ID フィールドのいずれかが一致するか */
+/** 1レコードあたり LINE_USER_ID①・② のいずれかが一致するか */
 export function staffRecordMatchesLineUser(
   record: Record<string, unknown>,
-  lineField1: string,
+  lineField1: string | undefined,
   lineField2: string | undefined,
   lineUserId: string,
 ): boolean {
   const want = stripSpaces(lineUserId);
   if (!want) return false;
-  if (pocketFieldContainsLineUserId(record[lineField1], want)) return true;
-  if (lineField2 && pocketFieldContainsLineUserId(record[lineField2], want))
+  if (lineField1 && pocketFieldContainsLineUserId(record[lineField1], want)) {
     return true;
+  }
+  if (lineField2 && pocketFieldContainsLineUserId(record[lineField2], want)) {
+    return true;
+  }
   return false;
 }
 
@@ -108,25 +111,32 @@ export type BindLineSlotResult =
 /** 選択したスタッフレコードに、caller の LINE ID を書き込めるか（空きスロット／既に同一なら already） */
 export function resolveBindLineSlot(
   record: Record<string, unknown>,
-  lineField1: string,
+  lineField1: string | undefined,
   lineField2: string | undefined,
   callerLineUserId: string,
 ): BindLineSlotResult {
   const want = stripSpaces(callerLineUserId);
-  if (!want) return { kind: "full" };
+  if (!want || (!lineField1 && !lineField2)) return { kind: "full" };
 
-  if (pocketFieldContainsLineUserId(record[lineField1], want))
+  if (lineField1 && pocketFieldContainsLineUserId(record[lineField1], want)) {
     return { kind: "already" };
-  if (lineField2 && pocketFieldContainsLineUserId(record[lineField2], want))
+  }
+  if (lineField2 && pocketFieldContainsLineUserId(record[lineField2], want)) {
     return { kind: "already" };
+  }
 
-  const slot1Empty = isStaffLineFieldEffectivelyEmpty(record[lineField1]);
+  const slot1Empty = lineField1
+    ? isStaffLineFieldEffectivelyEmpty(record[lineField1])
+    : true;
   const slot2Empty = lineField2
     ? isStaffLineFieldEffectivelyEmpty(record[lineField2])
     : true;
 
-  if (slot1Empty) return { kind: "field", fieldId: lineField1, value: want };
-  if (lineField2 && slot2Empty)
+  if (lineField1 && slot1Empty) {
+    return { kind: "field", fieldId: lineField1, value: want };
+  }
+  if (lineField2 && slot2Empty) {
     return { kind: "field", fieldId: lineField2, value: want };
+  }
   return { kind: "full" };
 }

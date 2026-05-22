@@ -258,6 +258,22 @@ export function LiffAccountBar({
   );
 }
 
+/** LINE 紐付け用の環境変数が未設定のとき */
+export function LiffStaffBindingConfigNotice({
+  message,
+}: {
+  message?: string | null;
+}) {
+  const text = message?.trim();
+  if (!text) return null;
+  return (
+    <div className="mb-3 rounded-2xl border border-red-200/90 bg-red-50/95 px-4 py-3 text-[12px] leading-relaxed text-red-900 shadow-sm ring-1 ring-red-100/80">
+      <p className="font-bold">LINE 紐付けの設定が不足しています</p>
+      <p className="mt-1">{text}</p>
+    </div>
+  );
+}
+
 /** 初回：スタッフ名簿と LINE を一覧から紐づけ（@pocket に LINE ID を書き込む） */
 export function LiffStaffBindPanel({
   staff,

@@ -11,6 +11,7 @@ import {
   LiffScreen,
   LiffSessionExpiredPanel,
   LiffStaffBindPanel,
+  LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { initLiffAndGetToken } from "@/lib/liff-session";
@@ -147,6 +148,7 @@ export default function HomeHubPage() {
             />
           }
         />
+        <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
         <LiffStaffBindPanel
           staff={account.staff}
           bindingEnabled={account.bindingEnabled}

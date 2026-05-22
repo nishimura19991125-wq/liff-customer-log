@@ -678,8 +678,8 @@ export function CustomerInfoEditForm({
                   {apClStaffLoading
                     ? `${roleLabel}担当者一覧を読み込み中…`
                     : apClStaff?.configured
-                      ? `スタッフ名簿の${roleLabel}稼働状況が「稼働」の社員から選択（LINE紐付け名が該当する場合は初期値に設定）`
-                      : "スタッフ名簿の設定（STAFF_APP_ID・氏名列・AP/CL稼働状況）を確認してください"}
+                      ? `スタッフ名簿の${roleLabel}稼働状況が「稼働」の社員から選択（LINE_USER_ID①・②のいずれかに紐づく場合は初期値）`
+                      : "スタッフ名簿の設定（STAFF_APP_ID・氏名列・AP/CL稼働状況・LINE_USER_ID①②の環境変数）を確認してください"}
                 </p>
               );
             }

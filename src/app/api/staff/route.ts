@@ -6,6 +6,11 @@ import {
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
 import {
+  staffLineBindingConfigError,
+  staffLineBindingEnabled,
+  staffLineUserIdFieldIdsFromEnv,
+} from "@/lib/staff-line-field-config";
+import {
   readStaffImportKeyFromRawRecord,
   staffImportKeyFieldIdResolved,
 } from "@/lib/staff-import-key";
@@ -30,15 +35,18 @@ export async function GET(request: Request) {
     );
   }
 
-  const lineField1 = process.env.STAFF_LINE_USER_ID_FIELD_ID?.trim();
-  const lineField2 = process.env.STAFF_LINE_USER_ID_FIELD_ID_2?.trim();
-
   try {
+    const lineIds = staffLineUserIdFieldIdsFromEnv();
+    const lineField1 = lineIds.lineField1;
+    const lineField2 = lineIds.lineField2;
+    const lineBindingOn = staffLineBindingEnabled(lineIds);
+    const lineConfigError = staffLineBindingConfigError();
+
     /** LINE 照合用は fields 無指定でフル record を取得（fields 指定だと値が欠けることがある） */
     const data = await fetchRecordsList(staffAppId, {
       limit: "1000",
       page: "1",
-      ...(!lineField1 && staffNameFieldId
+      ...(!lineBindingOn && staffNameFieldId
         ? { fields: staffNameFieldId }
         : {}),
     });
@@ -68,7 +76,7 @@ export async function GET(request: Request) {
       .filter((s) => s.id && s.name);
 
     let boundStaff: { id: string; name: string } | null = null;
-    if (lineField1) {
+    if (lineBindingOn) {
       for (const row of rows) {
         const rec = row.record;
         if (!rec || typeof rec !== "object") continue;
@@ -84,7 +92,7 @@ export async function GET(request: Request) {
           staffRecordMatchesLineUser(
             rec as Record<string, unknown>,
             lineField1,
-            lineField2 || undefined,
+            lineField2,
             caller.lineUserId,
           )
         ) {
@@ -98,7 +106,10 @@ export async function GET(request: Request) {
       staff,
       boundStaff,
       lineUserId: caller.lineUserId,
-      bindingEnabled: Boolean(lineField1),
+      bindingEnabled: lineBindingOn,
+      ...(lineConfigError && !lineBindingOn
+        ? { bindingConfigError: lineConfigError }
+        : {}),
     });
   } catch (e) {
     console.error("[api/staff]", e);

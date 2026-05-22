@@ -18,6 +18,11 @@ import {
   staffRecordRefreshFieldsCsv,
 } from "@/lib/staff-import-key";
 import {
+  staffLineBindingConfigError,
+  staffLineBindingEnabled,
+  staffLineUserIdFieldIdsFromEnv,
+} from "@/lib/staff-line-field-config";
+import {
   resolveBindLineSlot,
   staffRecordMatchesLineUser,
 } from "@/lib/staff-line-binding";
@@ -74,9 +79,6 @@ export async function POST(request: Request) {
 
   const staffAppId = process.env.STAFF_APP_ID?.trim();
   const staffNameFieldId = process.env.STAFF_NAME_FIELD_ID?.trim();
-  const lineField1 = process.env.STAFF_LINE_USER_ID_FIELD_ID?.trim();
-  const lineField2 = process.env.STAFF_LINE_USER_ID_FIELD_ID_2?.trim();
-
   if (!staffAppId || !staffNameFieldId) {
     return NextResponse.json(
       {
@@ -87,19 +89,22 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!lineField1) {
-    return NextResponse.json(
-      {
-        error:
-          "名前リストからの紐付けには STAFF_LINE_USER_ID_FIELD_ID の設定が必要です",
-      },
-      { status: 503 },
-    );
-  }
-
   const pocketAuth = { apiKey: apiKeyForStaffWrite() };
 
   try {
+    const lineIds = staffLineUserIdFieldIdsFromEnv();
+    const lineField1 = lineIds.lineField1;
+    const lineField2 = lineIds.lineField2;
+    if (!staffLineBindingEnabled(lineIds)) {
+      return NextResponse.json(
+        {
+          error:
+            staffLineBindingConfigError() ??
+            "LINE 紐付け用の環境変数が未設定です",
+        },
+        { status: 503 },
+      );
+    }
     const data = await fetchRecordsList(
       staffAppId,
       { limit: "1000", page: "1" },
@@ -116,7 +121,7 @@ export async function POST(request: Request) {
         staffRecordMatchesLineUser(
           rec as Record<string, unknown>,
           lineField1,
-          lineField2 || undefined,
+          lineField2,
           caller.lineUserId,
         )
       ) {
@@ -155,7 +160,7 @@ export async function POST(request: Request) {
     const refreshCsv = staffRecordRefreshFieldsCsv({
       staffNameFieldId,
       lineField1,
-      lineField2: lineField2 || undefined,
+      lineField2,
     });
     if (refreshCsv) {
       try {
@@ -194,7 +199,7 @@ export async function POST(request: Request) {
     const slot = resolveBindLineSlot(
       recordObj,
       lineField1,
-      lineField2 || undefined,
+      lineField2,
       caller.lineUserId,
     );
 
@@ -224,7 +229,7 @@ export async function POST(request: Request) {
     const preserveHyphen = pocketHyphenNumericFieldKeysToPreserveForStaffBind({
       staffNameFieldId,
       lineField1,
-      lineField2: lineField2 || undefined,
+      lineField2,
     });
     if (schemaUniqueIds != null && schemaUniqueIds.size > 0) {
       for (const k of Object.keys(recordObj)) {

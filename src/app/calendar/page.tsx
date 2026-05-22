@@ -12,6 +12,7 @@ import {
   LiffScreen,
   LiffSessionExpiredPanel,
   LiffStaffBindPanel,
+  LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import type {
@@ -1371,6 +1372,7 @@ export default function CalendarPage() {
           </div>
         </div>
 
+        <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
         <LiffStaffBindPanel
           staff={account.staff}
           bindingEnabled={account.bindingEnabled}
