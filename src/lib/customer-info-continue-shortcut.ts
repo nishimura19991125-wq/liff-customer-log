@@ -23,7 +23,11 @@ import {
   findMissingRequiredCustomerInfoFields,
   type CustomerInfoFormFieldForValidate,
 } from "@/lib/customer-info-form/validate";
-import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
+import {
+  matchCustomerInfoPendingAudience,
+  resolveCustomerInfoCreatorFieldId,
+  type CustomerInfoPendingAudienceReason,
+} from "@/lib/customer-info-creator-field";
 import type { AtPocketFieldRow } from "@/lib/atpocket";
 import { fetchAppFields, fetchRecordsList } from "@/lib/atpocket";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
@@ -33,6 +37,9 @@ export type CustomerInfoContinueShortcutHit = {
   customerName: string;
   /** T番号など（同名が複数あるときの識別用） */
   subtitle: string;
+  /** 担当者未設定で作成者向けに出しているとき */
+  creatorOnly?: boolean;
+  audienceReason?: CustomerInfoPendingAudienceReason;
 };
 
 const PAGE_LIMIT = 1000;
@@ -130,27 +137,16 @@ function recordMatchesContinueStatus(
   return allowed.has(token);
 }
 
-function recordMatchesBoundStaff(
-  recObj: Record<string, unknown>,
-  boundStaffName: string,
-  apFieldId: string | null,
-  clFieldId: string | null,
-): boolean {
-  const bound = normApClStaffName(boundStaffName);
-  if (!bound) return false;
-  if (apFieldId) {
-    const ap = normApClStaffName(
-      readCustomerInfoFieldValue(recObj, apFieldId),
-    );
-    if (ap && ap === bound) return true;
+function pendingHitSubtitle(
+  baseSubtitle: string,
+  reason: CustomerInfoPendingAudienceReason | null,
+): string {
+  const base = baseSubtitle.trim();
+  if (reason === "creator") {
+    const tag = "担当者未設定";
+    return base ? `${base} · ${tag}` : tag;
   }
-  if (clFieldId) {
-    const cl = normApClStaffName(
-      readCustomerInfoFieldValue(recObj, clFieldId),
-    );
-    if (cl && cl === bound) return true;
-  }
-  return false;
+  return base;
 }
 
 function recordHasIncompleteRequiredForm(
@@ -177,7 +173,8 @@ export type CustomerInfoPendingScanOptions = {
 };
 
 /**
- * 担当スタッフ一致・入力ステータスが未入力（空欄は未入力扱い）のレコード一覧。
+ * 入力ステータスが未入力（空欄は未入力扱い）のレコード一覧。
+ * AP/CL 担当者一致、または担当者未設定で作成者がログイン担当者のとき表示。
  */
 export async function findCustomerInfoPendingRecords(
   boundStaffName: string,
@@ -237,6 +234,7 @@ export async function findCustomerInfoPendingRecords(
     "CL担当者",
     appFields,
   );
+  const creatorFieldId = resolveCustomerInfoCreatorFieldId(appFields);
 
   const { resolved } = resolveCustomerInfoFormFields(appFields);
   const { resolved: transferResolved } =
@@ -259,6 +257,7 @@ export async function findCustomerInfoPendingRecords(
     ...(clFieldId ? [clFieldId] : []),
     ...(statusFieldId ? [statusFieldId] : []),
     ...(subtitleField ? [subtitleField] : []),
+    ...(creatorFieldId ? [creatorFieldId] : []),
   ]);
   if (!useStatusFilter) {
     for (const id of customerInfoFormFieldsCsv(resolved).split(",")) {
@@ -306,7 +305,14 @@ export async function findCustomerInfoPendingRecords(
       ) {
         continue;
       }
-      if (!recordMatchesBoundStaff(recObj, boundStaffName, apFieldId, clFieldId)) {
+      const audienceReason = matchCustomerInfoPendingAudience(
+        recObj,
+        boundStaffName,
+        apFieldId,
+        clFieldId,
+        creatorFieldId,
+      );
+      if (!audienceReason) {
         continue;
       }
 
@@ -325,11 +331,20 @@ export async function findCustomerInfoPendingRecords(
         continue;
       }
 
-      const subtitle = subtitleField
-        ? readCustomerInfoFieldValue(recObj, subtitleField)
-        : "";
+      const subtitle = pendingHitSubtitle(
+        subtitleField
+          ? readCustomerInfoFieldValue(recObj, subtitleField)
+          : "",
+        audienceReason,
+      );
 
-      hits.push({ recordId, customerName, subtitle });
+      hits.push({
+        recordId,
+        customerName,
+        subtitle,
+        creatorOnly: audienceReason === "creator",
+        audienceReason,
+      });
       if (hits.length >= maxResults) break;
     }
 

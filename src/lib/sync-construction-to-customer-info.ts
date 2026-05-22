@@ -21,6 +21,7 @@ import {
   resolveCustomerInfoRegistrationNumberFieldIds,
 } from "@/lib/construction-customer-info-sync-fields";
 import { INPUT_STATUS_PENDING } from "@/lib/customer-info-form/options";
+import { applyCreatorFromLineUserToCustomerRecord } from "@/lib/customer-info-creator-field";
 import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
 import { readCustomerInfoFieldValue } from "@/lib/customer-info-record";
 import { defaultApClStaffNamesForLineUser } from "@/lib/staff-ap-cl-candidates";
@@ -334,6 +335,11 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
 
   if (opts.lineUserId?.trim()) {
     await applyApClStaffFromLineUserToCustomerRecord(
+      customerRecord,
+      customerFields,
+      opts.lineUserId.trim(),
+    );
+    await applyCreatorFromLineUserToCustomerRecord(
       customerRecord,
       customerFields,
       opts.lineUserId.trim(),

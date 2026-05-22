@@ -10,7 +10,7 @@ import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
 export const dynamic = "force-dynamic";
 
-/** 入力ステータス「未入力」の案件一覧（担当スタッフ一致・本日限定なし） */
+/** 入力ステータス「未入力」の案件一覧（AP/CL担当一致、または作成者向け） */
 export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);

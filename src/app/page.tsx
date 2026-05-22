@@ -138,13 +138,7 @@ export default function HomeHubPage() {
     return () => {
       cancelled = true;
     };
-  }, [
-    phase,
-    idToken,
-    needsStaffBind,
-    account.loading,
-    account.boundStaffName,
-  ]);
+  }, [phase, idToken, needsStaffBind, account.loading, account.boundStaffName]);
 
   if (phase === "init" || phase === "need-login") {
     return (

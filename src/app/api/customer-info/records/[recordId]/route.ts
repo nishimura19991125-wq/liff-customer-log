@@ -35,6 +35,7 @@ import {
   updateRecord,
 } from "@/lib/atpocket";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
+import { resolveCustomerInfoCreatorFieldId } from "@/lib/customer-info-creator-field";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -122,9 +123,12 @@ export async function GET(request: Request, ctx: RouteCtx) {
       fields,
     );
 
+    const creatorSchema = resolveCustomerInfoCreatorFieldId(fields);
+
     const displayIds = [
       nameSchema,
       ...(inputStatusSchema ? [inputStatusSchema] : []),
+      ...(creatorSchema ? [creatorSchema] : []),
       ...(subtitleSchema ? [subtitleSchema] : []),
     ];
     const displayCsv = displayIds.join(",");

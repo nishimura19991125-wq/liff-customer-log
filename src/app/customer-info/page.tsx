@@ -151,7 +151,7 @@ function CustomerInfoPageContent() {
 
   const loadPendingRecords = useCallback(async () => {
     const token = idToken;
-    if (!token || needsStaffBind) {
+    if (!token || needsStaffBind || account.loading || !account.boundStaffName) {
       setPendingRecords([]);
       return;
     }
@@ -174,7 +174,7 @@ function CustomerInfoPageContent() {
     } finally {
       setPendingLoading(false);
     }
-  }, [idToken, needsStaffBind]);
+  }, [idToken, needsStaffBind, account.loading, account.boundStaffName]);
 
   useEffect(() => {
     if (phase !== "ready" || view !== "search") return;
