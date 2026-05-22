@@ -15,6 +15,13 @@ export type CalendarMonthApiItem = {
   accessEditUrl: string;
 };
 
+/** 1件の工事レコードを表示月カレンダーに即時反映するための差分 */
+export type CalendarRecordMonthPatch = {
+  recordId: string;
+  dayKeys: string[];
+  byDay: Record<string, CalendarMonthApiItem[]>;
+};
+
 export type CalendarApiPayload = {
   year: number;
   month: number;

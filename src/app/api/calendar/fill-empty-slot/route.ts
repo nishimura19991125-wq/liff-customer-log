@@ -19,6 +19,7 @@ import {
 } from "@/lib/atpocket";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
+import { buildCalendarPatchAfterConstructionSave } from "@/lib/calendar-record-patch-server";
 import { syncConstructionRecordToCustomerInfoApp } from "@/lib/sync-construction-to-customer-info";
 import {
   lineAuthUnauthorizedResponse,
@@ -43,6 +44,9 @@ type Body = {
   panelWorkDate?: string;
   electricWorkDate?: string;
   appSettingsDayDate?: string;
+  /** 表示中のカレンダー月（即時反映用・任意） */
+  viewYear?: number;
+  viewMonth?: number;
 };
 
 /** GET/PUT に載せるフィールドは必要なもののみ（それ以外を PUT すると「有効なフィールドではありません」になることがある） */
@@ -339,9 +343,19 @@ export async function POST(request: Request) {
       );
     }
 
+    const calendarPatch = await buildCalendarPatchAfterConstructionSave(
+      calAppId,
+      recordId,
+      pocketAuth,
+      body.viewYear,
+      body.viewMonth,
+    );
+
     return NextResponse.json({
       ok: true,
       customerInfoSynced: customerSync.kind === "synced",
+      recordId,
+      ...(calendarPatch ? { calendarPatch } : {}),
     });
   } catch (e) {
     console.error("[api/calendar/fill-empty-slot]", e);

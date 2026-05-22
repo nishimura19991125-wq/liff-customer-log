@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import {
   LiffAccountBar,
   LiffCard,
+  LiffContinueShortcutLink,
   LiffLoadingBlock,
   LiffMenuCard,
   LiffPageHeader,
@@ -15,6 +16,13 @@ import {
 } from "@/components/liff-chrome";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { initLiffAndGetToken } from "@/lib/liff-session";
+import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
+
+type ContinueShortcut = {
+  recordId: string;
+  customerName: string;
+  subtitle?: string;
+};
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -54,6 +62,9 @@ export default function HomeHubPage() {
     LIFF_ID ? null : "NEXT_PUBLIC_LIFF_ID が設定されていません",
   );
   const [idToken, setIdToken] = useState<string | null>(null);
+  const [continueShortcuts, setContinueShortcuts] = useState<
+    ContinueShortcut[]
+  >([]);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -89,6 +100,51 @@ export default function HomeHubPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      phase !== "ready" ||
+      !idToken ||
+      needsStaffBind ||
+      account.loading ||
+      !account.boundStaffName
+    ) {
+      setContinueShortcuts([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch("/api/customer-info/continue-shortcut", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const data = (await res.json()) as {
+          shortcuts?: ContinueShortcut[];
+          error?: string;
+        };
+        if (cancelled) return;
+        if (res.status === 401 && isLineSessionExpiredPayload(data)) {
+          setContinueShortcuts([]);
+          return;
+        }
+        setContinueShortcuts(data.shortcuts ?? []);
+      } catch {
+        if (!cancelled) setContinueShortcuts([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    phase,
+    idToken,
+    needsStaffBind,
+    account.loading,
+    account.boundStaffName,
+  ]);
 
   if (phase === "init" || phase === "need-login") {
     return (
@@ -165,13 +221,27 @@ export default function HomeHubPage() {
             icon={<CalendarGlyph />}
             disabled={needsStaffBind}
           />
-          <LiffMenuCard
-            href="/customer-info"
-            title="お客様情報入力"
-            description="お客様情報の入力（詳細は今後追加します）。"
-            icon={<CustomerInfoGlyph />}
-            disabled={needsStaffBind}
-          />
+          <div className="flex flex-col gap-2">
+            <LiffMenuCard
+              href="/customer-info"
+              title="お客様情報入力"
+              description="お客様名で検索し、@pocket のレコードを編集します。"
+              icon={<CustomerInfoGlyph />}
+              disabled={needsStaffBind}
+            />
+            {continueShortcuts.length > 0 ? (
+              <div className="flex flex-col gap-2" role="list">
+                {continueShortcuts.map((row) => (
+                  <LiffContinueShortcutLink
+                    key={row.recordId}
+                    href={`/customer-info?recordId=${encodeURIComponent(row.recordId)}`}
+                    customerName={row.customerName}
+                    subtitle={row.subtitle}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
       </main>
     </LiffScreen>

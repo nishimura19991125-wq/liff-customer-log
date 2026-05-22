@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import {
   LiffAccountBar,
@@ -65,6 +66,24 @@ type RecordDetail = {
 type View = "search" | "edit";
 
 export default function CustomerInfoPage() {
+  return (
+    <Suspense
+      fallback={
+        <LiffScreen>
+          <LiffLoadingBlock message="読み込み中…" />
+        </LiffScreen>
+      }
+    >
+      <CustomerInfoPageContent />
+    </Suspense>
+  );
+}
+
+function CustomerInfoPageContent() {
+  const searchParams = useSearchParams();
+  const recordIdFromUrl = searchParams.get("recordId")?.trim() ?? "";
+  const openedFromUrlRef = useRef(false);
+
   const [phase, setPhase] = useState<
     | "init"
     | "need-login"
@@ -240,6 +259,20 @@ export default function CustomerInfoPage() {
     },
     [idToken],
   );
+
+  useEffect(() => {
+    if (
+      phase !== "ready" ||
+      !idToken ||
+      !recordIdFromUrl ||
+      openedFromUrlRef.current ||
+      needsStaffBind
+    ) {
+      return;
+    }
+    openedFromUrlRef.current = true;
+    void openRecord(recordIdFromUrl);
+  }, [phase, idToken, recordIdFromUrl, needsStaffBind, openRecord]);
 
   const handleSave = useCallback(async () => {
     const token = idToken;

@@ -3,7 +3,11 @@
  */
 import "server-only";
 
-import type { CalendarApiPayload, CalendarMonthApiItem } from "@/lib/calendar-api-types";
+import type {
+  CalendarApiPayload,
+  CalendarMonthApiItem,
+  CalendarRecordMonthPatch,
+} from "@/lib/calendar-api-types";
 import type { AtPocketFieldRow, AtPocketRecordRow } from "@/lib/atpocket";
 
 export type { CalendarApiPayload, CalendarMonthApiItem } from "@/lib/calendar-api-types";
@@ -1168,4 +1172,49 @@ export function buildCalendarPayload(
     holidayKeys,
     byDay,
   };
+}
+
+export type { CalendarRecordMonthPatch } from "@/lib/calendar-api-types";
+
+/** 表示中の月向けに1件の工事レコードをカレンダー行へ変換（保存直後の即時反映用） */
+export function buildCalendarMonthPatchForConstructionRecord(
+  viewYear: number,
+  viewMonth1To12: number,
+  rec: AtPocketRecordRow,
+  constructionFields: AtPocketFieldRow[],
+  reportRecords: AtPocketRecordRow[] | null,
+  reportFields: AtPocketFieldRow[] | null,
+): CalendarRecordMonthPatch | null {
+  const fids = resolveConstructionFieldIds(constructionFields);
+  const ev = recordToEvent(rec, fids);
+  if (!ev) return null;
+
+  const recordId =
+    rec.recordId != null
+      ? String(rec.recordId)
+      : rec.uniqueId != null
+        ? String(rec.uniqueId)
+        : "";
+  if (!recordId) return null;
+
+  let tmap: Map<string, unknown[]> | null = null;
+  if (reportRecords && reportFields) {
+    const rf = resolveReportFieldIds(reportFields);
+    if (rf.tNumber && rf.reportContent) {
+      tmap = buildTNumberToReportContentMap(reportRecords, rf);
+    }
+  }
+  attachReportContentFromTNumberMap(ev, tmap);
+
+  const rows = eventsForDisplayMonth(viewYear, viewMonth1To12 - 1, [ev]);
+  const grouped = groupByDayKey(rows);
+  const byDay: Record<string, CalendarMonthApiItem[]> = {};
+  const dayKeys: string[] = [];
+  for (const [k, list] of Object.entries(grouped)) {
+    dayKeys.push(k);
+    byDay[k] = list.map(rowToApiItem);
+  }
+  if (dayKeys.length === 0) return null;
+
+  return { recordId, dayKeys, byDay };
 }

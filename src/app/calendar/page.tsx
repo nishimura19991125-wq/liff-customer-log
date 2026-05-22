@@ -15,9 +15,11 @@ import {
   LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
+import { applyCalendarRecordPatch } from "@/lib/calendar-apply-patch";
 import type {
   CalendarApiPayload,
   CalendarMonthApiItem,
+  CalendarRecordMonthPatch,
 } from "@/lib/calendar-api-types";
 import {
   EMPTY_FILL_HOUSING_STATUS_NEW_BUILD,
@@ -261,13 +263,17 @@ function countCasesAndSlots(items: CalendarMonthApiItem[]): {
 function EmptySlotCard({
   item,
   idToken,
+  viewYear,
+  viewMonth,
   onSaved,
   onSessionExpired,
   constructionHandlerUsesStaffDirectory,
 }: {
   item: CalendarMonthApiItem;
   idToken: string | null;
-  onSaved: () => Promise<void>;
+  viewYear: number;
+  viewMonth: number;
+  onSaved: (patch?: CalendarRecordMonthPatch | null) => Promise<void>;
   onSessionExpired?: () => void;
   /** undefined: 工事対応者なし。true: スタッフ名簿。false: 工事対応者フィールドのみ設定でスタッフ側不足 */
   constructionHandlerUsesStaffDirectory?: boolean;
@@ -402,6 +408,8 @@ function EmptySlotCard({
           recordId: rid,
           customerName: name,
           housingStatus: hs,
+          viewYear,
+          viewMonth,
           ...(handlerFromStaff
             ? {
                 constructionHandlerStaffRecordId:
@@ -430,6 +438,7 @@ function EmptySlotCard({
         error?: string;
         customerInfoSynced?: boolean;
         constructionSaved?: boolean;
+        calendarPatch?: CalendarRecordMonthPatch;
       };
       if (!res.ok) {
         if (res.status === 401 && isLineSessionExpiredPayload(data)) {
@@ -445,7 +454,7 @@ function EmptySlotCard({
           setElectricWorkDate("");
           setAppSettingsDayDate("");
           setOpen(false);
-          await onSaved();
+          await onSaved(data.calendarPatch ?? null);
         }
         setFeedback({
           kind: "err",
@@ -465,7 +474,7 @@ function EmptySlotCard({
       setElectricWorkDate("");
       setAppSettingsDayDate("");
       setOpen(false);
-      await onSaved();
+      await onSaved(data.calendarPatch ?? null);
       setFeedback({
         kind: "ok",
         text: data.customerInfoSynced
@@ -703,6 +712,8 @@ function NewConstructionRecordPanel({
   idToken,
   open,
   onToggleOpen,
+  viewYear,
+  viewMonth,
   onSaved,
   onSessionExpired,
   constructionHandlerUsesStaffDirectory,
@@ -710,7 +721,9 @@ function NewConstructionRecordPanel({
   idToken: string | null;
   open: boolean;
   onToggleOpen: () => void;
-  onSaved: () => Promise<void>;
+  viewYear: number;
+  viewMonth: number;
+  onSaved: (patch?: CalendarRecordMonthPatch | null) => Promise<void>;
   onSessionExpired?: () => void;
   constructionHandlerUsesStaffDirectory?: boolean;
 }) {
@@ -841,6 +854,8 @@ function NewConstructionRecordPanel({
         body: JSON.stringify({
           customerName: name,
           housingStatus: hs,
+          viewYear,
+          viewMonth,
           ...(handlerFromStaff
             ? {
                 constructionHandlerStaffRecordId:
@@ -869,6 +884,7 @@ function NewConstructionRecordPanel({
         error?: string;
         customerInfoSynced?: boolean;
         constructionSaved?: boolean;
+        calendarPatch?: CalendarRecordMonthPatch;
       };
       if (!res.ok) {
         if (res.status === 401 && isLineSessionExpiredPayload(data)) {
@@ -883,7 +899,7 @@ function NewConstructionRecordPanel({
           setPanelWorkDate("");
           setElectricWorkDate("");
           setAppSettingsDayDate("");
-          await onSaved();
+          await onSaved(data.calendarPatch ?? null);
         }
         setFeedback({
           kind: "err",
@@ -902,12 +918,12 @@ function NewConstructionRecordPanel({
       setPanelWorkDate("");
       setElectricWorkDate("");
       setAppSettingsDayDate("");
-      await onSaved();
+      await onSaved(data.calendarPatch ?? null);
       setFeedback({
         kind: "ok",
         text: data.customerInfoSynced
-          ? "登録しました。@pocket で T番号が採番され、お客様情報アプリにも連携しました。カレンダーを更新しました。"
-          : "登録しました。@pocket で T番号が採番されています。カレンダーを更新しました。",
+          ? "登録しました。@pocket で T番号が採番され、お客様情報アプリにも連携しました。"
+          : "登録しました。@pocket で T番号が採番されています。",
       });
     } catch {
       setFeedback({ kind: "err", text: "通信に失敗しました" });
@@ -1188,6 +1204,20 @@ export default function CalendarPage() {
 
   const [idToken, setIdToken] = useState<string | null>(null);
 
+  const applyCalendarSaveToView = useCallback(
+    async (patch?: CalendarRecordMonthPatch | null) => {
+      const t = idToken;
+      if (!t) return;
+      if (patch) {
+        setData((prev) => (prev ? applyCalendarRecordPatch(prev, patch) : prev));
+        const primaryDay = patch.dayKeys[0];
+        if (primaryDay) setSelectedDayKey(primaryDay);
+      }
+      await loadCalendar(t, ym.year, ym.month, { refresh: true });
+    },
+    [idToken, ym.year, ym.month, loadCalendar],
+  );
+
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
     account.bindingEnabled &&
@@ -1425,15 +1455,13 @@ export default function CalendarPage() {
             idToken={idToken}
             open={newRecordOpen}
             onToggleOpen={() => setNewRecordOpen((o) => !o)}
+            viewYear={ym.year}
+            viewMonth={ym.month}
             constructionHandlerUsesStaffDirectory={
               data?.emptyFillConstructionHandlerUsesStaffDirectory ??
               data?.emptyFillConstructionRegistrantUsesStaffDirectory
             }
-            onSaved={async () => {
-              const t = idToken;
-              if (!t) return;
-              await loadCalendar(t, ym.year, ym.month, { refresh: true });
-            }}
+            onSaved={applyCalendarSaveToView}
             onSessionExpired={() => setPhase("session-expired")}
           />
 
@@ -1675,17 +1703,13 @@ export default function CalendarPage() {
                                     <EmptySlotCard
                                       item={item}
                                       idToken={idToken}
+                                      viewYear={ym.year}
+                                      viewMonth={ym.month}
                                       constructionHandlerUsesStaffDirectory={
                                         data?.emptyFillConstructionHandlerUsesStaffDirectory ??
                                         data?.emptyFillConstructionRegistrantUsesStaffDirectory
                                       }
-                                      onSaved={async () => {
-                                        const t = idToken;
-                                        if (!t) return;
-                                        await loadCalendar(t, ym.year, ym.month, {
-                                          refresh: true,
-                                        });
-                                      }}
+                                      onSaved={applyCalendarSaveToView}
                                       onSessionExpired={() =>
                                         setPhase("session-expired")
                                       }

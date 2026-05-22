@@ -435,3 +435,43 @@ export function LiffMenuCard({
     </Link>
   );
 }
+
+/** トップ：本日の未完了レコードへ直行するショートカット */
+export function LiffContinueShortcutLink({
+  href,
+  customerName,
+  subtitle,
+}: {
+  href: string;
+  customerName: string;
+  /** T番号など（同名の続きが複数あるとき） */
+  subtitle?: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center gap-3 rounded-2xl border-2 border-amber-400/90 bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-3.5 shadow-[0_8px_28px_-10px_rgba(245,158,11,0.45)] ring-1 ring-amber-200/80 transition active:scale-[0.99]"
+    >
+      <span
+        className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-lg"
+        aria-hidden
+      >
+        ✎
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[14px] font-bold leading-snug text-amber-950">
+          <span className="text-amber-800">（未完了）</span>
+          {customerName}様の続きを入力する
+        </p>
+        {subtitle ? (
+          <p className="mt-0.5 truncate text-[12px] font-medium text-amber-800/80">
+            {subtitle}
+          </p>
+        ) : null}
+      </div>
+      <span className="shrink-0 text-lg font-light text-amber-700" aria-hidden>
+        ›
+      </span>
+    </Link>
+  );
+}

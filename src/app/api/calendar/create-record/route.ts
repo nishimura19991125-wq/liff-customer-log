@@ -7,6 +7,7 @@ import {
   fetchAppFields,
 } from "@/lib/atpocket";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
+import { buildCalendarPatchAfterConstructionSave } from "@/lib/calendar-record-patch-server";
 import { syncConstructionRecordToCustomerInfoApp } from "@/lib/sync-construction-to-customer-info";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import {
@@ -39,6 +40,8 @@ type Body = {
   panelWorkDate?: string;
   electricWorkDate?: string;
   appSettingsDayDate?: string;
+  viewYear?: number;
+  viewMonth?: number;
 };
 
 /**
@@ -251,13 +254,39 @@ export async function POST(request: Request) {
           { status: 502 },
         );
       }
+      const calendarPatch = await buildCalendarPatchAfterConstructionSave(
+        calAppId,
+        constructionRecordId,
+        pocketAuth,
+        body.viewYear,
+        body.viewMonth,
+      );
+
       return NextResponse.json({
         ok: true,
         customerInfoSynced: customerSync.kind === "synced",
+        recordId: constructionRecordId,
+        ...(calendarPatch ? { calendarPatch } : {}),
       });
     }
 
-    return NextResponse.json({ ok: true });
+    const constructionRecordId = atPocketRecordIdFromRow(createdRow);
+    const calendarPatch =
+      constructionRecordId != null
+        ? await buildCalendarPatchAfterConstructionSave(
+            calAppId,
+            constructionRecordId,
+            pocketAuth,
+            body.viewYear,
+            body.viewMonth,
+          )
+        : null;
+
+    return NextResponse.json({
+      ok: true,
+      ...(constructionRecordId ? { recordId: constructionRecordId } : {}),
+      ...(calendarPatch ? { calendarPatch } : {}),
+    });
   } catch (e) {
     console.error("[api/calendar/create-record]", e);
     const detail = e instanceof Error ? e.message : String(e);
