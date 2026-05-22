@@ -125,16 +125,26 @@ function pickFieldUniqueIdByExactCaption(
   fields: AtPocketFieldRow[],
   caption: string,
 ): string {
+  const id = pocketFieldUniqueIdByCaption(fields, caption);
+  return id ?? "";
+}
+
+/** 列見出し完全一致で uniqueId を返す（見つからなければ null） */
+export function pocketFieldUniqueIdByCaption(
+  fields: AtPocketFieldRow[],
+  caption: string,
+): string | null {
   const target = NFKC(String(caption)).trim().toLowerCase();
   for (const f of fields) {
     const cap = f.caption
       ? NFKC(String(f.caption)).trim().toLowerCase()
       : "";
     if (cap && cap === target) {
-      return f.uniqueId ? String(f.uniqueId) : "";
+      const id = f.uniqueId?.trim();
+      return id || null;
     }
   }
-  return "";
+  return null;
 }
 
 /**

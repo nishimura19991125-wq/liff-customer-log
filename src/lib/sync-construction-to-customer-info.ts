@@ -13,6 +13,10 @@ import {
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
 } from "@/lib/calendar-kojo";
+import {
+  resolveConstructionRegistrationNumberFieldIds,
+  resolveCustomerInfoRegistrationNumberFieldIds,
+} from "@/lib/construction-customer-info-sync-fields";
 
 export type CustomerInfoSyncResult =
   | { kind: "skipped" }
@@ -168,8 +172,44 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     }
   }
 
-  const fieldsCsv = [constructionKeyField, resolvedCustomerKey]
-    .concat(resolvedCustomerName ? [resolvedCustomerName] : [])
+  const constructionRegFields =
+    resolveConstructionRegistrationNumberFieldIds(opts.constructionFields);
+  const customerRegFields =
+    resolveCustomerInfoRegistrationNumberFieldIds(customerFields);
+
+  const registrationPairs: Array<{
+    constructionFieldId: string;
+    customerFieldId: string;
+    label: string;
+  }> = [];
+  if (
+    constructionRegFields.apptRegistrationNumber &&
+    customerRegFields.apptRegistrationNumber
+  ) {
+    registrationPairs.push({
+      constructionFieldId: constructionRegFields.apptRegistrationNumber,
+      customerFieldId: customerRegFields.apptRegistrationNumber,
+      label: "APPT登録番号",
+    });
+  }
+  if (
+    constructionRegFields.clptRegistrationNumber &&
+    customerRegFields.clptRegistrationNumber
+  ) {
+    registrationPairs.push({
+      constructionFieldId: constructionRegFields.clptRegistrationNumber,
+      customerFieldId: customerRegFields.clptRegistrationNumber,
+      label: "CLPT登録番号",
+    });
+  }
+
+  const fieldsCsv = [
+    constructionKeyField,
+    resolvedCustomerKey,
+    ...registrationPairs.map((p) => p.constructionFieldId),
+    ...(resolvedCustomerName ? [resolvedCustomerName] : []),
+  ]
+    .filter((id, i, arr) => id && arr.indexOf(id) === i)
     .join(",");
 
   let recRow = await fetchRecordById(
@@ -207,6 +247,15 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   };
   if (resolvedCustomerName) {
     customerRecord[resolvedCustomerName] = opts.customerName.trim();
+  }
+
+  for (const pair of registrationPairs) {
+    const regValue = coercePocketPlainString(
+      pickRecordValueByFieldAliases(recObj, pair.constructionFieldId),
+    );
+    if (regValue) {
+      customerRecord[pair.customerFieldId] = regValue;
+    }
   }
 
   const created = await createRecord(
