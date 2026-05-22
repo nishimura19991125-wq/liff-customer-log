@@ -597,7 +597,7 @@ function recordToEvent(
   let category: "empty" | "list";
   if (nameTrim.length === 0) {
     category = "empty";
-    displayTitle = coForColor || "（空枠）";
+    displayTitle = "（空枠）";
   } else {
     category = "list";
     displayTitle = nameTrim;
@@ -814,7 +814,7 @@ function bracketKubunFromSegmentLabel(segmentLabel: string): string {
 
 function displayNameLine1OnChip(row: CalendarMonthRow): string {
   if (!row || row.category === "empty") {
-    return String(row && row.title != null ? row.title : "");
+    return "（空枠）";
   }
   const t = String(row.title != null ? row.title : "");
   const s = t.trim();
@@ -838,14 +838,15 @@ function displayNameLine1OnChipWithReport(row: CalendarMonthRow): string {
 }
 
 function displayNameLine2OnChip(row: CalendarMonthRow): string {
-  if (!row || row.category === "empty") return "";
   const parts: string[] = [];
-  const spec =
-    row.chipSpecLine2 != null && String(row.chipSpecLine2).trim() !== ""
-      ? String(row.chipSpecLine2).trim()
-      : "";
-  if (spec) parts.push(spec);
-  const co = row.contractorNameForColor?.trim();
+  if (row?.category === "list") {
+    const spec =
+      row.chipSpecLine2 != null && String(row.chipSpecLine2).trim() !== ""
+        ? String(row.chipSpecLine2).trim()
+        : "";
+    if (spec) parts.push(spec);
+  }
+  const co = row?.contractorNameForColor?.trim();
   if (co) parts.push(`施工: ${co}`);
   return parts.join("｜");
 }
