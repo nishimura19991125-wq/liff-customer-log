@@ -17,6 +17,12 @@ import {
   resolveConstructionRegistrationNumberFieldIds,
   resolveCustomerInfoRegistrationNumberFieldIds,
 } from "@/lib/construction-customer-info-sync-fields";
+import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
+import { defaultApClStaffNamesForLineUser } from "@/lib/staff-ap-cl-candidates";
+import {
+  lookupStaffWorkplaceByStaffName,
+  resolveStaffWorkplaceLookupConfig,
+} from "@/lib/staff-workplace-lookup";
 
 export type CustomerInfoSyncResult =
   | { kind: "skipped" }
@@ -98,6 +104,8 @@ export async function syncConstructionRecordToCustomerInfoApp(opts: {
   customerName: string;
   constructionFields: AtPocketFieldRow[];
   calendarAuth: AtPocketFetchAuth;
+  /** LIFF ログイン者の LINE ID（sub）。AP/CL担当者の自動転記に使用 */
+  lineUserId?: string;
 }): Promise<CustomerInfoSyncResult> {
   try {
     return await syncConstructionRecordToCustomerInfoAppInner(opts);
@@ -107,12 +115,64 @@ export async function syncConstructionRecordToCustomerInfoApp(opts: {
   }
 }
 
+const BRANCH_FALLBACK = "-";
+
+async function applyApClStaffFromLineUserToCustomerRecord(
+  customerRecord: Record<string, unknown>,
+  customerFields: AtPocketFieldRow[],
+  lineUserId: string,
+): Promise<void> {
+  const want = lineUserId.trim();
+  if (!want) return;
+
+  const { apStaff, clStaff } = await defaultApClStaffNamesForLineUser(want);
+  const apStaffFieldId = resolveCustomerInfoFormFieldId(
+    "apStaff",
+    "AP担当者",
+    customerFields,
+  );
+  const clStaffFieldId = resolveCustomerInfoFormFieldId(
+    "clStaff",
+    "CL担当者",
+    customerFields,
+  );
+  if (apStaff && apStaffFieldId) {
+    customerRecord[apStaffFieldId] = apStaff;
+  }
+  if (clStaff && clStaffFieldId) {
+    customerRecord[clStaffFieldId] = clStaff;
+  }
+
+  const staffCfg = await resolveStaffWorkplaceLookupConfig();
+  if (!staffCfg) return;
+
+  const apBranchFieldId = resolveCustomerInfoFormFieldId(
+    "apBranch",
+    "AP所属支店",
+    customerFields,
+  );
+  const clBranchFieldId = resolveCustomerInfoFormFieldId(
+    "clBranch",
+    "CL所属支店",
+    customerFields,
+  );
+  if (apStaff && apBranchFieldId) {
+    const workplace = await lookupStaffWorkplaceByStaffName(apStaff, staffCfg);
+    customerRecord[apBranchFieldId] = workplace?.trim() || BRANCH_FALLBACK;
+  }
+  if (clStaff && clBranchFieldId) {
+    const workplace = await lookupStaffWorkplaceByStaffName(clStaff, staffCfg);
+    customerRecord[clBranchFieldId] = workplace?.trim() || BRANCH_FALLBACK;
+  }
+}
+
 async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   calAppId: string;
   constructionRecordId: string;
   customerName: string;
   constructionFields: AtPocketFieldRow[];
   calendarAuth: AtPocketFetchAuth;
+  lineUserId?: string;
 }): Promise<CustomerInfoSyncResult> {
   const customerAppId = process.env.CUSTOMER_INFO_APP_ID?.trim();
   if (!customerAppId) {
@@ -256,6 +316,14 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     if (regValue) {
       customerRecord[pair.customerFieldId] = regValue;
     }
+  }
+
+  if (opts.lineUserId?.trim()) {
+    await applyApClStaffFromLineUserToCustomerRecord(
+      customerRecord,
+      customerFields,
+      opts.lineUserId.trim(),
+    );
   }
 
   const created = await createRecord(

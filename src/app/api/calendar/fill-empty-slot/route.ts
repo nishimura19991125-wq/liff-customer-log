@@ -327,6 +327,7 @@ export async function POST(request: Request) {
       customerName,
       constructionFields,
       calendarAuth: pocketAuth,
+      lineUserId: auth.lineUserId,
     });
     if (customerSync.kind === "failed") {
       return NextResponse.json(

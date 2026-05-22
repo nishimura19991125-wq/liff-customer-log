@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { mergeStaffNameOptions } from "@/lib/staff-name-options";
 
 type ApClStaffRolePicker = {
   options: string[];
-  defaultName: string | null;
 };
 
 type ApClStaffPickerPayload = {
@@ -350,7 +349,6 @@ export function CustomerInfoEditForm({
   missingCaptions,
   requiredFieldErrors,
   idToken,
-  formSessionKey,
   onChange,
 }: {
   formFields: CustomerInfoFormFieldApi[];
@@ -359,8 +357,6 @@ export function CustomerInfoEditForm({
   missingCaptions?: string[];
   requiredFieldErrors?: ReadonlySet<string>;
   idToken: string | null;
-  /** レコード切替時に AP/CL デフォルト適用をリセットする */
-  formSessionKey?: string;
   onChange: (key: string, value: string) => void;
 }) {
   const [catalogOptions, setCatalogOptions] = useState<
@@ -376,7 +372,6 @@ export function CustomerInfoEditForm({
     null,
   );
   const [apClStaffLoading, setApClStaffLoading] = useState(false);
-  const apClDefaultsAppliedRef = useRef(false);
 
   const displayValues = useMemo(
     () => syncContractAmountFromPayment(values),
@@ -451,10 +446,6 @@ export function CustomerInfoEditForm({
   }, [idToken, manufacturer]);
 
   useEffect(() => {
-    apClDefaultsAppliedRef.current = false;
-  }, [formSessionKey]);
-
-  useEffect(() => {
     if (!idToken) {
       setApClStaff(null);
       setApClStaffLoading(false);
@@ -495,24 +486,6 @@ export function CustomerInfoEditForm({
     },
     [onChange, values],
   );
-
-  useEffect(() => {
-    if (apClStaffLoading || !apClStaff?.configured || apClDefaultsAppliedRef.current) {
-      return;
-    }
-    apClDefaultsAppliedRef.current = true;
-    const next = { ...values };
-    let changed = false;
-    if (!(values.apStaff ?? "").trim() && apClStaff.ap.defaultName) {
-      next.apStaff = apClStaff.ap.defaultName;
-      changed = true;
-    }
-    if (!(values.clStaff ?? "").trim() && apClStaff.cl.defaultName) {
-      next.clStaff = apClStaff.cl.defaultName;
-      changed = true;
-    }
-    if (changed) propagateValues(next);
-  }, [apClStaff, apClStaffLoading, propagateValues, values]);
 
   const visibleFields = useMemo(() => {
     return formFields
@@ -678,7 +651,7 @@ export function CustomerInfoEditForm({
                   {apClStaffLoading
                     ? `${roleLabel}担当者一覧を読み込み中…`
                     : apClStaff?.configured
-                      ? `スタッフ名簿の${roleLabel}稼働状況が「稼働」の社員から選択（LINE_USER_ID①・②のいずれかに紐づく場合は初期値）`
+                      ? `スタッフ名簿の${roleLabel}稼働状況が「稼働」の社員から選択`
                       : "スタッフ名簿の設定（STAFF_APP_ID・氏名列・AP/CL稼働状況・LINE_USER_ID①②の環境変数）を確認してください"}
                 </p>
               );

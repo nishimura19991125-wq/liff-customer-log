@@ -209,3 +209,16 @@ export async function fetchApClStaffPickerPayload(
     cl: { options: clOptions, defaultName: clDefault },
   };
 }
+
+/**
+ * LINE_USER_ID①・② に一致し、AP/CL 稼働が「稼働」のときの担当者名（工事→お客様情報連携用）。
+ */
+export async function defaultApClStaffNamesForLineUser(
+  lineUserId: string,
+): Promise<{ apStaff: string | null; clStaff: string | null }> {
+  const payload = await fetchApClStaffPickerPayload(lineUserId);
+  return {
+    apStaff: payload.ap.defaultName,
+    clStaff: payload.cl.defaultName,
+  };
+}
