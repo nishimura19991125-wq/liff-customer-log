@@ -101,6 +101,8 @@ function CustomerInfoPageContent() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<SearchHit[]>([]);
+  const [pendingRecords, setPendingRecords] = useState<SearchHit[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
   const [searchFeedback, setSearchFeedback] = useState<string | null>(null);
   const [loadingRecord, setLoadingRecord] = useState(false);
   const [detail, setDetail] = useState<RecordDetail | null>(null);
@@ -146,6 +148,38 @@ function CustomerInfoPageContent() {
       cancelled = true;
     };
   }, []);
+
+  const loadPendingRecords = useCallback(async () => {
+    const token = idToken;
+    if (!token || needsStaffBind) {
+      setPendingRecords([]);
+      return;
+    }
+    setPendingLoading(true);
+    try {
+      const res = await fetch("/api/customer-info/pending-records", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = (await res.json()) as {
+        records?: SearchHit[];
+        error?: string;
+      };
+      if (res.status === 401 && isLineSessionExpiredPayload(data)) {
+        setPhase("session-expired");
+        return;
+      }
+      setPendingRecords(data.records ?? []);
+    } catch {
+      setPendingRecords([]);
+    } finally {
+      setPendingLoading(false);
+    }
+  }, [idToken, needsStaffBind]);
+
+  useEffect(() => {
+    if (phase !== "ready" || view !== "search") return;
+    void loadPendingRecords();
+  }, [phase, view, loadPendingRecords, account.boundStaffName]);
 
   const handleSearch = useCallback(async () => {
     const token = idToken;
@@ -422,6 +456,38 @@ function CustomerInfoPageContent() {
           {view === "search" ? (
             <LiffCard>
               <div className="px-4 py-4">
+                {pendingLoading ? (
+                  <p className="mb-4 text-[13px] text-slate-500">
+                    未入力の案件を読み込んでいます…
+                  </p>
+                ) : pendingRecords.length > 0 ? (
+                  <div className="mb-5">
+                    <p className="mb-2 text-[12px] font-bold text-amber-900">
+                      入力ステータス：未入力
+                    </p>
+                    <ul className="flex flex-col gap-2">
+                      {pendingRecords.map((row) => (
+                        <li key={row.recordId}>
+                          <button
+                            type="button"
+                            className="w-full rounded-xl border-2 border-amber-300/80 bg-amber-50/90 px-3 py-3 text-left shadow-sm ring-1 ring-amber-200/60 transition active:scale-[0.99] disabled:opacity-50"
+                            disabled={loadingRecord}
+                            onClick={() => void openRecord(row.recordId)}
+                          >
+                            <p className="text-[15px] font-bold text-amber-950">
+                              {row.customerName}
+                            </p>
+                            {row.subtitle ? (
+                              <p className="mt-0.5 text-[12px] font-medium text-amber-800/85">
+                                {row.subtitle}
+                              </p>
+                            ) : null}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
                 <label className="block">
                   <span className="mb-1 block text-[12px] font-bold text-slate-700">
                     お客様名で検索
@@ -490,6 +556,7 @@ function CustomerInfoPageContent() {
                     setView("search");
                     setDetail(null);
                     setSaveFeedback(null);
+                    void loadPendingRecords();
                   }}
                 >
                   ‹ 検索結果に戻る

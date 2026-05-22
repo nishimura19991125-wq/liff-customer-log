@@ -21,6 +21,12 @@ export const SUBSIDY_OR_PREAPPLICATION_OPTIONS = [
 
 export const INDOOR_SURVEY_STATUS_OPTIONS = ["未実施", "実施済み"] as const;
 
+/** お客様情報の入力ステータス（@pocket リスト式） */
+export const INPUT_STATUS_OPTIONS = ["未入力", "入力完了"] as const;
+
+export const INPUT_STATUS_PENDING = "未入力" as const;
+export const INPUT_STATUS_COMPLETE = "入力完了" as const;
+
 export const PAYMENT_METHODS_WITH_LOAN = new Set<string>([
   "ソーラーローン",
   "頭金+ソーラーローン",

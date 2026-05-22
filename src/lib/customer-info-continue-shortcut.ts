@@ -96,7 +96,7 @@ function continueStatusValues(): Set<string> {
   const raw = process.env.CUSTOMER_INFO_CONTINUE_STATUS_VALUES?.trim();
   const parts = raw
     ? raw.split(",").map((s) => normStatusToken(s)).filter(Boolean)
-    : ["その他情報が未入力", "その他情報未入力"].map(normStatusToken);
+    : [normStatusToken("未入力")];
   return new Set(parts);
 }
 
@@ -124,8 +124,10 @@ function recordMatchesContinueStatus(
   allowed: Set<string>,
 ): boolean {
   const raw = readCustomerInfoFieldValue(recObj, statusFieldId);
-  if (!raw) return false;
-  return allowed.has(normStatusToken(raw));
+  const token = raw
+    ? normStatusToken(raw)
+    : normStatusToken("未入力");
+  return allowed.has(token);
 }
 
 function recordMatchesBoundStaff(
@@ -169,12 +171,19 @@ function recordHasIncompleteRequiredForm(
   );
 }
 
+export type CustomerInfoPendingScanOptions = {
+  /** true のとき作成日が本日（JST）のレコードのみ */
+  todayOnly?: boolean;
+};
+
 /**
- * 本日作成・担当スタッフ一致・「その他情報未入力」相当の未完了レコード一覧（0件なら空配列）。
+ * 担当スタッフ一致・入力ステータスが未入力（空欄は未入力扱い）のレコード一覧。
  */
-export async function findCustomerInfoContinueShortcuts(
+export async function findCustomerInfoPendingRecords(
   boundStaffName: string,
+  opts: CustomerInfoPendingScanOptions = {},
 ): Promise<CustomerInfoContinueShortcutHit[]> {
+  const todayOnly = opts.todayOnly === true;
   const cfg = customerInfoConfigReady();
   if (!cfg.ok) return [];
 
@@ -208,13 +217,15 @@ export async function findCustomerInfoContinueShortcuts(
     ["登録日", "作成日", "作成日時"],
     appFields,
   );
-  if (!createdFieldId) return [];
+  if (todayOnly && !createdFieldId) return [];
 
-  const statusFieldId = resolveFieldIdFromEnvOrCaptions(
-    "CUSTOMER_INFO_CONTINUE_STATUS_FIELD_ID",
-    ["入力ステータス", "その他情報入力ステータス", "ステータス", "その他情報"],
-    appFields,
-  );
+  const statusFieldId =
+    resolveFieldIdFromEnvOrCaptions(
+      "CUSTOMER_INFO_CONTINUE_STATUS_FIELD_ID",
+      ["入力ステータス"],
+      appFields,
+    ) ??
+    resolveCustomerInfoFormFieldId("inputStatus", "入力ステータス", appFields);
 
   const apFieldId = resolveCustomerInfoFormFieldId(
     "apStaff",
@@ -243,7 +254,7 @@ export async function findCustomerInfoContinueShortcuts(
 
   const fieldIdSet = new Set<string>([
     nameField,
-    createdFieldId,
+    ...(createdFieldId ? [createdFieldId] : []),
     ...(apFieldId ? [apFieldId] : []),
     ...(clFieldId ? [clFieldId] : []),
     ...(statusFieldId ? [statusFieldId] : []),
@@ -288,7 +299,13 @@ export async function findCustomerInfoContinueShortcuts(
       const customerName = readCustomerInfoFieldValue(recObj, nameField);
       if (!customerName) continue;
 
-      if (!isCreatedTodayJst(recObj, createdFieldId)) continue;
+      if (
+        todayOnly &&
+        createdFieldId &&
+        !isCreatedTodayJst(recObj, createdFieldId)
+      ) {
+        continue;
+      }
       if (!recordMatchesBoundStaff(recObj, boundStaffName, apFieldId, clFieldId)) {
         continue;
       }
@@ -326,4 +343,11 @@ export async function findCustomerInfoContinueShortcuts(
     a.customerName.localeCompare(b.customerName, "ja"),
   );
   return hits;
+}
+
+/** 本日作成の未入力レコード（トップの続き入力ショートカット用） */
+export async function findCustomerInfoContinueShortcuts(
+  boundStaffName: string,
+): Promise<CustomerInfoContinueShortcutHit[]> {
+  return findCustomerInfoPendingRecords(boundStaffName, { todayOnly: true });
 }

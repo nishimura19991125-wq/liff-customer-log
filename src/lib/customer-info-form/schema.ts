@@ -5,6 +5,7 @@ import {
   DOCUMENT_RADIO_HIDDEN_VALUE,
   FIT_TYPE_OPTIONS,
   INDOOR_SURVEY_STATUS_OPTIONS,
+  INPUT_STATUS_OPTIONS,
   LOAN_PAPER_HIDDEN_VALUE,
   PAYMENT_METHOD_OPTIONS,
   REGISTRY_BOOK_OPTIONS,
@@ -47,6 +48,12 @@ export const COSMETIC_COVER_OPTIONS = [
 /** お客様情報入力フォーム定義（見出しは @pocket 列名と一致させる） */
 export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   { key: "customerName", caption: "お客様名", type: "text" },
+  {
+    key: "inputStatus",
+    caption: "入力ステータス",
+    type: "select",
+    options: [...INPUT_STATUS_OPTIONS],
+  },
   {
     key: "pt",
     caption: "",

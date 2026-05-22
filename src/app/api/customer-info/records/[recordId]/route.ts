@@ -17,6 +17,7 @@ import {
   customerInfoFormFieldsCsv,
   formValuesFromPutBody,
   readCustomerInfoFormValuesFromRecord,
+  resolveCustomerInfoFormFieldId,
   resolveCustomerInfoFormFields,
   resolveCustomerInfoPtTransferFields,
 } from "@/lib/customer-info-form/resolve-fields";
@@ -115,7 +116,17 @@ export async function GET(request: Request, ctx: RouteCtx) {
       ? resolveConfiguredFieldToSchemaUniqueId(subtitleEnv, fields)
       : null;
 
-    const displayIds = [nameSchema, ...(subtitleSchema ? [subtitleSchema] : [])];
+    const inputStatusSchema = resolveCustomerInfoFormFieldId(
+      "inputStatus",
+      "入力ステータス",
+      fields,
+    );
+
+    const displayIds = [
+      nameSchema,
+      ...(inputStatusSchema ? [inputStatusSchema] : []),
+      ...(subtitleSchema ? [subtitleSchema] : []),
+    ];
     const displayCsv = displayIds.join(",");
 
     if (!customerInfoUsesLegacyEditableList()) {

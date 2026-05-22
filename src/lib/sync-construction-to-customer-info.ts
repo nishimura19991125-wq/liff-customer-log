@@ -20,7 +20,9 @@ import {
   resolveConstructionRegistrationNumberFieldIds,
   resolveCustomerInfoRegistrationNumberFieldIds,
 } from "@/lib/construction-customer-info-sync-fields";
+import { INPUT_STATUS_PENDING } from "@/lib/customer-info-form/options";
 import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
+import { readCustomerInfoFieldValue } from "@/lib/customer-info-record";
 import { defaultApClStaffNamesForLineUser } from "@/lib/staff-ap-cl-candidates";
 import {
   lookupStaffWorkplaceByStaffName,
@@ -338,6 +340,15 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     );
   }
 
+  const inputStatusFieldId = resolveCustomerInfoFormFieldId(
+    "inputStatus",
+    "入力ステータス",
+    customerFields,
+  );
+  if (inputStatusFieldId) {
+    customerRecord[inputStatusFieldId] = INPUT_STATUS_PENDING;
+  }
+
   const pocketPayload: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(customerRecord)) {
     pocketPayload[k] = customerInfoPutValue(v);
@@ -349,6 +360,31 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   );
 
   if (existingId) {
+    if (inputStatusFieldId) {
+      let existingRow = await fetchRecordById(
+        customerAppId,
+        existingId,
+        customerAuth,
+        inputStatusFieldId,
+      );
+      if (!existingRow?.record) {
+        existingRow = await fetchRecordById(
+          customerAppId,
+          existingId,
+          customerAuth,
+        );
+      }
+      const existingRec = existingRow?.record;
+      if (existingRec && typeof existingRec === "object") {
+        const currentStatus = readCustomerInfoFieldValue(
+          existingRec as Record<string, unknown>,
+          inputStatusFieldId,
+        );
+        if (currentStatus.trim()) {
+          delete pocketPayload[inputStatusFieldId];
+        }
+      }
+    }
     await updateRecord(
       customerAppId,
       existingId,
