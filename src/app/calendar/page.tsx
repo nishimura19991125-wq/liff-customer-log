@@ -248,17 +248,23 @@ function weekHeaderClass(i: number): string {
   return "text-slate-600 bg-white/95";
 }
 
-function countCasesAndSlots(items: CalendarMonthApiItem[]): {
-  cases: number;
+function countDayBadges(items: CalendarMonthApiItem[]): {
+  newBuild: number;
+  existing: number;
   emptySlots: number;
 } {
-  let cases = 0;
+  let newBuild = 0;
+  let existing = 0;
   let emptySlots = 0;
   for (const x of items) {
-    if (x.category === "empty") emptySlots += 1;
-    else cases += 1;
+    if (x.category === "empty") {
+      emptySlots += 1;
+      continue;
+    }
+    if (x.housingShort === "新築") newBuild += 1;
+    else if (x.housingShort === "既築") existing += 1;
   }
-  return { cases, emptySlots };
+  return { newBuild, existing, emptySlots };
 }
 
 function EmptySlotCard({
@@ -1436,13 +1442,17 @@ export default function CalendarPage() {
               <span className="size-1.5 rounded-full bg-[#06C755]" aria-hidden />
               <span className="font-bold text-slate-700">今日</span>
             </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-bold text-emerald-900 ring-1 ring-emerald-100">
-              <span className="rounded-full bg-emerald-600 px-1 py-px text-[8px] font-extrabold text-white">
-                緑
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 font-bold text-blue-900 ring-1 ring-blue-100">
+              <span className="rounded bg-blue-500 px-1 py-px text-[8px] font-extrabold text-white">
+                新
               </span>
-              <span className="font-semibold text-emerald-800/95">
-                案件の件数
+              <span className="font-semibold text-blue-800/95">新築工事</span>
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 font-bold text-orange-900 ring-1 ring-orange-100">
+              <span className="rounded bg-orange-500 px-1 py-px text-[8px] font-extrabold text-white">
+                既
               </span>
+              <span className="font-semibold text-orange-800/95">既築工事</span>
             </span>
             <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-slate-400/80 bg-slate-100/90 px-2 py-0.5 text-[10px] font-bold text-slate-700 ring-1 ring-slate-200/60">
               点線枠
@@ -1522,8 +1532,11 @@ export default function CalendarPage() {
                 const isToday = cell.dayKey === todayKey && cell.inMonth;
                 const isSelected =
                   Boolean(cell.dayKey && selectedDayKey === cell.dayKey);
-                const { cases: caseCount, emptySlots: emptyCount } =
-                  countCasesAndSlots(dayItems);
+                const {
+                  newBuild: newBuildCount,
+                  existing: existingCount,
+                  emptySlots: emptyCount,
+                } = countDayBadges(dayItems);
 
                 const hasEmptySlots = cell.inMonth && emptyCount > 0;
                 const accentCls = hasEmptySlots
@@ -1562,13 +1575,21 @@ export default function CalendarPage() {
                         {cell.dayNum}
                       </span>
                     </div>
-                    <div className="mt-auto flex min-h-[18px] flex-col items-center justify-end gap-0.5 pb-0.5 sm:min-h-[22px] sm:gap-1">
-                      {caseCount > 0 ? (
+                    <div className="mt-auto flex min-h-[18px] flex-wrap items-center justify-center gap-0.5 pb-0.5 sm:min-h-[22px] sm:gap-1">
+                      {newBuildCount > 0 ? (
                         <span
-                          className="inline-flex max-w-full items-center justify-center rounded-full bg-emerald-600 px-1.5 py-[2px] text-[7px] font-extrabold tabular-nums leading-none text-white shadow-sm ring-1 ring-emerald-800/15 sm:text-[8px]"
-                          title={`案件（お客様名のある工事）${caseCount}件`}
+                          className="inline-flex max-w-[48%] shrink-0 items-center justify-center rounded bg-blue-500 px-1 py-[1px] text-[7px] font-bold tabular-nums leading-none text-white sm:max-w-none sm:text-[10px]"
+                          title={`新築工事 ${newBuildCount}件`}
                         >
-                          案件{caseCount}
+                          新{newBuildCount}
+                        </span>
+                      ) : null}
+                      {existingCount > 0 ? (
+                        <span
+                          className="inline-flex max-w-[48%] shrink-0 items-center justify-center rounded bg-orange-500 px-1 py-[1px] text-[7px] font-bold tabular-nums leading-none text-white sm:max-w-none sm:text-[10px]"
+                          title={`既築工事 ${existingCount}件`}
+                        >
+                          既{existingCount}
                         </span>
                       ) : null}
                       {emptyCount > 0 ? (
