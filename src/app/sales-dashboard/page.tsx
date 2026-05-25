@@ -29,20 +29,16 @@ type DashboardKpi = {
 type RankingRow = {
   rank: number;
   staffName: string;
-  displayName: string;
   salesAmount: number;
   contractCount: number;
   isSelf: boolean;
 };
 
 type DashboardPayload = {
-  viewMode: "manager" | "staff";
-  roleLabel: string;
   staffName: string;
   periodLabel: string;
   kpi: DashboardKpi;
   ranking: RankingRow[];
-  rankingLimited: boolean;
 };
 
 function formatYen(n: number): string {
@@ -180,17 +176,11 @@ export default function SalesDashboardPage() {
     return <LiffSessionExpiredPanel />;
   }
 
-  const isManager = data?.viewMode === "manager";
-
   return (
     <LiffScreen>
       <LiffPageHeader
         title="営業ダッシュボード"
-        subtitle={
-          isManager
-            ? "全社の当月売上KPIと営業ランキング"
-            : "あなたの当月KPIと営業ランキング（一部匿名）"
-        }
+        subtitle="全社の当月売上KPIと営業ランキング"
         action={<LiffGhostLink href="/">トップ</LiffGhostLink>}
       />
 
@@ -226,18 +216,15 @@ export default function SalesDashboardPage() {
 
         {data ? (
           <div className="mt-6 flex flex-col gap-5">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-[13px] text-slate-500">
-              <span>{data.periodLabel}（JST）</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">
-                {isManager ? "全社表示" : "個人表示"} · {data.roleLabel}
-              </span>
-            </div>
+            <p className="text-[13px] text-slate-500">
+              {data.periodLabel}（JST）
+            </p>
 
             <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <LiffCard>
                 <div className="p-4">
                   <p className="text-[12px] font-medium text-slate-500">
-                    {isManager ? "全社売上" : "当月売上"}
+                    全社売上
                   </p>
                   <p className="mt-1 text-[1.35rem] font-bold text-slate-900">
                     {formatYen(data.kpi.salesAmount)}
@@ -273,11 +260,6 @@ export default function SalesDashboardPage() {
               <h2 className="mb-3 text-[15px] font-bold text-slate-800">
                 営業成績ランキング
               </h2>
-              {data.rankingLimited ? (
-                <p className="mb-3 text-[12px] leading-relaxed text-slate-500">
-                  上位5名まで表示。他メンバー名は匿名化しています（ご自身のみ実名）。
-                </p>
-              ) : null}
               <div className="flex flex-col gap-2">
                 {data.ranking.length === 0 ? (
                   <LiffCard>
@@ -304,7 +286,7 @@ export default function SalesDashboardPage() {
                         </span>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-[14px] font-semibold text-slate-900">
-                            {row.displayName}
+                            {row.staffName}
                             {row.isSelf ? (
                               <span className="ml-2 text-[11px] font-medium text-blue-600">
                                 あなた

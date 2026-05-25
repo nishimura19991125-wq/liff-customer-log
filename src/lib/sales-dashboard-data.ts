@@ -1,5 +1,8 @@
 import "server-only";
 
+import type { AtPocketFieldRow } from "@/lib/atpocket";
+import { fetchAppFields, fetchRecordsList } from "@/lib/atpocket";
+import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
 import {
   customerInfoAppId,
   customerInfoConfigReady,
@@ -7,21 +10,15 @@ import {
   customerInfoPocketAuth,
 } from "@/lib/customer-info-config";
 import {
-  matchCustomerInfoPendingAudience,
   readStaffAssigneeName,
   resolveCustomerInfoCreatorFieldId,
 } from "@/lib/customer-info-creator-field";
+import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
 import { readCustomerInfoFieldValue } from "@/lib/customer-info-record";
-import type { StaffDashboardViewMode } from "@/lib/staff-dashboard-role";
-import type { AtPocketFieldRow } from "@/lib/atpocket";
-import { fetchAppFields, fetchRecordsList } from "@/lib/atpocket";
-import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
-import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 
 const PAGE_LIMIT = 1000;
 const DEFAULT_MAX_PAGES = 25;
-const STAFF_RANKING_TOP = 5;
 
 export type SalesDashboardKpi = {
   salesAmount: number;
@@ -32,20 +29,16 @@ export type SalesDashboardKpi = {
 export type SalesDashboardRankingRow = {
   rank: number;
   staffName: string;
-  displayName: string;
   salesAmount: number;
   contractCount: number;
   isSelf: boolean;
 };
 
 export type SalesDashboardPayload = {
-  viewMode: StaffDashboardViewMode;
-  roleLabel: string;
   staffName: string;
   periodLabel: string;
   kpi: SalesDashboardKpi;
   ranking: SalesDashboardRankingRow[];
-  rankingLimited: boolean;
 };
 
 function dashboardMaxPages(): number {
@@ -129,37 +122,11 @@ function primaryStaffForRecord(
   if (ap) return ap;
   const cl = readStaffAssigneeName(recObj, ids.clFieldId);
   if (cl) return cl;
-  const creator = readStaffAssigneeName(recObj, ids.creatorFieldId);
-  return creator;
-}
-
-function recordBelongsToStaff(
-  recObj: Record<string, unknown>,
-  staffName: string,
-  ids: SalesFieldIds,
-): boolean {
-  return (
-    matchCustomerInfoPendingAudience(
-      recObj,
-      staffName,
-      ids.apFieldId,
-      ids.clFieldId,
-      ids.creatorFieldId,
-    ) !== null
-  );
-}
-
-function maskStaffName(name: string): string {
-  const n = normApClStaffName(name);
-  if (!n) return "—";
-  if (n.length <= 1) return "＊";
-  return `${n.slice(0, 1)}＊＊`;
+  return readStaffAssigneeName(recObj, ids.creatorFieldId);
 }
 
 export async function buildSalesDashboardPayload(
   boundStaffName: string,
-  viewMode: StaffDashboardViewMode,
-  roleLabel: string,
 ): Promise<SalesDashboardPayload | null> {
   const cfg = customerInfoConfigReady();
   if (!cfg.ok) return null;
@@ -188,8 +155,6 @@ export async function buildSalesDashboardPayload(
 
   type Agg = { salesAmount: number; contractCount: number };
   const byStaff = new Map<string, Agg>();
-  let personalSales = 0;
-  let personalCount = 0;
 
   const maxPages = dashboardMaxPages();
   for (let page = 1; page <= maxPages; page++) {
@@ -226,77 +191,37 @@ export async function buildSalesDashboardPayload(
       cur.salesAmount += amount;
       cur.contractCount += 1;
       byStaff.set(owner, cur);
-
-      if (recordBelongsToStaff(recObj, bound, ids)) {
-        personalSales += amount;
-        personalCount += 1;
-      }
     }
 
     if (rows.length < PAGE_LIMIT) break;
   }
 
-  const rankingAll = [...byStaff.entries()]
-    .sort((a, b) => b[1].salesAmount - a[1].salesAmount)
-    .map(([staffName, agg], i) => ({
+  const rankingSorted = [...byStaff.entries()].sort(
+    (a, b) => b[1].salesAmount - a[1].salesAmount,
+  );
+
+  const companySales = rankingSorted.reduce((s, [, agg]) => s + agg.salesAmount, 0);
+  const companyCount = rankingSorted.reduce((s, [, agg]) => s + agg.contractCount, 0);
+
+  const ranking: SalesDashboardRankingRow[] = rankingSorted.map(
+    ([staffName, agg], i) => ({
       rank: i + 1,
       staffName,
       salesAmount: agg.salesAmount,
       contractCount: agg.contractCount,
-    }));
-
-  const companySales = rankingAll.reduce((s, r) => s + r.salesAmount, 0);
-  const companyCount = rankingAll.reduce((s, r) => s + r.contractCount, 0);
-
-  const kpi: SalesDashboardKpi =
-    viewMode === "manager"
-      ? {
-          salesAmount: companySales,
-          contractCount: companyCount,
-          avgAmount:
-            companyCount > 0 ? Math.round(companySales / companyCount) : 0,
-        }
-      : {
-          salesAmount: personalSales,
-          contractCount: personalCount,
-          avgAmount:
-            personalCount > 0
-              ? Math.round(personalSales / personalCount)
-              : 0,
-        };
-
-  const rankingLimited = viewMode === "staff";
-  const rankingSource = rankingLimited
-    ? rankingAll.filter(
-        (r) =>
-          normApClStaffName(r.staffName) === bound ||
-          r.rank <= STAFF_RANKING_TOP,
-      )
-    : rankingAll;
-
-  const ranking: SalesDashboardRankingRow[] = rankingSource.map((r) => {
-    const isSelf = normApClStaffName(r.staffName) === bound;
-    const displayName =
-      viewMode === "manager" || isSelf
-        ? r.staffName
-        : maskStaffName(r.staffName);
-    return {
-      rank: r.rank,
-      staffName: r.staffName,
-      displayName,
-      salesAmount: r.salesAmount,
-      contractCount: r.contractCount,
-      isSelf,
-    };
-  });
+      isSelf: normApClStaffName(staffName) === bound,
+    }),
+  );
 
   return {
-    viewMode,
-    roleLabel,
     staffName: boundStaffName,
     periodLabel,
-    kpi,
+    kpi: {
+      salesAmount: companySales,
+      contractCount: companyCount,
+      avgAmount:
+        companyCount > 0 ? Math.round(companySales / companyCount) : 0,
+    },
     ranking,
-    rankingLimited,
   };
 }
