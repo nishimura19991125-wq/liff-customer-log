@@ -245,9 +245,13 @@ function openExternal(url: string) {
 }
 
 function weekHeaderClass(i: number): string {
-  if (i === 0) return "text-red-600 bg-red-50/95";
-  if (i === 6) return "text-sky-700 bg-sky-50/95";
-  return "text-slate-600 bg-white/95";
+  if (i === 0) {
+    return "text-red-600 bg-red-50/95 dark:text-red-200 dark:bg-red-950/60";
+  }
+  if (i === 6) {
+    return "text-sky-700 bg-sky-50/95 dark:text-sky-200 dark:bg-sky-950/60";
+  }
+  return "text-slate-600 bg-white/95 dark:text-white dark:bg-slate-800/90";
 }
 
 function countDayBadges(items: CalendarMonthApiItem[]): {
@@ -1370,13 +1374,13 @@ export default function CalendarPage() {
           <div>
             <Link
               href="/"
-              className="inline-flex items-center gap-1 text-[13px] font-semibold text-emerald-800 active:opacity-70"
+              className="inline-flex items-center gap-1 text-[13px] font-semibold text-emerald-800 active:opacity-70 dark:text-emerald-300"
             >
               <span className="text-lg leading-none">‹</span>
               メニューへ
             </Link>
             <div className="mt-3 flex items-start justify-between gap-3">
-              <h1 className="min-w-0 flex-1 text-[1.35rem] font-bold leading-tight tracking-tight text-slate-900">
+              <h1 className="min-w-0 flex-1 text-[1.35rem] font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
                 工事カレンダー
               </h1>
               <div className="flex shrink-0 items-start pt-0.5">
@@ -1388,7 +1392,7 @@ export default function CalendarPage() {
                 />
               </div>
             </div>
-            <p className="mt-1 text-[14px] leading-snug text-slate-500">
+            <p className="mt-1 text-[14px] leading-snug text-slate-500 dark:text-slate-300">
               日付をタップで下に一覧表示。工事空枠は「情報を入力」からお客様名を登録できます。案件は
               @pocket を開けます。
             </p>
@@ -1423,7 +1427,7 @@ export default function CalendarPage() {
             }
           >
             <div className="mb-4 flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-600">
+          <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-600 dark:text-slate-300">
             <span className="inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 ring-1 ring-slate-200/80">
               <span className="size-1.5 rounded-full bg-[#06C755]" aria-hidden />
               <span className="font-bold text-slate-700">今日</span>
@@ -1462,24 +1466,24 @@ export default function CalendarPage() {
             onSessionExpired={() => setPhase("session-expired")}
           />
 
-          <div className="flex items-center gap-2 rounded-2xl bg-slate-200/55 p-1.5 shadow-inner">
+          <div className="flex items-center gap-2 rounded-2xl bg-slate-200/55 p-1.5 shadow-inner dark:bg-slate-800/80">
             <button
               type="button"
               onClick={() => shiftMonth(-1)}
-              className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-white text-xl font-medium text-slate-700 shadow-sm transition active:scale-95"
+              className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-white text-xl font-medium text-slate-700 shadow-sm transition active:scale-95 dark:bg-slate-700 dark:text-white dark:shadow-none"
               aria-label="前の月"
             >
               ‹
             </button>
             <div className="min-w-0 flex-1 text-center">
-              <span className="text-[1.05rem] font-bold tabular-nums text-slate-800">
+              <span className="text-[1.05rem] font-bold tabular-nums text-slate-800 dark:text-white">
                 {ym.year}年 {ym.month}月
               </span>
             </div>
             <button
               type="button"
               onClick={() => shiftMonth(1)}
-              className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-white text-xl font-medium text-slate-700 shadow-sm transition active:scale-95"
+              className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-white text-xl font-medium text-slate-700 shadow-sm transition active:scale-95 dark:bg-slate-700 dark:text-white dark:shadow-none"
               aria-label="次の月"
             >
               ›
@@ -1490,7 +1494,7 @@ export default function CalendarPage() {
         <LiffCard>
           <div className="w-full p-2 sm:p-4">
             {/* grid-cols-7 は画面幅いっぱいに収め、セルは min-w-0 で縮小可能にする（横スクロールなし） */}
-            <div className="grid w-full grid-cols-7 gap-px rounded-xl bg-slate-300/90 p-px sm:gap-0.5 sm:rounded-2xl sm:p-0.5">
+            <div className="grid w-full grid-cols-7 gap-px rounded-xl bg-slate-300/90 p-px dark:bg-slate-600/80 sm:gap-0.5 sm:rounded-2xl sm:p-0.5">
               {WEEK_LABELS.map((w, wi) => (
                 <div
                   key={w}
@@ -1503,12 +1507,12 @@ export default function CalendarPage() {
                 const accent = cellAccent(cell.date, holidaySet);
                 const accentClsBase =
                   accent === "hol"
-                    ? "bg-red-50/98 text-red-800"
+                    ? "bg-red-50/98 text-red-800 dark:bg-red-950/70 dark:text-red-100"
                     : accent === "sun"
-                      ? "bg-rose-50/90 text-rose-700"
+                      ? "bg-rose-50/90 text-rose-700 dark:bg-rose-950/60 dark:text-rose-100"
                       : accent === "sat"
-                        ? "bg-sky-50/90 text-sky-800"
-                        : "bg-white text-slate-800";
+                        ? "bg-sky-50/90 text-sky-800 dark:bg-sky-950/60 dark:text-sky-100"
+                        : "bg-white text-slate-800 dark:bg-slate-800/95 dark:text-white";
 
                 const dayItems: CalendarMonthApiItem[] =
                   cell.dayKey && data?.byDay
@@ -1527,12 +1531,12 @@ export default function CalendarPage() {
                 const hasEmptySlots = cell.inMonth && emptyCount > 0;
                 const accentCls = hasEmptySlots
                   ? accent === "hol"
-                    ? "bg-red-50/88 text-red-900"
+                    ? "bg-red-50/88 text-red-900 dark:bg-red-950/65 dark:text-red-100"
                     : accent === "sun"
-                      ? "bg-rose-50/88 text-rose-900"
+                      ? "bg-rose-50/88 text-rose-900 dark:bg-rose-950/55 dark:text-rose-100"
                       : accent === "sat"
-                        ? "bg-sky-50/88 text-sky-900"
-                        : "bg-slate-100/98 text-slate-800"
+                        ? "bg-sky-50/88 text-sky-900 dark:bg-sky-950/55 dark:text-sky-100"
+                        : "bg-slate-100/98 text-slate-800 dark:bg-slate-700/90 dark:text-white"
                   : accentClsBase;
 
                 const cellFrameCls = hasEmptySlots
@@ -1544,7 +1548,7 @@ export default function CalendarPage() {
                     key={`${idx}-${cell.dayKey ?? "x"}`}
                     role="button"
                     tabIndex={cell.inMonth ? 0 : -1}
-                    className={`flex min-h-[3.25rem] min-w-0 flex-col rounded-lg p-0.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#06C755] sm:min-h-[4.25rem] sm:rounded-xl sm:p-1 ${accentCls} ${cellFrameCls} ${cell.inMonth ? "cursor-pointer active:brightness-[0.97]" : "cursor-default opacity-[0.42]"} ${isSelected ? "z-[1] ring-2 ring-[#06C755] ring-offset-1 ring-offset-white" : ""}`}
+                    className={`flex min-h-[3.25rem] min-w-0 flex-col rounded-lg p-0.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#06C755] sm:min-h-[4.25rem] sm:rounded-xl sm:p-1 ${accentCls} ${cellFrameCls} ${cell.inMonth ? "cursor-pointer active:brightness-[0.97]" : "cursor-default opacity-[0.42]"} ${isSelected ? "z-[1] ring-2 ring-[#06C755] ring-offset-1 ring-offset-white dark:ring-offset-slate-900" : ""}`}
                     onClick={() => selectDay(cell)}
                     onKeyDown={(e) => {
                       if (!cell.inMonth) return;
@@ -1556,7 +1560,7 @@ export default function CalendarPage() {
                   >
                     <div className="flex justify-center sm:justify-end">
                       <span
-                        className={`flex size-6 items-center justify-center rounded-full text-[11px] font-bold tabular-nums leading-none sm:size-7 sm:text-[12px] ${isToday ? "bg-[#06C755] text-white shadow-sm shadow-emerald-700/25" : "bg-white/75 text-current ring-1 ring-black/[0.06]"}`}
+                        className={`flex size-6 items-center justify-center rounded-full text-[11px] font-bold tabular-nums leading-none sm:size-7 sm:text-[12px] ${isToday ? "bg-[#06C755] text-white shadow-sm shadow-emerald-700/25" : "bg-white/75 text-current ring-1 ring-black/[0.06] dark:bg-slate-900/50 dark:ring-white/10"}`}
                       >
                         {cell.dayNum}
                       </span>
@@ -1598,7 +1602,7 @@ export default function CalendarPage() {
           <section className="mt-5" aria-labelledby="day-detail-heading">
             <h2
               id="day-detail-heading"
-              className="mb-3 px-1 text-[15px] font-bold text-slate-800"
+              className="mb-3 px-1 text-[15px] font-bold text-slate-800 dark:text-white"
             >
               {formatDayHeading(selectedDayKey)}の予定
             </h2>
