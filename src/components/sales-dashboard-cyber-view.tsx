@@ -81,14 +81,6 @@ function tabClass(active: boolean): string {
   }`;
 }
 
-function CrownIcon() {
-  return (
-    <span className="mb-1 inline-block text-[18px] leading-none" aria-hidden>
-      👑
-    </span>
-  );
-}
-
 type PersonalKpi = {
   totalPt: number;
   salesPt: number;
@@ -206,11 +198,6 @@ function PtPodiumCard({ row, leaderPt }: { row: RankingRow; leaderPt: number }) 
         row.isSelf ? "ring-2 ring-inset ring-cyan-300/80 dark:ring-cyan-400/35" : ""
       }`}
     >
-      {row.rank === 1 ? (
-        <div className="flex justify-center text-amber-700 dark:text-amber-300">
-          <CrownIcon />
-        </div>
-      ) : null}
       <div className="flex items-start gap-3">
         <span
           className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${rankBadgeClass(row.rank)}`}
@@ -344,11 +331,6 @@ function SalesRankingSection({ rows }: { rows: RankingRow[] }) {
               row.isSelf ? "ring-2 ring-inset ring-cyan-300/70 dark:ring-cyan-400/30" : ""
             }`}
           >
-            {displayRank === 1 ? (
-              <div className="mb-1 flex justify-center text-amber-700 dark:text-amber-300">
-                <CrownIcon />
-              </div>
-            ) : null}
             <div className="flex items-center gap-3">
               <span
                 className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${rankBadgeClass(displayRank)}`}
@@ -388,11 +370,6 @@ function ApoPodiumCard({ row, leaderCount }: { row: ApoRankingRow; leaderCount: 
         row.isSelf ? "ring-2 ring-inset ring-cyan-300/80 dark:ring-cyan-400/35" : ""
       }`}
     >
-      {row.rank === 1 ? (
-        <div className="flex justify-center text-amber-700 dark:text-amber-300">
-          <CrownIcon />
-        </div>
-      ) : null}
       <div className="flex items-center gap-3">
         <span
           className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${rankBadgeClass(row.rank)}`}
