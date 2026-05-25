@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   LiffAccountBar,
   LiffCard,
@@ -192,7 +193,7 @@ export default function HomeHubPage() {
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                className="mt-8 rounded-xl px-6 py-3 text-[14px] font-semibold text-slate-700 underline underline-offset-2"
+                className="mt-8 rounded-xl px-6 py-3 text-[14px] font-semibold text-slate-700 underline underline-offset-2 dark:text-slate-300"
               >
                 再読み込み
               </button>
@@ -218,12 +219,15 @@ export default function HomeHubPage() {
               : "メニューから利用する機能を選んでください"
           }
           action={
-            <LiffAccountBar
-              loading={account.loading}
-              pictureUrl={account.pictureUrl}
-              boundStaffName={account.boundStaffName}
-              bindingEnabled={account.bindingEnabled}
-            />
+            <div className="flex shrink-0 items-center gap-2">
+              <ThemeToggle />
+              <LiffAccountBar
+                loading={account.loading}
+                pictureUrl={account.pictureUrl}
+                boundStaffName={account.boundStaffName}
+                bindingEnabled={account.bindingEnabled}
+              />
+            </div>
           }
         />
         <LiffStaffBindingConfigNotice message={account.bindingConfigError} />

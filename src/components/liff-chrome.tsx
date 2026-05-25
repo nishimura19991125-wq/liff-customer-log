@@ -9,7 +9,7 @@ import { triggerLiffRelogin } from "@/lib/liff-session";
 /** LIFF / モバイル WebView 向け：背景・セーフエリア・最大幅 */
 export function LiffScreen({ children }: { children: ReactNode }) {
   return (
-    <div className="liff-screen flex min-h-dvh min-w-0 flex-col text-slate-900">
+    <div className="liff-screen flex min-h-dvh min-w-0 flex-col bg-slate-50 text-slate-800 transition-all duration-300 dark:bg-slate-900 dark:text-slate-100">
       <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-5">
         {children}
       </div>
@@ -40,11 +40,13 @@ export function LiffPageHeader({ title, subtitle, action }: LiffPageHeaderProps)
     <header className="mb-5 flex items-start gap-3">
       <LiffMark />
       <div className="min-w-0 flex-1 pt-0.5">
-        <h1 className="text-[1.35rem] font-bold leading-tight tracking-tight text-slate-900">
+        <h1 className="text-[1.35rem] font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
           {title}
         </h1>
         {subtitle ? (
-          <p className="mt-1 text-[13px] leading-snug text-slate-500">{subtitle}</p>
+          <p className="mt-1 text-[13px] leading-snug text-slate-500 dark:text-slate-400">
+            {subtitle}
+          </p>
         ) : null}
       </div>
       {action ? (
@@ -56,7 +58,7 @@ export function LiffPageHeader({ title, subtitle, action }: LiffPageHeaderProps)
 
 export function LiffCard({ children }: { children: ReactNode }) {
   return (
-    <div className="min-w-0 max-w-full overflow-hidden rounded-[1.35rem] border border-white/70 bg-white/85 shadow-[0_12px_40px_-12px_rgba(15,23,42,0.12)] ring-1 ring-slate-200/60 backdrop-blur-md">
+    <div className="min-w-0 max-w-full overflow-hidden rounded-[1.35rem] border border-slate-100 bg-white text-slate-800 shadow-sm ring-1 ring-slate-100/80 backdrop-blur-md transition-all duration-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:shadow-none dark:ring-slate-700/80">
       {children}
     </div>
   );
@@ -84,7 +86,7 @@ export function LiffGhostLink({
   return (
     <Link
       href={href}
-      className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[13px] font-semibold text-emerald-800 transition active:bg-emerald-50"
+      className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[13px] font-semibold text-emerald-800 transition duration-300 active:bg-emerald-50 dark:text-emerald-300 dark:active:bg-emerald-950/50"
     >
       {children}
     </Link>
@@ -103,10 +105,10 @@ export function LiffLoadingBlock({
       <div className="flex flex-1 flex-col items-center justify-center gap-6 py-16">
         <div className="flex flex-col items-center gap-4">
           <div
-            className="size-11 rounded-full border-2 border-emerald-200 border-t-[#06C755] animate-spin"
+            className="size-11 animate-spin rounded-full border-2 border-emerald-200 border-t-[#06C755] dark:border-emerald-800 dark:border-t-emerald-400"
             aria-hidden
           />
-          <p className="text-center text-[15px] font-medium text-slate-600">
+          <p className="text-center text-[15px] font-medium text-slate-600 dark:text-slate-300">
             {message}
           </p>
         </div>
@@ -129,10 +131,10 @@ export function LiffSessionExpiredPanel({
       <div className="flex flex-1 flex-col justify-center py-10">
         <LiffCard>
           <div className="px-5 py-8 text-center">
-            <p className="text-[16px] font-bold leading-snug text-slate-900">
+            <p className="text-[16px] font-bold leading-snug text-slate-900 dark:text-white">
               ログインの有効期限が切れました
             </p>
-            <p className="mt-3 text-[14px] leading-relaxed text-slate-600">
+            <p className="mt-3 text-[14px] leading-relaxed text-slate-600 dark:text-slate-300">
               セキュリティのため、定期的に再ログインが必要です。下のボタンから LINE
               に再度ログインしてください。
             </p>
@@ -172,13 +174,13 @@ export function LiffNavPill({
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3.5 text-[14px] font-semibold text-slate-800 shadow-sm transition active:scale-[0.99] active:bg-slate-50"
+      className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3.5 text-[14px] font-semibold text-slate-800 shadow-sm transition-all duration-300 active:scale-[0.99] active:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:shadow-none dark:active:bg-slate-700"
     >
-      <span className="flex size-9 items-center justify-center rounded-xl bg-emerald-50 text-lg text-[#06C755]">
+      <span className="flex size-9 items-center justify-center rounded-xl bg-emerald-50 text-lg text-[#06C755] dark:bg-emerald-950/60 dark:text-emerald-400">
         {icon}
       </span>
       <span className="flex-1">{label}</span>
-      <span className="text-slate-400" aria-hidden>
+      <span className="text-slate-400 dark:text-slate-500" aria-hidden>
         ›
       </span>
     </Link>
@@ -203,11 +205,11 @@ export function LiffAccountBar({
   if (loading) {
     return (
       <div
-        className="flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/90 py-1 pl-1 pr-3 shadow-sm"
+        className="flex items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-3 shadow-sm transition-all duration-300 dark:border-slate-700 dark:bg-slate-800"
         aria-busy
       >
-        <div className="size-10 shrink-0 animate-pulse rounded-full bg-slate-200/80" />
-        <div className="h-4 w-24 animate-pulse rounded bg-slate-200/75" />
+        <div className="size-10 shrink-0 animate-pulse rounded-full bg-slate-200/80 dark:bg-slate-600" />
+        <div className="h-4 w-24 animate-pulse rounded bg-slate-200/75 dark:bg-slate-600" />
       </div>
     );
   }
@@ -228,20 +230,20 @@ export function LiffAccountBar({
       : "未登録";
 
   return (
-    <div className="flex max-w-[min(100%,14rem)] items-center gap-2 rounded-full border border-slate-200/90 bg-white/95 py-1 pl-1 pr-3 shadow-sm backdrop-blur-sm">
+    <div className="flex max-w-[min(100%,14rem)] items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-3 shadow-sm backdrop-blur-sm transition-all duration-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
       {pictureUrl ? (
         // eslint-disable-next-line @next/next/no-img-element -- LIFF の外部プロフィール画像
         <img
           src={pictureUrl}
           alt=""
-          className="size-10 shrink-0 rounded-full object-cover ring-1 ring-slate-200/80"
+          className="size-10 shrink-0 rounded-full object-cover ring-1 ring-slate-200/80 dark:ring-slate-600"
         />
       ) : (
         <div
-          className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ring-1 ring-slate-200/80 ${
+          className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ring-1 ring-slate-200/80 dark:ring-slate-600 ${
             showBindHint
-              ? "bg-amber-50 text-amber-900"
-              : "bg-gradient-to-br from-emerald-100 to-emerald-200 text-emerald-800"
+              ? "bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200"
+              : "bg-gradient-to-br from-emerald-100 to-emerald-200 text-emerald-800 dark:from-emerald-900 dark:to-emerald-800 dark:text-emerald-200"
           }`}
         >
           {avatarLetter}
@@ -249,7 +251,9 @@ export function LiffAccountBar({
       )}
       <p
         className={`truncate text-right text-[15px] font-bold leading-tight tracking-tight ${
-          showBindHint ? "text-amber-950" : "text-slate-900"
+          showBindHint
+            ? "text-amber-950 dark:text-amber-100"
+            : "text-slate-800 dark:text-white"
         }`}
       >
         {label}
@@ -267,7 +271,7 @@ export function LiffStaffBindingConfigNotice({
   const text = message?.trim();
   if (!text) return null;
   return (
-    <div className="mb-3 rounded-2xl border border-red-200/90 bg-red-50/95 px-4 py-3 text-[12px] leading-relaxed text-red-900 shadow-sm ring-1 ring-red-100/80">
+    <div className="mb-3 rounded-2xl border border-red-200/90 bg-red-50/95 px-4 py-3 text-[12px] leading-relaxed text-red-900 shadow-sm ring-1 ring-red-100/80 transition-all duration-300 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200 dark:ring-red-900/40">
       <p className="font-bold">LINE 紐付けの設定が不足しています</p>
       <p className="mt-1">{text}</p>
     </div>
@@ -305,7 +309,7 @@ export function LiffStaffBindPanel({
   }
 
   const selectClass =
-    "min-h-[48px] w-full rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-[#06C755] focus:ring-2 focus:ring-[#06C755]/25";
+    "min-h-[48px] w-full rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition-all duration-300 focus:border-[#06C755] focus:ring-2 focus:ring-[#06C755]/25 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -322,11 +326,11 @@ export function LiffStaffBindPanel({
   }
 
   return (
-    <div className="mb-3 rounded-2xl border border-amber-200/90 bg-amber-50/90 px-4 py-3 shadow-sm ring-1 ring-amber-100/80">
-      <p className="text-[13px] font-bold text-amber-950">
+    <div className="mb-3 rounded-2xl border border-amber-200/90 bg-amber-50/90 px-4 py-3 shadow-sm ring-1 ring-amber-100/80 transition-all duration-300 dark:border-amber-800/60 dark:bg-amber-950/40 dark:ring-amber-900/40">
+      <p className="text-[13px] font-bold text-amber-950 dark:text-amber-100">
         スタッフ名簿と紐づけ（必須）
       </p>
-      <p className="mt-1 text-[12px] leading-snug text-amber-900/85">
+      <p className="mt-1 text-[12px] leading-snug text-amber-900/85 dark:text-amber-200/85">
         利用前に一覧から自分の名前を選んでください。@pocket のスタッフ名簿に LINE
         ID が保存されます。
       </p>
@@ -368,8 +372,8 @@ export function LiffStaffBindPanel({
 
 const menuCardIconToneClass = {
   emerald:
-    "bg-gradient-to-br from-emerald-50 to-emerald-100/70 text-[#06C755]",
-  blue: "bg-gradient-to-br from-blue-50 to-blue-100/70 text-blue-500",
+    "bg-gradient-to-br from-emerald-50 to-emerald-100/70 text-[#06C755] dark:from-emerald-950/80 dark:to-emerald-900/50 dark:text-emerald-400",
+  blue: "bg-gradient-to-br from-blue-50 to-blue-100/70 text-blue-500 dark:from-blue-950/80 dark:to-blue-900/50 dark:text-blue-400",
 } as const;
 
 /** トップメニュー用の大きな選択カード */
@@ -391,7 +395,7 @@ export function LiffMenuCard({
 }) {
   const iconWrap = menuCardIconToneClass[iconTone];
   const cls =
-    "group flex items-stretch gap-4 rounded-[1.35rem] border border-slate-200/90 bg-white/95 p-5 shadow-[0_10px_36px_-14px_rgba(15,23,42,0.18)] ring-1 ring-slate-200/55 transition active:scale-[0.99]";
+    "group flex items-stretch gap-4 rounded-[1.35rem] border border-slate-100 bg-white p-5 text-slate-800 shadow-sm ring-1 ring-slate-100/80 transition-all duration-300 active:scale-[0.99] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:shadow-none dark:ring-slate-700/80";
 
   if (disabled) {
     return (
@@ -407,15 +411,15 @@ export function LiffMenuCard({
           {icon}
         </span>
         <div className="min-w-0 flex-1 py-0.5">
-          <p className="text-[1.05rem] font-bold leading-snug text-slate-900">
+          <p className="text-[1.05rem] font-bold leading-snug text-slate-800 dark:text-slate-100">
             {title}
           </p>
-          <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
+          <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
             {description}
           </p>
         </div>
         <span
-          className="self-center text-xl font-light text-slate-300"
+          className="self-center text-xl font-light text-slate-300 dark:text-slate-500"
           aria-hidden
         >
           ›
@@ -432,15 +436,15 @@ export function LiffMenuCard({
         {icon}
       </span>
       <div className="min-w-0 flex-1 py-0.5">
-        <p className="text-[1.05rem] font-bold leading-snug text-slate-900">
+        <p className="text-[1.05rem] font-bold leading-snug text-slate-800 dark:text-slate-100">
           {title}
         </p>
-        <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
+        <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
           {description}
         </p>
       </div>
       <span
-        className="self-center text-xl font-light text-slate-300 group-active:text-slate-400"
+        className="self-center text-xl font-light text-slate-300 group-active:text-slate-400 dark:text-slate-500 dark:group-active:text-slate-400"
         aria-hidden
       >
         ›
@@ -463,7 +467,7 @@ export function LiffContinueShortcutLink({
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 rounded-2xl border-2 border-amber-400/90 bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-3.5 shadow-[0_8px_28px_-10px_rgba(245,158,11,0.45)] ring-1 ring-amber-200/80 transition active:scale-[0.99]"
+      className="flex items-center gap-3 rounded-2xl border-2 border-amber-400/90 bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-3.5 shadow-[0_8px_28px_-10px_rgba(245,158,11,0.45)] ring-1 ring-amber-200/80 transition-all duration-300 active:scale-[0.99] dark:border-amber-600/70 dark:from-amber-950/50 dark:to-orange-950/40 dark:ring-amber-800/50"
     >
       <span
         className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-lg"
@@ -472,12 +476,12 @@ export function LiffContinueShortcutLink({
         ✎
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[14px] font-bold leading-snug text-amber-950">
-          <span className="text-amber-800">（未完了）</span>
+        <p className="text-[14px] font-bold leading-snug text-amber-950 dark:text-amber-100">
+          <span className="text-amber-800 dark:text-amber-300">（未完了）</span>
           {customerName}様の続きを入力する
         </p>
         {subtitle ? (
-          <p className="mt-0.5 truncate text-[12px] font-medium text-amber-800/80">
+          <p className="mt-0.5 truncate text-[12px] font-medium text-amber-800/80 dark:text-amber-300/80">
             {subtitle}
           </p>
         ) : null}

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 
 import { LiffPinGuard } from "@/components/liff-pin-guard";
 import { LiffScrollReset } from "@/components/liff-scroll-reset";
+import { ThemeProvider } from "@/components/theme-provider";
 
 import "./globals.css";
 
@@ -32,11 +33,14 @@ export default function RootLayout({
   return (
     <html
       lang="ja"
-      className={`${geistSans.variable} ${geistMono.variable} h-full overflow-x-hidden antialiased`}
+      suppressHydrationWarning
+      className={`${geistSans.variable} ${geistMono.variable} h-full overflow-x-hidden antialiased transition-colors duration-300`}
     >
-      <body className="flex min-h-dvh min-w-0 flex-col overflow-x-hidden font-sans antialiased">
-        <LiffScrollReset />
-        <LiffPinGuard>{children}</LiffPinGuard>
+      <body className="flex min-h-dvh min-w-0 flex-col overflow-x-hidden bg-slate-50 font-sans text-slate-800 antialiased transition-all duration-300 dark:bg-slate-900 dark:text-white">
+        <ThemeProvider>
+          <LiffScrollReset />
+          <LiffPinGuard>{children}</LiffPinGuard>
+        </ThemeProvider>
       </body>
     </html>
   );
