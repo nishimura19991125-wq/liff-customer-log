@@ -14,6 +14,7 @@ import {
   LiffStaffBindPanel,
   LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
+import { MapNavigationButton } from "@/components/map-navigation-button";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { applyCalendarRecordPatch } from "@/lib/calendar-apply-patch";
 import type {
@@ -1620,45 +1621,55 @@ export default function CalendarPage() {
                           <li
                             key={`detail-${selectedDayKey}-case-${i}-${item.recordId ?? i}`}
                           >
-                            <button
-                              type="button"
-                              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99] disabled:opacity-60"
+                            <div
+                              className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100"
                               style={{ borderLeft: leftBorder }}
-                              disabled={!item.accessEditUrl?.trim()}
-                              onClick={() => openExternal(item.accessEditUrl)}
                             >
-                              <div className="mb-2 flex flex-wrap items-center gap-2">
-                                <span className="inline-flex rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-extrabold tracking-wide text-white shadow-sm ring-1 ring-emerald-800/20">
-                                  案件
-                                </span>
-                                {item.housingShort ? (
-                                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 ring-1 ring-slate-200/80">
-                                    {item.housingShort}
+                              <button
+                                type="button"
+                                className="w-full px-4 py-4 text-left transition active:scale-[0.99] active:bg-slate-50 disabled:opacity-60"
+                                disabled={!item.accessEditUrl?.trim()}
+                                onClick={() => openExternal(item.accessEditUrl)}
+                              >
+                                <div className="mb-2 flex flex-wrap items-center gap-2">
+                                  <span className="inline-flex rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-extrabold tracking-wide text-white shadow-sm ring-1 ring-emerald-800/20">
+                                    案件
                                   </span>
+                                  {item.housingShort ? (
+                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 ring-1 ring-slate-200/80">
+                                      {item.housingShort}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p className="text-[17px] font-bold leading-snug text-slate-900 sm:text-lg">
+                                  {item.line1}
+                                  {item.showKankoCheck ? (
+                                    <span className="ml-1 text-xl text-emerald-600 sm:text-[1.35rem]">
+                                      ✅
+                                    </span>
+                                  ) : null}
+                                </p>
+                                {item.line2 ? (
+                                  <p className="mt-2 text-[15px] font-semibold leading-relaxed text-slate-600 sm:text-base">
+                                    {item.line2}
+                                  </p>
                                 ) : null}
+                                {item.memo ? (
+                                  <p className="mt-3 rounded-xl bg-white/80 px-3 py-2 text-[13px] leading-relaxed text-slate-700 whitespace-pre-wrap ring-1 ring-slate-100">
+                                    {item.memo}
+                                  </p>
+                                ) : null}
+                                <p className="mt-3 text-[11px] font-semibold text-[#06C755]">
+                                  タップして @pocket で開く →
+                                </p>
+                              </button>
+                              <div className="border-t border-slate-100 px-4 pb-4 pt-3">
+                                <MapNavigationButton
+                                  pinpointAddress={item.pinpointAddress}
+                                  normalAddress={item.normalAddress}
+                                />
                               </div>
-                              <p className="text-[17px] font-bold leading-snug text-slate-900 sm:text-lg">
-                                {item.line1}
-                                {item.showKankoCheck ? (
-                                  <span className="ml-1 text-xl text-emerald-600 sm:text-[1.35rem]">
-                                    ✅
-                                  </span>
-                                ) : null}
-                              </p>
-                              {item.line2 ? (
-                                <p className="mt-2 text-[15px] font-semibold leading-relaxed text-slate-600 sm:text-base">
-                                  {item.line2}
-                                </p>
-                              ) : null}
-                              {item.memo ? (
-                                <p className="mt-3 rounded-xl bg-white/80 px-3 py-2 text-[13px] leading-relaxed text-slate-700 whitespace-pre-wrap ring-1 ring-slate-100">
-                                  {item.memo}
-                                </p>
-                              ) : null}
-                              <p className="mt-3 text-[11px] font-semibold text-[#06C755]">
-                                タップして @pocket で開く →
-                              </p>
-                            </button>
+                            </div>
                           </li>
                         );
                       };

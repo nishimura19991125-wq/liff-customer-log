@@ -7,6 +7,7 @@ import {
   resolveConstructionFieldIds,
   resolveReportFieldIds,
 } from "@/lib/calendar-kojo";
+import { resolveConstructionMapAddressFieldIds } from "@/lib/map-address-fields";
 import type { CalendarRecordMonthPatch } from "@/lib/calendar-api-types";
 import type { AtPocketFetchAuth, AtPocketRecordRow } from "@/lib/atpocket";
 import {
@@ -48,9 +49,9 @@ export async function buildCalendarPatchAfterConstructionSave(
   if (!ym) return null;
 
   const calFields = await fetchAppFields(calAppId, pocketAuth);
-  const csv = collectConstructionFieldsCsv(
-    resolveConstructionFieldIds(calFields),
-  );
+  const fids = resolveConstructionFieldIds(calFields);
+  const mapAddressIds = resolveConstructionMapAddressFieldIds(calFields);
+  const csv = collectConstructionFieldsCsv(fids, mapAddressIds);
 
   let row = await fetchRecordById(
     calAppId,

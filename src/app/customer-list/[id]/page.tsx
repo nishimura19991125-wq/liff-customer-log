@@ -15,6 +15,7 @@ import {
   LiffStaffBindPanel,
   LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
+import { MapNavigationButton } from "@/components/map-navigation-button";
 import { resetLiffScroll } from "@/components/liff-scroll-reset";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { initLiffAndGetToken } from "@/lib/liff-session";
@@ -41,6 +42,8 @@ type DetailPayload = {
   subsidyPresence: string;
   documents: DocumentRow[];
   summary: Array<{ label: string; value: string }>;
+  pinpointAddress: string;
+  normalAddress: string;
 };
 
 export default function CustomerDetailPage() {
@@ -225,6 +228,13 @@ export default function CustomerDetailPage() {
                   💡 【重要】この案件は『{detail.combinedSubsidyName}』の対象です。写真の撮影漏れや、申請書類の回収漏れがないよう、現場での確認を徹底してください。
                 </div>
               ) : null}
+
+              <div className="mb-4">
+                <MapNavigationButton
+                  pinpointAddress={detail.pinpointAddress}
+                  normalAddress={detail.normalAddress}
+                />
+              </div>
 
               <div className="mb-4 flex flex-wrap gap-2">
                 {detail.isDocumentMissing ? (

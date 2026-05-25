@@ -9,6 +9,11 @@ import type {
   CalendarRecordMonthPatch,
 } from "@/lib/calendar-api-types";
 import type { AtPocketFieldRow, AtPocketRecordRow } from "@/lib/atpocket";
+import {
+  readMapAddressesFromRecord,
+  resolveConstructionMapAddressFieldIds,
+  type MapAddressFieldIds,
+} from "@/lib/map-address-fields";
 
 export type { CalendarApiPayload, CalendarMonthApiItem } from "@/lib/calendar-api-types";
 
@@ -52,6 +57,8 @@ type CalendarEventInternal = {
   tNumberKey: string | null;
   _reportContentRaws: unknown[] | null;
   chipSpecLine2: string;
+  pinpointAddress: string;
+  normalAddress: string;
 };
 
 type CalendarMonthRow = {
@@ -68,6 +75,8 @@ type CalendarMonthRow = {
   reportPostponed: boolean;
   chipSpecLine2: string;
   inputStatusIsShinki: boolean;
+  pinpointAddress: string;
+  normalAddress: string;
 };
 
 const HOUSING_STATUS_EXACT = [
@@ -328,11 +337,26 @@ export function resolveReportFieldIds(
   };
 }
 
-export function collectConstructionFieldsCsv(fids: ConstructionFieldIds): string {
+export function collectConstructionFieldsCsv(
+  fids: ConstructionFieldIds,
+  mapAddressIds?: MapAddressFieldIds,
+): string {
   const set = new Set<string>();
   for (const v of Object.values(fids)) {
     const t = String(v ?? "").trim();
     if (t) set.add(t);
+  }
+  if (mapAddressIds) {
+    for (const id of [
+      mapAddressIds.pinpointFieldId,
+      mapAddressIds.normalAddressFieldId,
+      mapAddressIds.prefectureFieldId,
+      mapAddressIds.cityFieldId,
+      mapAddressIds.streetFieldId,
+    ]) {
+      const t = id?.trim();
+      if (t) set.add(t);
+    }
   }
   return Array.from(set).join(",");
 }
@@ -578,6 +602,7 @@ function getAccessEditUrlFromListItem(rec: AtPocketRecordRow): string {
 function recordToEvent(
   rec: AtPocketRecordRow,
   fids: ConstructionFieldIds,
+  mapAddressIds: MapAddressFieldIds,
 ): CalendarEventInternal | null {
   const recObj =
     rec && rec.record && typeof rec.record === "object"
@@ -675,6 +700,11 @@ function recordToEvent(
     inputStatusIsShinki = isInputStatusShinki(recObj[fids.inputStatus]);
   }
 
+  const { pinpointAddress, normalAddress } = readMapAddressesFromRecord(
+    recObj,
+    mapAddressIds,
+  );
+
   return {
     start,
     end,
@@ -691,6 +721,8 @@ function recordToEvent(
     tNumberKey,
     _reportContentRaws: null,
     chipSpecLine2,
+    pinpointAddress,
+    normalAddress,
   };
 }
 
@@ -907,6 +939,8 @@ function eventsForDisplayMonth(
           reportPostponed: evHasReportPostponed(ev),
           chipSpecLine2: ev.chipSpecLine2 ?? "",
           inputStatusIsShinki: ev.inputStatusIsShinki === true,
+          pinpointAddress: ev.pinpointAddress ?? "",
+          normalAddress: ev.normalAddress ?? "",
         });
       }
     } else {
@@ -944,6 +978,8 @@ function eventsForDisplayMonth(
             reportPostponed: evHasReportPostponed(ev),
             chipSpecLine2: ev.chipSpecLine2 ?? "",
             inputStatusIsShinki: ev.inputStatusIsShinki === true,
+            pinpointAddress: ev.pinpointAddress ?? "",
+            normalAddress: ev.normalAddress ?? "",
           });
         }
       }
@@ -967,6 +1003,8 @@ function eventsForDisplayMonth(
           reportPostponed: false,
           chipSpecLine2: ev.chipSpecLine2 ?? "",
           inputStatusIsShinki: ev.inputStatusIsShinki === true,
+          pinpointAddress: ev.pinpointAddress ?? "",
+          normalAddress: ev.normalAddress ?? "",
         });
       }
     }
@@ -1117,6 +1155,8 @@ function rowToApiItem(row: CalendarMonthRow): CalendarMonthApiItem {
     contractorKey: contractorKeyFromRow(row),
     recordId: row.recordId != null ? String(row.recordId) : null,
     accessEditUrl: row.accessEditUrl || "",
+    pinpointAddress: row.pinpointAddress ?? "",
+    normalAddress: row.normalAddress ?? "",
   };
 }
 
@@ -1136,10 +1176,13 @@ export function buildCalendarPayload(
 ): CalendarApiPayload {
   const viewMonth0 = viewMonth1To12 - 1;
   const fids = resolveConstructionFieldIds(constructionFields);
+  const mapAddressIds = resolveConstructionMapAddressFieldIds(
+    constructionFields,
+  );
 
   const events: CalendarEventInternal[] = [];
   for (const rec of constructionRecords) {
-    const ev = recordToEvent(rec, fids);
+    const ev = recordToEvent(rec, fids, mapAddressIds);
     if (ev) events.push(ev);
   }
 
@@ -1186,7 +1229,10 @@ export function buildCalendarMonthPatchForConstructionRecord(
   reportFields: AtPocketFieldRow[] | null,
 ): CalendarRecordMonthPatch | null {
   const fids = resolveConstructionFieldIds(constructionFields);
-  const ev = recordToEvent(rec, fids);
+  const mapAddressIds = resolveConstructionMapAddressFieldIds(
+    constructionFields,
+  );
+  const ev = recordToEvent(rec, fids, mapAddressIds);
   if (!ev) return null;
 
   const recordId =

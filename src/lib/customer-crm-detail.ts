@@ -26,6 +26,10 @@ import {
 import type { CrmDocumentCheckItem } from "@/lib/customer-crm-documents";
 import { fetchAppFields, fetchRecordById } from "@/lib/atpocket";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
+import {
+  readMapAddressesFromRecord,
+  resolveCustomerInfoMapAddressFieldIds,
+} from "@/lib/map-address-fields";
 
 export type CustomerCrmDetail = {
   recordId: string;
@@ -40,6 +44,8 @@ export type CustomerCrmDetail = {
   subsidyPresence: string;
   documents: CrmDocumentCheckItem[];
   summary: Array<{ label: string; value: string }>;
+  pinpointAddress: string;
+  normalAddress: string;
 };
 
 const SUMMARY_CAPTIONS = [
@@ -108,6 +114,7 @@ export async function fetchCustomerCrmDetail(
   const docFields = resolveCrmDocumentFields(appFields);
   const constructionDateFieldId = resolveCrmConstructionDateFieldId(appFields);
   const subsidyFieldIds = resolveCrmSubsidyFieldIds(appFields);
+  const mapAddressIds = resolveCustomerInfoMapAddressFieldIds(appFields);
 
   const row = await fetchRecordById(appId, recordId, auth);
   if (!row?.record || typeof row.record !== "object") {
@@ -141,6 +148,10 @@ export async function fetchCustomerCrmDetail(
   const constructionDate = constructionDateFieldId
     ? readCustomerInfoFieldValue(recObj, constructionDateFieldId)
     : "";
+  const { pinpointAddress, normalAddress } = readMapAddressesFromRecord(
+    recObj,
+    mapAddressIds,
+  );
 
   const summary: Array<{ label: string; value: string }> = [];
   const seen = new Set<string>();
@@ -180,6 +191,8 @@ export async function fetchCustomerCrmDetail(
       subsidyPresence: subsidyPresence || "—",
       documents,
       summary,
+      pinpointAddress,
+      normalAddress,
     },
   };
 }

@@ -9,6 +9,7 @@ import {
   resolveConstructionFieldIds,
   resolveReportFieldIds,
 } from "@/lib/calendar-kojo";
+import { resolveConstructionMapAddressFieldIds } from "@/lib/map-address-fields";
 import {
   buildCalendarPayloadCacheKey,
   getOrComputeCalendarPayload,
@@ -103,7 +104,9 @@ export async function GET(request: Request) {
         ]);
 
         const fids = resolveConstructionFieldIds(constructionFields);
-        const csv = collectConstructionFieldsCsv(fids);
+        const mapAddressIds =
+          resolveConstructionMapAddressFieldIds(constructionFields);
+        const csv = collectConstructionFieldsCsv(fids, mapAddressIds);
 
         const pocketQuery =
           recordsQueryFilterEnabled

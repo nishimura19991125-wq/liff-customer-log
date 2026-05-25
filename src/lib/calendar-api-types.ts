@@ -13,6 +13,10 @@ export type CalendarMonthApiItem = {
   contractorKey: string;
   recordId: string | null;
   accessEditUrl: string;
+  /** ピンポイント住所（@pocket） */
+  pinpointAddress: string;
+  /** 通常住所（見出し「住所」または都道府県+市区郡+町村+番地） */
+  normalAddress: string;
 };
 
 /** 1件の工事レコードを表示月カレンダーに即時反映するための差分 */
