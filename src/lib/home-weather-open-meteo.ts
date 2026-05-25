@@ -1,23 +1,39 @@
 /** Open-Meteo（無料・登録不要）で天気を取得 */
 
+export type WeatherLocationSource = "gps" | "company";
+
 export type HomeWeatherSnapshot = {
-  label: string;
+  locationSource: WeatherLocationSource;
+  locationHeading: string;
+  conditionText: string;
   precipitationPercent: number;
   temperatureC: number;
   rainAdvice: string | null;
 };
 
-const DEFAULT_LAT = 35.6762;
-const DEFAULT_LON = 139.6503;
+/** 奈良エリア（位置情報不可時の会社周辺デフォルト） */
+export const NARA_COMPANY_WEATHER = {
+  lat: 34.6851,
+  lon: 135.8048,
+} as const;
 
-export function homeWeatherDefaultCoordinates(): { lat: number; lon: number } {
+export function weatherLocationHeading(
+  source: WeatherLocationSource,
+): string {
+  return source === "gps" ? "現在地周辺の天気" : "会社周辺の天気";
+}
+
+export function homeWeatherCompanyCoordinates(): {
+  lat: number;
+  lon: number;
+} {
   const latRaw = process.env.NEXT_PUBLIC_HOME_WEATHER_LAT?.trim();
   const lonRaw = process.env.NEXT_PUBLIC_HOME_WEATHER_LON?.trim();
-  const lat = latRaw ? Number(latRaw) : DEFAULT_LAT;
-  const lon = lonRaw ? Number(lonRaw) : DEFAULT_LON;
+  const lat = latRaw ? Number(latRaw) : NARA_COMPANY_WEATHER.lat;
+  const lon = lonRaw ? Number(lonRaw) : NARA_COMPANY_WEATHER.lon;
   return {
-    lat: Number.isFinite(lat) ? lat : DEFAULT_LAT,
-    lon: Number.isFinite(lon) ? lon : DEFAULT_LON,
+    lat: Number.isFinite(lat) ? lat : NARA_COMPANY_WEATHER.lat,
+    lon: Number.isFinite(lon) ? lon : NARA_COMPANY_WEATHER.lon,
   };
 }
 
@@ -56,6 +72,7 @@ function maxAfternoonPrecip(hourly: {
 export async function fetchHomeWeatherOpenMeteo(
   lat: number,
   lon: number,
+  locationSource: WeatherLocationSource,
 ): Promise<HomeWeatherSnapshot> {
   const params = new URLSearchParams({
     latitude: String(lat),
@@ -120,8 +137,13 @@ export async function fetchHomeWeatherOpenMeteo(
     rainAdvice = "☔ 午後から雨予報です。置き傘を忘れずに！";
   }
 
+  const heading = weatherLocationHeading(locationSource);
+  const conditionText = `${emoji} ${label} / ${temp}℃ / 降水確率 ${Math.round(precipDisplay)}%`;
+
   return {
-    label: `${emoji} ${label} / ${temp}℃ / 降水確率 ${Math.round(precipDisplay)}%`,
+    locationSource,
+    locationHeading: heading,
+    conditionText,
     precipitationPercent: precipDisplay,
     temperatureC: temp,
     rainAdvice,
@@ -130,15 +152,21 @@ export async function fetchHomeWeatherOpenMeteo(
 
 export function formatHomeWeatherMarqueeLine(
   weather: HomeWeatherSnapshot | null,
-  loading: boolean,
-  error: boolean,
+  options: { loading: boolean; error: boolean; locationSource?: WeatherLocationSource },
 ): string {
-  if (loading) return "🌤️ リアルタイム天気予報　取得中…　｜　";
-  if (error || !weather) {
-    return "🌤️ リアルタイム天気予報　しばらくして再表示します　｜　";
+  const heading = weatherLocationHeading(
+    options.locationSource ?? weather?.locationSource ?? "company",
+  );
+
+  if (options.loading) {
+    return `📍 ${heading}　取得中…　｜　`;
   }
-  if (weather.rainAdvice) {
-    return `${weather.rainAdvice}　｜　`;
+
+  if (options.error || !weather) {
+    return `📍 会社周辺の天気　取得できませんでした　｜　`;
   }
-  return `${weather.label}　｜　`;
+
+  const base = `📍 ${weather.locationHeading} ${weather.conditionText}`;
+  const rain = weather.rainAdvice ? `　${weather.rainAdvice}` : "";
+  return `${base}${rain}　｜　`;
 }
