@@ -68,6 +68,20 @@ function CustomerListGlyph() {
   );
 }
 
+function SalesDashboardGlyph() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M4 19V5M4 19h16M8 16v-4M12 16V8M16 16v-6"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function HomeHubPage() {
   const [phase, setPhase] = useState<"init" | "need-login" | "ready" | "error">(
     () => (LIFF_ID ? "init" : "error"),
@@ -242,6 +256,14 @@ export default function HomeHubPage() {
               title="担当顧客一覧"
               description="担当案件の書類・工事日・補助金を一覧で確認します。"
               icon={<CustomerListGlyph />}
+              disabled={needsStaffBind}
+            />
+            <LiffMenuCard
+              href="/sales-dashboard"
+              title="営業ダッシュボード"
+              description="当月の売上KPIや営業成績ランキングをリアルタイムで確認します。"
+              icon={<SalesDashboardGlyph />}
+              iconTone="blue"
               disabled={needsStaffBind}
             />
             {continueShortcuts.length > 0 ? (
