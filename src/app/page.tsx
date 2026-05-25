@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { HomeMissingDocumentsAlert } from "@/components/home-missing-documents-alert";
+import { NewsMarquee } from "@/components/news-marquee";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   LiffAccountBar,
@@ -230,6 +231,11 @@ export default function HomeHubPage() {
               />
             </div>
           }
+        />
+
+        <NewsMarquee
+          staffName={account.boundStaffName}
+          className="-mx-4 mb-4 sm:-mx-5"
         />
 
         {account.boundStaffName && !needsStaffBind ? (

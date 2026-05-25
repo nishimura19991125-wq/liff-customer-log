@@ -15,6 +15,7 @@ import {
   LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
 import { MapNavigationButton } from "@/components/map-navigation-button";
+import { NewsMarquee } from "@/components/news-marquee";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
@@ -1400,6 +1401,11 @@ export default function CalendarPage() {
             </p>
           </div>
         </div>
+
+        <NewsMarquee
+          staffName={account.boundStaffName}
+          className="-mx-4 mb-4 sm:-mx-0"
+        />
 
         <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
         <LiffStaffBindPanel
