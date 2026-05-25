@@ -6,11 +6,12 @@ import {
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
 import { buildSalesDashboardPayload } from "@/lib/sales-dashboard-data";
+import { parseSalesDashboardPeriodParam } from "@/lib/sales-dashboard-period";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
 export const dynamic = "force-dynamic";
 
-/** 営業ダッシュボード（当月KPI・ランキング・全社員共通） */
+/** 営業ダッシュボード（PT集計・全社員共通） */
 export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
@@ -23,6 +24,9 @@ export async function GET(request: Request) {
     );
   }
 
+  const url = new URL(request.url);
+  const period = parseSalesDashboardPeriodParam(url.searchParams.get("period"));
+
   try {
     const boundStaffName = await resolveBoundStaffNameForLineUser(
       auth.lineUserId,
@@ -31,10 +35,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ needsStaffBind: true });
     }
 
-    const payload = await buildSalesDashboardPayload(boundStaffName);
+    const payload = await buildSalesDashboardPayload(boundStaffName, period);
     if (!payload) {
       return NextResponse.json(
-        { error: "営業ダッシュボードの集計に失敗しました" },
+        {
+          error:
+            "営業ダッシュボードの集計に失敗しました（SALES_DASHBOARD_PT_APP_ID 等を確認してください）",
+        },
         { status: 502 },
       );
     }

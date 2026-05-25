@@ -1,26 +1,32 @@
 import "server-only";
 
-import type { AtPocketFieldRow } from "@/lib/atpocket";
+import type { AtPocketFetchAuth } from "@/lib/atpocket";
 import { fetchAppFields, fetchRecordsList } from "@/lib/atpocket";
-import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
+import { customerInfoPocketAuth } from "@/lib/customer-info-config";
 import {
-  customerInfoAppId,
-  customerInfoConfigReady,
-  customerInfoNameFieldId,
-  customerInfoPocketAuth,
-} from "@/lib/customer-info-config";
-import {
-  readStaffAssigneeName,
-  resolveCustomerInfoCreatorFieldId,
-} from "@/lib/customer-info-creator-field";
+  coerceCustomerInfoDisplayString,
+  readCustomerInfoFieldValue,
+} from "@/lib/customer-info-record";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
-import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
-import { readCustomerInfoFieldValue } from "@/lib/customer-info-record";
+import {
+  isYmInPeriod,
+  resolveSalesDashboardPeriod,
+  type SalesDashboardPeriodKey,
+} from "@/lib/sales-dashboard-period";
+import {
+  resolveContractCountFieldMap,
+  resolvePtDashboardFieldMap,
+  salesDashboardContractAppId,
+  salesDashboardPtAppId,
+  type ContractCountFieldMap,
+  type PtDashboardFieldMap,
+} from "@/lib/sales-dashboard-fields";
 
 const PAGE_LIMIT = 1000;
 const DEFAULT_MAX_PAGES = 25;
 
 export type SalesDashboardKpi = {
+  pt: number;
   salesAmount: number;
   contractCount: number;
   avgAmount: number;
@@ -29,16 +35,28 @@ export type SalesDashboardKpi = {
 export type SalesDashboardRankingRow = {
   rank: number;
   staffName: string;
+  pt: number;
   salesAmount: number;
   contractCount: number;
+  sharePercent: number;
   isSelf: boolean;
+  isPodium: boolean;
 };
 
 export type SalesDashboardPayload = {
   staffName: string;
+  period: SalesDashboardPeriodKey;
   periodLabel: string;
+  periodHint: string;
   kpi: SalesDashboardKpi;
   ranking: SalesDashboardRankingRow[];
+};
+
+type StaffAgg = {
+  name: string;
+  pt: number;
+  salesAmount: number;
+  contractCount: number;
 };
 
 function dashboardMaxPages(): number {
@@ -48,180 +66,275 @@ function dashboardMaxPages(): number {
   return Math.min(50, Math.floor(n));
 }
 
-function currentYmJst(): { year: number; month1: number; label: string } {
-  const d = new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }),
-  );
-  const year = d.getFullYear();
-  const month1 = d.getMonth() + 1;
-  return { year, month1, label: `${year}年${month1}月` };
-}
-
-function parseYenAmount(raw: string): number {
+function parseNumber(raw: string): number {
   const digits = raw.replace(/[^\d]/g, "");
   const n = Number(digits);
-  return Number.isFinite(n) && n > 0 ? n : 0;
+  return Number.isFinite(n) ? n : 0;
 }
 
-function isContractInMonth(
-  raw: string,
-  year: number,
-  month1: number,
-): boolean {
-  const digits = raw.replace(/[^\d]/g, "");
-  if (digits.length < 6) return false;
-  const y = Number(digits.slice(0, 4));
-  const m = Number(digits.slice(4, 6));
-  return y === year && m === month1;
+function parseRecordYm(
+  raw: unknown,
+): { year: number; month1: number } | null {
+  const s = coerceCustomerInfoDisplayString(raw);
+  const digits = s.replace(/[^\d]/g, "");
+  if (digits.length < 6) return null;
+  const year = Number(digits.slice(0, 4));
+  const month1 = Number(digits.slice(4, 6));
+  if (!Number.isFinite(year) || !Number.isFinite(month1)) return null;
+  if (month1 < 1 || month1 > 12) return null;
+  return { year, month1 };
 }
 
-type SalesFieldIds = {
-  nameField: string;
-  apFieldId: string | null;
-  clFieldId: string | null;
-  creatorFieldId: string | null;
-  contractAmountFieldId: string | null;
-  contractDateFieldId: string | null;
-};
+function monthKeyFromYm(year: number, month1: number): string {
+  return `${year}-${String(month1).padStart(2, "0")}`;
+}
 
-function buildSalesFieldIds(appFields: AtPocketFieldRow[]): SalesFieldIds | null {
-  const nameField = resolveConfiguredFieldToSchemaUniqueId(
-    customerInfoNameFieldId()!,
-    appFields,
-  );
-  if (!nameField) return null;
+/** PT集計表: ranking_pt_dashboard.js aggregate() 相当 */
+function aggregatePtRecords(
+  records: Array<{ record?: unknown }>,
+  fieldMap: PtDashboardFieldMap,
+  periodKey: SalesDashboardPeriodKey,
+): Map<string, StaffAgg> {
+  const period = resolveSalesDashboardPeriod(periodKey);
+  const m = new Map<string, StaffAgg>();
 
-  const contractAmountFieldId = resolveCustomerInfoFormFieldId(
-    "contractAmount",
-    "契約金額",
-    appFields,
-  );
-  const contractDateFieldId =
-    resolveCustomerInfoFormFieldId("contractDate", "契約日", appFields) ??
-    resolveCustomerInfoFormFieldId(
-      "firstContractDate",
-      "初回契約日",
-      appFields,
+  for (const row of records) {
+    const rec = row.record;
+    if (!rec || typeof rec !== "object") continue;
+    const recObj = rec as Record<string, unknown>;
+
+    const name = normApClStaffName(
+      readCustomerInfoFieldValue(recObj, fieldMap.salesperson),
     );
+    if (!name) continue;
 
-  return {
-    nameField,
-    apFieldId: resolveCustomerInfoFormFieldId("apStaff", "AP担当者", appFields),
-    clFieldId: resolveCustomerInfoFormFieldId("clStaff", "CL担当者", appFields),
-    creatorFieldId: resolveCustomerInfoCreatorFieldId(appFields),
-    contractAmountFieldId,
-    contractDateFieldId,
-  };
+    const ym = parseRecordYm(recObj[fieldMap.date]);
+    if (!ym || !isYmInPeriod(ym.year, ym.month1, period)) continue;
+
+    const pt = fieldMap.pt
+      ? parseNumber(readCustomerInfoFieldValue(recObj, fieldMap.pt))
+      : 0;
+    const salesRaw = fieldMap.sales
+      ? readCustomerInfoFieldValue(recObj, fieldMap.sales)
+      : "";
+    const sales = fieldMap.sales && pt !== 0 ? parseNumber(salesRaw) : 0;
+
+    const cur = m.get(name) ?? {
+      name,
+      pt: 0,
+      salesAmount: 0,
+      contractCount: 0,
+    };
+    cur.pt += pt;
+    if (pt !== 0) cur.salesAmount += sales;
+    m.set(name, cur);
+  }
+
+  return m;
 }
 
-function primaryStaffForRecord(
-  recObj: Record<string, unknown>,
-  ids: SalesFieldIds,
-): string {
-  const ap = readStaffAssigneeName(recObj, ids.apFieldId);
-  if (ap) return ap;
-  const cl = readStaffAssigneeName(recObj, ids.clFieldId);
-  if (cl) return cl;
-  return readStaffAssigneeName(recObj, ids.creatorFieldId);
+/** 契約情報: buildContractCountMap + 対象月 */
+function buildContractCountByMonth(
+  records: Array<{ record?: unknown }>,
+  fieldMap: ContractCountFieldMap,
+): Map<string, Map<string, number>> {
+  const map = new Map<string, Map<string, number>>();
+
+  for (const row of records) {
+    const rec = row.record;
+    if (!rec || typeof rec !== "object") continue;
+    const recObj = rec as Record<string, unknown>;
+
+    if (fieldMap.customerStatus) {
+      const status = readCustomerInfoFieldValue(
+        recObj,
+        fieldMap.customerStatus,
+      );
+      if (status === "キャンセル") continue;
+    }
+
+    const name = normApClStaffName(
+      readCustomerInfoFieldValue(recObj, fieldMap.clPerson),
+    );
+    if (!name) continue;
+
+    const ym = parseRecordYm(recObj[fieldMap.date]);
+    if (!ym) continue;
+
+    const monthKey = monthKeyFromYm(ym.year, ym.month1);
+    let perPerson = map.get(name);
+    if (!perPerson) {
+      perPerson = new Map();
+      map.set(name, perPerson);
+    }
+    perPerson.set(monthKey, (perPerson.get(monthKey) ?? 0) + 1);
+  }
+
+  return map;
 }
 
-export async function buildSalesDashboardPayload(
-  boundStaffName: string,
-): Promise<SalesDashboardPayload | null> {
-  const cfg = customerInfoConfigReady();
-  if (!cfg.ok) return null;
+function mergeContractCounts(
+  byStaff: Map<string, StaffAgg>,
+  contractMap: Map<string, Map<string, number>>,
+  periodKey: SalesDashboardPeriodKey,
+): void {
+  const period = resolveSalesDashboardPeriod(periodKey);
+  const monthKey = `${period.year}-${String(period.month1).padStart(2, "0")}`;
 
-  const appId = customerInfoAppId();
-  if (!appId) return null;
-
-  const auth = customerInfoPocketAuth();
-  const appFields = await fetchAppFields(appId, auth, {
-    operation: "sales-dashboard",
-    appEnv: "CUSTOMER_INFO_APP_ID",
+  contractMap.forEach((perMonth, name) => {
+    const count = perMonth.get(monthKey) ?? 0;
+    if (count <= 0) return;
+    const cur = byStaff.get(name) ?? {
+      name,
+      pt: 0,
+      salesAmount: 0,
+      contractCount: 0,
+    };
+    cur.contractCount = count;
+    byStaff.set(name, cur);
   });
-  const ids = buildSalesFieldIds(appFields);
-  if (!ids) return null;
+}
 
-  const { year, month1, label: periodLabel } = currentYmJst();
-  const bound = normApClStaffName(boundStaffName);
+function sortStaffAgg(items: StaffAgg[]): StaffAgg[] {
+  return [...items].sort(
+    (a, b) =>
+      b.pt - a.pt ||
+      b.salesAmount - a.salesAmount ||
+      b.contractCount - a.contractCount ||
+      a.name.localeCompare(b.name, "ja"),
+  );
+}
 
-  const fieldIdSet = new Set<string>([ids.nameField]);
-  if (ids.apFieldId) fieldIdSet.add(ids.apFieldId);
-  if (ids.clFieldId) fieldIdSet.add(ids.clFieldId);
-  if (ids.creatorFieldId) fieldIdSet.add(ids.creatorFieldId);
-  if (ids.contractAmountFieldId) fieldIdSet.add(ids.contractAmountFieldId);
-  if (ids.contractDateFieldId) fieldIdSet.add(ids.contractDateFieldId);
-  const fieldsCsv = [...fieldIdSet].join(",");
+function buildRanking(
+  sorted: StaffAgg[],
+  companyPt: number,
+  bound: string,
+): SalesDashboardRankingRow[] {
+  return sorted.map((item, i) => ({
+    rank: i + 1,
+    staffName: item.name,
+    pt: item.pt,
+    salesAmount: item.salesAmount,
+    contractCount: item.contractCount,
+    sharePercent:
+      companyPt > 0 ? Math.round((item.pt / companyPt) * 1000) / 10 : 0,
+    isSelf: normApClStaffName(item.name) === bound,
+    isPodium: i < 3,
+  }));
+}
 
-  type Agg = { salesAmount: number; contractCount: number };
-  const byStaff = new Map<string, Agg>();
-
+async function fetchAllPages(
+  appId: string,
+  fieldsCsv: string,
+  auth: AtPocketFetchAuth,
+  operation: string,
+): Promise<Array<{ record?: unknown }>> {
+  const all: Array<{ record?: unknown }> = [];
   const maxPages = dashboardMaxPages();
+
   for (let page = 1; page <= maxPages; page++) {
     const data = await fetchRecordsList(
       appId,
       { limit: String(PAGE_LIMIT), page: String(page), fields: fieldsCsv },
       auth,
-      { operation: "sales-dashboard:records", appEnv: "CUSTOMER_INFO_APP_ID" },
+      { operation, appEnv: "SALES_DASHBOARD_PT_APP_ID" },
     );
     const rows = data.records ?? [];
-    if (rows.length === 0) break;
-
-    for (const row of rows) {
-      const rec = row.record;
-      if (!rec || typeof rec !== "object") continue;
-      const recObj = rec as Record<string, unknown>;
-
-      const dateRaw = ids.contractDateFieldId
-        ? readCustomerInfoFieldValue(recObj, ids.contractDateFieldId)
-        : "";
-      if (!isContractInMonth(dateRaw, year, month1)) continue;
-
-      const amount = ids.contractAmountFieldId
-        ? parseYenAmount(
-            readCustomerInfoFieldValue(recObj, ids.contractAmountFieldId),
-          )
-        : 0;
-      if (amount <= 0) continue;
-
-      const owner = primaryStaffForRecord(recObj, ids);
-      if (!owner) continue;
-
-      const cur = byStaff.get(owner) ?? { salesAmount: 0, contractCount: 0 };
-      cur.salesAmount += amount;
-      cur.contractCount += 1;
-      byStaff.set(owner, cur);
-    }
-
+    all.push(...rows);
     if (rows.length < PAGE_LIMIT) break;
   }
+  return all;
+}
 
-  const rankingSorted = [...byStaff.entries()].sort(
-    (a, b) => b[1].salesAmount - a[1].salesAmount,
+export async function buildSalesDashboardPayload(
+  boundStaffName: string,
+  periodKey: SalesDashboardPeriodKey,
+): Promise<SalesDashboardPayload | null> {
+  const ptAppId = salesDashboardPtAppId();
+  if (!ptAppId) return null;
+
+  const auth = customerInfoPocketAuth();
+  const period = resolveSalesDashboardPeriod(periodKey);
+  const bound = normApClStaffName(boundStaffName);
+
+  const ptFields = await fetchAppFields(ptAppId, auth, {
+    operation: "sales-dashboard:pt-fields",
+    appEnv: "SALES_DASHBOARD_PT_APP_ID",
+  });
+  const ptFieldMap = resolvePtDashboardFieldMap(ptFields);
+  if (!ptFieldMap) return null;
+
+  const ptWanted = [
+    ptFieldMap.salesperson,
+    ptFieldMap.date,
+    ptFieldMap.pt,
+    ptFieldMap.sales,
+  ].filter(Boolean) as string[];
+
+  const ptRecords = await fetchAllPages(
+    ptAppId,
+    ptWanted.join(","),
+    auth,
+    "sales-dashboard:pt-records",
   );
 
-  const companySales = rankingSorted.reduce((s, [, agg]) => s + agg.salesAmount, 0);
-  const companyCount = rankingSorted.reduce((s, [, agg]) => s + agg.contractCount, 0);
+  const byStaff = aggregatePtRecords(ptRecords, ptFieldMap, periodKey);
 
-  const ranking: SalesDashboardRankingRow[] = rankingSorted.map(
-    ([staffName, agg], i) => ({
-      rank: i + 1,
-      staffName,
-      salesAmount: agg.salesAmount,
-      contractCount: agg.contractCount,
-      isSelf: normApClStaffName(staffName) === bound,
-    }),
-  );
+  const contractAppId = salesDashboardContractAppId();
+  if (contractAppId) {
+    try {
+      const contractFields = await fetchAppFields(contractAppId, auth, {
+        operation: "sales-dashboard:contract-fields",
+        appEnv: "SALES_DASHBOARD_CONTRACT_APP_ID",
+      });
+      const contractFieldMap = resolveContractCountFieldMap(contractFields);
+      if (contractFieldMap) {
+        const contractCsv = [
+          contractFieldMap.date,
+          contractFieldMap.clPerson,
+          contractFieldMap.customerStatus,
+        ]
+          .filter(Boolean)
+          .join(",");
+        const contractRecords = await fetchAllPages(
+          contractAppId,
+          contractCsv,
+          auth,
+          "sales-dashboard:contract-records",
+        );
+        const contractMap = buildContractCountByMonth(
+          contractRecords,
+          contractFieldMap,
+        );
+        mergeContractCounts(byStaff, contractMap, periodKey);
+      }
+    } catch (e) {
+      console.warn("[sales-dashboard] contract count merge skipped", e);
+    }
+  }
+
+  const sorted = sortStaffAgg([...byStaff.values()]);
+
+  const companyPt = sorted.reduce((s, x) => s + x.pt, 0);
+  const companySales = sorted.reduce((s, x) => s + x.salesAmount, 0);
+  const companyCount = sorted.reduce((s, x) => s + x.contractCount, 0);
+
+  const kpi: SalesDashboardKpi = {
+    pt: companyPt,
+    salesAmount: companySales,
+    contractCount: companyCount,
+    avgAmount:
+      companyCount > 0
+        ? Math.round(companySales / companyCount)
+        : 0,
+  };
 
   return {
     staffName: boundStaffName,
-    periodLabel,
-    kpi: {
-      salesAmount: companySales,
-      contractCount: companyCount,
-      avgAmount:
-        companyCount > 0 ? Math.round(companySales / companyCount) : 0,
-    },
-    ranking,
+    period: periodKey,
+    periodLabel: period.label,
+    periodHint: period.hint,
+    kpi,
+    ranking: buildRanking(sorted, companyPt, bound),
   };
 }
