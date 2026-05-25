@@ -15,6 +15,7 @@ import {
   LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
 import { MapNavigationButton } from "@/components/map-navigation-button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
 import { applyCalendarRecordPatch } from "@/lib/calendar-apply-patch";
@@ -1383,7 +1384,8 @@ export default function CalendarPage() {
               <h1 className="min-w-0 flex-1 text-[1.35rem] font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
                 工事カレンダー
               </h1>
-              <div className="flex shrink-0 items-start pt-0.5">
+              <div className="flex shrink-0 items-start gap-2 pt-0.5">
+                <ThemeToggle />
                 <LiffAccountBar
                   loading={account.loading}
                   pictureUrl={account.pictureUrl}

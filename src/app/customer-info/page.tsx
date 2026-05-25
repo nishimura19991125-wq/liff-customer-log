@@ -25,6 +25,7 @@ import {
   CustomerInfoSaveBar,
   type CustomerInfoSaveFeedback,
 } from "@/components/customer-info-save-bar";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { applyCustomerInfoHiddenDefaultsToValues } from "@/lib/customer-info-form/rules";
@@ -416,25 +417,28 @@ function CustomerInfoPageContent() {
   return (
     <LiffScreen>
       <main className="liff-page-main mx-auto w-full max-w-lg flex-1 py-6">
-        <nav className="mb-3 flex items-center justify-between gap-2">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1 text-[13px] font-semibold text-emerald-800 active:opacity-70"
-          >
-            <span className="text-lg leading-none">‹</span>
-            メニューへ
-          </Link>
-          <LiffAccountBar
-            loading={account.loading}
-            pictureUrl={account.pictureUrl}
-            boundStaffName={account.boundStaffName}
-            bindingEnabled={account.bindingEnabled}
-          />
-        </nav>
+        <Link
+          href="/"
+          className="mb-3 inline-flex items-center gap-1 text-[13px] font-semibold text-emerald-800 active:opacity-70 dark:text-emerald-300"
+        >
+          <span className="text-lg leading-none">‹</span>
+          メニューへ
+        </Link>
 
         <LiffPageHeader
           title="お客様情報入力"
           subtitle="お客様名で検索し、該当レコードを編集して @pocket に保存します。"
+          action={
+            <div className="flex shrink-0 items-center gap-2">
+              <ThemeToggle />
+              <LiffAccountBar
+                loading={account.loading}
+                pictureUrl={account.pictureUrl}
+                boundStaffName={account.boundStaffName}
+                bindingEnabled={account.bindingEnabled}
+              />
+            </div>
+          }
         />
 
         <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
