@@ -5,7 +5,9 @@ import { useCallback, useEffect, useState } from "react";
 import { LockScreen } from "@/components/lock-screen";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 import {
-  clearPinUnlockSession,
+  beginPinAppBoot,
+  invalidatePinUnlockOnAppHide,
+  isFreshDocumentLoad,
   isPinUnlockSessionActive,
   markPinUnlockSession,
   touchPinUnlockSession,
@@ -24,7 +26,6 @@ type GuardPhase =
   | "init"
   | "redirecting"
   | "skip"
-  | "checking"
   | "locked"
   | "unlocked";
 
@@ -34,7 +35,7 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
   const [pinStatus, setPinStatus] = useState<PinStatus | null>(null);
 
   const lockApp = useCallback(() => {
-    clearPinUnlockSession();
+    invalidatePinUnlockOnAppHide();
     setPhase("locked");
   }, []);
 
@@ -44,10 +45,28 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const onPageHide = () => invalidatePinUnlockOnAppHide();
+    const onFreeze = () => invalidatePinUnlockOnAppHide();
+
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("freeze", onFreeze as EventListener);
+
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("freeze", onFreeze as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!LIFF_ID) {
       setPhase("skip");
       return;
     }
+
+    if (isFreshDocumentLoad()) {
+      invalidatePinUnlockOnAppHide();
+    }
+    beginPinAppBoot();
 
     let cancelled = false;
 
@@ -100,10 +119,7 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
           staffName: pinData.staffName ?? staffData.boundStaff.name,
         });
 
-        if (
-          pinData.needsInitialSetup ||
-          !isPinUnlockSessionActive()
-        ) {
+        if (pinData.needsInitialSetup || !isPinUnlockSessionActive()) {
           setPhase("locked");
         } else {
           setPhase("unlocked");
@@ -133,41 +149,15 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
       }
     }, 30_000);
 
-    let hiddenSince: number | null = null;
-
-    const onPageShow = () => {
-      lockApp();
-    };
-
-    const onVisible = () => {
-      if (document.visibilityState === "hidden") {
-        hiddenSince = Date.now();
-        return;
-      }
-      if (
-        document.visibilityState === "visible" &&
-        hiddenSince != null &&
-        Date.now() - hiddenSince > 800
-      ) {
-        lockApp();
-      }
-      hiddenSince = null;
-    };
-
-    window.addEventListener("pageshow", onPageShow);
-    document.addEventListener("visibilitychange", onVisible);
-
     return () => {
       for (const ev of events) {
         document.removeEventListener(ev, onActivity);
       }
       window.clearInterval(interval);
-      window.removeEventListener("pageshow", onPageShow);
-      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [phase, lockApp]);
 
-  if (phase === "redirecting" || phase === "init" || phase === "checking") {
+  if (phase === "redirecting" || phase === "init") {
     return (
       <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900 text-slate-300">
         <p className="text-sm">読み込み中…</p>
