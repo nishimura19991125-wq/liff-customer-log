@@ -77,15 +77,12 @@ export const REGISTRY_BOOK_OPTIONS = ["未確認", "確認済み"] as const;
 /** 補助金事前申請書類 */
 export const SUBSIDY_PRE_APPLICATION_DOC_OPTIONS = [
   "未回収",
-  "一部回収済み",
   "回収済み",
+  "不要",
 ] as const;
 
 /** 書類ラジオ：非表示時の既定値 */
 export const DOCUMENT_RADIO_HIDDEN_VALUE = "不要";
-
-/** ローン用紙：非表示時（現金一括系） */
-export const LOAN_PAPER_HIDDEN_VALUE = "現金一括の為、不要";
 
 export function preApplicationRequiresDocuments(
   preApplication: string | undefined,

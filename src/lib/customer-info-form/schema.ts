@@ -6,7 +6,6 @@ import {
   FIT_TYPE_OPTIONS,
   INDOOR_SURVEY_STATUS_OPTIONS,
   INPUT_STATUS_OPTIONS,
-  LOAN_PAPER_HIDDEN_VALUE,
   PAYMENT_METHOD_OPTIONS,
   REGISTRY_BOOK_OPTIONS,
   SUBSIDY_OR_PREAPPLICATION_OPTIONS,
@@ -234,7 +233,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     caption: "ローン用紙",
     type: "radio",
     options: [...COLLECTION_STATUS_TWO_OPTIONS],
-    hiddenValue: LOAN_PAPER_HIDDEN_VALUE,
+    hiddenValue: DOCUMENT_RADIO_HIDDEN_VALUE,
   },
   {
     key: "groupCreditLifeInsurance",
