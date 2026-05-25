@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { HomeMissingDocumentsAlert } from "@/components/home-missing-documents-alert";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   LiffAccountBar,
@@ -230,6 +231,19 @@ export default function HomeHubPage() {
             </div>
           }
         />
+
+        {account.boundStaffName && !needsStaffBind ? (
+          <p className="mt-4 text-[15px] font-semibold text-slate-800 dark:text-white">
+            {account.boundStaffName} さん、おつかれさまです
+          </p>
+        ) : null}
+
+        <HomeMissingDocumentsAlert
+          idToken={idToken}
+          boundStaffName={account.boundStaffName}
+          disabled={needsStaffBind || account.loading}
+        />
+
         <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
         <LiffStaffBindPanel
           staff={account.staff}
