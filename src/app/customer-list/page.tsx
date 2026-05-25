@@ -183,7 +183,7 @@ export default function CustomerListPage() {
       <LiffScreen>
         <LiffPageHeader title="担当顧客一覧" />
         <p className="text-sm text-rose-600 dark:text-rose-400">{errorMessage}</p>
-        <LiffGhostLink href="/">トップへ戻る</LiffGhostLink>
+        <LiffGhostLink href="/">メニューへ</LiffGhostLink>
       </LiffScreen>
     );
   }
@@ -207,7 +207,7 @@ export default function CustomerListPage() {
       />
 
       <div className="mb-4">
-        <LiffGhostLink href="/">トップ</LiffGhostLink>
+        <LiffGhostLink href="/">メニューへ</LiffGhostLink>
       </div>
 
       <LiffStaffBindingConfigNotice message={account.bindingConfigError} />

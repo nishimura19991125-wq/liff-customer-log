@@ -15,6 +15,7 @@ import {
   type SalesDashboardPeriodKey,
 } from "@/lib/sales-dashboard-period";
 import { buildApoDashboardSection } from "@/lib/sales-dashboard-apo-aggregate";
+import { buildTenkaDashboardSection } from "@/lib/sales-dashboard-tenka-aggregate";
 import { isExcludedSalesDashboardRankingName } from "@/lib/sales-dashboard-ranking-exclude";
 import type {
   ApoDashboardKpi,
@@ -65,6 +66,10 @@ export type SalesDashboardPayload = {
   apoError: string | null;
   apoKpi: ApoDashboardKpi | null;
   apoRanking: ApoDashboardRankingRow[];
+  tenkaReady: boolean;
+  tenkaError: string | null;
+  tenkaKpi: { totalTargetCount: number } | null;
+  tenkaRanking: ApoDashboardRankingRow[];
 };
 
 type StaffAgg = {
@@ -276,6 +281,10 @@ export async function buildSalesDashboardPayload(
   const period = resolveSalesDashboardPeriod(periodKey);
   const bound = normApClStaffName(boundStaffName);
   const apoSectionPromise = buildApoDashboardSection(boundStaffName, periodKey);
+  const tenkaSectionPromise = buildTenkaDashboardSection(
+    boundStaffName,
+    periodKey,
+  );
 
   const ptFields = await fetchAppFields(ptAppId, ptAuth, {
     operation: "sales-dashboard:pt-fields",
@@ -349,7 +358,10 @@ export async function buildSalesDashboardPayload(
         : 0,
   };
 
-  const apoSection = await apoSectionPromise;
+  const [apoSection, tenkaSection] = await Promise.all([
+    apoSectionPromise,
+    tenkaSectionPromise,
+  ]);
 
   return {
     staffName: boundStaffName,
@@ -363,5 +375,9 @@ export async function buildSalesDashboardPayload(
     apoError: apoSection.ok ? null : apoSection.error,
     apoKpi: apoSection.ok ? apoSection.kpi : null,
     apoRanking: apoSection.ok ? apoSection.ranking : [],
+    tenkaReady: tenkaSection.ok,
+    tenkaError: tenkaSection.ok ? null : tenkaSection.error,
+    tenkaKpi: tenkaSection.ok ? tenkaSection.kpi : null,
+    tenkaRanking: tenkaSection.ok ? tenkaSection.ranking : [],
   };
 }

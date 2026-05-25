@@ -194,7 +194,7 @@ export default function SalesDashboardPage() {
       />
 
       <div className="mb-4">
-        <LiffGhostLink href="/">トップ</LiffGhostLink>
+        <LiffGhostLink href="/">メニューへ</LiffGhostLink>
       </div>
 
       {account.boundStaffName && !needsStaffBind ? (

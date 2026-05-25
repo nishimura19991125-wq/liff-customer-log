@@ -3,7 +3,7 @@
 import { LiffCard } from "@/components/liff-chrome";
 
 export type DashboardPeriod = "current" | "previous";
-export type DashboardDepartment = "pt" | "sales" | "apo";
+export type DashboardDepartment = "pt" | "sales" | "apo" | "tenka";
 
 export type DashboardKpi = {
   pt: number;
@@ -44,12 +44,17 @@ export type DashboardPayload = {
   apoError: string | null;
   apoKpi: { totalApoCount: number } | null;
   apoRanking: ApoRankingRow[];
+  tenkaReady: boolean;
+  tenkaError: string | null;
+  tenkaKpi: { totalTargetCount: number } | null;
+  tenkaRanking: ApoRankingRow[];
 };
 
 const DEPARTMENT_TABS: Array<{ id: DashboardDepartment; label: string }> = [
   { id: "pt", label: "総合PTランキング" },
   { id: "sales", label: "売上金額部門" },
   { id: "apo", label: "アポ件数部門" },
+  { id: "tenka", label: "AP天下賞" },
 ];
 
 function formatYen(n: number): string {
@@ -66,11 +71,6 @@ function formatPt(n: number): string {
 
 function formatCount(n: number): string {
   return new Intl.NumberFormat("ja-JP").format(Math.round(n));
-}
-
-function percentOfLeader(value: number, leader: number): number {
-  if (leader <= 0) return value > 0 ? 100 : 0;
-  return Math.min(100, Math.round((value / leader) * 1000) / 10);
 }
 
 function tabClass(active: boolean): string {
@@ -146,18 +146,6 @@ function PersonalKpiHero({ personal, periodLabel }: { personal: PersonalKpi; per
   );
 }
 
-function PtGauge({ percent }: { percent: number }) {
-  const w = Math.max(2, Math.min(100, percent));
-  return (
-    <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-      <div
-        className="h-full rounded-full bg-emerald-500 transition-all duration-500 dark:bg-emerald-400 dark:shadow-[0_0_10px_rgba(52,211,153,0.7)]"
-        style={{ width: `${w}%` }}
-      />
-    </div>
-  );
-}
-
 function podiumCardShell(rank: number): string {
   const base = "relative rounded-[1.35rem] border px-4 py-4 ";
   if (rank === 1) {
@@ -190,8 +178,7 @@ function rankBadgeClass(rank: number): string {
   return "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200";
 }
 
-function PtPodiumCard({ row, leaderPt }: { row: RankingRow; leaderPt: number }) {
-  const gauge = percentOfLeader(row.pt, leaderPt);
+function PtPodiumCard({ row }: { row: RankingRow }) {
   return (
     <div
       className={`${podiumCardShell(row.rank)} ${
@@ -220,18 +207,13 @@ function PtPodiumCard({ row, leaderPt }: { row: RankingRow; leaderPt: number }) 
           <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
             {formatYen(row.salesAmount)}
           </p>
-          <PtGauge percent={gauge} />
-          <p className="mt-1 text-[11px] text-slate-500 dark:text-emerald-300/80">
-            1位比 {gauge}%
-          </p>
         </div>
       </div>
     </div>
   );
 }
 
-function PtListRow({ row, leaderPt }: { row: RankingRow; leaderPt: number }) {
-  const gauge = percentOfLeader(row.pt, leaderPt);
+function PtListRow({ row }: { row: RankingRow }) {
   return (
     <div
       className={`rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm dark:border-emerald-500/15 dark:bg-slate-900/50 ${
@@ -256,14 +238,12 @@ function PtListRow({ row, leaderPt }: { row: RankingRow; leaderPt: number }) {
           <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">
             {formatYen(row.salesAmount)}
           </p>
-          <PtGauge percent={gauge} />
         </div>
         <div className="shrink-0 text-right">
           <p className={`text-[16px] ${ptValueClass()}`}>
             {formatPt(row.pt)}
             <span className="ml-0.5 text-[12px] font-bold">PT</span>
           </p>
-          <p className="text-[10px] text-slate-500 dark:text-slate-400">1位比 {gauge}%</p>
         </div>
       </div>
     </div>
@@ -280,7 +260,6 @@ function PtRankingSection({ rows }: { rows: RankingRow[] }) {
       </LiffCard>
     );
   }
-  const leaderPt = rows[0]?.pt ?? 0;
   const podium = rows.filter((r) => r.rank <= 3);
   const rest = rows.filter((r) => r.rank > 3);
   return (
@@ -288,14 +267,14 @@ function PtRankingSection({ rows }: { rows: RankingRow[] }) {
       {podium.length > 0 ? (
         <div className="flex flex-col gap-2">
           {podium.map((row) => (
-            <PtPodiumCard key={`podium-${row.rank}-${row.staffName}`} row={row} leaderPt={leaderPt} />
+            <PtPodiumCard key={`podium-${row.rank}-${row.staffName}`} row={row} />
           ))}
         </div>
       ) : null}
       {rest.length > 0 ? (
         <div className="flex flex-col gap-2">
           {rest.map((row) => (
-            <PtListRow key={`${row.rank}-${row.staffName}`} row={row} leaderPt={leaderPt} />
+            <PtListRow key={`${row.rank}-${row.staffName}`} row={row} />
           ))}
         </div>
       ) : null}
@@ -314,12 +293,10 @@ function SalesRankingSection({ rows }: { rows: RankingRow[] }) {
     );
   }
   const sorted = [...rows].sort((a, b) => b.salesAmount - a.salesAmount);
-  const leaderSales = sorted[0]?.salesAmount ?? 0;
   return (
     <div className="flex flex-col gap-2">
       {sorted.map((row, i) => {
         const displayRank = i + 1;
-        const gauge = percentOfLeader(row.salesAmount, leaderSales);
         const isPodium = displayRank <= 3;
         const shell = isPodium
           ? podiumCardShell(displayRank)
@@ -349,7 +326,6 @@ function SalesRankingSection({ rows }: { rows: RankingRow[] }) {
                   ) : null}
                 </p>
                 <p className={`text-[12px] ${ptValueClass()}`}>{formatPt(row.pt)} PT</p>
-                <PtGauge percent={gauge} />
               </div>
               <p className="shrink-0 text-right text-[15px] font-bold text-slate-800 dark:text-white">
                 {formatYen(row.salesAmount)}
@@ -362,8 +338,7 @@ function SalesRankingSection({ rows }: { rows: RankingRow[] }) {
   );
 }
 
-function ApoPodiumCard({ row, leaderCount }: { row: ApoRankingRow; leaderCount: number }) {
-  const gauge = percentOfLeader(row.apoCount, leaderCount);
+function ApoPodiumCard({ row }: { row: ApoRankingRow }) {
   return (
     <div
       className={`${podiumCardShell(row.rank)} ${
@@ -383,8 +358,6 @@ function ApoPodiumCard({ row, leaderCount }: { row: ApoRankingRow; leaderCount: 
               <span className="ml-2 text-[11px] text-cyan-700 dark:text-cyan-300">あなた</span>
             ) : null}
           </p>
-          <PtGauge percent={gauge} />
-          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">1位比 {gauge}%</p>
         </div>
         <p className={`shrink-0 text-[1.5rem] ${ptValueClass()}`}>
           {formatCount(row.apoCount)}
@@ -395,8 +368,7 @@ function ApoPodiumCard({ row, leaderCount }: { row: ApoRankingRow; leaderCount: 
   );
 }
 
-function ApoListRow({ row, leaderCount }: { row: ApoRankingRow; leaderCount: number }) {
-  const gauge = percentOfLeader(row.apoCount, leaderCount);
+function ApoListRow({ row }: { row: ApoRankingRow }) {
   return (
     <div
       className={`rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm dark:border-emerald-500/15 dark:bg-slate-900/50 ${
@@ -416,7 +388,6 @@ function ApoListRow({ row, leaderCount }: { row: ApoRankingRow; leaderCount: num
               <span className="ml-2 text-[11px] text-cyan-700 dark:text-cyan-300">あなた</span>
             ) : null}
           </p>
-          <PtGauge percent={gauge} />
         </div>
         <p className={`shrink-0 text-[15px] ${ptValueClass()}`}>{formatCount(row.apoCount)}件</p>
       </div>
@@ -434,16 +405,15 @@ function ApoRankingSection({ rows }: { rows: ApoRankingRow[] }) {
       </LiffCard>
     );
   }
-  const leaderCount = rows[0]?.apoCount ?? 0;
   const podium = rows.filter((r) => r.rank <= 3);
   const rest = rows.filter((r) => r.rank > 3);
   return (
     <div className="flex flex-col gap-3">
       {podium.map((row) => (
-        <ApoPodiumCard key={`apo-p-${row.rank}`} row={row} leaderCount={leaderCount} />
+        <ApoPodiumCard key={`apo-p-${row.rank}`} row={row} />
       ))}
       {rest.map((row) => (
-        <ApoListRow key={`apo-${row.rank}`} row={row} leaderCount={leaderCount} />
+        <ApoListRow key={`apo-${row.rank}`} row={row} />
       ))}
     </div>
   );
@@ -464,12 +434,17 @@ export function SalesDashboardCyberView({
   const apoConfigured = data.apoEnabled;
   const apoReady = data.apoReady;
 
+  const tenkaConfigured = data.apoEnabled;
+  const tenkaReady = data.tenkaReady;
+
   const rankingTitle =
     department === "pt"
       ? "総合PTランキング"
       : department === "sales"
         ? "売上金額ランキング"
-        : "アポ件数ランキング";
+        : department === "apo"
+          ? "アポ件数ランキング"
+          : "AP天下賞ランキング";
 
   return (
     <div className="flex flex-col gap-5">
@@ -520,6 +495,20 @@ export function SalesDashboardCyberView({
           </LiffCard>
         ) : department === "apo" ? (
           <ApoRankingSection rows={data.apoRanking} />
+        ) : department === "tenka" && !tenkaConfigured ? (
+          <LiffCard>
+            <p className="px-4 py-6 text-center text-[13px] text-slate-500 dark:text-slate-400">
+              AP天下賞ランキングは未設定です（SALES_DASHBOARD_APO_APP_ID を設定してください）
+            </p>
+          </LiffCard>
+        ) : department === "tenka" && !tenkaReady ? (
+          <LiffCard>
+            <p className="px-4 py-6 text-center text-[13px] text-red-800 dark:text-red-300 whitespace-pre-wrap">
+              {data.tenkaError ?? "AP天下賞ランキングの集計に失敗しました"}
+            </p>
+          </LiffCard>
+        ) : department === "tenka" ? (
+          <ApoRankingSection rows={data.tenkaRanking} />
         ) : department === "sales" ? (
           <SalesRankingSection rows={data.ranking} />
         ) : (

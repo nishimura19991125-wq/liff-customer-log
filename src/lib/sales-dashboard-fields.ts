@@ -219,3 +219,50 @@ export function salesDashboardApoTypeFilterValues(): string[] {
 export function salesDashboardApoAppId(): string | null {
   return process.env.SALES_DASHBOARD_APO_APP_ID?.trim() || null;
 }
+
+export type ApoTenkaFieldMap = ApoDashboardFieldMap & {
+  closeType: string;
+  meetingPlace: string;
+  leadTime: string;
+};
+
+/** AP天下賞の対象アポ種別（ranking_pt_dashboard.config.js APO_FILTER_VALUES 相当） */
+export function salesDashboardApoTenkaTypeFilterValues(): string[] {
+  const raw = process.env.SALES_DASHBOARD_APO_TENKA_TYPE_FILTER_VALUES?.trim();
+  const defaults = ["ダイレクト", "お客様紹介"];
+  if (!raw) return defaults;
+  const parsed = raw
+    .split(",")
+    .map((s) => nfkc(s))
+    .filter(Boolean);
+  return parsed.length ? parsed : defaults;
+}
+
+export function resolveApoTenkaFieldMap(
+  fields: AtPocketFieldRow[],
+): ApoTenkaFieldMap | null {
+  const base = resolveApoDashboardFieldMap(fields);
+  if (!base) return null;
+
+  const closeType = pickByEnvOrKeywords(
+    "SALES_DASHBOARD_APO_CLOSE_TYPE_FIELD_ID",
+    fields,
+    ["片クロor両クロ", "片クロ", "両クロ"],
+    ["片クロor両クロ"],
+  );
+  const meetingPlace = pickByEnvOrKeywords(
+    "SALES_DASHBOARD_APO_MEETING_PLACE_FIELD_ID",
+    fields,
+    ["商談場所"],
+    ["商談場所"],
+  );
+  const leadTime = pickByEnvOrKeywords(
+    "SALES_DASHBOARD_APO_LEAD_TIME_FIELD_ID",
+    fields,
+    ["商談化リードタイム", "リードタイム"],
+    ["商談化リードタイム"],
+  );
+  if (!closeType || !meetingPlace || !leadTime) return null;
+
+  return { ...base, closeType, meetingPlace, leadTime };
+}

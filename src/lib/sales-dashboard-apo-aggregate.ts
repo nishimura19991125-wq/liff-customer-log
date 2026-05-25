@@ -78,7 +78,7 @@ function parseRecordYm(
   return { year, month1 };
 }
 
-function parseRecordYmFromField(
+export function parseRecordYmFromField(
   recObj: Record<string, unknown>,
   fieldId: string,
 ): { year: number; month1: number } | null {
