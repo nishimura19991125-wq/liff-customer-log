@@ -79,6 +79,17 @@ export function LockScreen({
   const [busy, setBusy] = useState(false);
   const [resetCode, setResetCode] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (needsInitialSetup) {
+      setMode("set");
+      setSetStep("enter");
+      setDigits("");
+      setConfirmDigits("");
+      setError(null);
+      setResetCode(null);
+    }
+  }, [needsInitialSetup]);
+
   const authHeaders = useCallback(
     () => ({ Authorization: `Bearer ${idToken}` }),
     [idToken],
@@ -122,8 +133,19 @@ export function LockScreen({
           },
           body: JSON.stringify({ pin }),
         });
-        const data = (await res.json()) as { error?: string };
+        const data = (await res.json()) as {
+          error?: string;
+          needsInitialSetup?: boolean;
+        };
         if (!res.ok) {
+          if (data.needsInitialSetup) {
+            setMode("set");
+            setSetStep("enter");
+            setDigits("");
+            setConfirmDigits("");
+            setError(data.error ?? "暗証番号を登録してください");
+            return;
+          }
           setError(data.error ?? "暗証番号が正しくありません");
           setDigits("");
           return;
@@ -174,9 +196,9 @@ export function LockScreen({
   );
 
   useEffect(() => {
-    if (mode !== "verify" || digits.length !== 4) return;
+    if (needsInitialSetup || mode !== "verify" || digits.length !== 4) return;
     void submitVerify(digits);
-  }, [mode, digits, submitVerify]);
+  }, [needsInitialSetup, mode, digits, submitVerify]);
 
   useEffect(() => {
     if (mode !== "set") return;
@@ -288,6 +310,12 @@ export function LockScreen({
         ) : (
           <div className="mb-8" />
         )}
+
+        {needsInitialSetup && mode === "set" ? (
+          <p className="mb-6 rounded-xl border border-sky-500/40 bg-sky-950/50 px-4 py-3 text-left text-[14px] leading-relaxed text-sky-100">
+            名簿の PINコード が未設定です。ご自身で4桁の暗証番号を登録してください（2回入力で確認します）。
+          </p>
+        ) : null}
 
         {mode === "waiting" && resetCode ? (
           <div className="mb-8 rounded-2xl border-2 border-amber-400/60 bg-slate-800 px-4 py-6">

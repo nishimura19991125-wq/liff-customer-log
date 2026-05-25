@@ -20,6 +20,8 @@ import {
 import {
   generateStaffResetCode,
   isResetApprovalApproved,
+  isStaffPinConfigured,
+  isStaffPinUnset,
   isValidFourDigitPin,
   readStaffPinFieldValue,
   resolveStaffPinFieldIds,
@@ -225,19 +227,24 @@ export async function readStaffPinPublicState(
     ctx.fieldIds.resetApprovalFieldId,
   );
 
+  const needsInitialSetup = isStaffPinUnset(pin);
+
   return {
     enabled: true,
-    configured: Boolean(pin && isValidFourDigitPin(pin)),
+    configured: isStaffPinConfigured(pin),
     resetApproval: resetApproval || STAFF_PIN_RESET_PENDING,
     hasResetCode: Boolean(resetCode && isValidFourDigitPin(resetCode)),
-    needsInitialSetup: !pin || !isValidFourDigitPin(pin),
+    needsInitialSetup,
   };
 }
 
 export async function verifyStaffPin(
   ctx: Extract<BoundStaffContext, { ok: true }>,
   enteredPin: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true }
+  | { ok: false; error: string; needsInitialSetup?: boolean }
+> {
   if (!isValidFourDigitPin(enteredPin)) {
     return { ok: false, error: "4桁の数字を入力してください" };
   }
@@ -249,8 +256,12 @@ export async function verifyStaffPin(
     ctx.fieldIds,
   );
   const stored = readStaffPinFieldValue(recObj, ctx.fieldIds.pinCodeFieldId);
-  if (!stored || !isValidFourDigitPin(stored)) {
-    return { ok: false, error: "暗証番号が登録されていません。新しい番号を設定してください" };
+  if (isStaffPinUnset(stored)) {
+    return {
+      ok: false,
+      needsInitialSetup: true,
+      error: "暗証番号が未登録です。新しい4桁を設定してください",
+    };
   }
   if (!pinMatches(stored, enteredPin)) {
     return { ok: false, error: "暗証番号が正しくありません" };

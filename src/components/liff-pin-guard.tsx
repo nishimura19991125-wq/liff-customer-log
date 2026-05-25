@@ -112,14 +112,17 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        const needsInitialSetup =
+          pinData.needsInitialSetup || !pinData.configured;
+
         setPinStatus({
           enabled: true,
           configured: pinData.configured,
-          needsInitialSetup: pinData.needsInitialSetup,
+          needsInitialSetup,
           staffName: pinData.staffName ?? staffData.boundStaff.name,
         });
 
-        if (pinData.needsInitialSetup || !isPinUnlockSessionActive()) {
+        if (needsInitialSetup || !isPinUnlockSessionActive()) {
           setPhase("locked");
         } else {
           setPhase("unlocked");

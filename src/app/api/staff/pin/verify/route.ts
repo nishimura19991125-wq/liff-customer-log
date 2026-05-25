@@ -42,7 +42,13 @@ export async function POST(request: Request) {
 
     const result = await verifyStaffPin(ctx, pin);
     if (!result.ok) {
-      return NextResponse.json({ error: result.error }, { status: 401 });
+      return NextResponse.json(
+        {
+          error: result.error,
+          ...(result.needsInitialSetup ? { needsInitialSetup: true } : {}),
+        },
+        { status: result.needsInitialSetup ? 403 : 401 },
+      );
     }
 
     return NextResponse.json({ ok: true });

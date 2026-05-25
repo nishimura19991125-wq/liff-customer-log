@@ -83,6 +83,17 @@ export function isValidFourDigitPin(raw: string): boolean {
   return /^\d{4}$/.test(nfkc(raw));
 }
 
+/** PINコード列が未設定（空白・「-」・4桁以外） */
+export function isStaffPinUnset(raw: string): boolean {
+  const v = nfkc(raw);
+  if (!v || v === "-" || v === "－") return true;
+  return !isValidFourDigitPin(v);
+}
+
+export function isStaffPinConfigured(raw: string): boolean {
+  return !isStaffPinUnset(raw);
+}
+
 export function generateStaffResetCode(): string {
   const n = Math.floor(Math.random() * 10_000);
   return String(n).padStart(4, "0");
