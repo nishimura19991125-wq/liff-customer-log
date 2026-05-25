@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
@@ -32,6 +32,19 @@ type CustomerRow = {
   combinedSubsidyName: string | null;
   isConstructionDateUnset: boolean;
 };
+
+function applyCrmFilter(rows: CustomerRow[], filter: CrmFilter): CustomerRow[] {
+  switch (filter) {
+    case "missing_docs":
+      return rows.filter((r) => r.isDocumentMissing);
+    case "no_construction_date":
+      return rows.filter((r) => r.isConstructionDateUnset);
+    case "subsidy":
+      return rows.filter((r) => r.isSubsidyTarget);
+    default:
+      return rows;
+  }
+}
 
 const FILTER_TABS: Array<{ id: CrmFilter; label: string }> = [
   { id: "all", label: "すべて" },
@@ -110,15 +123,18 @@ export default function CustomerListPage() {
     };
   }, []);
 
-  const loadCustomers = useCallback(
-    async (token: string, nextFilter: CrmFilter) => {
+  const displayedCustomers = useMemo(
+    () => applyCrmFilter(customers, filter),
+    [customers, filter],
+  );
+
+  const loadCustomers = useCallback(async (token: string) => {
       setListLoading(true);
       setListFeedback(null);
       try {
-        const res = await fetch(
-          `/api/customers?filter=${encodeURIComponent(nextFilter)}`,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
+        const res = await fetch("/api/customers?filter=all", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         const data = (await res.json()) as {
           customers?: CustomerRow[];
           error?: string;
@@ -130,7 +146,12 @@ export default function CustomerListPage() {
           return;
         }
         if (!res.ok) {
-          setListFeedback(data.error ?? "一覧の取得に失敗しました");
+          setListFeedback(
+            res.status === 429
+              ? (data.error ??
+                  "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。")
+              : (data.error ?? "一覧の取得に失敗しました"),
+          );
           setCustomers([]);
           return;
         }
@@ -138,8 +159,9 @@ export default function CustomerListPage() {
           setCustomers([]);
           return;
         }
-        setCustomers(data.customers ?? []);
-        if ((data.customers?.length ?? 0) === 0) {
+        const rows = data.customers ?? [];
+        setCustomers(rows);
+        if (rows.length === 0) {
           setListFeedback("該当する案件はありません");
         }
       } catch (e) {
@@ -155,8 +177,17 @@ export default function CustomerListPage() {
 
   useEffect(() => {
     if (phase !== "ready" || !idToken || needsStaffBind) return;
-    void loadCustomers(idToken, filter);
-  }, [phase, idToken, filter, needsStaffBind, loadCustomers]);
+    void loadCustomers(idToken);
+  }, [phase, idToken, needsStaffBind, loadCustomers]);
+
+  const listMessage = useMemo(() => {
+    if (listLoading) return null;
+    if (listFeedback && customers.length === 0) return listFeedback;
+    if (customers.length > 0 && displayedCustomers.length === 0) {
+      return "該当する案件はありません";
+    }
+    return null;
+  }, [listLoading, listFeedback, customers.length, displayedCustomers.length]);
 
   useEffect(() => {
     if (phase === "ready") resetLiffScroll();
@@ -237,7 +268,12 @@ export default function CustomerListPage() {
                   <button
                     key={tab.id}
                     type="button"
-                    onClick={() => setFilter(tab.id)}
+                    onClick={() => {
+                      setFilter(tab.id);
+                      if (listFeedback === "該当する案件はありません") {
+                        setListFeedback(null);
+                      }
+                    }}
                     className={`shrink-0 rounded-2xl px-4 py-2.5 text-[15px] transition-all duration-300 active:scale-[0.98] ${
                       active
                         ? "bg-emerald-600 font-bold text-white shadow-md shadow-emerald-600/25"
@@ -259,13 +295,13 @@ export default function CustomerListPage() {
             <LiffLoadingBlock message="案件を読み込み中…" />
           ) : (
             <div className="flex flex-col gap-3">
-              {listFeedback && customers.length === 0 ? (
+              {listMessage && displayedCustomers.length === 0 ? (
                 <p className="rounded-xl bg-slate-50 px-4 py-3 text-center text-sm text-slate-600 dark:bg-slate-800/80 dark:text-slate-300">
-                  {listFeedback}
+                  {listMessage}
                 </p>
               ) : null}
 
-              {customers.map((row) => (
+              {displayedCustomers.map((row) => (
                 <Link
                   key={row.recordId}
                   href={`/customer-list/${encodeURIComponent(row.recordId)}`}

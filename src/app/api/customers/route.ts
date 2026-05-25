@@ -54,8 +54,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ customers, filter });
   } catch (e) {
     console.error("[api/customers]", e);
-    const msg =
+    const raw =
       e instanceof Error ? e.message : "担当顧客一覧の取得に失敗しました";
-    return NextResponse.json({ error: msg, customers: [] }, { status: 502 });
+    const isRateLimited = raw.includes("429");
+    const msg = isRateLimited
+      ? "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。"
+      : raw;
+    return NextResponse.json(
+      { error: msg, customers: [] },
+      { status: isRateLimited ? 429 : 502 },
+    );
   }
 }

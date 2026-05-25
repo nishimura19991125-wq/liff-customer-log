@@ -50,6 +50,41 @@ export type CustomerCrmListItem = {
 const PAGE_LIMIT = 1000;
 const DEFAULT_MAX_PAGES = 25;
 const DEFAULT_MAX_RESULTS = 80;
+const DEFAULT_CACHE_TTL_MS = 120_000;
+const DEFAULT_PAGE_DELAY_MS = 400;
+
+type CrmCandidate = CustomerCrmListItem & { sortKey: number };
+
+const crmListStore = new Map<string, { expiresAt: number; items: CrmCandidate[] }>();
+const crmListInflight = new Map<string, Promise<CrmCandidate[]>>();
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function crmCacheKey(boundStaffName: string): string {
+  return boundStaffName.normalize("NFKC").trim();
+}
+
+function crmCacheTtlMs(): number {
+  const raw = process.env.CUSTOMER_CRM_CACHE_TTL_MS?.trim();
+  const n = raw ? Number(raw) : DEFAULT_CACHE_TTL_MS;
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_CACHE_TTL_MS;
+  return Math.min(600_000, Math.floor(n));
+}
+
+function crmPageDelayMs(): number {
+  const raw = process.env.CUSTOMER_CRM_PAGE_DELAY_MS?.trim();
+  const n = raw ? Number(raw) : DEFAULT_PAGE_DELAY_MS;
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(2000, Math.floor(n));
+}
+
+/** 顧客一覧の再取得が必要なとき（将来の PUT 連携用） */
+export function invalidateCustomerCrmListCache(): void {
+  crmListStore.clear();
+  crmListInflight.clear();
+}
 
 function crmMaxPages(): number {
   const raw = process.env.CUSTOMER_CRM_MAX_PAGES?.trim();
@@ -158,13 +193,9 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
   };
 }
 
-/**
- * ログイン担当者（AP/CL/案件作成者）の顧客を @pocket から取得し、最新順で返す。
- */
-export async function listCustomerCrmRecords(
+async function fetchCustomerCrmCandidatesFromPocket(
   boundStaffName: string,
-  filter: CustomerCrmFilter = "all",
-): Promise<CustomerCrmListItem[]> {
+): Promise<CrmCandidate[]> {
   const cfg = customerInfoConfigReady();
   if (!cfg.ok) return [];
 
@@ -181,11 +212,14 @@ export async function listCustomerCrmRecords(
   const ctx = buildCrmFieldContext(appFields);
   if (!ctx) return [];
 
-  const candidates: Array<CustomerCrmListItem & { sortKey: number }> = [];
+  const candidates: CrmCandidate[] = [];
   const maxPages = crmMaxPages();
-  const maxResults = crmMaxResults();
+  const pageDelayMs = crmPageDelayMs();
 
   for (let page = 1; page <= maxPages; page++) {
+    if (page > 1 && pageDelayMs > 0) {
+      await sleep(pageDelayMs);
+    }
     const data = await fetchRecordsList(
       appId,
       {
@@ -230,7 +264,7 @@ export async function listCustomerCrmRecords(
         ctx.constructionDateFieldId,
       );
 
-      const item: CustomerCrmListItem & { sortKey: number } = {
+      candidates.push({
         recordId,
         customerName,
         subtitle: ctx.subtitleField
@@ -241,17 +275,61 @@ export async function listCustomerCrmRecords(
         combinedSubsidyName,
         isConstructionDateUnset,
         sortKey: crmSortKeyFromRecord(recObj, recordId, ctx.sortFieldId),
-      };
-
-      if (passesCrmFilter(item, filter)) {
-        candidates.push(item);
-      }
+      });
     }
 
     if (rows.length < PAGE_LIMIT) break;
   }
 
   candidates.sort((a, b) => b.sortKey - a.sortKey);
+  return candidates;
+}
 
-  return candidates.slice(0, maxResults).map(({ sortKey: _s, ...item }) => item);
+async function getCachedCustomerCrmCandidates(
+  boundStaffName: string,
+): Promise<CrmCandidate[]> {
+  const ttl = crmCacheTtlMs();
+  if (ttl <= 0) {
+    return fetchCustomerCrmCandidatesFromPocket(boundStaffName);
+  }
+
+  const key = crmCacheKey(boundStaffName);
+  const now = Date.now();
+  const hit = crmListStore.get(key);
+  if (hit && hit.expiresAt > now) {
+    return hit.items.map((item) => ({ ...item }));
+  }
+
+  const pending = crmListInflight.get(key);
+  if (pending) {
+    return pending.then((items) => items.map((item) => ({ ...item })));
+  }
+
+  const promise = (async () => {
+    try {
+      const items = await fetchCustomerCrmCandidatesFromPocket(boundStaffName);
+      crmListStore.set(key, { expiresAt: Date.now() + ttl, items });
+      return items;
+    } finally {
+      crmListInflight.delete(key);
+    }
+  })();
+
+  crmListInflight.set(key, promise);
+  return promise;
+}
+
+/**
+ * ログイン担当者（AP/CL/案件作成者）の顧客を @pocket から取得し、最新順で返す。
+ */
+export async function listCustomerCrmRecords(
+  boundStaffName: string,
+  filter: CustomerCrmFilter = "all",
+): Promise<CustomerCrmListItem[]> {
+  const maxResults = crmMaxResults();
+  const all = await getCachedCustomerCrmCandidates(boundStaffName);
+  return all
+    .filter((item) => passesCrmFilter(item, filter))
+    .slice(0, maxResults)
+    .map(({ sortKey: _s, ...item }) => item);
 }
