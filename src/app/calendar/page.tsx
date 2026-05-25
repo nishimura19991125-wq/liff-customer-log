@@ -16,6 +16,7 @@ import {
 } from "@/components/liff-chrome";
 import { MapNavigationButton } from "@/components/map-navigation-button";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
+import { useLiffSwr } from "@/hooks/use-liff-swr";
 import { applyCalendarRecordPatch } from "@/lib/calendar-apply-patch";
 import type {
   CalendarApiPayload,
@@ -26,6 +27,7 @@ import {
   EMPTY_FILL_HOUSING_STATUS_NEW_BUILD,
   EMPTY_FILL_HOUSING_STATUS_VALUES,
 } from "@/lib/calendar-empty-fill-options";
+import { isLiffSwrSessionExpired, liffAuthedJsonFetch } from "@/lib/liff-swr";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 
@@ -1139,90 +1141,82 @@ export default function CalendarPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(() =>
     LIFF_ID ? null : "NEXT_PUBLIC_LIFF_ID が設定されていません",
   );
-  const [data, setData] = useState<CalendarApiPayload | null>(null);
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
   const [newRecordOpen, setNewRecordOpen] = useState(false);
+  const [idToken, setIdToken] = useState<string | null>(null);
 
-  const loadCalendar = useCallback(
-    async (
-      idToken: string,
-      year: number,
-      month: number,
-      options?: { refresh?: boolean },
-    ) => {
-    if (!options?.refresh) {
-      setPhase("loading");
-      setErrorMessage(null);
-    }
-    const qs = new URLSearchParams({ year: String(year), month: String(month) });
-    if (options?.refresh) qs.set("refresh", "1");
-    const res = await fetch(`/api/calendar?${qs}`, {
-      headers: { Authorization: `Bearer ${idToken}` },
+  const calendarPath = useMemo(() => {
+    if (!idToken) return null;
+    const qs = new URLSearchParams({
+      year: String(ym.year),
+      month: String(ym.month),
     });
+    return `/api/calendar?${qs}`;
+  }, [idToken, ym.year, ym.month]);
 
-    if (res.status === 401) {
-      let body: unknown = null;
-      try {
-        body = await res.json();
-      } catch {
-        /* ignore */
-      }
-      if (isLineSessionExpiredPayload(body)) {
+  const {
+    data,
+    error: calendarError,
+    isLoading: calendarLoading,
+    mutate: mutateCalendar,
+  } = useLiffSwr<CalendarApiPayload>(calendarPath, idToken);
+
+  useEffect(() => {
+    if (!idToken) return;
+    if (calendarError) {
+      if (isLiffSwrSessionExpired(calendarError)) {
         setPhase("session-expired");
         return;
       }
-      setErrorMessage("認証に失敗しました。LINE から開き直してください。");
-      setPhase("error");
-      return;
-    }
-
-    if (res.status === 503) {
-      const body = (await res.json()) as { disabled?: boolean; error?: string };
-      setErrorMessage(
-        body.error ??
-          "工事カレンダーは環境変数 CALENDAR_APP_ID 設定後に利用できます。",
-      );
-      setPhase("disabled");
-      return;
-    }
-
-    if (!res.ok) {
-      let body: { error?: string } = {};
-      try {
-        body = (await res.json()) as { error?: string };
-      } catch {
-        /* ignore */
+      if (calendarError.status === 503) {
+        const body = calendarError.body as { error?: string } | null;
+        setErrorMessage(
+          body?.error ??
+            "工事カレンダーは環境変数 CALENDAR_APP_ID 設定後に利用できます。",
+        );
+        setPhase("disabled");
+        return;
       }
-      const base =
-        body.error ??
-        (res.status === 429
-          ? "アクセスが集中しています。少し待ってから再度お試しください。"
-          : "読み込みに失敗しました");
-      setErrorMessage(base);
+      setErrorMessage(calendarError.message);
       setPhase("error");
       return;
     }
-
-    const payload = (await res.json()) as CalendarApiPayload;
-    setData(payload);
-    setPhase("ready");
-  },
-  []);
-
-  const [idToken, setIdToken] = useState<string | null>(null);
+    if (data) {
+      setErrorMessage(null);
+      setPhase("ready");
+    } else if (calendarLoading) {
+      setPhase("loading");
+      setErrorMessage(null);
+    }
+  }, [idToken, data, calendarError, calendarLoading]);
 
   const applyCalendarSaveToView = useCallback(
     async (patch?: CalendarRecordMonthPatch | null) => {
       const t = idToken;
       if (!t) return;
       if (patch) {
-        setData((prev) => (prev ? applyCalendarRecordPatch(prev, patch) : prev));
+        void mutateCalendar(
+          (prev) => (prev ? applyCalendarRecordPatch(prev, patch) : prev),
+          { revalidate: false },
+        );
         const primaryDay = patch.dayKeys[0];
         if (primaryDay) setSelectedDayKey(primaryDay);
       }
-      await loadCalendar(t, ym.year, ym.month, { refresh: true });
+      const qs = new URLSearchParams({
+        year: String(ym.year),
+        month: String(ym.month),
+        refresh: "1",
+      });
+      await mutateCalendar(
+        () =>
+          liffAuthedJsonFetch<CalendarApiPayload>(
+            `/api/calendar?${qs}`,
+            t,
+          ),
+        { revalidate: false },
+      );
     },
-    [idToken, ym.year, ym.month, loadCalendar],
+    [idToken, ym.year, ym.month, mutateCalendar],
   );
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
@@ -1258,14 +1252,6 @@ export default function CalendarPage() {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (!idToken) return;
-    const t = window.setTimeout(() => {
-      void loadCalendar(idToken, ym.year, ym.month);
-    }, 120);
-    return () => clearTimeout(t);
-  }, [idToken, ym.year, ym.month, loadCalendar]);
 
   useEffect(() => {
     const t = window.setTimeout(() => {

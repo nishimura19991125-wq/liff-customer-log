@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   SalesDashboardCyberView,
@@ -21,8 +21,9 @@ import {
 } from "@/components/liff-chrome";
 import { resetLiffScroll } from "@/components/liff-scroll-reset";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
+import { useLiffSwr } from "@/hooks/use-liff-swr";
+import { isLiffSwrSessionExpired } from "@/lib/liff-swr";
 import { initLiffAndGetToken } from "@/lib/liff-session";
-import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -46,9 +47,7 @@ export default function SalesDashboardPage() {
   const [idToken, setIdToken] = useState<string | null>(null);
   const [period, setPeriod] = useState<DashboardPeriod>("current");
   const [department, setDepartment] = useState<DashboardDepartment>("pt");
-  const [data, setData] = useState<DashboardPayload | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [listLoading, setListLoading] = useState(false);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -82,62 +81,56 @@ export default function SalesDashboardPage() {
     };
   }, []);
 
-  const loadDashboard = useCallback(
-    async (token: string, nextPeriod: DashboardPeriod) => {
-      setListLoading(true);
-      setFeedback(null);
-      try {
-        const res = await fetch(
-          `/api/sales-dashboard?period=${encodeURIComponent(nextPeriod)}`,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-        const body = (await res.json()) as DashboardPayload & {
-          error?: string;
-          disabled?: boolean;
-          needsStaffBind?: boolean;
-        };
-        if (isLineSessionExpiredPayload(body)) {
-          setPhase("session-expired");
-          return;
-        }
-        if (!res.ok) {
-          setFeedback(body.error ?? "ダッシュボードの取得に失敗しました");
-          setData(null);
-          setPhase("ready");
-          return;
-        }
-        if (body.needsStaffBind) {
-          setData(null);
-          setPhase("ready");
-          return;
-        }
-        setData(body);
-        setPhase("ready");
-        resetLiffScroll();
-      } catch {
-        setFeedback("ダッシュボードの取得に失敗しました");
-        setData(null);
-        setPhase("ready");
-      } finally {
-        setListLoading(false);
-      }
-    },
-    [],
-  );
+  type DashboardApiBody = DashboardPayload & {
+    error?: string;
+    disabled?: boolean;
+    needsStaffBind?: boolean;
+  };
+
+  const dashboardPath =
+    idToken && !needsStaffBind && !account.loading
+      ? `/api/sales-dashboard?period=${encodeURIComponent(period)}`
+      : null;
+
+  const {
+    data,
+    error: swrError,
+    isLoading: dashboardLoading,
+  } = useLiffSwr<DashboardApiBody>(dashboardPath, idToken);
 
   useEffect(() => {
     if (!idToken) return;
-    if (phase !== "ready" && phase !== "loading") return;
-    if (needsStaffBind || account.loading) return;
-    void loadDashboard(idToken, period);
+    if (needsStaffBind || account.loading) {
+      if (phase === "loading") setPhase("ready");
+      return;
+    }
+    if (swrError) {
+      if (isLiffSwrSessionExpired(swrError)) {
+        setPhase("session-expired");
+        return;
+      }
+      setFeedback(swrError.message);
+      setPhase("ready");
+      return;
+    }
+    if (data) {
+      setFeedback(null);
+      setPhase("ready");
+      resetLiffScroll();
+    } else if (dashboardLoading && phase !== "session-expired") {
+      setPhase("loading");
+    }
   }, [
-    phase,
     idToken,
-    period,
+    data,
+    swrError,
+    dashboardLoading,
     needsStaffBind,
     account.loading,
-    loadDashboard,
+    phase,
   ]);
+
+  const listLoading = dashboardLoading && !data;
 
   if (
     phase === "init" ||

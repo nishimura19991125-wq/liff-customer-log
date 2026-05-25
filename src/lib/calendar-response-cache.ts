@@ -21,7 +21,7 @@ export function buildCalendarPayloadCacheKey(year: number, month: number): strin
   const includeSandwich =
     process.env.CALENDAR_INCLUDE_SANDWICH_NATIONAL_HOLIDAY?.trim() === "true";
   const recordsQueryFilterEnabled =
-    process.env.CALENDAR_RECORDS_QUERY_FILTER?.trim() === "true";
+    process.env.CALENDAR_RECORDS_QUERY_FILTER?.trim() !== "false";
 
   return JSON.stringify({
     v: 3,

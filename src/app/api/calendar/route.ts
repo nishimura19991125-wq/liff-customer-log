@@ -76,8 +76,9 @@ export async function GET(request: Request) {
     process.env.CALENDAR_INCLUDE_SANDWICH_NATIONAL_HOLIDAY?.trim() === "true";
 
   const reportAppId = process.env.CALENDAR_REPORT_APP_ID?.trim() ?? "";
-  const recordsQueryFilterEnabled =
-    process.env.CALENDAR_RECORDS_QUERY_FILTER?.trim() === "true";
+  const recordsQueryFilterDisabled =
+    process.env.CALENDAR_RECORDS_QUERY_FILTER?.trim() === "false";
+  const recordsQueryFilterEnabled = !recordsQueryFilterDisabled;
 
   const refresh =
     url.searchParams.get("refresh") === "1" ||

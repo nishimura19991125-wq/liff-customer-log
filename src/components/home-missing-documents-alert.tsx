@@ -1,17 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { useLiffSwr } from "@/hooks/use-liff-swr";
 import {
   clearMissingDocumentsAlertSessionCollapse,
   isMissingDocumentsAlertCollapsed,
-  readMissingDocumentsCache,
   setMissingDocumentsAlertCollapsed,
-  writeMissingDocumentsCache,
-  type MissingDocumentAlertItem,
 } from "@/lib/missing-documents-cache";
-import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 
 type Props = {
   idToken: string | null;
@@ -19,9 +16,13 @@ type Props = {
   disabled?: boolean;
 };
 
-type ApiCustomerRow = {
-  recordId: string;
-  customerName: string;
+type CustomersApiBody = {
+  customers?: Array<{
+    recordId: string;
+    customerName: string;
+    isDocumentMissing?: boolean;
+  }>;
+  needsStaffBind?: boolean;
 };
 
 export function HomeMissingDocumentsAlert({
@@ -29,56 +30,38 @@ export function HomeMissingDocumentsAlert({
   boundStaffName,
   disabled = false,
 }: Props) {
-  const [items, setItems] = useState<MissingDocumentAlertItem[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
+  const swrPath =
+    idToken && boundStaffName && !disabled
+      ? "/api/customers?filter=all"
+      : null;
+
+  const { data } = useLiffSwr<CustomersApiBody>(swrPath, idToken, {
+    dedupingInterval: 10 * 60 * 1000,
+    focusThrottleInterval: 10 * 60 * 1000,
+    revalidateOnFocus: false,
+  });
+
+  const items = useMemo(
+    () =>
+      (data?.customers ?? [])
+        .filter((r) => r.isDocumentMissing)
+        .map((r) => ({
+          recordId: r.recordId,
+          customerName: r.customerName,
+        })),
+    [data?.customers],
+  );
+
   useEffect(() => {
     setCollapsed(isMissingDocumentsAlertCollapsed());
-    const cached = readMissingDocumentsCache();
-    if (cached) setItems(cached.items);
     setHydrated(true);
     return () => {
       clearMissingDocumentsAlertSessionCollapse();
     };
   }, []);
-
-  const load = useCallback(async () => {
-    if (!idToken || disabled || !boundStaffName) {
-      setItems([]);
-      return;
-    }
-
-    try {
-      const res = await fetch("/api/customers?filter=missing_docs", {
-        headers: { Authorization: `Bearer ${idToken}` },
-      });
-      const data = (await res.json()) as {
-        customers?: ApiCustomerRow[];
-        needsStaffBind?: boolean;
-        error?: string;
-      };
-      if (isLineSessionExpiredPayload(data)) return;
-      if (!res.ok || data.needsStaffBind) {
-        setItems([]);
-        return;
-      }
-
-      const next = (data.customers ?? []).map((row) => ({
-        recordId: row.recordId,
-        customerName: row.customerName,
-      }));
-      setItems(next);
-      writeMissingDocumentsCache(next);
-    } catch {
-      /* キャッシュ表示を維持 */
-    }
-  }, [idToken, boundStaffName, disabled]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    void load();
-  }, [hydrated, load]);
 
   const handleCollapse = () => {
     setMissingDocumentsAlertCollapsed();

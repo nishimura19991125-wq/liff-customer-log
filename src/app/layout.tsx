@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 
 import { LiffPinGuard } from "@/components/liff-pin-guard";
 import { LiffScrollReset } from "@/components/liff-scroll-reset";
+import { LiffSwrProvider } from "@/components/liff-swr-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 
 import "./globals.css";
@@ -38,8 +39,10 @@ export default function RootLayout({
     >
       <body className="flex min-h-dvh min-w-0 flex-col overflow-x-hidden bg-slate-50 font-sans text-slate-800 antialiased transition-all duration-300 dark:bg-slate-900 dark:text-white">
         <ThemeProvider>
-          <LiffScrollReset />
-          <LiffPinGuard>{children}</LiffPinGuard>
+          <LiffSwrProvider>
+            <LiffScrollReset />
+            <LiffPinGuard>{children}</LiffPinGuard>
+          </LiffSwrProvider>
         </ThemeProvider>
       </body>
     </html>

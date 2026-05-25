@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
@@ -16,8 +16,9 @@ import {
 } from "@/components/liff-chrome";
 import { resetLiffScroll } from "@/components/liff-scroll-reset";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
+import { useLiffSwr } from "@/hooks/use-liff-swr";
+import { isLiffSwrSessionExpired } from "@/lib/liff-swr";
 import { initLiffAndGetToken } from "@/lib/liff-session";
-import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -87,8 +88,6 @@ export default function CustomerListPage() {
   );
   const [idToken, setIdToken] = useState<string | null>(null);
   const [filter, setFilter] = useState<CrmFilter>("all");
-  const [customers, setCustomers] = useState<CustomerRow[]>([]);
-  const [listLoading, setListLoading] = useState(false);
   const [listFeedback, setListFeedback] = useState<string | null>(null);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
@@ -123,62 +122,61 @@ export default function CustomerListPage() {
     };
   }, []);
 
+  type CustomersApiBody = {
+    customers?: CustomerRow[];
+    error?: string;
+    disabled?: boolean;
+    needsStaffBind?: boolean;
+  };
+
+  const customersPath =
+    phase === "ready" && idToken && !needsStaffBind
+      ? "/api/customers?filter=all"
+      : null;
+
+  const {
+    data: customersBody,
+    error: customersError,
+    isLoading: customersLoading,
+  } = useLiffSwr<CustomersApiBody>(customersPath, idToken);
+
+  const customers = customersBody?.customers ?? [];
+  const listLoading = customersLoading && !customersBody;
+
+  useEffect(() => {
+    if (phase !== "ready" || !idToken || needsStaffBind) return;
+    if (customersError) {
+      if (isLiffSwrSessionExpired(customersError)) {
+        setPhase("session-expired");
+        return;
+      }
+      setListFeedback(
+        customersError.status === 429
+          ? customersError.message
+          : customersError.message,
+      );
+      return;
+    }
+    if (customersBody?.needsStaffBind) return;
+    if (!customersLoading && customers.length === 0) {
+      setListFeedback("該当する案件はありません");
+    } else if (customers.length > 0) {
+      setListFeedback(null);
+    }
+  }, [
+    phase,
+    idToken,
+    needsStaffBind,
+    customersError,
+    customersBody,
+    customersLoading,
+    customers.length,
+  ]);
+
   const displayedCustomers = useMemo(
     () => applyCrmFilter(customers, filter),
     [customers, filter],
   );
-
-  const loadCustomers = useCallback(async (token: string) => {
-      setListLoading(true);
-      setListFeedback(null);
-      try {
-        const res = await fetch("/api/customers?filter=all", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = (await res.json()) as {
-          customers?: CustomerRow[];
-          error?: string;
-          disabled?: boolean;
-          needsStaffBind?: boolean;
-        };
-        if (isLineSessionExpiredPayload(data)) {
-          setPhase("session-expired");
-          return;
-        }
-        if (!res.ok) {
-          setListFeedback(
-            res.status === 429
-              ? (data.error ??
-                  "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。")
-              : (data.error ?? "一覧の取得に失敗しました"),
-          );
-          setCustomers([]);
-          return;
-        }
-        if (data.needsStaffBind) {
-          setCustomers([]);
-          return;
-        }
-        const rows = data.customers ?? [];
-        setCustomers(rows);
-        if (rows.length === 0) {
-          setListFeedback("該当する案件はありません");
-        }
-      } catch (e) {
-        console.error(e);
-        setListFeedback("通信エラーが発生しました");
-        setCustomers([]);
-      } finally {
-        setListLoading(false);
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (phase !== "ready" || !idToken || needsStaffBind) return;
-    void loadCustomers(idToken);
-  }, [phase, idToken, needsStaffBind, loadCustomers]);
 
   const listMessage = useMemo(() => {
     if (listLoading) return null;
