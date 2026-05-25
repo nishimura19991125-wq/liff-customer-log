@@ -58,7 +58,7 @@ export function LiffPageHeader({ title, subtitle, action }: LiffPageHeaderProps)
 
 export function LiffCard({ children }: { children: ReactNode }) {
   return (
-    <div className="min-w-0 max-w-full overflow-hidden rounded-[1.35rem] border border-slate-100 bg-white text-slate-800 shadow-sm ring-1 ring-slate-100/80 backdrop-blur-md transition-all duration-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:shadow-none dark:ring-slate-700/80">
+    <div className="cyber-card min-w-0 max-w-full overflow-hidden text-slate-800 backdrop-blur-md dark:text-slate-100">
       {children}
     </div>
   );
@@ -395,7 +395,7 @@ export function LiffMenuCard({
 }) {
   const iconWrap = menuCardIconToneClass[iconTone];
   const cls =
-    "group flex items-stretch gap-4 rounded-[1.35rem] border border-slate-100 bg-white p-5 text-slate-800 shadow-sm ring-1 ring-slate-100/80 transition-all duration-300 active:scale-[0.99] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:shadow-none dark:ring-slate-700/80";
+    "cyber-card group flex items-stretch gap-4 p-5 text-slate-800 transition-all duration-300 active:scale-[0.99] dark:text-slate-100 dark:hover:shadow-[0_0_14px_rgba(16,185,129,0.12)]";
 
   if (disabled) {
     return (

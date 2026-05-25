@@ -95,7 +95,7 @@ export function HomeMissingDocumentsAlert({
         <button
           type="button"
           onClick={() => setCollapsed(false)}
-          className="w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-left text-[14px] font-semibold text-red-900 shadow-sm transition-colors active:scale-[0.99] dark:border-red-900 dark:bg-red-950/30 dark:text-red-100"
+          className="w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-left text-[14px] font-semibold text-red-900 shadow-sm transition-colors active:scale-[0.99] dark:border-red-900 dark:bg-red-950/30 dark:text-red-100 dark:shadow-[0_0_15px_rgba(239,68,68,0.1)]"
         >
           🚨 書類未回収が {items.length} 件あります（タップで表示）
         </button>
@@ -105,7 +105,7 @@ export function HomeMissingDocumentsAlert({
 
   return (
     <section
-      className="relative mb-4 rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm dark:border-red-900 dark:bg-red-950/30"
+      className="relative mb-4 rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm dark:border-red-900 dark:bg-red-950/30 dark:shadow-[0_0_15px_rgba(239,68,68,0.1)]"
       aria-label="書類未回収の警告"
     >
       <button

@@ -55,7 +55,44 @@ body {
 }
 
 .dark .liff-screen {
-  background: linear-gradient(165deg, #0f172a 0%, #1e293b 48%, #0f172a 100%);
+  background:
+    radial-gradient(ellipse 120% 80% at 50% -20%, rgba(16, 185, 129, 0.12), transparent 55%),
+    radial-gradient(ellipse 90% 60% at 100% 50%, rgba(6, 182, 212, 0.06), transparent 50%),
+    linear-gradient(165deg, #020617 0%, #0f172a 42%, #020617 100%);
+}
+
+/** サイバーパンク風ネオンカード（ダッシュボード等） */
+.cyber-card {
+  border-radius: 1rem;
+  border: 1px solid rgb(226 232 240 / 0.9);
+  background: rgb(255 255 255 / 0.92);
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.06);
+  transition:
+    border-color 300ms ease,
+    box-shadow 300ms ease;
+}
+
+.dark .cyber-card {
+  border-color: rgb(16 185 129 / 0.22);
+  background: rgb(15 23 42 / 0.72);
+  box-shadow:
+    0 0 12px rgb(16 185 129 / 0.08),
+    inset 0 1px 0 rgb(16 185 129 / 0.06);
+}
+
+.cyber-tab-active {
+  background: rgb(5 150 105);
+  color: white;
+  font-weight: 700;
+  box-shadow:
+    0 0 10px rgb(16 185 129 / 0.5),
+    0 4px 14px rgb(16 185 129 / 0.25);
+}
+
+.dark .cyber-tab-active {
+  box-shadow:
+    0 0 14px rgb(16 185 129 / 0.55),
+    0 0 24px rgb(16 185 129 / 0.2);
 }
 
 /** LIFF 各ページの main：横はみ出しを抑え縦スクロールのみ */
