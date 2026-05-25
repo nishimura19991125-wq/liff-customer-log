@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   LiffAccountBar,
-  LiffCard,
   LiffGhostLink,
   LiffLoadingBlock,
   LiffPageHeader,
@@ -39,6 +39,26 @@ const FILTER_TABS: Array<{ id: CrmFilter; label: string }> = [
   { id: "no_construction_date", label: "工事日未定" },
   { id: "subsidy", label: "補助金対象" },
 ];
+
+function ChevronRightIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden
+    >
+      <path
+        d="M9 6l6 6-6 6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 export default function CustomerListPage() {
   const [phase, setPhase] = useState<
@@ -162,7 +182,7 @@ export default function CustomerListPage() {
     return (
       <LiffScreen>
         <LiffPageHeader title="担当顧客一覧" />
-        <p className="text-sm text-rose-600">{errorMessage}</p>
+        <p className="text-sm text-rose-600 dark:text-rose-400">{errorMessage}</p>
         <LiffGhostLink href="/">トップへ戻る</LiffGhostLink>
       </LiffScreen>
     );
@@ -174,16 +194,21 @@ export default function CustomerListPage() {
         title="担当顧客一覧"
         subtitle="自分の担当案件の書類・工事日・補助金を一覧で確認"
         action={
-          <LiffGhostLink href="/">トップ</LiffGhostLink>
+          <div className="flex shrink-0 items-center gap-2">
+            <ThemeToggle />
+            <LiffAccountBar
+              loading={account.loading}
+              pictureUrl={account.pictureUrl}
+              boundStaffName={account.boundStaffName}
+              bindingEnabled={account.bindingEnabled}
+            />
+          </div>
         }
       />
 
-      <LiffAccountBar
-        loading={account.loading}
-        pictureUrl={account.pictureUrl}
-        boundStaffName={account.boundStaffName}
-        bindingEnabled={account.bindingEnabled}
-      />
+      <div className="mb-4">
+        <LiffGhostLink href="/">トップ</LiffGhostLink>
+      </div>
 
       <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
       <LiffStaffBindPanel
@@ -201,35 +226,41 @@ export default function CustomerListPage() {
             : undefined
         }
       >
-          <nav
-            className="mb-4 flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]"
-            aria-label="絞り込み"
-          >
-            {FILTER_TABS.map((tab) => {
-              const active = filter === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setFilter(tab.id)}
-                  className={`shrink-0 rounded-2xl px-4 py-3 text-[15px] font-semibold transition active:scale-[0.98] ${
-                    active
-                      ? "bg-slate-900 text-white shadow-md"
-                      : "border border-slate-200 bg-white text-slate-700"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </nav>
+          <div className="relative mb-4">
+            <nav
+              className="flex gap-2 overflow-x-auto pb-2 pl-0.5 pr-10 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              aria-label="絞り込み"
+            >
+              {FILTER_TABS.map((tab) => {
+                const active = filter === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setFilter(tab.id)}
+                    className={`shrink-0 rounded-2xl px-4 py-2.5 text-[15px] transition-all duration-300 active:scale-[0.98] ${
+                      active
+                        ? "bg-emerald-600 font-bold text-white shadow-md shadow-emerald-600/25"
+                        : "bg-slate-100 font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </nav>
+            <div
+              className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-slate-50 to-transparent dark:from-slate-900"
+              aria-hidden
+            />
+          </div>
 
           {listLoading ? (
             <LiffLoadingBlock message="案件を読み込み中…" />
           ) : (
             <div className="flex flex-col gap-3">
               {listFeedback && customers.length === 0 ? (
-                <p className="rounded-xl bg-slate-50 px-4 py-3 text-center text-sm text-slate-600">
+                <p className="rounded-xl bg-slate-50 px-4 py-3 text-center text-sm text-slate-600 dark:bg-slate-800/80 dark:text-slate-300">
                   {listFeedback}
                 </p>
               ) : null}
@@ -238,40 +269,44 @@ export default function CustomerListPage() {
                 <Link
                   key={row.recordId}
                   href={`/customer-list/${encodeURIComponent(row.recordId)}`}
-                  className="block min-h-[4.5rem] rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition active:scale-[0.99] active:bg-slate-50"
+                  className="group flex min-h-[4.5rem] items-stretch gap-3 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm transition-all duration-300 active:scale-[0.99] active:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:shadow-none dark:active:bg-slate-700/80"
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-lg font-bold leading-snug text-slate-900">
-                        {row.customerName}
-                      </p>
-                      {row.subtitle ? (
-                        <p className="mt-1 text-sm text-slate-500">{row.subtitle}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-lg font-bold leading-snug text-slate-800 dark:text-white">
+                      {row.customerName}
+                    </p>
+                    {row.subtitle ? (
+                      <p className="mt-1 text-xs text-slate-400">{row.subtitle}</p>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {row.isDocumentMissing ? (
+                        <span className="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-1 text-xs font-medium text-rose-800 dark:bg-rose-950/50 dark:text-rose-200">
+                          ⚠ 書類未回収
+                        </span>
+                      ) : null}
+                      {row.isSubsidyTarget && row.combinedSubsidyName ? (
+                        <span
+                          className="inline-flex max-w-full min-w-0 items-center rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-900 dark:bg-sky-950/50 dark:text-sky-200"
+                          title={`補助金: ${row.combinedSubsidyName}`}
+                        >
+                          <span className="truncate">
+                            💰 補助金: {row.combinedSubsidyName}
+                          </span>
+                        </span>
+                      ) : null}
+                      {row.isConstructionDateUnset ? (
+                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
+                          ⌛ 工事日未定
+                        </span>
                       ) : null}
                     </div>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {row.isDocumentMissing ? (
-                      <span className="inline-flex items-center rounded-xl bg-rose-100 px-3 py-1.5 text-[13px] font-semibold text-rose-800">
-                        ⚠️ 書類未回収
-                      </span>
-                    ) : null}
-                    {row.isSubsidyTarget && row.combinedSubsidyName ? (
-                      <span
-                        className="inline-flex max-w-full min-w-0 items-center rounded-xl bg-sky-100 px-3 py-1.5 text-[12px] font-semibold text-sky-900 sm:text-[13px]"
-                        title={`補助金: ${row.combinedSubsidyName}`}
-                      >
-                        <span className="truncate">
-                          💰 補助金: {row.combinedSubsidyName}
-                        </span>
-                      </span>
-                    ) : null}
-                    {row.isConstructionDateUnset ? (
-                      <span className="inline-flex items-center rounded-xl bg-amber-100 px-3 py-1.5 text-[13px] font-semibold text-amber-900">
-                        ⏳ 工事日未定
-                      </span>
-                    ) : null}
-                  </div>
+                  <span
+                    className="flex size-9 shrink-0 items-center justify-center self-center rounded-full bg-slate-100 text-slate-400 transition-colors duration-300 group-active:bg-slate-200 dark:bg-slate-700/80 dark:text-slate-500 dark:group-active:bg-slate-600"
+                    aria-hidden
+                  >
+                    <ChevronRightIcon />
+                  </span>
                 </Link>
               ))}
             </div>
