@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
+import { LiffPinGuard } from "@/components/liff-pin-guard";
 import { LiffScrollReset } from "@/components/liff-scroll-reset";
 
 import "./globals.css";
@@ -35,7 +36,7 @@ export default function RootLayout({
     >
       <body className="flex min-h-dvh min-w-0 flex-col overflow-x-hidden font-sans antialiased">
         <LiffScrollReset />
-        {children}
+        <LiffPinGuard>{children}</LiffPinGuard>
       </body>
     </html>
   );
