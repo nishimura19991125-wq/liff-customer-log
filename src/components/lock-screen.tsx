@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 type LockMode = "verify" | "waiting" | "set";
 
@@ -30,6 +30,56 @@ function PinDots({ length }: { length: number }) {
   );
 }
 
+const NUMPAD_BTN_CLASS =
+  "flex size-[4.25rem] shrink-0 items-center justify-center rounded-full border border-slate-600/70 bg-slate-800/50 text-3xl font-bold text-white shadow-md transition-colors active:border-slate-500 active:bg-slate-600 disabled:pointer-events-none disabled:opacity-40 sm:size-20 sm:text-4xl";
+
+function BackspaceIcon() {
+  return (
+    <svg
+      width="28"
+      height="28"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M21 4H8l-7 8 7 8h13a2 2 0 002-2V6a2 2 0 00-2-2z" />
+      <path d="M18 9l-6 6M12 9l6 6" />
+    </svg>
+  );
+}
+
+function NumPadButton({
+  label,
+  onClick,
+  disabled,
+  ariaLabel,
+}: {
+  label: ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  ariaLabel?: string;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className={NUMPAD_BTN_CLASS}
+    >
+      {label}
+    </button>
+  );
+}
+
+function NumPadSpacer() {
+  return <div className="size-[4.25rem] shrink-0 sm:size-20" aria-hidden />;
+}
+
 function NumPad({
   onDigit,
   onBack,
@@ -39,26 +89,44 @@ function NumPad({
   onBack: () => void;
   disabled?: boolean;
 }) {
-  const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"];
+  const row1 = ["1", "2", "3"];
+  const row2 = ["4", "5", "6"];
+  const row3 = ["7", "8", "9"];
+
+  const renderRow = (digits: string[]) => (
+    <div className="flex justify-center gap-5 sm:gap-6">
+      {digits.map((d) => (
+        <NumPadButton
+          key={d}
+          label={d}
+          disabled={disabled}
+          ariaLabel={`数字 ${d}`}
+          onClick={() => onDigit(d)}
+        />
+      ))}
+    </div>
+  );
+
   return (
-    <div className="grid max-w-xs grid-cols-3 gap-3">
-      {keys.map((k, idx) => {
-        if (k === "") {
-          return <div key={`empty-${idx}`} />;
-        }
-        const isBack = k === "⌫";
-        return (
-          <button
-            key={k}
-            type="button"
-            disabled={disabled}
-            onClick={() => (isBack ? onBack() : onDigit(k))}
-            className="flex h-16 items-center justify-center rounded-2xl bg-slate-800 text-2xl font-bold text-white shadow-lg ring-1 ring-slate-600 transition active:scale-95 active:bg-slate-700 disabled:opacity-40"
-          >
-            {k}
-          </button>
-        );
-      })}
+    <div className="flex flex-col items-center gap-5 sm:gap-6">
+      {renderRow(row1)}
+      {renderRow(row2)}
+      {renderRow(row3)}
+      <div className="flex justify-center gap-5 sm:gap-6">
+        <NumPadSpacer />
+        <NumPadButton
+          label="0"
+          disabled={disabled}
+          ariaLabel="数字 0"
+          onClick={() => onDigit("0")}
+        />
+        <NumPadButton
+          label={<BackspaceIcon />}
+          disabled={disabled}
+          ariaLabel="1文字削除"
+          onClick={onBack}
+        />
+      </div>
     </div>
   );
 }
@@ -293,8 +361,8 @@ export function LockScreen({
     mode === "set" && setStep === "confirm" ? confirmDigits.length : digits.length;
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-900 px-4 text-white">
-      <div className="w-full max-w-md text-center">
+    <div className="fixed inset-0 z-[100] flex min-h-dvh flex-col items-center justify-center bg-slate-900 px-4 py-[max(1rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] text-white">
+      <div className="flex w-full max-w-md flex-col items-center justify-center text-center">
         <p className="mb-1 text-sm font-medium text-slate-400">情報確認くん</p>
         <h1 className="mb-2 text-xl font-bold tracking-tight">
           {mode === "waiting"
@@ -343,13 +411,11 @@ export function LockScreen({
             ) : (
               <div className="mb-4 h-5" />
             )}
-            <div className="flex justify-center">
-              <NumPad
-                onDigit={pushDigit}
-                onBack={backspace}
-                disabled={busy || mode === "waiting"}
-              />
-            </div>
+            <NumPad
+              onDigit={pushDigit}
+              onBack={backspace}
+              disabled={busy || mode === "waiting"}
+            />
           </>
         )}
 
