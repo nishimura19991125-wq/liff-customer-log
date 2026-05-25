@@ -55,6 +55,16 @@ function parseRecordYm(
   raw: unknown,
 ): { year: number; month1: number } | null {
   const s = coerceCustomerInfoDisplayString(raw);
+  if (!s) return null;
+
+  const slashIso = s.replace(/\//g, "-");
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(slashIso);
+  if (iso) {
+    const year = Number(iso[1]);
+    const month1 = Number(iso[2]);
+    if (month1 >= 1 && month1 <= 12) return { year, month1 };
+  }
+
   const digits = s.replace(/[^\d]/g, "");
   if (digits.length < 6) return null;
   const year = Number(digits.slice(0, 4));
@@ -62,6 +72,13 @@ function parseRecordYm(
   if (!Number.isFinite(year) || !Number.isFinite(month1)) return null;
   if (month1 < 1 || month1 > 12) return null;
   return { year, month1 };
+}
+
+function parseRecordYmFromField(
+  recObj: Record<string, unknown>,
+  fieldId: string,
+): { year: number; month1: number } | null {
+  return parseRecordYm(readCustomerInfoFieldValue(recObj, fieldId));
 }
 
 function normalizeStatus(s: string): string {
@@ -106,14 +123,16 @@ export function aggregateApoRecords(
     const typeVal = readCustomerInfoFieldValue(recObj, fieldMap.apoType);
     if (!typeVal || !isApoTypeMatched(typeVal, filterValues)) continue;
 
-    const ym = parseRecordYm(recObj[fieldMap.date]);
+    const ym = parseRecordYmFromField(recObj, fieldMap.date);
     if (!ym || !isYmInPeriod(ym.year, ym.month1, period)) continue;
 
-    const statusVal = readCustomerInfoFieldValue(
-      recObj,
-      fieldMap.estimateStatus,
-    );
-    if (isApoCancelStatus(statusVal)) continue;
+    if (fieldMap.estimateStatus) {
+      const statusVal = readCustomerInfoFieldValue(
+        recObj,
+        fieldMap.estimateStatus,
+      );
+      if (isApoCancelStatus(statusVal)) continue;
+    }
 
     const cur = m.get(name) ?? { name, apoCount: 0 };
     cur.apoCount += 1;
@@ -171,43 +190,74 @@ async function fetchAllPages(
   return all;
 }
 
+export type ApoDashboardSectionResult =
+  | {
+      ok: true;
+      kpi: ApoDashboardKpi;
+      ranking: ApoDashboardRankingRow[];
+    }
+  | { ok: false; error: string };
+
 export async function buildApoDashboardSection(
   boundStaffName: string,
   periodKey: SalesDashboardPeriodKey,
-): Promise<{ kpi: ApoDashboardKpi; ranking: ApoDashboardRankingRow[] } | null> {
+): Promise<ApoDashboardSectionResult> {
   const apoAppId = salesDashboardApoAppId();
-  if (!apoAppId) return null;
+  if (!apoAppId) {
+    return {
+      ok: false,
+      error: "SALES_DASHBOARD_APO_APP_ID が未設定です",
+    };
+  }
 
-  const auth = { apiKey: apiKeyForSalesDashboardApoPocket() };
-  const bound = normApClStaffName(boundStaffName);
-  const filterValues = salesDashboardApoTypeFilterValues();
+  try {
+    const auth = { apiKey: apiKeyForSalesDashboardApoPocket() };
+    const bound = normApClStaffName(boundStaffName);
+    const filterValues = salesDashboardApoTypeFilterValues();
 
-  const apoFields = await fetchAppFields(apoAppId, auth, {
-    operation: "sales-dashboard:apo-fields",
-    appEnv: "SALES_DASHBOARD_APO_APP_ID",
-  });
-  const fieldMap = resolveApoDashboardFieldMap(apoFields);
-  if (!fieldMap) return null;
+    const apoFields = await fetchAppFields(apoAppId, auth, {
+      operation: "sales-dashboard:apo-fields",
+      appEnv: "SALES_DASHBOARD_APO_APP_ID",
+    });
+    const fieldMap = resolveApoDashboardFieldMap(apoFields);
+    if (!fieldMap) {
+      return {
+        ok: false,
+        error:
+          "必須フィールド（AP担当者・アポ種別・日付）の特定に失敗しました。SALES_DASHBOARD_APO_*_FIELD_ID で uniqueId を指定してください",
+      };
+    }
 
-  const wanted = [
-    fieldMap.salesperson,
-    fieldMap.apoType,
-    fieldMap.date,
-    fieldMap.estimateStatus,
-  ].join(",");
+    const wanted = [
+      fieldMap.salesperson,
+      fieldMap.apoType,
+      fieldMap.date,
+      fieldMap.estimateStatus,
+    ]
+      .filter(Boolean)
+      .join(",");
 
-  const records = await fetchAllPages(apoAppId, wanted, auth);
-  const byStaff = aggregateApoRecords(
-    records,
-    fieldMap,
-    periodKey,
-    filterValues,
-  );
-  const sorted = sortApoAgg([...byStaff.values()]);
-  const totalApo = sorted.reduce((s, x) => s + x.apoCount, 0);
+    const records = await fetchAllPages(apoAppId, wanted, auth);
+    const byStaff = aggregateApoRecords(
+      records,
+      fieldMap,
+      periodKey,
+      filterValues,
+    );
+    const sorted = sortApoAgg([...byStaff.values()]);
+    const totalApo = sorted.reduce((s, x) => s + x.apoCount, 0);
 
-  return {
-    kpi: { totalApoCount: totalApo },
-    ranking: buildApoRanking(sorted, totalApo, bound),
-  };
+    return {
+      ok: true,
+      kpi: { totalApoCount: totalApo },
+      ranking: buildApoRanking(sorted, totalApo, bound),
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[sales-dashboard] apo section failed", e);
+    return {
+      ok: false,
+      error: msg || "アポ集計の取得に失敗しました",
+    };
+  }
 }

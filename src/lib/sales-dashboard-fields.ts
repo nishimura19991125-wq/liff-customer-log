@@ -133,7 +133,8 @@ export type ApoDashboardFieldMap = {
   salesperson: string;
   apoType: string;
   date: string;
-  estimateStatus: string;
+  /** 未検出時はアポキャン除外なし（参照実装と同様） */
+  estimateStatus: string | null;
 };
 
 function pickApoSalespersonFieldId(fields: AtPocketFieldRow[]): string | null {
@@ -165,17 +166,20 @@ function pickApoDateFieldId(fields: AtPocketFieldRow[]): string | null {
     const id = resolveConfiguredFieldToSchemaUniqueId(env, fields);
     if (id) return id;
   }
-  for (const cap of ["アポ取得日", "初回商談実施日"]) {
+  // ranking_pt_dashboard.config.js APO_FIELD_KEYWORDS.date と同順
+  for (const cap of ["初回商談実施日", "アポ取得日"]) {
     const id = pocketFieldUniqueIdByCaption(fields, cap);
     if (id) return id;
   }
   return pickByKeywords(fields, [
-    "アポ取得日",
-    "アポ日",
-    "取得日",
     "初回商談実施日",
     "日付",
     "登録日",
+    "作成日",
+    "実績日",
+    "アポ日",
+    "取得日",
+    "アポ取得日",
   ]);
 }
 
@@ -196,8 +200,8 @@ export function resolveApoDashboardFieldMap(
     ["見積ステータス", "見積ｽﾃｰﾀｽ", "見積ステータス区分"],
     ["見積ステータス"],
   );
-  if (!salesperson || !apoType || !date || !estimateStatus) return null;
-  return { salesperson, apoType, date, estimateStatus };
+  if (!salesperson || !apoType || !date) return null;
+  return { salesperson, apoType, date, estimateStatus: estimateStatus ?? null };
 }
 
 /** アポ種別フィルタ（部分一致）。未設定時は ranking_pt_dashboard.config.js 既定相当 */

@@ -23,6 +23,7 @@ import {
   resolveContractCountFieldMap,
   resolvePtDashboardFieldMap,
   salesDashboardContractAppId,
+  salesDashboardApoAppId,
   salesDashboardPtAppId,
   type ContractCountFieldMap,
   type PtDashboardFieldMap,
@@ -59,6 +60,8 @@ export type SalesDashboardPayload = {
   kpi: SalesDashboardKpi;
   ranking: SalesDashboardRankingRow[];
   apoEnabled: boolean;
+  apoReady: boolean;
+  apoError: string | null;
   apoKpi: ApoDashboardKpi | null;
   apoRanking: ApoDashboardRankingRow[];
 };
@@ -351,8 +354,10 @@ export async function buildSalesDashboardPayload(
     periodHint: period.hint,
     kpi,
     ranking: buildRanking(sorted, companyPt, bound),
-    apoEnabled: apoSection !== null,
-    apoKpi: apoSection?.kpi ?? null,
-    apoRanking: apoSection?.ranking ?? [],
+    apoEnabled: Boolean(salesDashboardApoAppId()),
+    apoReady: apoSection.ok,
+    apoError: apoSection.ok ? null : apoSection.error,
+    apoKpi: apoSection.ok ? apoSection.kpi : null,
+    apoRanking: apoSection.ok ? apoSection.ranking : [],
   };
 }

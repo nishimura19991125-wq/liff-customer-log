@@ -59,6 +59,8 @@ type DashboardPayload = {
   kpi: DashboardKpi;
   ranking: RankingRow[];
   apoEnabled: boolean;
+  apoReady: boolean;
+  apoError: string | null;
   apoKpi: { totalApoCount: number } | null;
   apoRanking: ApoRankingRow[];
 };
@@ -234,7 +236,8 @@ export default function SalesDashboardPage() {
   }
 
   const showApo = department === "apo";
-  const apoReady = data?.apoEnabled ?? false;
+  const apoReady = data?.apoReady ?? false;
+  const apoConfigured = data?.apoEnabled ?? false;
 
   return (
     <LiffScreen>
@@ -409,11 +412,18 @@ export default function SalesDashboardPage() {
                 {showApo ? "アポ件数ランキング" : "営業成績ランキング"}
               </h2>
 
-              {showApo && !apoReady ? (
+              {showApo && !apoConfigured ? (
                 <LiffCard>
                   <p className="px-4 py-6 text-center text-[13px] text-slate-500 dark:text-slate-400">
                     アポ件数ランキングは未設定です（SALES_DASHBOARD_APO_APP_ID
                     を設定してください）
+                  </p>
+                </LiffCard>
+              ) : showApo && !apoReady ? (
+                <LiffCard>
+                  <p className="px-4 py-6 text-center text-[13px] text-red-800 dark:text-red-300 whitespace-pre-wrap">
+                    {data.apoError ??
+                      "アポ件数ランキングの集計に失敗しました"}
                   </p>
                 </LiffCard>
               ) : showApo ? (
