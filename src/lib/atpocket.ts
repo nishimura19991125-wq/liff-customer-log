@@ -85,6 +85,13 @@ export function apiKeyForCustomerInfoPocket(): string {
   return apiKey();
 }
 
+/** PT集計表（営業ダッシュボード）読み取り専用。未設定時はお客様情報キー → ATPOCKET_API_KEY */
+export function apiKeyForSalesDashboardPtPocket(): string {
+  const k = process.env.SALES_DASHBOARD_PT_ATPOCKET_API_KEY?.trim();
+  if (k) return k;
+  return apiKeyForCustomerInfoPocket();
+}
+
 export type AtPocketFetchAuth = {
   apiKey?: string;
 };
@@ -98,6 +105,10 @@ export type AtPocketRequestContext = {
 function authKeyEnvLabel(auth?: AtPocketFetchAuth): string {
   const key = (auth?.apiKey ?? apiKey()).trim();
   const candidates: Array<[string, string | undefined]> = [
+    [
+      "SALES_DASHBOARD_PT_ATPOCKET_API_KEY",
+      process.env.SALES_DASHBOARD_PT_ATPOCKET_API_KEY?.trim(),
+    ],
     ["CUSTOMER_INFO_ATPOCKET_API_KEY", process.env.CUSTOMER_INFO_ATPOCKET_API_KEY?.trim()],
     ["STAFF_READ_ATPOCKET_API_KEY", process.env.STAFF_READ_ATPOCKET_API_KEY?.trim()],
     ["STAFF_WRITE_ATPOCKET_API_KEY", process.env.STAFF_WRITE_ATPOCKET_API_KEY?.trim()],
