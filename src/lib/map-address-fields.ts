@@ -43,6 +43,29 @@ function fieldIdOrNull(id: string | null | undefined): string | null {
   return t || null;
 }
 
+function resolveFieldIdByCaptions(
+  appFields: AtPocketFieldRow[],
+  captions: readonly string[],
+): string | null {
+  for (const caption of captions) {
+    const id = pocketFieldUniqueIdByCaption(appFields, caption);
+    if (id) return id;
+  }
+  return null;
+}
+
+/** 都道府県・市区郡・番地を結合した検索用文字列 */
+export function buildCombinedNormalAddress(parts: {
+  prefecture: string;
+  city: string;
+  street: string;
+}): string {
+  return [parts.prefecture, parts.city, parts.street]
+    .map((s) => trimMapAddressValue(s))
+    .filter(Boolean)
+    .join("");
+}
+
 /** お客様情報アプリ向け：ピンポイント住所・住所列の解決 */
 export function resolveCustomerInfoMapAddressFieldIds(
   appFields: AtPocketFieldRow[],
@@ -59,14 +82,16 @@ export function resolveCustomerInfoMapAddressFieldIds(
       pocketFieldUniqueIdByCaption(appFields, "住所"),
     ),
     prefectureFieldId: fieldIdOrNull(
-      resolveCustomerInfoFormFieldId("prefecture", "都道府県", appFields),
+      resolveCustomerInfoFormFieldId("prefecture", "都道府県", appFields) ??
+        pocketFieldUniqueIdByCaption(appFields, "都道府県"),
     ),
     cityFieldId: fieldIdOrNull(
-      resolveCustomerInfoFormFieldId("city", "市区郡", appFields),
+      resolveCustomerInfoFormFieldId("city", "市区郡", appFields) ??
+        resolveFieldIdByCaptions(appFields, ["市区郡", "市区町村"]),
     ),
     streetFieldId: fieldIdOrNull(
-      resolveCustomerInfoFormFieldId("address", "町村+番地", appFields) ??
-        pocketFieldUniqueIdByCaption(appFields, "町村+番地"),
+      resolveCustomerInfoFormFieldId("address", "番地", appFields) ??
+        resolveFieldIdByCaptions(appFields, ["番地", "町村+番地", "町村＋番地"]),
     ),
   };
 }
@@ -86,10 +111,10 @@ export function resolveConstructionMapAddressFieldIds(
       pocketFieldUniqueIdByCaption(appFields, "都道府県"),
     ),
     cityFieldId: fieldIdOrNull(
-      pocketFieldUniqueIdByCaption(appFields, "市区郡"),
+      resolveFieldIdByCaptions(appFields, ["市区郡", "市区町村"]),
     ),
     streetFieldId: fieldIdOrNull(
-      pocketFieldUniqueIdByCaption(appFields, "町村+番地"),
+      resolveFieldIdByCaptions(appFields, ["番地", "町村+番地", "町村＋番地"]),
     ),
   };
 }
@@ -111,24 +136,17 @@ export function readMapAddressesFromRecord(
     );
   }
   if (!normalAddress) {
-    const parts = [
-      ids.prefectureFieldId
-        ? trimMapAddressValue(
-            readCustomerInfoFieldValue(recObj, ids.prefectureFieldId),
-          )
+    normalAddress = buildCombinedNormalAddress({
+      prefecture: ids.prefectureFieldId
+        ? readCustomerInfoFieldValue(recObj, ids.prefectureFieldId)
         : "",
-      ids.cityFieldId
-        ? trimMapAddressValue(
-            readCustomerInfoFieldValue(recObj, ids.cityFieldId),
-          )
+      city: ids.cityFieldId
+        ? readCustomerInfoFieldValue(recObj, ids.cityFieldId)
         : "",
-      ids.streetFieldId
-        ? trimMapAddressValue(
-            readCustomerInfoFieldValue(recObj, ids.streetFieldId),
-          )
+      street: ids.streetFieldId
+        ? readCustomerInfoFieldValue(recObj, ids.streetFieldId)
         : "",
-    ].filter(Boolean);
-    normalAddress = parts.join("");
+    });
   }
 
   return { pinpointAddress, normalAddress };

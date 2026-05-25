@@ -11,8 +11,10 @@ export type MapNavigationResult = {
   mode: "pinpoint-url" | "pinpoint-query" | "normal-address";
 };
 
-const NAV_PREFIX_PINPOINT = "http://googleusercontent.com/maps.google.com/5";
-const NAV_PREFIX_NORMAL = "http://googleusercontent.com/maps.google.com/6";
+/** スマホの Google マップアプリで開きやすい公式検索 URL */
+function googleMapsSearchUrl(query: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
 
 export function trimMapAddressValue(
   raw: string | null | undefined,
@@ -45,7 +47,7 @@ export function buildMapNavigation(
       };
     }
     return {
-      mapUrl: `${NAV_PREFIX_PINPOINT}${encodeURIComponent(pinpoint)}`,
+      mapUrl: googleMapsSearchUrl(pinpoint),
       label: "📍 ピンポイントナビ開始",
       mode: "pinpoint-query",
     };
@@ -53,7 +55,7 @@ export function buildMapNavigation(
 
   if (normal) {
     return {
-      mapUrl: `${NAV_PREFIX_NORMAL}${encodeURIComponent(normal)}`,
+      mapUrl: googleMapsSearchUrl(normal),
       label: "🚗 住所でナビ開始",
       mode: "normal-address",
     };
