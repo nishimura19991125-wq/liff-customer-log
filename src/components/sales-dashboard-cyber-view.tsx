@@ -115,30 +115,39 @@ function resolvePersonalKpi(data: DashboardPayload): PersonalKpi {
 
 function PersonalKpiHero({ personal, periodLabel }: { personal: PersonalKpi; periodLabel: string }) {
   return (
-    <section className="cyber-card relative overflow-hidden p-6 text-center">
+    <section className="relative overflow-hidden rounded-xl border border-slate-100 bg-white p-6 text-center shadow-sm dark:border-emerald-500/20 dark:bg-slate-900/60 dark:shadow-[0_0_12px_rgba(16,185,129,0.08)]">
       <div
-        className="pointer-events-none absolute inset-0 bg-gradient-to-b from-emerald-500/5 via-transparent to-transparent dark:from-emerald-400/10"
+        className="pointer-events-none absolute inset-0 bg-gradient-to-b from-emerald-50/80 via-transparent to-transparent dark:from-emerald-400/10"
         aria-hidden
       />
       <p className="relative text-[12px] font-medium tracking-wide text-slate-500 dark:text-emerald-200/70">
         {periodLabel}の獲得総PT
       </p>
-      <p className="relative mt-2 text-[3.25rem] font-black leading-none tracking-tight text-emerald-600 drop-shadow-[0_0_18px_rgba(16,185,129,0.45)] dark:text-emerald-400 dark:drop-shadow-[0_0_28px_rgba(52,211,153,0.55)]">
+      <p className="relative mt-2 text-[3rem] font-extrabold leading-none tracking-tight text-emerald-600 sm:text-[3.25rem] dark:font-black dark:text-emerald-400 dark:drop-shadow-[0_0_28px_rgba(52,211,153,0.55)]">
         {formatPt(personal.totalPt)}
-        <span className="ml-2 text-[1.35rem] font-bold">PT</span>
+        <span className="ml-2 text-[1.25rem] font-bold sm:text-[1.35rem]">PT</span>
       </p>
-      <p className="relative mt-2 text-[13px] text-slate-600 dark:text-slate-300">
+      <p className="relative mt-2 text-[13px] text-slate-500 dark:text-slate-300">
         （内訳: 売上 {formatPt(personal.salesPt)}pt + アポ {formatPt(personal.apoPt)}pt）
       </p>
       <div className="relative mt-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[12px] text-slate-500 dark:text-slate-400">
         <span>
-          当月売上 <span className="font-semibold text-slate-700 dark:text-slate-200">{formatYen(personal.salesAmount)}</span>
+          当月売上{" "}
+          <span className="font-medium text-slate-600 dark:font-semibold dark:text-slate-200">
+            {formatYen(personal.salesAmount)}
+          </span>
         </span>
         <span>
-          アポ <span className="font-semibold text-slate-700 dark:text-slate-200">{formatCount(personal.apoCount)}件</span>
+          アポ{" "}
+          <span className="font-medium text-slate-600 dark:font-semibold dark:text-slate-200">
+            {formatCount(personal.apoCount)}件
+          </span>
         </span>
         <span>
-          契約 <span className="font-semibold text-slate-700 dark:text-slate-200">{formatCount(personal.contractCount)}件</span>
+          契約{" "}
+          <span className="font-medium text-slate-600 dark:font-semibold dark:text-slate-200">
+            {formatCount(personal.contractCount)}件
+          </span>
         </span>
       </div>
     </section>
@@ -148,23 +157,38 @@ function PersonalKpiHero({ personal, periodLabel }: { personal: PersonalKpi; per
 function PtGauge({ percent }: { percent: number }) {
   const w = Math.max(2, Math.min(100, percent));
   return (
-    <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-200/80 dark:bg-slate-800">
+    <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
       <div
-        className="h-full rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)] transition-all duration-500 dark:bg-emerald-400 dark:shadow-[0_0_10px_rgba(52,211,153,0.7)]"
+        className="h-full rounded-full bg-emerald-500 transition-all duration-500 dark:bg-emerald-400 dark:shadow-[0_0_10px_rgba(52,211,153,0.7)]"
         style={{ width: `${w}%` }}
       />
     </div>
   );
 }
 
-function podiumAura(rank: number): string {
+function podiumCardShell(rank: number): string {
+  const base = "relative rounded-[1.35rem] border px-4 py-4 ";
   if (rank === 1) {
-    return "border-amber-400/50 shadow-[0_0_20px_rgba(234,179,8,0.35)] dark:border-amber-400/40 dark:shadow-[0_0_24px_rgba(234,179,8,0.25)]";
+    return `${base} border-amber-200 bg-amber-50/70 shadow-sm dark:border-amber-400/40 dark:bg-transparent dark:shadow-[0_0_24px_rgba(234,179,8,0.25)]`;
   }
   if (rank === 2) {
-    return "border-slate-300/60 shadow-[0_0_16px_rgba(148,163,184,0.4)] dark:border-slate-400/40 dark:shadow-[0_0_20px_rgba(148,163,184,0.3)]";
+    return `${base} border-slate-200 bg-slate-100/80 shadow-sm dark:border-slate-400/40 dark:bg-transparent dark:shadow-[0_0_20px_rgba(148,163,184,0.3)]`;
   }
-  return "border-amber-700/40 shadow-[0_0_16px_rgba(180,83,9,0.35)] dark:border-amber-600/35 dark:shadow-[0_0_20px_rgba(180,83,9,0.25)]";
+  if (rank === 3) {
+    return `${base} border-orange-200 bg-orange-50/60 shadow-sm dark:border-amber-600/35 dark:bg-transparent dark:shadow-[0_0_20px_rgba(180,83,9,0.25)]`;
+  }
+  return `${base} border-slate-100 bg-white dark:border-slate-700/60 dark:bg-transparent`;
+}
+
+function podiumNameClass(rank: number): string {
+  if (rank === 1) return "text-amber-700 dark:text-white";
+  if (rank === 2) return "text-slate-800 dark:text-white";
+  if (rank === 3) return "text-orange-900 dark:text-white";
+  return "text-slate-800 dark:text-white";
+}
+
+function ptValueClass(): string {
+  return "font-bold text-emerald-600 dark:font-black dark:text-emerald-400 dark:drop-shadow-[0_0_16px_rgba(52,211,153,0.45)]";
 }
 
 function rankBadgeClass(rank: number): string {
@@ -177,87 +201,85 @@ function rankBadgeClass(rank: number): string {
 function PtPodiumCard({ row, leaderPt }: { row: RankingRow; leaderPt: number }) {
   const gauge = percentOfLeader(row.pt, leaderPt);
   return (
-    <LiffCard>
-      <div
-        className={`relative px-4 py-4 ${podiumAura(row.rank)} rounded-[1.35rem] border ${
-          row.isSelf ? "ring-2 ring-inset ring-cyan-400/50 dark:ring-cyan-400/35" : ""
-        }`}
-      >
-        {row.rank === 1 ? (
-          <div className="flex justify-center">
-            <CrownIcon />
-          </div>
-        ) : null}
-        <div className="flex items-start gap-3">
-          <span
-            className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${rankBadgeClass(row.rank)}`}
-          >
-            {row.rank}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[15px] font-bold text-slate-800 dark:text-white">
-              {row.staffName}
-              {row.isSelf ? (
-                <span className="ml-2 text-[11px] font-medium text-cyan-600 dark:text-cyan-300">
-                  あなた
-                </span>
-              ) : null}
-            </p>
-            <p className="mt-1 text-[1.75rem] font-black leading-none text-emerald-600 drop-shadow-[0_0_12px_rgba(16,185,129,0.35)] dark:text-emerald-400 dark:drop-shadow-[0_0_16px_rgba(52,211,153,0.45)]">
-              {formatPt(row.pt)}
-              <span className="ml-1 text-[14px] font-bold">PT</span>
-            </p>
-            <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-              {formatYen(row.salesAmount)}
-            </p>
-            <PtGauge percent={gauge} />
-            <p className="mt-1 text-[11px] text-emerald-700/80 dark:text-emerald-300/80">
-              1位比 {gauge}%
-            </p>
-          </div>
+    <div
+      className={`${podiumCardShell(row.rank)} ${
+        row.isSelf ? "ring-2 ring-inset ring-cyan-300/80 dark:ring-cyan-400/35" : ""
+      }`}
+    >
+      {row.rank === 1 ? (
+        <div className="flex justify-center text-amber-700 dark:text-amber-300">
+          <CrownIcon />
+        </div>
+      ) : null}
+      <div className="flex items-start gap-3">
+        <span
+          className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${rankBadgeClass(row.rank)}`}
+        >
+          {row.rank}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className={`truncate text-[15px] font-bold ${podiumNameClass(row.rank)}`}>
+            {row.staffName}
+            {row.isSelf ? (
+              <span className="ml-2 text-[11px] font-medium text-cyan-700 dark:text-cyan-300">
+                あなた
+              </span>
+            ) : null}
+          </p>
+          <p className={`mt-1 text-[1.75rem] leading-none ${ptValueClass()}`}>
+            {formatPt(row.pt)}
+            <span className="ml-1 text-[14px] font-bold">PT</span>
+          </p>
+          <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
+            {formatYen(row.salesAmount)}
+          </p>
+          <PtGauge percent={gauge} />
+          <p className="mt-1 text-[11px] text-slate-500 dark:text-emerald-300/80">
+            1位比 {gauge}%
+          </p>
         </div>
       </div>
-    </LiffCard>
+    </div>
   );
 }
 
 function PtListRow({ row, leaderPt }: { row: RankingRow; leaderPt: number }) {
   const gauge = percentOfLeader(row.pt, leaderPt);
   return (
-    <LiffCard>
-      <div
-        className={`px-4 py-3 ${row.isSelf ? "ring-2 ring-inset ring-cyan-400/40 dark:ring-cyan-400/30 rounded-[1.35rem]" : ""}`}
-      >
-        <div className="flex items-center gap-3">
-          <span
-            className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${rankBadgeClass(row.rank)}`}
-          >
-            {row.rank}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[14px] font-semibold text-slate-800 dark:text-white">
-              {row.staffName}
-              {row.isSelf ? (
-                <span className="ml-2 text-[11px] font-medium text-cyan-600 dark:text-cyan-300">
-                  あなた
-                </span>
-              ) : null}
-            </p>
-            <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">
-              {formatYen(row.salesAmount)}
-            </p>
-            <PtGauge percent={gauge} />
-          </div>
-          <div className="shrink-0 text-right">
-            <p className="text-[16px] font-black text-emerald-600 dark:text-emerald-400">
-              {formatPt(row.pt)}
-              <span className="ml-0.5 text-[12px] font-bold">PT</span>
-            </p>
-            <p className="text-[10px] text-slate-400">1位比 {gauge}%</p>
-          </div>
+    <div
+      className={`rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm dark:border-emerald-500/15 dark:bg-slate-900/50 ${
+        row.isSelf ? "ring-2 ring-inset ring-cyan-300/70 dark:ring-cyan-400/30" : ""
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <span
+          className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${rankBadgeClass(row.rank)}`}
+        >
+          {row.rank}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[14px] font-semibold text-slate-800 dark:text-white">
+            {row.staffName}
+            {row.isSelf ? (
+              <span className="ml-2 text-[11px] font-medium text-cyan-700 dark:text-cyan-300">
+                あなた
+              </span>
+            ) : null}
+          </p>
+          <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">
+            {formatYen(row.salesAmount)}
+          </p>
+          <PtGauge percent={gauge} />
+        </div>
+        <div className="shrink-0 text-right">
+          <p className={`text-[16px] ${ptValueClass()}`}>
+            {formatPt(row.pt)}
+            <span className="ml-0.5 text-[12px] font-bold">PT</span>
+          </p>
+          <p className="text-[10px] text-slate-500 dark:text-slate-400">1位比 {gauge}%</p>
         </div>
       </div>
-    </LiffCard>
+    </div>
   );
 }
 
@@ -312,42 +334,46 @@ function SalesRankingSection({ rows }: { rows: RankingRow[] }) {
         const displayRank = i + 1;
         const gauge = percentOfLeader(row.salesAmount, leaderSales);
         const isPodium = displayRank <= 3;
+        const shell = isPodium
+          ? podiumCardShell(displayRank)
+          : "rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm dark:border-emerald-500/15 dark:bg-slate-900/50";
         return (
-          <LiffCard key={`sales-${row.staffName}`}>
-            <div
-              className={`px-4 py-3 ${isPodium ? `border rounded-[1.35rem] ${podiumAura(displayRank)}` : ""} ${
-                row.isSelf ? "ring-2 ring-inset ring-cyan-400/40 dark:ring-cyan-400/30" : ""
-              }`}
-            >
-              {displayRank === 1 ? (
-                <div className="mb-1 flex justify-center">
-                  <CrownIcon />
-                </div>
-              ) : null}
-              <div className="flex items-center gap-3">
-                <span
-                  className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${rankBadgeClass(displayRank)}`}
-                >
-                  {displayRank}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[14px] font-semibold text-slate-800 dark:text-white">
-                    {row.staffName}
-                    {row.isSelf ? (
-                      <span className="ml-2 text-[11px] text-cyan-600 dark:text-cyan-300">あなた</span>
-                    ) : null}
-                  </p>
-                  <p className="text-[12px] text-emerald-600 dark:text-emerald-400">
-                    {formatPt(row.pt)} PT
-                  </p>
-                  <PtGauge percent={gauge} />
-                </div>
-                <p className="shrink-0 text-right text-[15px] font-bold text-slate-800 dark:text-white">
-                  {formatYen(row.salesAmount)}
-                </p>
+          <div
+            key={`sales-${row.staffName}`}
+            className={`${shell} ${
+              row.isSelf ? "ring-2 ring-inset ring-cyan-300/70 dark:ring-cyan-400/30" : ""
+            }`}
+          >
+            {displayRank === 1 ? (
+              <div className="mb-1 flex justify-center text-amber-700 dark:text-amber-300">
+                <CrownIcon />
               </div>
+            ) : null}
+            <div className="flex items-center gap-3">
+              <span
+                className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${rankBadgeClass(displayRank)}`}
+              >
+                {displayRank}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p
+                  className={`truncate text-[14px] font-semibold ${
+                    isPodium ? podiumNameClass(displayRank) : "text-slate-800 dark:text-white"
+                  }`}
+                >
+                  {row.staffName}
+                  {row.isSelf ? (
+                    <span className="ml-2 text-[11px] text-cyan-700 dark:text-cyan-300">あなた</span>
+                  ) : null}
+                </p>
+                <p className={`text-[12px] ${ptValueClass()}`}>{formatPt(row.pt)} PT</p>
+                <PtGauge percent={gauge} />
+              </div>
+              <p className="shrink-0 text-right text-[15px] font-bold text-slate-800 dark:text-white">
+                {formatYen(row.salesAmount)}
+              </p>
             </div>
-          </LiffCard>
+          </div>
         );
       })}
     </div>
@@ -357,71 +383,67 @@ function SalesRankingSection({ rows }: { rows: RankingRow[] }) {
 function ApoPodiumCard({ row, leaderCount }: { row: ApoRankingRow; leaderCount: number }) {
   const gauge = percentOfLeader(row.apoCount, leaderCount);
   return (
-    <LiffCard>
-      <div
-        className={`relative px-4 py-4 ${podiumAura(row.rank)} rounded-[1.35rem] border ${
-          row.isSelf ? "ring-2 ring-inset ring-cyan-400/50 dark:ring-cyan-400/35" : ""
-        }`}
-      >
-        {row.rank === 1 ? (
-          <div className="flex justify-center">
-            <CrownIcon />
-          </div>
-        ) : null}
-        <div className="flex items-center gap-3">
-          <span
-            className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${rankBadgeClass(row.rank)}`}
-          >
-            {row.rank}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[15px] font-bold text-slate-800 dark:text-white">
-              {row.staffName}
-              {row.isSelf ? (
-                <span className="ml-2 text-[11px] text-cyan-600 dark:text-cyan-300">あなた</span>
-              ) : null}
-            </p>
-            <PtGauge percent={gauge} />
-            <p className="mt-1 text-[11px] text-slate-400">1位比 {gauge}%</p>
-          </div>
-          <p className="shrink-0 text-[1.5rem] font-black text-emerald-600 dark:text-emerald-400">
-            {formatCount(row.apoCount)}
-            <span className="ml-0.5 text-[13px] font-bold">件</span>
-          </p>
+    <div
+      className={`${podiumCardShell(row.rank)} ${
+        row.isSelf ? "ring-2 ring-inset ring-cyan-300/80 dark:ring-cyan-400/35" : ""
+      }`}
+    >
+      {row.rank === 1 ? (
+        <div className="flex justify-center text-amber-700 dark:text-amber-300">
+          <CrownIcon />
         </div>
+      ) : null}
+      <div className="flex items-center gap-3">
+        <span
+          className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${rankBadgeClass(row.rank)}`}
+        >
+          {row.rank}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className={`truncate text-[15px] font-bold ${podiumNameClass(row.rank)}`}>
+            {row.staffName}
+            {row.isSelf ? (
+              <span className="ml-2 text-[11px] text-cyan-700 dark:text-cyan-300">あなた</span>
+            ) : null}
+          </p>
+          <PtGauge percent={gauge} />
+          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">1位比 {gauge}%</p>
+        </div>
+        <p className={`shrink-0 text-[1.5rem] ${ptValueClass()}`}>
+          {formatCount(row.apoCount)}
+          <span className="ml-0.5 text-[13px] font-bold">件</span>
+        </p>
       </div>
-    </LiffCard>
+    </div>
   );
 }
 
 function ApoListRow({ row, leaderCount }: { row: ApoRankingRow; leaderCount: number }) {
   const gauge = percentOfLeader(row.apoCount, leaderCount);
   return (
-    <LiffCard>
-      <div
-        className={`px-4 py-3 ${row.isSelf ? "ring-2 ring-inset ring-cyan-400/40 dark:ring-cyan-400/30 rounded-[1.35rem]" : ""}`}
-      >
-        <div className="flex items-center gap-3">
-          <span
-            className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${rankBadgeClass(row.rank)}`}
-          >
-            {row.rank}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[14px] font-semibold text-slate-800 dark:text-white">
-              {row.staffName}
-              {row.isSelf ? (
-                <span className="ml-2 text-[11px] text-cyan-600 dark:text-cyan-300">あなた</span>
-              ) : null}
-            </p>
-            <PtGauge percent={gauge} />
-          </div>
-          <p className="shrink-0 text-[15px] font-bold text-emerald-600 dark:text-emerald-400">
-            {formatCount(row.apoCount)}件
+    <div
+      className={`rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm dark:border-emerald-500/15 dark:bg-slate-900/50 ${
+        row.isSelf ? "ring-2 ring-inset ring-cyan-300/70 dark:ring-cyan-400/30" : ""
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <span
+          className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${rankBadgeClass(row.rank)}`}
+        >
+          {row.rank}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[14px] font-semibold text-slate-800 dark:text-white">
+            {row.staffName}
+            {row.isSelf ? (
+              <span className="ml-2 text-[11px] text-cyan-700 dark:text-cyan-300">あなた</span>
+            ) : null}
           </p>
+          <PtGauge percent={gauge} />
         </div>
+        <p className={`shrink-0 text-[15px] ${ptValueClass()}`}>{formatCount(row.apoCount)}件</p>
       </div>
-    </LiffCard>
+    </div>
   );
 }
 

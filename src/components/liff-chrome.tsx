@@ -33,24 +33,44 @@ type LiffPageHeaderProps = {
   title: string;
   subtitle?: string;
   action?: ReactNode;
+  titleClassName?: string;
+  subtitleClassName?: string;
 };
 
-export function LiffPageHeader({ title, subtitle, action }: LiffPageHeaderProps) {
+export function LiffPageHeader({
+  title,
+  subtitle,
+  action,
+  titleClassName,
+  subtitleClassName,
+}: LiffPageHeaderProps) {
   return (
-    <header className="mb-5 flex items-start gap-3">
+    <header className="mb-5 flex items-start gap-2 sm:gap-3">
       <LiffMark />
-      <div className="min-w-0 flex-1 pt-0.5">
-        <h1 className="text-[1.35rem] font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
+      <div className="min-w-0 flex-1 overflow-hidden pt-0.5">
+        <h1
+          className={
+            titleClassName ??
+            "text-[1.35rem] font-bold leading-tight tracking-tight text-slate-900 dark:text-white"
+          }
+        >
           {title}
         </h1>
         {subtitle ? (
-          <p className="mt-1 text-[13px] leading-snug text-slate-500 dark:text-slate-400">
+          <p
+            className={
+              subtitleClassName ??
+              "mt-1 text-[13px] leading-snug text-slate-500 dark:text-slate-400"
+            }
+          >
             {subtitle}
           </p>
         ) : null}
       </div>
       {action ? (
-        <div className="flex shrink-0 items-start pt-0.5">{action}</div>
+        <div className="flex shrink-0 items-start gap-1 pt-0.5 sm:gap-2">
+          {action}
+        </div>
       ) : null}
     </header>
   );

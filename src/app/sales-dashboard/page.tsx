@@ -177,9 +177,11 @@ export default function SalesDashboardPage() {
     <LiffScreen>
       <LiffPageHeader
         title="営業ダッシュボード"
+        titleClassName="text-base font-bold leading-tight tracking-tight whitespace-nowrap text-slate-900 sm:text-lg dark:text-white"
         subtitle="PTを軸にした全社ランキング"
+        subtitleClassName="mt-0.5 truncate text-[12px] leading-snug text-slate-500 sm:text-[13px] dark:text-slate-400"
         action={
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <ThemeToggle />
             <LiffAccountBar
               loading={account.loading}
