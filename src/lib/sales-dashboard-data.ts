@@ -14,6 +14,11 @@ import {
   resolveSalesDashboardPeriod,
   type SalesDashboardPeriodKey,
 } from "@/lib/sales-dashboard-period";
+import { buildApoDashboardSection } from "@/lib/sales-dashboard-apo-aggregate";
+import type {
+  ApoDashboardKpi,
+  ApoDashboardRankingRow,
+} from "@/lib/sales-dashboard-apo-aggregate";
 import {
   resolveContractCountFieldMap,
   resolvePtDashboardFieldMap,
@@ -22,6 +27,8 @@ import {
   type ContractCountFieldMap,
   type PtDashboardFieldMap,
 } from "@/lib/sales-dashboard-fields";
+
+export type { ApoDashboardKpi, ApoDashboardRankingRow };
 
 const PAGE_LIMIT = 1000;
 const DEFAULT_MAX_PAGES = 25;
@@ -51,6 +58,9 @@ export type SalesDashboardPayload = {
   periodHint: string;
   kpi: SalesDashboardKpi;
   ranking: SalesDashboardRankingRow[];
+  apoEnabled: boolean;
+  apoKpi: ApoDashboardKpi | null;
+  apoRanking: ApoDashboardRankingRow[];
 };
 
 type StaffAgg = {
@@ -258,6 +268,7 @@ export async function buildSalesDashboardPayload(
   const contractAuth = customerInfoPocketAuth();
   const period = resolveSalesDashboardPeriod(periodKey);
   const bound = normApClStaffName(boundStaffName);
+  const apoSectionPromise = buildApoDashboardSection(boundStaffName, periodKey);
 
   const ptFields = await fetchAppFields(ptAppId, ptAuth, {
     operation: "sales-dashboard:pt-fields",
@@ -331,6 +342,8 @@ export async function buildSalesDashboardPayload(
         : 0,
   };
 
+  const apoSection = await apoSectionPromise;
+
   return {
     staffName: boundStaffName,
     period: periodKey,
@@ -338,5 +351,8 @@ export async function buildSalesDashboardPayload(
     periodHint: period.hint,
     kpi,
     ranking: buildRanking(sorted, companyPt, bound),
+    apoEnabled: apoSection !== null,
+    apoKpi: apoSection?.kpi ?? null,
+    apoRanking: apoSection?.ranking ?? [],
   };
 }

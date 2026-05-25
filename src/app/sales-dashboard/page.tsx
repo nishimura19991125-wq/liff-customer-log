@@ -22,6 +22,7 @@ import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
 type DashboardPeriod = "current" | "previous";
+type DashboardDepartment = "sales" | "apo";
 
 type DashboardKpi = {
   pt: number;
@@ -41,6 +42,15 @@ type RankingRow = {
   isPodium: boolean;
 };
 
+type ApoRankingRow = {
+  rank: number;
+  staffName: string;
+  apoCount: number;
+  sharePercent: number;
+  isSelf: boolean;
+  isPodium: boolean;
+};
+
 type DashboardPayload = {
   staffName: string;
   period: DashboardPeriod;
@@ -48,11 +58,19 @@ type DashboardPayload = {
   periodHint: string;
   kpi: DashboardKpi;
   ranking: RankingRow[];
+  apoEnabled: boolean;
+  apoKpi: { totalApoCount: number } | null;
+  apoRanking: ApoRankingRow[];
 };
 
 const PERIOD_TABS: Array<{ id: DashboardPeriod; label: string }> = [
   { id: "current", label: "今月" },
   { id: "previous", label: "先月" },
+];
+
+const DEPARTMENT_TABS: Array<{ id: DashboardDepartment; label: string }> = [
+  { id: "sales", label: "売上金額部門" },
+  { id: "apo", label: "アポ件数部門" },
 ];
 
 function formatYen(n: number): string {
@@ -64,6 +82,10 @@ function formatYen(n: number): string {
 }
 
 function formatPt(n: number): string {
+  return new Intl.NumberFormat("ja-JP").format(Math.round(n));
+}
+
+function formatCount(n: number): string {
   return new Intl.NumberFormat("ja-JP").format(Math.round(n));
 }
 
@@ -81,6 +103,7 @@ export default function SalesDashboardPage() {
   );
   const [idToken, setIdToken] = useState<string | null>(null);
   const [period, setPeriod] = useState<DashboardPeriod>("current");
+  const [department, setDepartment] = useState<DashboardDepartment>("sales");
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [listLoading, setListLoading] = useState(false);
@@ -210,6 +233,9 @@ export default function SalesDashboardPage() {
     return <LiffSessionExpiredPanel />;
   }
 
+  const showApo = department === "apo";
+  const apoReady = data?.apoEnabled ?? false;
+
   return (
     <LiffScreen>
       <LiffPageHeader
@@ -288,113 +314,239 @@ export default function SalesDashboardPage() {
               {data.periodLabel}（JST）· {data.periodHint}
             </p>
 
-            <section className="grid grid-cols-1 gap-3">
-              <LiffCard>
-                <div className="p-5">
-                  <p className="text-[12px] font-medium text-slate-500 dark:text-slate-400">
-                    全社 PT（粗利）
-                  </p>
-                  <p className="mt-1 text-[2rem] font-black leading-none tracking-tight text-slate-800 dark:text-white">
-                    {formatPt(data.kpi.pt)}
-                    <span className="ml-2 text-[1rem] font-bold text-emerald-600 dark:text-emerald-400">
-                      pt
-                    </span>
-                  </p>
-                </div>
-              </LiffCard>
-              <div className="grid grid-cols-2 gap-3">
+            {showApo ? (
+              <section className="grid grid-cols-1 gap-3">
                 <LiffCard>
-                  <div className="p-4">
+                  <div className="p-5">
                     <p className="text-[12px] font-medium text-slate-500 dark:text-slate-400">
-                      全社売上
+                      全社アポ件数
                     </p>
-                    <p className="mt-1 text-[1.2rem] font-bold text-slate-800 dark:text-white">
-                      {formatYen(data.kpi.salesAmount)}
-                    </p>
-                  </div>
-                </LiffCard>
-                <LiffCard>
-                  <div className="p-4">
-                    <p className="text-[12px] font-medium text-slate-500 dark:text-slate-400">
-                      契約件数
-                    </p>
-                    <p className="mt-1 text-[1.2rem] font-bold text-slate-800 dark:text-white">
-                      {data.kpi.contractCount}
-                      <span className="ml-1 text-[14px] font-semibold text-slate-500">
+                    <p className="mt-1 text-[2rem] font-black leading-none tracking-tight text-slate-800 dark:text-white">
+                      {apoReady && data.apoKpi
+                        ? formatCount(data.apoKpi.totalApoCount)
+                        : "—"}
+                      <span className="ml-2 text-[1rem] font-bold text-emerald-600 dark:text-emerald-400">
                         件
                       </span>
                     </p>
                   </div>
                 </LiffCard>
-              </div>
-            </section>
+              </section>
+            ) : (
+              <section className="grid grid-cols-1 gap-3">
+                <LiffCard>
+                  <div className="p-5">
+                    <p className="text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                      全社 PT（粗利）
+                    </p>
+                    <p className="mt-1 text-[2rem] font-black leading-none tracking-tight text-slate-800 dark:text-white">
+                      {formatPt(data.kpi.pt)}
+                      <span className="ml-2 text-[1rem] font-bold text-emerald-600 dark:text-emerald-400">
+                        pt
+                      </span>
+                    </p>
+                  </div>
+                </LiffCard>
+                <div className="grid grid-cols-2 gap-3">
+                  <LiffCard>
+                    <div className="p-4">
+                      <p className="text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                        全社売上
+                      </p>
+                      <p className="mt-1 text-[1.2rem] font-bold text-slate-800 dark:text-white">
+                        {formatYen(data.kpi.salesAmount)}
+                      </p>
+                    </div>
+                  </LiffCard>
+                  <LiffCard>
+                    <div className="p-4">
+                      <p className="text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                        契約件数
+                      </p>
+                      <p className="mt-1 text-[1.2rem] font-bold text-slate-800 dark:text-white">
+                        {data.kpi.contractCount}
+                        <span className="ml-1 text-[14px] font-semibold text-slate-500">
+                          件
+                        </span>
+                      </p>
+                    </div>
+                  </LiffCard>
+                </div>
+              </section>
+            )}
 
             <section>
-              <h2 className="mb-2 text-[15px] font-bold text-slate-800 dark:text-white">
-                営業成績ランキング
-              </h2>
-              <div className="flex flex-col gap-2">
-                {data.ranking.length === 0 ? (
-                  <LiffCard>
-                    <p className="px-4 py-6 text-center text-[13px] text-slate-500 dark:text-slate-400">
-                      対象期間のデータがありません
-                    </p>
-                  </LiffCard>
-                ) : (
-                  data.ranking.map((row) => (
-                    <LiffCard key={`${row.rank}-${row.staffName}`}>
-                      <div
-                        className={`px-4 py-3 transition-all duration-300 ${
-                          row.isSelf
-                            ? "ring-2 ring-inset ring-blue-200/80 dark:ring-blue-500/40"
-                            : ""
-                        } ${row.isPodium ? "bg-gradient-to-r from-amber-50/80 to-transparent dark:from-amber-950/30" : ""}`}
+              <div className="relative mb-3">
+                <nav
+                  className="flex gap-2 overflow-x-auto pb-2 pl-0.5 pr-10 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  aria-label="ランキング部門"
+                >
+                  {DEPARTMENT_TABS.map((tab) => {
+                    const active = department === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setDepartment(tab.id)}
+                        className={`shrink-0 rounded-2xl px-4 py-2.5 text-[15px] transition-all duration-300 active:scale-[0.98] ${
+                          active
+                            ? "bg-emerald-600 font-bold text-white shadow-md shadow-emerald-600/25"
+                            : "bg-slate-100 font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                        }`}
                       >
-                        <div className="flex items-center gap-3">
-                          <span
-                            className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${
-                              row.rank === 1
-                                ? "bg-amber-400 text-amber-950"
-                                : row.rank === 2
-                                  ? "bg-slate-300 text-slate-800 dark:bg-slate-500 dark:text-white"
-                                  : row.rank === 3
-                                    ? "bg-amber-700/80 text-white"
-                                    : "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200"
-                            }`}
-                          >
-                            {row.rank}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-[14px] font-semibold text-slate-800 dark:text-white">
-                              {row.staffName}
-                              {row.isSelf ? (
-                                <span className="ml-2 text-[11px] font-medium text-blue-600 dark:text-blue-400">
-                                  あなた
-                                </span>
-                              ) : null}
-                            </p>
-                            <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">
-                              {formatPt(row.pt)} pt · {row.contractCount}件 ·{" "}
-                              {formatYen(row.salesAmount)}
-                            </p>
-                            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
-                              <div
-                                className="h-full rounded-full bg-emerald-500 transition-all duration-300 dark:bg-emerald-400"
-                                style={{
-                                  width: `${Math.max(2, Math.min(100, row.sharePercent))}%`,
-                                }}
-                              />
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </nav>
+                <div
+                  className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-slate-50 to-transparent dark:from-slate-900"
+                  aria-hidden
+                />
+              </div>
+
+              <h2 className="mb-2 text-[15px] font-bold text-slate-800 dark:text-white">
+                {showApo ? "アポ件数ランキング" : "営業成績ランキング"}
+              </h2>
+
+              {showApo && !apoReady ? (
+                <LiffCard>
+                  <p className="px-4 py-6 text-center text-[13px] text-slate-500 dark:text-slate-400">
+                    アポ件数ランキングは未設定です（SALES_DASHBOARD_APO_APP_ID
+                    を設定してください）
+                  </p>
+                </LiffCard>
+              ) : showApo ? (
+                <div className="flex flex-col gap-2">
+                  {data.apoRanking.length === 0 ? (
+                    <LiffCard>
+                      <p className="px-4 py-6 text-center text-[13px] text-slate-500 dark:text-slate-400">
+                        対象期間のデータがありません
+                      </p>
+                    </LiffCard>
+                  ) : (
+                    data.apoRanking.map((row) => (
+                      <LiffCard key={`apo-${row.rank}-${row.staffName}`}>
+                        <div
+                          className={`px-4 py-3 transition-all duration-300 ${
+                            row.isSelf
+                              ? "ring-2 ring-inset ring-blue-200/80 dark:ring-blue-500/40"
+                              : ""
+                          } ${row.isPodium ? "bg-gradient-to-r from-amber-50/80 to-transparent dark:from-amber-950/30" : ""}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${
+                                row.rank === 1
+                                  ? "bg-amber-400 text-amber-950"
+                                  : row.rank === 2
+                                    ? "bg-slate-300 text-slate-800 dark:bg-slate-500 dark:text-white"
+                                    : row.rank === 3
+                                      ? "bg-amber-700/80 text-white"
+                                      : "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                              }`}
+                            >
+                              {row.rank}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-[14px] font-semibold text-slate-800 dark:text-white">
+                                {row.staffName}
+                                {row.isSelf ? (
+                                  <span className="ml-2 text-[11px] font-medium text-blue-600 dark:text-blue-400">
+                                    あなた
+                                  </span>
+                                ) : null}
+                              </p>
+                              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
+                                <div
+                                  className="h-full rounded-full bg-emerald-500 transition-all duration-300 dark:bg-emerald-400"
+                                  style={{
+                                    width: `${Math.max(2, Math.min(100, row.sharePercent))}%`,
+                                  }}
+                                />
+                              </div>
+                              <p className="mt-1 text-[11px] text-slate-400">
+                                シェア {row.sharePercent}%
+                              </p>
                             </div>
-                            <p className="mt-1 text-[11px] text-slate-400">
-                              PT比率 {row.sharePercent}%
+                            <p className="shrink-0 text-right text-[15px] font-bold text-slate-800 dark:text-white">
+                              {formatCount(row.apoCount)}
+                              <span className="ml-0.5 text-[13px] font-semibold text-slate-500 dark:text-slate-400">
+                                件
+                              </span>
                             </p>
                           </div>
                         </div>
-                      </div>
+                      </LiffCard>
+                    ))
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {data.ranking.length === 0 ? (
+                    <LiffCard>
+                      <p className="px-4 py-6 text-center text-[13px] text-slate-500 dark:text-slate-400">
+                        対象期間のデータがありません
+                      </p>
                     </LiffCard>
-                  ))
-                )}
-              </div>
+                  ) : (
+                    data.ranking.map((row) => (
+                      <LiffCard key={`${row.rank}-${row.staffName}`}>
+                        <div
+                          className={`px-4 py-3 transition-all duration-300 ${
+                            row.isSelf
+                              ? "ring-2 ring-inset ring-blue-200/80 dark:ring-blue-500/40"
+                              : ""
+                          } ${row.isPodium ? "bg-gradient-to-r from-amber-50/80 to-transparent dark:from-amber-950/30" : ""}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${
+                                row.rank === 1
+                                  ? "bg-amber-400 text-amber-950"
+                                  : row.rank === 2
+                                    ? "bg-slate-300 text-slate-800 dark:bg-slate-500 dark:text-white"
+                                    : row.rank === 3
+                                      ? "bg-amber-700/80 text-white"
+                                      : "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                              }`}
+                            >
+                              {row.rank}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-[14px] font-semibold text-slate-800 dark:text-white">
+                                {row.staffName}
+                                {row.isSelf ? (
+                                  <span className="ml-2 text-[11px] font-medium text-blue-600 dark:text-blue-400">
+                                    あなた
+                                  </span>
+                                ) : null}
+                              </p>
+                              <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">
+                                {formatPt(row.pt)} pt · {row.contractCount}件
+                              </p>
+                              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
+                                <div
+                                  className="h-full rounded-full bg-emerald-500 transition-all duration-300 dark:bg-emerald-400"
+                                  style={{
+                                    width: `${Math.max(2, Math.min(100, row.sharePercent))}%`,
+                                  }}
+                                />
+                              </div>
+                              <p className="mt-1 text-[11px] text-slate-400">
+                                PT比率 {row.sharePercent}%
+                              </p>
+                            </div>
+                            <p className="shrink-0 text-right text-[14px] font-bold text-slate-800 dark:text-white">
+                              {formatYen(row.salesAmount)}
+                            </p>
+                          </div>
+                        </div>
+                      </LiffCard>
+                    ))
+                  )}
+                </div>
+              )}
             </section>
           </div>
         ) : needsStaffBind ? null : (

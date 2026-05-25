@@ -92,6 +92,13 @@ export function apiKeyForSalesDashboardPtPocket(): string {
   return apiKeyForCustomerInfoPocket();
 }
 
+/** アポ取得情報連携（営業ダッシュボード）読み取り専用 */
+export function apiKeyForSalesDashboardApoPocket(): string {
+  const k = process.env.SALES_DASHBOARD_APO_ATPOCKET_API_KEY?.trim();
+  if (k) return k;
+  return apiKeyForCustomerInfoPocket();
+}
+
 export type AtPocketFetchAuth = {
   apiKey?: string;
 };
@@ -108,6 +115,10 @@ function authKeyEnvLabel(auth?: AtPocketFetchAuth): string {
     [
       "SALES_DASHBOARD_PT_ATPOCKET_API_KEY",
       process.env.SALES_DASHBOARD_PT_ATPOCKET_API_KEY?.trim(),
+    ],
+    [
+      "SALES_DASHBOARD_APO_ATPOCKET_API_KEY",
+      process.env.SALES_DASHBOARD_APO_ATPOCKET_API_KEY?.trim(),
     ],
     ["CUSTOMER_INFO_ATPOCKET_API_KEY", process.env.CUSTOMER_INFO_ATPOCKET_API_KEY?.trim()],
     ["STAFF_READ_ATPOCKET_API_KEY", process.env.STAFF_READ_ATPOCKET_API_KEY?.trim()],

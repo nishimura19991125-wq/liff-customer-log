@@ -128,3 +128,90 @@ export function salesDashboardContractAppId(): string | null {
     null
   );
 }
+
+export type ApoDashboardFieldMap = {
+  salesperson: string;
+  apoType: string;
+  date: string;
+  estimateStatus: string;
+};
+
+function pickApoSalespersonFieldId(fields: AtPocketFieldRow[]): string | null {
+  const env = process.env.SALES_DASHBOARD_APO_SALESPERSON_FIELD_ID?.trim();
+  if (env) {
+    const id = resolveConfiguredFieldToSchemaUniqueId(env, fields);
+    if (id) return id;
+  }
+  for (const cap of ["AP担当者", "AP 担当者"]) {
+    const id = pocketFieldUniqueIdByCaption(fields, cap);
+    if (id) return id;
+  }
+  for (const cap of ["アポインター", "アポ担当者", "AP担当"]) {
+    const id = pickByKeywords(fields, [cap]);
+    if (id) return id;
+  }
+  return pickByKeywords(fields, [
+    "AP担当者",
+    "AP 担当者",
+    "担当者",
+    "営業担当",
+    "AP",
+  ]);
+}
+
+function pickApoDateFieldId(fields: AtPocketFieldRow[]): string | null {
+  const env = process.env.SALES_DASHBOARD_APO_DATE_FIELD_ID?.trim();
+  if (env) {
+    const id = resolveConfiguredFieldToSchemaUniqueId(env, fields);
+    if (id) return id;
+  }
+  for (const cap of ["アポ取得日", "初回商談実施日"]) {
+    const id = pocketFieldUniqueIdByCaption(fields, cap);
+    if (id) return id;
+  }
+  return pickByKeywords(fields, [
+    "アポ取得日",
+    "アポ日",
+    "取得日",
+    "初回商談実施日",
+    "日付",
+    "登録日",
+  ]);
+}
+
+export function resolveApoDashboardFieldMap(
+  fields: AtPocketFieldRow[],
+): ApoDashboardFieldMap | null {
+  const salesperson = pickApoSalespersonFieldId(fields);
+  const apoType = pickByEnvOrKeywords(
+    "SALES_DASHBOARD_APO_TYPE_FIELD_ID",
+    fields,
+    ["アポ種別", "アポタイプ", "種別"],
+    ["アポ種別"],
+  );
+  const date = pickApoDateFieldId(fields);
+  const estimateStatus = pickByEnvOrKeywords(
+    "SALES_DASHBOARD_APO_STATUS_FIELD_ID",
+    fields,
+    ["見積ステータス", "見積ｽﾃｰﾀｽ", "見積ステータス区分"],
+    ["見積ステータス"],
+  );
+  if (!salesperson || !apoType || !date || !estimateStatus) return null;
+  return { salesperson, apoType, date, estimateStatus };
+}
+
+/** アポ種別フィルタ（部分一致）。未設定時は ranking_pt_dashboard.config.js 既定相当 */
+export function salesDashboardApoTypeFilterValues(): string[] {
+  const raw = process.env.SALES_DASHBOARD_APO_TYPE_FILTER_VALUES?.trim();
+  const defaults = ["ダイレクト", "お客様紹介", "(DC)工務店OBリスト"];
+  if (!raw) return defaults;
+  const parsed = raw
+    .split(",")
+    .map((s) => nfkc(s))
+    .filter(Boolean);
+  return parsed.length ? parsed : defaults;
+}
+
+export function salesDashboardApoAppId(): string | null {
+  return process.env.SALES_DASHBOARD_APO_APP_ID?.trim() || null;
+}
