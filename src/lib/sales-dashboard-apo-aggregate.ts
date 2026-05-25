@@ -22,6 +22,10 @@ import {
   salesDashboardApoTypeFilterValues,
   type ApoDashboardFieldMap,
 } from "@/lib/sales-dashboard-fields";
+import {
+  isExcludedSalesDashboardCaseLabel,
+  isExcludedSalesDashboardRankingName,
+} from "@/lib/sales-dashboard-ranking-exclude";
 
 const PAGE_LIMIT = 1000;
 const DEFAULT_MAX_PAGES = 25;
@@ -118,10 +122,11 @@ export function aggregateApoRecords(
     const name = normApClStaffName(
       readCustomerInfoFieldValue(recObj, fieldMap.salesperson),
     );
-    if (!name) continue;
+    if (!name || isExcludedSalesDashboardRankingName(name)) continue;
 
     const typeVal = readCustomerInfoFieldValue(recObj, fieldMap.apoType);
     if (!typeVal || !isApoTypeMatched(typeVal, filterValues)) continue;
+    if (isExcludedSalesDashboardCaseLabel(typeVal)) continue;
 
     const ym = parseRecordYmFromField(recObj, fieldMap.date);
     if (!ym || !isYmInPeriod(ym.year, ym.month1, period)) continue;
@@ -143,7 +148,10 @@ export function aggregateApoRecords(
 }
 
 function sortApoAgg(items: ApoAggItem[]): ApoAggItem[] {
-  return [...items].sort(
+  const visible = items.filter(
+    (it) => !isExcludedSalesDashboardRankingName(it.name),
+  );
+  return [...visible].sort(
     (a, b) =>
       b.apoCount - a.apoCount || a.name.localeCompare(b.name, "ja"),
   );

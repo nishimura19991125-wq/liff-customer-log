@@ -15,6 +15,7 @@ import {
   type SalesDashboardPeriodKey,
 } from "@/lib/sales-dashboard-period";
 import { buildApoDashboardSection } from "@/lib/sales-dashboard-apo-aggregate";
+import { isExcludedSalesDashboardRankingName } from "@/lib/sales-dashboard-ranking-exclude";
 import type {
   ApoDashboardKpi,
   ApoDashboardRankingRow,
@@ -120,7 +121,7 @@ function aggregatePtRecords(
     const name = normApClStaffName(
       readCustomerInfoFieldValue(recObj, fieldMap.salesperson),
     );
-    if (!name) continue;
+    if (!name || isExcludedSalesDashboardRankingName(name)) continue;
 
     const ym = parseRecordYm(recObj[fieldMap.date]);
     if (!ym || !isYmInPeriod(ym.year, ym.month1, period)) continue;
@@ -170,7 +171,7 @@ function buildContractCountByMonth(
     const name = normApClStaffName(
       readCustomerInfoFieldValue(recObj, fieldMap.clPerson),
     );
-    if (!name) continue;
+    if (!name || isExcludedSalesDashboardRankingName(name)) continue;
 
     const ym = parseRecordYm(recObj[fieldMap.date]);
     if (!ym) continue;
@@ -210,7 +211,10 @@ function mergeContractCounts(
 }
 
 function sortStaffAgg(items: StaffAgg[]): StaffAgg[] {
-  return [...items].sort(
+  const visible = items.filter(
+    (it) => !isExcludedSalesDashboardRankingName(it.name),
+  );
+  return [...visible].sort(
     (a, b) =>
       b.pt - a.pt ||
       b.salesAmount - a.salesAmount ||
