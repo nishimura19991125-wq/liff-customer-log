@@ -360,30 +360,30 @@ export function LockScreen({
   const activeLen =
     mode === "set" && setStep === "confirm" ? confirmDigits.length : digits.length;
 
+  const screenTitle =
+    mode === "waiting" ? "事務所承認待ち" : "暗証番号入力";
+
+  const screenSubtitle =
+    mode === "set"
+      ? setStep === "confirm"
+        ? "もう一度同じ番号を入力"
+        : needsInitialSetup
+          ? "4桁の暗証番号を登録（2回入力）"
+          : "新しい4桁の暗証番号を入力"
+      : null;
+
   return (
     <div className="fixed inset-0 z-[100] flex min-h-dvh flex-col items-center justify-center bg-slate-900 px-4 py-[max(1rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] text-white">
       <div className="flex w-full max-w-md flex-col items-center justify-center text-center">
         <p className="mb-1 text-sm font-medium text-slate-400">情報確認くん</p>
-        <h1 className="mb-2 text-xl font-bold tracking-tight">
-          {mode === "waiting"
-            ? "事務所承認待ち"
-            : mode === "set"
-              ? needsInitialSetup
-                ? "暗証番号の登録"
-                : "新しい暗証番号"
-              : "暗証番号入力"}
-        </h1>
+        <h1 className="mb-2 text-xl font-bold tracking-tight">{screenTitle}</h1>
         {staffName ? (
-          <p className="mb-8 text-sm text-slate-400">{staffName}</p>
-        ) : (
-          <div className="mb-8" />
-        )}
-
-        {needsInitialSetup && mode === "set" ? (
-          <p className="mb-6 rounded-xl border border-sky-500/40 bg-sky-950/50 px-4 py-3 text-left text-[14px] leading-relaxed text-sky-100">
-            名簿の PINコード が未設定です。ご自身で4桁の暗証番号を登録してください（2回入力で確認します）。
-          </p>
+          <p className="text-sm text-slate-400">{staffName}</p>
         ) : null}
+        {screenSubtitle ? (
+          <p className="mt-2 text-sm text-slate-400">{screenSubtitle}</p>
+        ) : null}
+        <div className="mb-8" />
 
         {mode === "waiting" && resetCode ? (
           <div className="mb-8 rounded-2xl border-2 border-amber-400/60 bg-slate-800 px-4 py-6">
@@ -398,13 +398,6 @@ export function LockScreen({
           </div>
         ) : (
           <>
-            {mode === "set" ? (
-              <p className="mb-4 text-sm text-slate-400">
-                {setStep === "enter"
-                  ? "新しい4桁の暗証番号を入力"
-                  : "もう一度同じ番号を入力"}
-              </p>
-            ) : null}
             <PinDots length={activeLen} />
             {error ? (
               <p className="mb-4 text-sm font-semibold text-rose-400">{error}</p>
