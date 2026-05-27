@@ -4,13 +4,15 @@ import {
   apiKeyForStaffWrite,
   fetchAppFieldUniqueIdsSetTryKeys,
   fetchRecordById,
-  fetchRecordsList,
   pickRecordFieldsForSchema,
   stripLikelyInvalidPocketKeysFromRecord,
   updateRecord,
 } from "@/lib/atpocket";
 import { invalidateApClStaffPickerCache } from "@/lib/staff-ap-cl-candidates";
-import { invalidateStaffRosterCache } from "@/lib/staff-roster-cache";
+import {
+  fetchStaffRosterRowsCached,
+  patchStaffRosterAfterLineBind,
+} from "@/lib/staff-roster-cache";
 import { resolveCallerLineAuth, lineAuthUnauthorizedResponse } from "@/lib/request-auth";
 import {
   enrichCleanedRecordWithImportKey,
@@ -142,12 +144,7 @@ export async function POST(request: Request) {
         { status: 503 },
       );
     }
-    const data = await fetchRecordsList(
-      staffAppId,
-      { limit: "1000", page: "1" },
-      pocketAuth,
-    );
-    const rows = data.records ?? [];
+    const rows = await fetchStaffRosterRowsCached();
 
     for (const row of rows) {
       const rec = row.record;
@@ -342,7 +339,12 @@ export async function POST(request: Request) {
       requiredFieldIds,
     });
 
-    invalidateStaffRosterCache();
+    patchStaffRosterAfterLineBind({
+      recordId: staffRecordIdRaw,
+      lineFieldId: slot.fieldId,
+      lineUserId: slot.value,
+      recordSnapshot: payload,
+    });
     invalidateApClStaffPickerCache();
 
     return NextResponse.json({

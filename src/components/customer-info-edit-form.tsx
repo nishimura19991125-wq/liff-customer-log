@@ -224,6 +224,11 @@ function FieldControl({
     field.options.length > 0 &&
     !field.optionsPending
   ) {
+    const trimmed = value.trim();
+    const selectOptions =
+      trimmed && !field.options.includes(trimmed)
+        ? [...field.options, trimmed]
+        : field.options;
     return (
       <select
         className={selectClass}
@@ -233,7 +238,7 @@ function FieldControl({
         onChange={(e) => onChange(e.target.value)}
       >
         <option value="">選択してください</option>
-        {field.options.map((opt) => (
+        {selectOptions.map((opt) => (
           <option key={opt} value={opt}>
             {opt}
           </option>

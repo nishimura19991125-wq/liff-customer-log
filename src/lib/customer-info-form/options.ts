@@ -24,6 +24,23 @@ export const INDOOR_SURVEY_STATUS_OPTIONS = ["未実施", "実施済み"] as con
 /** お客様情報の入力ステータス（@pocket リスト式） */
 export const INPUT_STATUS_OPTIONS = ["未入力", "入力完了"] as const;
 
+/** 導入経緯（@pocket リスト式） */
+export const INTRODUCTION_ROUTE_OPTIONS = [
+  "ダイレクト",
+  "(DC)工務店OBリスト",
+  "ソーラーパートナーズ",
+  "タイナビ",
+  "工務店トスアップ",
+  "トラーチ倶楽部",
+  "卸案件",
+  "お客様紹介",
+  "HP",
+  "SNS",
+  "トレンディ",
+  "大和ハウス",
+  "産業用",
+] as const;
+
 export const INPUT_STATUS_PENDING = "未入力" as const;
 export const INPUT_STATUS_COMPLETE = "入力完了" as const;
 
