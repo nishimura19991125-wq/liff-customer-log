@@ -13,6 +13,7 @@ import {
 import { staffRecordMatchesLineUser } from "@/lib/staff-line-binding";
 
 type RosterCacheEntry = {
+  key: string;
   expiresAt: number;
   rows: AtPocketRecordRow[];
 };
@@ -45,7 +46,11 @@ export async function fetchStaffRosterRowsCached(): Promise<
   if (!key || !staffAppId) return [];
 
   const now = Date.now();
-  if (rosterCache && rosterCache.expiresAt > now) {
+  if (
+    rosterCache &&
+    rosterCache.key === key &&
+    rosterCache.expiresAt > now
+  ) {
     return rosterCache.rows;
   }
 
@@ -55,6 +60,9 @@ export async function fetchStaffRosterRowsCached(): Promise<
   const lineOn = staffLineBindingEnabled(lineIds);
   const staffNameFieldId = process.env.STAFF_NAME_FIELD_ID?.trim() ?? "";
   const auth = { apiKey: apiKeyForStaffPocketRead() };
+
+  const staleRows =
+    rosterCache && rosterCache.key === key ? rosterCache.rows : null;
 
   rosterInflight = (async () => {
     try {
@@ -69,10 +77,21 @@ export async function fetchStaffRosterRowsCached(): Promise<
           ).records ?? [];
 
       rosterCache = {
+        key,
         expiresAt: Date.now() + rosterCacheTtlMs(),
         rows,
       };
       return rows;
+    } catch (error) {
+      // @pocket 側で 429 が発生しても、直近の名簿があれば画面を落とさない。
+      if (staleRows && staleRows.length > 0) {
+        console.warn(
+          "[staff-roster-cache] fallback to stale roster after fetch error",
+          error,
+        );
+        return staleRows;
+      }
+      throw error;
     } finally {
       rosterInflight = null;
     }
