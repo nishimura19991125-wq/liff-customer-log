@@ -44,6 +44,41 @@ function rowId(row: {
   return row.recordId != null ? String(row.recordId) : String(row.uniqueId ?? "");
 }
 
+function parseInvalidFieldIdFromPocketError(msg: string): string | null {
+  const m = msg.match(/指定されたフィールド\[([^\]]+)\]は有効なフィールドではありません。?/);
+  return m?.[1]?.trim() || null;
+}
+
+async function updateRecordSkippingInvalidFields(params: {
+  staffAppId: string;
+  staffRecordIdRaw: string;
+  payload: Record<string, unknown>;
+  pocketAuth: { apiKey: string };
+  requiredFieldIds: Set<string>;
+}): Promise<void> {
+  const { staffAppId, staffRecordIdRaw, payload, pocketAuth, requiredFieldIds } =
+    params;
+  const retryMax = 3;
+
+  for (let i = 0; i < retryMax; i++) {
+    try {
+      await updateRecord(staffAppId, staffRecordIdRaw, payload, pocketAuth);
+      return;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const invalidFieldId = parseInvalidFieldIdFromPocketError(msg);
+      if (!invalidFieldId) throw error;
+      if (requiredFieldIds.has(invalidFieldId)) throw error;
+      if (!(invalidFieldId in payload)) throw error;
+      delete payload[invalidFieldId];
+      console.warn(
+        `[api/staff/bind] dropped invalid field from update payload: ${invalidFieldId}`,
+      );
+    }
+  }
+  throw new Error("@pocket update record failed: invalid fields remained");
+}
+
 export async function POST(request: Request) {
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
@@ -297,7 +332,15 @@ export async function POST(request: Request) {
       );
     }
 
-    await updateRecord(staffAppId, staffRecordIdRaw, payload, pocketAuth);
+    const requiredFieldIds = new Set<string>([slot.fieldId]);
+    if (importKeyId) requiredFieldIds.add(importKeyId);
+    await updateRecordSkippingInvalidFields({
+      staffAppId,
+      staffRecordIdRaw,
+      payload,
+      pocketAuth,
+      requiredFieldIds,
+    });
 
     invalidateStaffRosterCache();
     invalidateApClStaffPickerCache();
