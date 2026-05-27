@@ -16,6 +16,7 @@ import {
 } from "@/lib/staff-construction-availability";
 
 const COMPANY_TYPE_MANUFACTURER = "メーカー";
+const COMPANY_TYPE_CREDIT = "信販会社";
 const TRADE_STATUS_ACTIVE = "取引中";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -151,9 +152,10 @@ function readCompanyNameCell(
   return nfkcNormalize(pocketTableCellToPlainString(readRecordCell(rec, fieldId)));
 }
 
-function collectManufacturerNames(
+function collectTradingPartnerCompanyNames(
   rows: Awaited<ReturnType<typeof fetchAllRecordsPages>>,
   ids: TradingPartnerFieldIds,
+  expectedCompanyTypeLabel: string,
 ): string[] {
   const names = new Set<string>();
   let matched = 0;
@@ -173,7 +175,9 @@ function collectManufacturerNames(
     if (statusSamples.length < 5) {
       statusSamples.push(pocketSelectTokens(statusRaw).join("|") || "(空)");
     }
-    if (!pocketSelectIncludesLabel(typeRaw, COMPANY_TYPE_MANUFACTURER)) {
+    if (
+      !pocketSelectIncludesLabel(typeRaw, expectedCompanyTypeLabel)
+    ) {
       continue;
     }
     if (!pocketSelectIncludesLabel(statusRaw, TRADE_STATUS_ACTIVE)) {
@@ -185,7 +189,7 @@ function collectManufacturerNames(
   }
 
   console.info(
-    `[trading-partner-manufacturers] rows=${rows.length} matched=${matched} manufacturers=${names.size}`,
+    `[trading-partner-manufacturers] rows=${rows.length} matched=${matched} options(${expectedCompanyTypeLabel})=${names.size}`,
   );
   if (matched === 0 && rows.length > 0) {
     console.warn(
@@ -248,18 +252,95 @@ async function fetchManufacturerOptionsUncached(): Promise<string[] | null> {
     ",",
   );
   let rows = await fetchAllRecordsPages(appId, fieldsCsv, auth);
-  let names = collectManufacturerNames(rows, ids);
+  let names = collectTradingPartnerCompanyNames(
+    rows,
+    ids,
+    COMPANY_TYPE_MANUFACTURER,
+  );
 
   // fields 指定で値が欠ける・キーがずれる場合に全項目取得で再試行
   if (names.length <= 1 && rows.length >= 2) {
     const fullRows = await fetchAllRecordsPages(appId, "", auth);
-    const retryNames = collectManufacturerNames(fullRows, ids);
+    const retryNames = collectTradingPartnerCompanyNames(
+      fullRows,
+      ids,
+      COMPANY_TYPE_MANUFACTURER,
+    );
     if (retryNames.length > names.length) {
       names = retryNames;
     }
   }
 
   return names;
+}
+
+type CompanyOptionsCache = {
+  expiresAt: number;
+  options: string[] | null;
+};
+
+let creditCache: CompanyOptionsCache | null = null;
+let creditInflight: Promise<string[] | null> | null = null;
+
+async function fetchCreditCompanyOptionsUncached(): Promise<string[] | null> {
+  const appId = tradingPartnerAppId();
+  if (!appId) return null;
+
+  const auth = tradingPartnerPocketAuth();
+  const ids = await resolveTradingPartnerIdsForFetch(appId);
+  if (!ids) {
+    return [];
+  }
+
+  const fieldsCsv = [ids.companyType, ids.tradeStatus, ids.companyName].join(
+    ",",
+  );
+  let rows = await fetchAllRecordsPages(appId, fieldsCsv, auth);
+  let names = collectTradingPartnerCompanyNames(
+    rows,
+    ids,
+    COMPANY_TYPE_CREDIT,
+  );
+
+  // fields 指定で値が欠ける・キーがずれる場合に全項目取得で再試行
+  if (names.length <= 1 && rows.length >= 2) {
+    const fullRows = await fetchAllRecordsPages(appId, "", auth);
+    const retryNames = collectTradingPartnerCompanyNames(
+      fullRows,
+      ids,
+      COMPANY_TYPE_CREDIT,
+    );
+    if (retryNames.length > names.length) {
+      names = retryNames;
+    }
+  }
+
+  return names;
+}
+
+/** 取引先会社一覧から信販会社（取引中）の会社名リスト。未設定時は null */
+export async function fetchTradingPartnerCreditCompanyOptions(): Promise<
+  string[] | null
+> {
+  const now = Date.now();
+  if (creditCache && creditCache.expiresAt > now) return creditCache.options;
+  if (creditInflight) return creditInflight;
+
+  creditInflight = (async () => {
+    try {
+      const options = await fetchCreditCompanyOptionsUncached();
+      creditCache = { expiresAt: Date.now() + CACHE_TTL_MS, options };
+      return options;
+    } catch (e) {
+      console.error("[trading-partner-manufacturers] credit options fetch failed", e);
+      creditCache = { expiresAt: Date.now() + 60_000, options: [] };
+      return [];
+    } finally {
+      creditInflight = null;
+    }
+  })();
+
+  return creditInflight;
 }
 
 /** 取引先会社一覧からメーカー（取引中）の会社名リスト。未設定時は null */

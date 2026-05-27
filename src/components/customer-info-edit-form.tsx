@@ -378,6 +378,11 @@ export function CustomerInfoEditForm({
   );
   const [apClStaffLoading, setApClStaffLoading] = useState(false);
 
+  const [creditCompanies, setCreditCompanies] = useState<string[]>([]);
+  const [creditCompaniesLoading, setCreditCompaniesLoading] = useState(false);
+  const [creditCompaniesConfigured, setCreditCompaniesConfigured] =
+    useState(false);
+
   const displayValues = useMemo(
     () => syncContractAmountFromPayment(values),
     [values],
@@ -452,6 +457,49 @@ export function CustomerInfoEditForm({
 
   useEffect(() => {
     if (!idToken) {
+      setCreditCompanies([]);
+      setCreditCompaniesLoading(false);
+      setCreditCompaniesConfigured(false);
+      return;
+    }
+
+    let cancelled = false;
+    setCreditCompaniesLoading(true);
+    void (async () => {
+      try {
+        const res = await fetch("/api/customer-info/credit-companies", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const data = (await res.json()) as {
+          options?: string[];
+          configured?: boolean;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok) {
+          setCreditCompanies([]);
+          setCreditCompaniesConfigured(false);
+          return;
+        }
+        setCreditCompanies(data.options ?? []);
+        setCreditCompaniesConfigured(data.configured !== false);
+      } catch {
+        if (!cancelled) {
+          setCreditCompanies([]);
+          setCreditCompaniesConfigured(false);
+        }
+      } finally {
+        if (!cancelled) setCreditCompaniesLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [idToken]);
+
+  useEffect(() => {
+    if (!idToken) {
       setApClStaff(null);
       setApClStaffLoading(false);
       return;
@@ -496,6 +544,21 @@ export function CustomerInfoEditForm({
     return formFields
       .filter((f) => isCustomerInfoFormFieldVisible(f.key, displayValues))
       .map((f) => {
+        if (f.key === "creditCompany") {
+          if (
+            creditCompaniesLoading ||
+            !creditCompaniesConfigured ||
+            creditCompanies.length === 0
+          ) {
+            return { ...f, options: [], optionsPending: true };
+          }
+          return {
+            ...f,
+            type: "select" as const,
+            options: creditCompanies,
+            optionsPending: false,
+          };
+        }
         if (f.key === "apStaff" || f.key === "clStaff") {
           const role = f.key === "apStaff" ? "ap" : "cl";
           if (apClStaffLoading || !apClStaff?.configured) {
@@ -538,6 +601,9 @@ export function CustomerInfoEditForm({
     catalogConfigured,
     apClStaff,
     apClStaffLoading,
+    creditCompanies,
+    creditCompaniesLoading,
+    creditCompaniesConfigured,
   ]);
 
   const handleFieldChange = useCallback(

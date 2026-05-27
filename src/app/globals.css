@@ -206,3 +206,11 @@ body {
     0 0 22px rgb(96 165 250 / 0.4),
     0 1px 0 rgb(2 6 23 / 0.9);
 }
+
+.news-marquee-shell {
+  touch-action: pan-y;
+}
+
+.news-marquee-js-track {
+  will-change: transform;
+}

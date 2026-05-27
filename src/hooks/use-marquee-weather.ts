@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 
 import {
   fetchHomeWeatherOpenMeteo,
-  formatHomeWeatherMarqueeLine,
   homeWeatherCompanyCoordinates,
+  weatherLocationHeading,
   type WeatherLocationSource,
 } from "@/lib/home-weather-open-meteo";
 
@@ -13,6 +13,14 @@ export type MarqueeWeatherCoords = {
   lat: number;
   lon: number;
   source: WeatherLocationSource;
+};
+
+export type MarqueeWeatherView = {
+  heading: string;
+  conditionText: string;
+  rainAdvice: string;
+  loading: boolean;
+  error: boolean;
 };
 
 const GEO_TIMEOUT_MS = 4500;
@@ -113,37 +121,48 @@ async function fetchMarqueeWeatherSafe(): Promise<{
  * テロップ用天気（Open-Meteo + Geolocation）。
  * localStorage / sessionStorage には保存しない。
  */
-export function useMarqueeWeather(): string {
-  const [weatherLine, setWeatherLine] = useState(() =>
-    formatHomeWeatherMarqueeLine(null, {
-      loading: true,
-      error: false,
-      locationSource: "company",
-    }),
-  );
+export function useMarqueeWeather(): MarqueeWeatherView {
+  const [weather, setWeather] = useState<MarqueeWeatherView>({
+    heading: weatherLocationHeading("company"),
+    conditionText: "取得中…",
+    rainAdvice: "",
+    loading: true,
+    error: false,
+  });
 
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
-      setWeatherLine(
-        formatHomeWeatherMarqueeLine(null, {
-          loading: true,
-          error: false,
-          locationSource: "company",
-        }),
-      );
+      setWeather({
+        heading: weatherLocationHeading("company"),
+        conditionText: "取得中…",
+        rainAdvice: "",
+        loading: true,
+        error: false,
+      });
 
       const { snapshot, locationSource } = await fetchMarqueeWeatherSafe();
       if (cancelled) return;
 
-      setWeatherLine(
-        formatHomeWeatherMarqueeLine(snapshot, {
+      if (!snapshot) {
+        setWeather({
+          heading: weatherLocationHeading("company"),
+          conditionText: "取得できませんでした",
+          rainAdvice: "",
           loading: false,
-          error: !snapshot,
-          locationSource,
-        }),
-      );
+          error: true,
+        });
+        return;
+      }
+
+      setWeather({
+        heading: weatherLocationHeading(locationSource),
+        conditionText: snapshot.conditionText,
+        rainAdvice: snapshot.rainAdvice ?? "",
+        loading: false,
+        error: false,
+      });
     })();
 
     return () => {
@@ -151,5 +170,5 @@ export function useMarqueeWeather(): string {
     };
   }, []);
 
-  return weatherLine;
+  return weather;
 }
