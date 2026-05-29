@@ -1,26 +1,27 @@
 import { NextResponse } from "next/server";
 
-import { resolveConstructionRecordAfterCreate } from "@/lib/atpocket-record-id";
 import {
   apiKeyForCalendarPocket,
-  apiKeyForCalendarWrite,
   createRecord,
   fetchAppFields,
+  updateRecord,
 } from "@/lib/atpocket";
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
+import {
+  buildConstructionFillPatch,
+  ensureConstructionTNumberOnRecord,
+  resolveRecordIdAfterConstructionCreate,
+  uniqueFieldsCsv,
+} from "@/lib/calendar-construction-pocket-common";
 import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
-import {
-  EMPTY_FILL_HOUSING_STATUS_NEW_BUILD,
-  isValidEmptyFillHousingStatus,
-} from "@/lib/calendar-empty-fill-options";
+import { isValidEmptyFillHousingStatus } from "@/lib/calendar-empty-fill-options";
 import {
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
   resolveConstructionTNumberFieldId,
 } from "@/lib/calendar-kojo";
-import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -49,8 +50,8 @@ type Body = {
 };
 
 /**
- * 工事アプリに新規レコードを追加（空枠更新と同じフィールド設定を利用）。
- * T番号はリクエストに含めず、@pocket の自動採番に任せる。
+ * 工事日未定案件登録。工事空枠登録（fill-empty-slot）と同じ流れ:
+ * 工事アプリへ書き込み → recordId 確定 → GET で T番号確認 → PUT → お客様情報連携
  */
 export async function POST(request: Request) {
   const auth = await resolveCallerLineAuth(request);
@@ -74,7 +75,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "登録先フィールドが未設定です。.env に CALENDAR_EMPTY_FILL_CUSTOMER_NAME_FIELD_ID と CALENDAR_EMPTY_FILL_HOUSING_STATUS_FIELD_ID を設定してください。",
+          "工事空枠の入力先フィールドが未設定です。.env に CALENDAR_EMPTY_FILL_CUSTOMER_NAME_FIELD_ID と CALENDAR_EMPTY_FILL_HOUSING_STATUS_FIELD_ID（@pocket の uniqueId）を設定してください。",
       },
       { status: 500 },
     );
@@ -111,47 +112,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const handlerFieldEnv = calendarConstructionHandlerFieldIdFromEnv();
-
-  let handlerPutValue: string | undefined;
-  let resolvedHandlerField: string | undefined;
-
-  /** 工事日未定案件登録では工事対応者は任意。送信されたときのみ検証して書き込む */
-  if (handlerFieldEnv && constructionHandlerStaffRecordId) {
-    if (!constructionHandlerStaffConfigReady()) {
-      return NextResponse.json(
-        {
-          error:
-            "工事対応者はスタッフ名簿と連携する必要があります。STAFF_APP_ID・STAFF_NAME_FIELD_ID・STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID を設定してください。",
-        },
-        { status: 503 },
-      );
-    }
-    const resolvedName = await resolveConstructionHandlerNameForActiveStaff(
-      constructionHandlerStaffRecordId,
-    );
-    if (!resolvedName.ok) {
-      const msg =
-        resolvedName.reason === "not_found"
-          ? "選択したスタッフが見つかりません。"
-          : resolvedName.reason === "not_active"
-            ? "選択した社員は工事対応が「稼働」ではありません。一覧を更新して選び直してください。"
-            : resolvedName.reason === "no_name"
-              ? "スタッフ名簿に氏名が入っていません。"
-              : "工事対応者を検証できませんでした。";
-      return NextResponse.json({ error: msg }, { status: 400 });
-    }
-    handlerPutValue = resolvedName.name;
-  }
-
-  /** 書込専用キー未設定時は CALENDAR_ATPOCKET_API_KEY が登録・一覧の両方に使われる */
-  const pocketWriteAuth = { apiKey: apiKeyForCalendarWrite() };
-  const pocketReadAuth = { apiKey: apiKeyForCalendarPocket() };
+  const pocketAuth = { apiKey: apiKeyForCalendarPocket() };
 
   let constructionSaved = false;
 
   try {
-    const constructionFields = await fetchAppFields(calAppId, pocketReadAuth);
+    const constructionFields = await fetchAppFields(calAppId, pocketAuth);
 
     const resolvedCustomer = resolveConfiguredFieldToSchemaUniqueId(
       customerField,
@@ -175,13 +141,27 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            `住宅ステータスフィールド「${housingField}」が工事アプリのフィールド定義と一致しません。`,
+            `住宅ステータスフィールド「${housingField}」が工事アプリのフィールド定義と一致しません。GET /api/apps/{アプリID}/fields で返る uniqueId を設定してください。`,
         },
         { status: 500 },
       );
     }
 
-    if (handlerFieldEnv && handlerPutValue != null) {
+    const handlerFieldEnv = calendarConstructionHandlerFieldIdFromEnv();
+    let resolvedHandlerField: string | undefined;
+    let handlerValueToPut: string | undefined;
+
+    /** 工事日未定案件登録では工事対応者は任意。送信されたときのみ検証して書き込む */
+    if (handlerFieldEnv && constructionHandlerStaffRecordId) {
+      if (!constructionHandlerStaffConfigReady()) {
+        return NextResponse.json(
+          {
+            error:
+              "工事対応者はスタッフ名簿と連携する必要があります。STAFF_APP_ID・STAFF_NAME_FIELD_ID・STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID を設定してください。",
+          },
+          { status: 503 },
+        );
+      }
       const resolved = resolveConfiguredFieldToSchemaUniqueId(
         handlerFieldEnv,
         constructionFields,
@@ -190,15 +170,30 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              `工事対応者フィールド「${handlerFieldEnv}」が工事アプリのフィールド定義と一致しません。CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID を確認してください。`,
+              `工事対応者フィールド「${handlerFieldEnv}」が工事アプリのフィールド定義と一致しません。GET /api/apps/{アプリID}/fields の uniqueId を CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID（または後方互換 CALENDAR_EMPTY_FILL_CONSTRUCTION_REGISTRANT_FIELD_ID）に設定してください。`,
           },
           { status: 500 },
         );
       }
       resolvedHandlerField = resolved;
+      const resolvedName = await resolveConstructionHandlerNameForActiveStaff(
+        constructionHandlerStaffRecordId,
+      );
+      if (!resolvedName.ok) {
+        const msg =
+          resolvedName.reason === "not_found"
+            ? "選択したスタッフが見つかりません。"
+            : resolvedName.reason === "not_active"
+              ? "選択した社員は工事対応が「稼働」ではありません。一覧を更新して選び直してください。"
+              : resolvedName.reason === "no_name"
+                ? "スタッフ名簿に氏名が入っていません。"
+                : "工事対応者を検証できませんでした。";
+        return NextResponse.json({ error: msg }, { status: 400 });
+      }
+      handlerValueToPut = resolvedName.name;
     }
 
-    const constructionFids = resolveConstructionFieldIds(constructionFields);
+    const fids = resolveConstructionFieldIds(constructionFields);
     const resolvedTNumber =
       resolveConstructionTNumberFieldId(constructionFields);
     if (!resolvedTNumber) {
@@ -211,37 +206,39 @@ export async function POST(request: Request) {
       );
     }
 
-    const record: Record<string, unknown> = {
-      [resolvedCustomer]: customerName,
-      [resolvedHousing]: housingRaw,
+    const fieldsCsv = uniqueFieldsCsv(
+      resolvedCustomer,
+      resolvedHousing,
+      resolvedTNumber,
+    );
+
+    const patchDates = {
+      shigumiDate: body.shigumiDate,
+      panelWorkDate: body.panelWorkDate,
+      electricWorkDate: body.electricWorkDate,
+      appSettingsDayDate: body.appSettingsDayDate,
     };
-    if (resolvedHandlerField != null && handlerPutValue != null) {
-      record[resolvedHandlerField] = handlerPutValue;
-    }
 
-    if (housingRaw === EMPTY_FILL_HOUSING_STATUS_NEW_BUILD) {
-      const quad: Array<[fieldId: string | undefined, raw: string | undefined]> =
-        [
-          [constructionFids.shigumi, body.shigumiDate],
-          [constructionFids.panelWork, body.panelWorkDate],
-          [constructionFids.electricWork, body.electricWorkDate],
-          [constructionFids.appSettingsDay, body.appSettingsDayDate],
-        ];
-      for (const [fid, raw] of quad) {
-        const ymd = optionalCalendarYmd(raw);
-        const id = fid?.trim();
-        if (ymd && id) record[id] = ymd;
-      }
-    }
-
-    /** 自動採番: 空で送り @pocket に付番させる（取込キー検証を通す） */
-    record[resolvedTNumber] = "";
-
-    const createResult = await createRecord(calAppId, record, pocketWriteAuth);
+    const createResult = await createRecord(
+      calAppId,
+      buildConstructionFillPatch({
+        resolvedCustomer,
+        resolvedHousing,
+        resolvedTNumber,
+        tNumberValue: "",
+        customerName,
+        housingRaw,
+        resolvedHandlerField,
+        handlerValue: handlerValueToPut,
+        fids,
+        ...patchDates,
+      }),
+      pocketAuth,
+    );
     constructionSaved = true;
     invalidateAllCalendarPayloadCache();
 
-    const constructionMatch = await resolveConstructionRecordAfterCreate(
+    const recordId = await resolveRecordIdAfterConstructionCreate(
       calAppId,
       createResult,
       {
@@ -249,19 +246,62 @@ export async function POST(request: Request) {
         housingStatus: housingRaw,
         customerFieldId: resolvedCustomer,
         housingFieldId: resolvedHousing,
-        startDateFieldId: constructionFids.startDate?.trim() || undefined,
+        startDateFieldId: fids.startDate?.trim() || undefined,
         tNumberFieldId: resolvedTNumber,
       },
-      pocketReadAuth,
+      pocketAuth,
     );
+
+    if (!recordId) {
+      return NextResponse.json(
+        {
+          error:
+            "工事レコードは登録されましたが、レコード ID を取得できませんでした。しばらくしてからカレンダーを更新し、登録された案件を確認してください。",
+          constructionSaved: true,
+        },
+        { status: 502 },
+      );
+    }
+
+    const tNumber = await ensureConstructionTNumberOnRecord(
+      calAppId,
+      recordId,
+      resolvedTNumber,
+      pocketAuth,
+      fieldsCsv,
+    );
+    if (!tNumber) {
+      return NextResponse.json(
+        {
+          error:
+            "登録したレコードから T番号 を取得できませんでした。@pocket で T番号 が採番されているか、フィールド設定を確認してください。",
+          constructionSaved: true,
+        },
+        { status: 409 },
+      );
+    }
+
+    const patch = buildConstructionFillPatch({
+      resolvedCustomer,
+      resolvedHousing,
+      resolvedTNumber,
+      tNumberValue: tNumber,
+      customerName,
+      housingRaw,
+      resolvedHandlerField,
+      handlerValue: handlerValueToPut,
+      fids,
+      ...patchDates,
+    });
+
+    await updateRecord(calAppId, recordId, patch, pocketAuth);
 
     return finalizeConstructionCalendarSave({
       calAppId,
-      constructionRecordId: constructionMatch.recordId,
-      constructionUniqueKey: constructionMatch.uniqueKey,
+      constructionRecordId: recordId,
       customerName,
       constructionFields,
-      calendarAuth: pocketReadAuth,
+      calendarAuth: pocketAuth,
       lineUserId: auth.lineUserId,
       viewYear: body.viewYear,
       viewMonth: body.viewMonth,

@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 
+import { isValidEmptyFillHousingStatus } from "@/lib/calendar-empty-fill-options";
 import {
-  EMPTY_FILL_HOUSING_STATUS_NEW_BUILD,
-  isValidEmptyFillHousingStatus,
-} from "@/lib/calendar-empty-fill-options";
-import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
+  buildConstructionFillPatch,
+  fetchConstructionRecordRow,
+  readConstructionTNumberFromRecord,
+  uniqueFieldsCsv,
+} from "@/lib/calendar-construction-pocket-common";
 import {
   constructionTitleFieldIsEmpty,
-  pickRecordValueByFieldAliases,
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
   resolveConstructionTNumberFieldId,
@@ -15,7 +16,6 @@ import {
 import {
   apiKeyForCalendarPocket,
   fetchAppFields,
-  fetchRecordById,
   updateRecord,
 } from "@/lib/atpocket";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
@@ -48,30 +48,6 @@ type Body = {
   viewYear?: number;
   viewMonth?: number;
 };
-
-/** GET/PUT に載せるフィールドは必要なもののみ（それ以外を PUT すると「有効なフィールドではありません」になることがある） */
-function uniqueFieldsCsv(...uids: (string | undefined)[]): string {
-  const seen = new Set<string>();
-  const parts: string[] = [];
-  for (const u of uids) {
-    const t = u?.trim();
-    if (t && !seen.has(t)) {
-      seen.add(t);
-      parts.push(t);
-    }
-  }
-  return parts.join(",");
-}
-
-/** @pocket へレコード PUT（フィールドキーは GET fields で解決した uniqueId をそのまま使う） */
-async function updateFillEmptySlotPocketRecord(
-  calAppId: string,
-  calendarRecordId: string,
-  pocketAuth: { apiKey: string },
-  patch: Record<string, unknown>,
-): Promise<void> {
-  await updateRecord(calAppId, calendarRecordId, patch, pocketAuth);
-}
 
 export async function POST(request: Request) {
   const auth = await resolveCallerLineAuth(request);
@@ -238,17 +214,12 @@ export async function POST(request: Request) {
       resolvedTNumber,
     );
 
-    let recRow: Awaited<ReturnType<typeof fetchRecordById>> = null;
-    try {
-      recRow = await fetchRecordById(
-        calAppId,
-        recordId,
-        pocketAuth,
-        fieldsCsv,
-      );
-    } catch {
-      recRow = await fetchRecordById(calAppId, recordId, pocketAuth);
-    }
+    const recRow = await fetchConstructionRecordRow(
+      calAppId,
+      recordId,
+      pocketAuth,
+      fieldsCsv,
+    );
 
     if (!recRow?.record || typeof recRow.record !== "object") {
       return NextResponse.json({ error: "レコードが見つかりません" }, { status: 404 });
@@ -265,8 +236,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const existingT = pickRecordValueByFieldAliases(recObj, resolvedTNumber);
-    if (existingT === undefined || existingT === null) {
+    const existingT = readConstructionTNumberFromRecord(recObj, resolvedTNumber);
+    if (!existingT) {
       return NextResponse.json(
         {
           error:
@@ -276,36 +247,23 @@ export async function POST(request: Request) {
       );
     }
 
-    const patch: Record<string, unknown> = {
-      [resolvedTNumber]: existingT,
-      [resolvedCustomer]: customerName,
-      [resolvedHousing]: housingRaw,
-    };
-    if (resolvedHandlerField != null && handlerValueToPut != null) {
-      patch[resolvedHandlerField] = handlerValueToPut;
-    }
+    const patch = buildConstructionFillPatch({
+      resolvedCustomer,
+      resolvedHousing,
+      resolvedTNumber,
+      tNumberValue: existingT,
+      customerName,
+      housingRaw,
+      resolvedHandlerField,
+      handlerValue: handlerValueToPut,
+      fids,
+      shigumiDate: body.shigumiDate,
+      panelWorkDate: body.panelWorkDate,
+      electricWorkDate: body.electricWorkDate,
+      appSettingsDayDate: body.appSettingsDayDate,
+    });
 
-    if (housingRaw === EMPTY_FILL_HOUSING_STATUS_NEW_BUILD) {
-      const quad: Array<[fieldId: string | undefined, raw: string | undefined]> =
-        [
-          [fids.shigumi, body.shigumiDate],
-          [fids.panelWork, body.panelWorkDate],
-          [fids.electricWork, body.electricWorkDate],
-          [fids.appSettingsDay, body.appSettingsDayDate],
-        ];
-      for (const [fid, raw] of quad) {
-        const ymd = optionalCalendarYmd(raw);
-        const id = fid?.trim();
-        if (ymd && id) patch[id] = ymd;
-      }
-    }
-
-    await updateFillEmptySlotPocketRecord(
-      calAppId,
-      recordId,
-      pocketAuth,
-      patch,
-    );
+    await updateRecord(calAppId, recordId, patch, pocketAuth);
     constructionUpdated = true;
     invalidateAllCalendarPayloadCache();
 

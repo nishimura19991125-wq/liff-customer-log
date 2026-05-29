@@ -243,7 +243,7 @@ export async function pollConstructionTNumberByRecordId(
   return null;
 }
 
-async function findConstructionRecordByNewEntryOnce(
+export async function findConstructionRecordByNewEntryOnce(
   calAppId: string,
   opts: ConstructionLookupOpts,
   auth: AtPocketFetchAuth,
