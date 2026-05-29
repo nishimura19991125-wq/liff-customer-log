@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
+import {
+  atPocketRecordIdFromCreateResponse,
+  findConstructionRecordIdByNewEntry,
+} from "@/lib/atpocket-record-id";
 import {
   apiKeyForCalendarWrite,
   createRecord,
@@ -228,13 +231,26 @@ export async function POST(request: Request) {
     constructionSaved = true;
     invalidateAllCalendarPayloadCache();
 
+    let constructionRecordId = atPocketRecordIdFromCreateResponse(createdRow);
+    if (!constructionRecordId) {
+      constructionRecordId = await findConstructionRecordIdByNewEntry(
+        calAppId,
+        {
+          customerName,
+          housingStatus: housingRaw,
+          customerFieldId: resolvedCustomer,
+          housingFieldId: resolvedHousing,
+        },
+        pocketAuth,
+      );
+    }
+
     if (process.env.CUSTOMER_INFO_APP_ID?.trim()) {
-      const constructionRecordId = atPocketRecordIdFromRow(createdRow);
       if (!constructionRecordId) {
         return NextResponse.json(
           {
             error:
-              "工事レコードは登録されましたが、レコード ID を取得できませんでした。お客様情報アプリへの連携は行えません。@pocket の登録 API 応答を確認してください。",
+              "工事レコードは登録されましたが、レコード ID を取得できませんでした。お客様情報アプリへの連携は行えません。しばらくしてからカレンダーを更新し、登録された案件を確認してください。",
             constructionSaved: true,
           },
           { status: 502 },
@@ -273,7 +289,6 @@ export async function POST(request: Request) {
       });
     }
 
-    const constructionRecordId = atPocketRecordIdFromRow(createdRow);
     const calendarPatch =
       constructionRecordId != null
         ? await buildCalendarPatchAfterConstructionSave(
