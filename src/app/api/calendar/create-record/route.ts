@@ -194,6 +194,17 @@ export async function POST(request: Request) {
     }
 
     const constructionFids = resolveConstructionFieldIds(constructionFields);
+    const resolvedTNumber =
+      resolveConstructionTNumberFieldId(constructionFields);
+    if (!resolvedTNumber) {
+      return NextResponse.json(
+        {
+          error:
+            "T番号フィールドの uniqueId が分かりません。CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID を .env に設定するか、アプリに「T番号」見出しのフィールドを用意してください。",
+        },
+        { status: 500 },
+      );
+    }
 
     const record: Record<string, unknown> = {
       [resolvedCustomer]: customerName,
@@ -218,11 +229,8 @@ export async function POST(request: Request) {
       }
     }
 
-    const resolvedTNumber = resolveConstructionTNumberFieldId(constructionFields);
-    if (resolvedTNumber) {
-      /** 自動採番: 空で送り @pocket に付番させる（取込キー検証を通す） */
-      record[resolvedTNumber] = "";
-    }
+    /** 自動採番: 空で送り @pocket に付番させる（取込キー検証を通す） */
+    record[resolvedTNumber] = "";
 
     const createResult = await createRecord(calAppId, record, pocketAuth);
     constructionSaved = true;
@@ -237,8 +245,7 @@ export async function POST(request: Request) {
         customerFieldId: resolvedCustomer,
         housingFieldId: resolvedHousing,
         startDateFieldId: constructionFids.startDate?.trim() || undefined,
-        tNumberFieldId:
-          resolveConstructionTNumberFieldId(constructionFields) ?? undefined,
+        tNumberFieldId: resolvedTNumber,
       },
       pocketAuth,
     );

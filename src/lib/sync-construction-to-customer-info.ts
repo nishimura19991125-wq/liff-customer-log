@@ -1,6 +1,9 @@
 import "server-only";
 
-import { atPocketRecordIdFromCreateResult } from "@/lib/atpocket-record-id";
+import {
+  atPocketRecordIdFromCreateResult,
+  pollConstructionTNumberByRecordId,
+} from "@/lib/atpocket-record-id";
 import type { AtPocketFieldRow, AtPocketFetchAuth } from "@/lib/atpocket";
 import {
   apiKeyForCustomerInfoPocket,
@@ -324,6 +327,35 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       uniqueKey = coercePocketPlainString(
         pickRecordValueByFieldAliases(recObj, constructionKeyField),
       );
+    }
+  }
+
+  if (!uniqueKey && constructionRecordId) {
+    const polledKey = await pollConstructionTNumberByRecordId(
+      opts.calAppId,
+      constructionRecordId,
+      constructionKeyField,
+      opts.calendarAuth,
+      fieldsCsv,
+    );
+    if (polledKey) uniqueKey = polledKey;
+    if (uniqueKey && !recObj) {
+      let recRow = await fetchRecordById(
+        opts.calAppId,
+        constructionRecordId,
+        opts.calendarAuth,
+        fieldsCsv,
+      );
+      if (!recRow?.record) {
+        recRow = await fetchRecordById(
+          opts.calAppId,
+          constructionRecordId,
+          opts.calendarAuth,
+        );
+      }
+      if (recRow?.record && typeof recRow.record === "object") {
+        recObj = recRow.record as Record<string, unknown>;
+      }
     }
   }
 

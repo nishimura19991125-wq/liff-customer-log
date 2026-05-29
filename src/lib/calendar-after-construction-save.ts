@@ -25,13 +25,13 @@ export async function finalizeConstructionCalendarSave(opts: {
   const recordId = opts.constructionRecordId?.trim() || null;
   const uniqueKey = opts.constructionUniqueKey?.trim() || null;
 
-  if (!uniqueKey) {
+  if (!recordId && !uniqueKey) {
     return NextResponse.json(
       {
         error:
           savedVerb === "登録"
-            ? "工事レコードは登録されましたが、T番号を取得できませんでした。お客様情報アプリへの連携は行えません。@pocket で T番号が採番されているか、しばらくしてからカレンダーを更新してください。"
-            : "工事レコードは更新されましたが、T番号を取得できませんでした。お客様情報アプリへの連携は行えません。",
+            ? "工事レコードは登録されましたが、登録内容を再取得できませんでした。お客様情報アプリへの連携は行えません。しばらくしてからカレンダーを更新し、登録された案件を確認してください。"
+            : "工事レコードは更新されましたが、レコードを再取得できませんでした。お客様情報アプリへの連携は行えません。",
         constructionSaved: true,
       },
       { status: 502 },
