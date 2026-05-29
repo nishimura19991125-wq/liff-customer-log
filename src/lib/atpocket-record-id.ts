@@ -7,7 +7,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 /** Netlify 等のサーバーレス（約10秒制限）向け。長い待機はタイムアウト→「登録に失敗しました」になる */
-const POST_CREATE_LOOKUP_DELAYS_MS = [0, 600, 1800] as const;
+const POST_CREATE_LOOKUP_DELAYS_MS = [0, 400, 1200, 2500] as const;
 const POST_CREATE_TNUMBER_POLL_DELAYS_MS = [0, 500, 1200, 2500] as const;
 export const SYNC_TNUMBER_POLL_DELAYS_MS = [0, 400, 1200] as const;
 
@@ -157,7 +157,7 @@ export function atPocketRecordIdFromCreateResponse(
     if (nested) return nested;
   }
 
-  for (const key of ["data", "result"]) {
+  for (const key of ["data", "result", "recordData"]) {
     const nested = o[key];
     if (nested && typeof nested === "object") {
       const id = atPocketRecordIdFromCreateResponse(
@@ -167,12 +167,19 @@ export function atPocketRecordIdFromCreateResponse(
     }
   }
 
+  for (const key of ["recordId", "record_id", "id", "insertId"]) {
+    const v = o[key];
+    if (v != null && String(v).trim()) return String(v).trim();
+  }
+
   return null;
 }
 
 export function atPocketRecordIdFromCreateResult(
   result: AtPocketCreateRecordResult,
 ): string | null {
+  const hint = result.recordIdHint?.trim();
+  if (hint) return hint;
   return (
     atPocketRecordIdFromCreateResponse(result.row, result.location) ??
     atPocketRecordIdFromRow(result.row)
@@ -291,7 +298,8 @@ async function findConstructionRecordByNewEntryOnce(
       const rid = atPocketRecordIdFromRow(row);
       const n = rid ? recordIdNumeric(rid) : -1;
       const ts = rowTimestampMs(row);
-      if (ts >= recentCutoff && n > newestNameMatchNumeric) {
+      /** 登録直後は createdAt が無いことがあるため、お客様名一致なら最大 recordId を採用 */
+      if (n > newestNameMatchNumeric) {
         newestNameMatchNumeric = n;
         newestNameMatchId = rid;
         newestNameMatchKey = tNum.trim() || newestNameMatchKey;
@@ -324,9 +332,26 @@ async function findConstructionRecordByNewEntryOnce(
     appEnv: "CALENDAR_APP_ID",
   } as const;
 
+  const byName = await fetchRecordsList(
+    calAppId,
+    { limit: "100", page: "1", fields: fieldsCsv, query: wantName },
+    auth,
+    listOpts,
+  );
+  considerRows(byName.records ?? []);
+  if (newestNameMatchId) {
+    return {
+      recordId: newestNameMatchId,
+      uniqueKey: newestNameMatchKey,
+    };
+  }
+  if (bestScore >= 35 && (bestId || bestKey)) {
+    return { recordId: bestId, uniqueKey: bestKey };
+  }
+
   const recent = await fetchRecordsList(
     calAppId,
-    { limit: "150", page: "1", fields: fieldsCsv },
+    { limit: "200", page: "1", fields: fieldsCsv },
     auth,
     listOpts,
   );
@@ -479,7 +504,7 @@ export async function findConstructionRecordByNewEntry(
  * 工事登録 POST 直後: 登録レコードを特定し GET で T番号を取得する。
  * 1) recordId（POST 応答 or 一覧照合） 2) GET ポーリングで T番号 3) T番号のみのときは検索で ID
  */
-export async function resolveConstructionRecordAfterCreate(
+async function resolveConstructionRecordAfterCreateWithAuth(
   calAppId: string,
   createResult: AtPocketCreateRecordResult,
   lookup: ConstructionLookupOpts,
@@ -525,6 +550,34 @@ export async function resolveConstructionRecordAfterCreate(
   }
 
   return { recordId, uniqueKey };
+}
+
+/** 登録 POST 直後に工事レコード ID / T番号を解決（一覧・GET は参照キー推奨） */
+export async function resolveConstructionRecordAfterCreate(
+  calAppId: string,
+  createResult: AtPocketCreateRecordResult,
+  lookup: ConstructionLookupOpts,
+  auth: AtPocketFetchAuth,
+  fallbackAuth?: AtPocketFetchAuth,
+): Promise<ConstructionRecordMatch> {
+  let match = await resolveConstructionRecordAfterCreateWithAuth(
+    calAppId,
+    createResult,
+    lookup,
+    auth,
+  );
+  const fallbackKey = fallbackAuth?.apiKey?.trim();
+  const primaryKey = auth.apiKey?.trim();
+  if (!match.recordId && fallbackAuth && fallbackKey && fallbackKey !== primaryKey) {
+    const alt = await resolveConstructionRecordAfterCreateWithAuth(
+      calAppId,
+      createResult,
+      lookup,
+      fallbackAuth,
+    );
+    if (alt.recordId || alt.uniqueKey) match = alt;
+  }
+  return match;
 }
 
 /** @deprecated resolveConstructionRecordAfterCreate を使用 */

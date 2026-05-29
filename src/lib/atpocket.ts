@@ -15,6 +15,8 @@ export type AtPocketCreateRecordResult = {
   row: AtPocketRecordRow;
   /** HTTP Location（…/records/{id} 等） */
   location?: string | null;
+  /** Location / Content-Location 等から抽出した recordId */
+  recordIdHint?: string | null;
 };
 
 export type AtPocketListResponse = {
@@ -500,6 +502,15 @@ export async function fetchRecordById(
   return JSON.parse(text) as AtPocketRecordRow;
 }
 
+function recordIdFromHttpLocationHeader(value: string | null): string | null {
+  const s = value?.trim();
+  if (!s) return null;
+  const m =
+    s.match(/\/records\/(\d+)(?:\/|$|[?#])/i) ||
+    s.match(/\/record\/(\d+)(?:\/|$|[?#])/i);
+  return m?.[1]?.trim() || null;
+}
+
 export async function createRecord(
   appsId: string,
   record: Record<string, unknown>,
@@ -519,6 +530,12 @@ export async function createRecord(
 
   const text = await res.text();
   const location = res.headers.get("location") ?? res.headers.get("Location");
+  const contentLocation =
+    res.headers.get("content-location") ??
+    res.headers.get("Content-Location");
+  const recordIdHint =
+    recordIdFromHttpLocationHeader(location) ??
+    recordIdFromHttpLocationHeader(contentLocation);
   if (!res.ok) {
     throw new Error(`@pocket create record failed: ${res.status} ${text}`);
   }
@@ -530,7 +547,7 @@ export async function createRecord(
       row = {};
     }
   }
-  return { row, location };
+  return { row, location, recordIdHint };
 }
 
 /** レコード更新 PUT /api/apps/{appsId}/records/{recordId} */

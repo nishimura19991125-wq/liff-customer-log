@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveConstructionRecordAfterCreate } from "@/lib/atpocket-record-id";
 import {
+  apiKeyForCalendarPocket,
   apiKeyForCalendarWrite,
   createRecord,
   fetchAppFields,
@@ -143,12 +144,13 @@ export async function POST(request: Request) {
     handlerPutValue = resolvedName.name;
   }
 
-  const pocketAuth = { apiKey: apiKeyForCalendarWrite() };
+  const pocketWriteAuth = { apiKey: apiKeyForCalendarWrite() };
+  const pocketReadAuth = { apiKey: apiKeyForCalendarPocket() };
 
   let constructionSaved = false;
 
   try {
-    const constructionFields = await fetchAppFields(calAppId, pocketAuth);
+    const constructionFields = await fetchAppFields(calAppId, pocketReadAuth);
 
     const resolvedCustomer = resolveConfiguredFieldToSchemaUniqueId(
       customerField,
@@ -234,7 +236,7 @@ export async function POST(request: Request) {
     /** 自動採番: 空で送り @pocket に付番させる（取込キー検証を通す） */
     record[resolvedTNumber] = "";
 
-    const createResult = await createRecord(calAppId, record, pocketAuth);
+    const createResult = await createRecord(calAppId, record, pocketWriteAuth);
     constructionSaved = true;
     invalidateAllCalendarPayloadCache();
 
@@ -249,7 +251,8 @@ export async function POST(request: Request) {
         startDateFieldId: constructionFids.startDate?.trim() || undefined,
         tNumberFieldId: resolvedTNumber,
       },
-      pocketAuth,
+      pocketReadAuth,
+      pocketWriteAuth,
     );
 
     return finalizeConstructionCalendarSave({
@@ -258,7 +261,7 @@ export async function POST(request: Request) {
       constructionUniqueKey: constructionMatch.uniqueKey,
       customerName,
       constructionFields,
-      calendarAuth: pocketAuth,
+      calendarAuth: pocketReadAuth,
       lineUserId: auth.lineUserId,
       viewYear: body.viewYear,
       viewMonth: body.viewMonth,
