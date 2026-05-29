@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 
-import {
-  atPocketRecordIdFromCreateResponse,
-  findConstructionRecordIdByNewEntry,
-} from "@/lib/atpocket-record-id";
+import { resolveConstructionRecordIdAfterCreate } from "@/lib/atpocket-record-id";
 import {
   apiKeyForCalendarWrite,
   createRecord,
@@ -197,6 +194,8 @@ export async function POST(request: Request) {
       resolvedHandlerField = resolved;
     }
 
+    const constructionFids = resolveConstructionFieldIds(constructionFields);
+
     const record: Record<string, unknown> = {
       [resolvedCustomer]: customerName,
       [resolvedHousing]: housingRaw,
@@ -206,13 +205,12 @@ export async function POST(request: Request) {
     }
 
     if (housingRaw === EMPTY_FILL_HOUSING_STATUS_NEW_BUILD) {
-      const fids = resolveConstructionFieldIds(constructionFields);
       const quad: Array<[fieldId: string | undefined, raw: string | undefined]> =
         [
-          [fids.shigumi, body.shigumiDate],
-          [fids.panelWork, body.panelWorkDate],
-          [fids.electricWork, body.electricWorkDate],
-          [fids.appSettingsDay, body.appSettingsDayDate],
+          [constructionFids.shigumi, body.shigumiDate],
+          [constructionFids.panelWork, body.panelWorkDate],
+          [constructionFids.electricWork, body.electricWorkDate],
+          [constructionFids.appSettingsDay, body.appSettingsDayDate],
         ];
       for (const [fid, raw] of quad) {
         const ymd = optionalCalendarYmd(raw);
@@ -227,23 +225,24 @@ export async function POST(request: Request) {
       record[resolvedTNumber] = "";
     }
 
-    const createdRow = await createRecord(calAppId, record, pocketAuth);
+    const createResult = await createRecord(calAppId, record, pocketAuth);
     constructionSaved = true;
     invalidateAllCalendarPayloadCache();
 
-    let constructionRecordId = atPocketRecordIdFromCreateResponse(createdRow);
-    if (!constructionRecordId) {
-      constructionRecordId = await findConstructionRecordIdByNewEntry(
-        calAppId,
-        {
-          customerName,
-          housingStatus: housingRaw,
-          customerFieldId: resolvedCustomer,
-          housingFieldId: resolvedHousing,
-        },
-        pocketAuth,
-      );
-    }
+    const constructionRecordId = await resolveConstructionRecordIdAfterCreate(
+      calAppId,
+      createResult,
+      {
+        customerName,
+        housingStatus: housingRaw,
+        customerFieldId: resolvedCustomer,
+        housingFieldId: resolvedHousing,
+        startDateFieldId: constructionFids.startDate?.trim() || undefined,
+        tNumberFieldId:
+          resolveConstructionTNumberFieldId(constructionFields) ?? undefined,
+      },
+      pocketAuth,
+    );
 
     if (process.env.CUSTOMER_INFO_APP_ID?.trim()) {
       if (!constructionRecordId) {

@@ -1,9 +1,6 @@
 import "server-only";
 
-import {
-  atPocketRecordIdFromCreateResponse,
-  atPocketRecordIdFromRow,
-} from "@/lib/atpocket-record-id";
+import { atPocketRecordIdFromCreateResult } from "@/lib/atpocket-record-id";
 import type { AtPocketFieldRow, AtPocketFetchAuth } from "@/lib/atpocket";
 import {
   apiKeyForCustomerInfoPocket,
@@ -412,9 +409,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     customerAuth,
   );
   const customerInfoRecordId =
-    atPocketRecordIdFromCreateResponse(created) ??
-    atPocketRecordIdFromRow(created) ??
-    undefined;
+    atPocketRecordIdFromCreateResult(created) ?? undefined;
 
   return { kind: "synced", customerInfoRecordId };
 }

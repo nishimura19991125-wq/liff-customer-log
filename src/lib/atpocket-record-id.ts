@@ -1,8 +1,12 @@
-import type { AtPocketFetchAuth, AtPocketRecordRow } from "@/lib/atpocket";
+import type { AtPocketCreateRecordResult, AtPocketFetchAuth, AtPocketRecordRow } from "@/lib/atpocket";
 import { fetchRecordsList } from "@/lib/atpocket";
 import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
 
-/** accessEditUrl からレコード ID を抽出（…/records/123/edit 等） */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** accessEditUrl / Location からレコード ID を抽出（…/records/123/edit 等） */
 export function recordIdFromAccessEditUrl(url: string): string | null {
   const s = url.trim();
   if (!s) return null;
@@ -11,6 +15,16 @@ export function recordIdFromAccessEditUrl(url: string): string | null {
     s.match(/\/record\/(\d+)(?:\/|$|[?#])/i);
   const id = m?.[1]?.trim();
   return id || null;
+}
+
+function recordIdFromLocationHeader(location: string): string | null {
+  const s = location.trim();
+  if (!s) return null;
+  return recordIdFromAccessEditUrl(s) ?? recordIdFromAccessEditUrl(`https://x${s.startsWith("/") ? "" : "/"}${s}`);
+}
+
+function normalizeMatchText(raw: string): string {
+  return raw.normalize("NFKC").replace(/\s+/g, " ").trim();
 }
 
 function coercePlainString(raw: unknown): string {
@@ -32,6 +46,31 @@ function coercePlainString(raw: unknown): string {
     }
   }
   return String(raw).trim();
+}
+
+function nameMatches(got: string, want: string): boolean {
+  return normalizeMatchText(got) === normalizeMatchText(want);
+}
+
+function housingMatches(got: string, want: string): boolean {
+  const a = normalizeMatchText(got);
+  const b = normalizeMatchText(want);
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
+function rowTimestampMs(row: AtPocketRecordRow): number {
+  for (const raw of [row.updatedAt, row.createdAt]) {
+    if (!raw) continue;
+    const t = Date.parse(String(raw));
+    if (!Number.isNaN(t)) return t;
+  }
+  return 0;
+}
+
+function recordIdNumeric(id: string): number {
+  const n = Number(id);
+  return Number.isFinite(n) ? n : -1;
 }
 
 /** @pocket のレコード行から API 用 recordId（なければ uniqueId）を得る */
@@ -73,7 +112,13 @@ export function atPocketRecordIdFromRow(
  */
 export function atPocketRecordIdFromCreateResponse(
   body: AtPocketRecordRow | Record<string, unknown> | null | undefined,
+  locationHint?: string | null,
 ): string | null {
+  if (locationHint) {
+    const fromLoc = recordIdFromLocationHeader(locationHint);
+    if (fromLoc) return fromLoc;
+  }
+
   if (!body || typeof body !== "object") return null;
 
   const direct = atPocketRecordIdFromRow(body as AtPocketRecordRow);
@@ -114,28 +159,44 @@ export function atPocketRecordIdFromCreateResponse(
   return null;
 }
 
-/**
- * 登録 API が ID を返さないとき、お客様名・住宅ステータスで直近レコードを照合する。
- */
-export async function findConstructionRecordIdByNewEntry(
+export function atPocketRecordIdFromCreateResult(
+  result: AtPocketCreateRecordResult,
+): string | null {
+  return (
+    atPocketRecordIdFromCreateResponse(result.row, result.location) ??
+    atPocketRecordIdFromRow(result.row)
+  );
+}
+
+type ConstructionLookupOpts = {
+  customerName: string;
+  housingStatus: string;
+  customerFieldId: string;
+  housingFieldId: string;
+  startDateFieldId?: string;
+  tNumberFieldId?: string;
+};
+
+async function findConstructionRecordIdByNewEntryOnce(
   calAppId: string,
-  opts: {
-    customerName: string;
-    housingStatus: string;
-    customerFieldId: string;
-    housingFieldId: string;
-  },
+  opts: ConstructionLookupOpts,
   auth: AtPocketFetchAuth,
 ): Promise<string | null> {
   const wantName = opts.customerName.trim();
   const wantHousing = opts.housingStatus.trim();
   if (!wantName || !wantHousing) return null;
 
-  const fieldsCsv = [opts.customerFieldId, opts.housingFieldId]
-    .filter((id, i, arr) => id && arr.indexOf(id) === i)
-    .join(",");
+  const fieldParts = [
+    opts.customerFieldId,
+    opts.housingFieldId,
+    opts.startDateFieldId,
+    opts.tNumberFieldId,
+  ].filter((id, i, arr) => id && arr.indexOf(id) === i);
+  const fieldsCsv = fieldParts.join(",");
 
+  const recentCutoff = Date.now() - 5 * 60 * 1000;
   let bestId: string | null = null;
+  let bestScore = -1;
   let bestNumeric = -1;
 
   const considerRows = (rows: AtPocketRecordRow[]) => {
@@ -146,24 +207,52 @@ export async function findConstructionRecordIdByNewEntry(
       const name = coercePlainString(
         pickRecordValueByFieldAliases(recObj, opts.customerFieldId),
       );
+      if (!nameMatches(name, wantName)) continue;
+
       const housing = coercePlainString(
         pickRecordValueByFieldAliases(recObj, opts.housingFieldId),
       );
-      if (name !== wantName || housing !== wantHousing) continue;
+      const startRaw = opts.startDateFieldId
+        ? coercePlainString(
+            pickRecordValueByFieldAliases(recObj, opts.startDateFieldId),
+          )
+        : "";
+      const tNum = opts.tNumberFieldId
+        ? coercePlainString(
+            pickRecordValueByFieldAliases(recObj, opts.tNumberFieldId),
+          )
+        : "";
+
+      let score = 10;
+      if (housingMatches(housing, wantHousing)) {
+        score += 30;
+      } else if (housing.trim()) {
+        continue;
+      }
+
+      if (opts.startDateFieldId && !startRaw.trim()) score += 8;
+      if (tNum.trim()) score += 5;
+
+      const ts = rowTimestampMs(row);
+      if (ts >= recentCutoff) score += 15;
 
       const rid = atPocketRecordIdFromRow(row);
       if (!rid) continue;
-      const n = Number(rid);
-      if (Number.isFinite(n) && n > bestNumeric) {
+      const n = recordIdNumeric(rid);
+      if (score > bestScore || (score === bestScore && n > bestNumeric)) {
+        bestScore = score;
         bestNumeric = n;
-        bestId = rid;
-      } else if (!Number.isFinite(n) && !bestId) {
         bestId = rid;
       }
     }
   };
 
-  for (let page = 1; page <= 3; page++) {
+  const listOpts = {
+    operation: "calendar:新規登録後のrecordId照合",
+    appEnv: "CALENDAR_APP_ID",
+  } as const;
+
+  for (let page = 1; page <= 5; page++) {
     const data = await fetchRecordsList(
       calAppId,
       {
@@ -173,24 +262,50 @@ export async function findConstructionRecordIdByNewEntry(
         query: wantName,
       },
       auth,
-      { operation: "calendar:新規登録後のrecordId照合", appEnv: "CALENDAR_APP_ID" },
+      listOpts,
     );
     const rows = data.records ?? [];
     considerRows(rows);
-    if (bestId) return bestId;
+    if (bestScore >= 38) return bestId;
     if (rows.length < 200) break;
   }
 
   const data = await fetchRecordsList(
     calAppId,
-    {
-      limit: "200",
-      page: "1",
-      fields: fieldsCsv,
-    },
+    { limit: "300", page: "1", fields: fieldsCsv },
     auth,
-    { operation: "calendar:新規登録後のrecordId照合(全件1ページ)", appEnv: "CALENDAR_APP_ID" },
+    listOpts,
   );
   considerRows(data.records ?? []);
-  return bestId;
+  return bestScore >= 18 ? bestId : null;
+}
+
+/**
+ * 登録 API が ID を返さないとき、お客様名・住宅ステータス等で直近レコードを照合する（リトライ付き）。
+ */
+export async function findConstructionRecordIdByNewEntry(
+  calAppId: string,
+  opts: ConstructionLookupOpts,
+  auth: AtPocketFetchAuth,
+): Promise<string | null> {
+  const delays = [0, 350, 900, 1800];
+  let last: string | null = null;
+  for (const delay of delays) {
+    if (delay > 0) await sleep(delay);
+    last = await findConstructionRecordIdByNewEntryOnce(calAppId, opts, auth);
+    if (last) return last;
+  }
+  return last;
+}
+
+/** 工事登録 POST 直後に recordId を可能な限り解決する */
+export async function resolveConstructionRecordIdAfterCreate(
+  calAppId: string,
+  createResult: AtPocketCreateRecordResult,
+  lookup: ConstructionLookupOpts,
+  auth: AtPocketFetchAuth,
+): Promise<string | null> {
+  const fromCreate = atPocketRecordIdFromCreateResult(createResult);
+  if (fromCreate) return fromCreate;
+  return findConstructionRecordIdByNewEntry(calAppId, lookup, auth);
 }

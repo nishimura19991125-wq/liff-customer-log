@@ -7,6 +7,14 @@ export type AtPocketRecordRow = {
   record?: Record<string, unknown>;
   /** 一覧 API が返す編集画面への URL（環境により付与） */
   accessEditUrl?: string;
+  updatedAt?: string;
+  createdAt?: string;
+};
+
+export type AtPocketCreateRecordResult = {
+  row: AtPocketRecordRow;
+  /** HTTP Location（…/records/{id} 等） */
+  location?: string | null;
 };
 
 export type AtPocketListResponse = {
@@ -496,7 +504,7 @@ export async function createRecord(
   appsId: string,
   record: Record<string, unknown>,
   auth?: AtPocketFetchAuth,
-): Promise<AtPocketRecordRow> {
+): Promise<AtPocketCreateRecordResult> {
   const url = `${baseUrl()}/api/apps/${appsId}/records`;
   const key = auth?.apiKey ?? apiKeyForCreateRecord(appsId);
   const res = await fetch(url, {
@@ -510,11 +518,19 @@ export async function createRecord(
   });
 
   const text = await res.text();
+  const location = res.headers.get("location") ?? res.headers.get("Location");
   if (!res.ok) {
     throw new Error(`@pocket create record failed: ${res.status} ${text}`);
   }
-  if (!text) return {};
-  return JSON.parse(text) as AtPocketRecordRow;
+  let row: AtPocketRecordRow = {};
+  if (text) {
+    try {
+      row = JSON.parse(text) as AtPocketRecordRow;
+    } catch {
+      row = {};
+    }
+  }
+  return { row, location };
 }
 
 /** レコード更新 PUT /api/apps/{appsId}/records/{recordId} */
