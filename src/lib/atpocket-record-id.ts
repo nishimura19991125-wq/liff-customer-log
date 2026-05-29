@@ -103,6 +103,25 @@ function buildFieldEqualsQuery(fieldId: string, value: string): string {
   return `(${id} = "${v}")`;
 }
 
+/** 全角スペース等の表記差向け（@pocket 保存値が正規化前のとき） */
+function buildFieldEqualsQueryVariants(
+  fieldId: string,
+  value: string,
+): string[] {
+  const out: string[] = [];
+  const normalized = buildFieldEqualsQuery(fieldId, value);
+  if (normalized) out.push(normalized);
+  const id = fieldId.trim();
+  const raw = value.trim();
+  if (!id || !raw) return out;
+  const norm = normalizeMatchText(value);
+  if (raw !== norm) {
+    const rawQ = `(${id} = "${escapePocketQueryValue(raw)}")`;
+    if (!out.includes(rawQ)) out.push(rawQ);
+  }
+  return out;
+}
+
 function housingMatches(got: string, want: string): boolean {
   const a = normalizeMatchText(got);
   const b = normalizeMatchText(want);
@@ -384,6 +403,47 @@ export async function findConstructionRecordByNewEntryOnce(
     appEnv: "CALENDAR_APP_ID",
   } as const;
 
+  const finishIfMatched = (): ConstructionRecordMatch | null => {
+    if (newestNameMatchId) {
+      return {
+        recordId: newestNameMatchId,
+        uniqueKey: newestNameMatchKey,
+      };
+    }
+    if (bestScore >= 12 && (bestId || bestKey)) {
+      return { recordId: bestId, uniqueKey: bestKey };
+    }
+    return null;
+  };
+
+  /** 一覧の先頭ページだけでは新規行に届かないため、お客様名列のフィールド式で直接絞る */
+  for (const nameQuery of buildFieldEqualsQueryVariants(
+    opts.customerFieldId,
+    wantName,
+  )) {
+    try {
+      const byNameField = await fetchRecordsList(
+        calAppId,
+        {
+          limit: "100",
+          page: "1",
+          fields: fieldsCsv,
+          query: nameQuery,
+        },
+        auth,
+        listOpts,
+        { maxRetries: 0 },
+      );
+      considerRows(byNameField.records ?? []);
+      const hit = finishIfMatched();
+      if (hit) return hit;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("400") || msg.includes("Bad Request")) continue;
+      throw e;
+    }
+  }
+
   const maxPages = Math.min(
     10,
     Math.max(
@@ -404,12 +464,8 @@ export async function findConstructionRecordByNewEntryOnce(
       listOpts,
     );
     considerRows(data.records ?? []);
-    if (newestNameMatchId) {
-      return {
-        recordId: newestNameMatchId,
-        uniqueKey: newestNameMatchKey,
-      };
-    }
+    const hit = finishIfMatched();
+    if (hit) return hit;
     if (bestScore >= 35 && (bestId || bestKey)) {
       return { recordId: bestId, uniqueKey: bestKey };
     }
@@ -424,15 +480,8 @@ export async function findConstructionRecordByNewEntryOnce(
     listOpts,
   );
   considerRows(fullFieldsFirst.records ?? []);
-  if (newestNameMatchId) {
-    return {
-      recordId: newestNameMatchId,
-      uniqueKey: newestNameMatchKey,
-    };
-  }
-  if (bestScore >= 12 && (bestId || bestKey)) {
-    return { recordId: bestId, uniqueKey: bestKey };
-  }
+  const fullHit = finishIfMatched();
+  if (fullHit) return fullHit;
 
   return { recordId: bestId, uniqueKey: bestKey };
 }
