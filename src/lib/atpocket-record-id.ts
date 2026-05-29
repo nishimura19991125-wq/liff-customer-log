@@ -30,7 +30,14 @@ function recordIdFromLocationHeader(location: string): string | null {
 }
 
 function normalizeMatchText(raw: string): string {
-  return raw.normalize("NFKC").replace(/\s+/g, " ").trim();
+  return raw
+    .normalize("NFKC")
+    .replace(/[\s\u3000\u00a0\u2000-\u200b\uFEFF]+/g, " ")
+    .trim();
+}
+
+function compactNameKey(raw: string): string {
+  return normalizeMatchText(raw).replace(/\s/g, "");
 }
 
 function coercePlainString(raw: unknown): string {
@@ -58,16 +65,43 @@ function nameMatches(got: string, want: string): boolean {
   return normalizeMatchText(got) === normalizeMatchText(want);
 }
 
-/** 登録直後の一覧照合: 表記ゆれ（空白・旧字体）を許容 */
+/** 登録直後の一覧照合: 表記ゆれ（全角スペース・空白差）を許容 */
 function nameMatchesLoose(got: string, want: string): boolean {
   const a = normalizeMatchText(got);
   const b = normalizeMatchText(want);
   if (!a || !b) return false;
   if (a === b) return true;
+  const ac = compactNameKey(a);
+  const bc = compactNameKey(b);
+  if (ac.length >= 2 && bc.length >= 2 && ac === bc) return true;
   if (a.length >= 2 && b.length >= 2 && (a.includes(b) || b.includes(a))) {
     return true;
   }
   return false;
+}
+
+function nameAppearsInRecordObject(
+  recObj: Record<string, unknown>,
+  wantName: string,
+): boolean {
+  for (const v of Object.values(recObj)) {
+    const s = coercePlainString(v);
+    if (s && nameMatchesLoose(s, wantName)) return true;
+  }
+  return false;
+}
+
+function customerNameSearchQueries(wantName: string): string[] {
+  const n = normalizeMatchText(wantName);
+  const out = new Set<string>();
+  if (n) out.add(n);
+  const parts = n.split(" ").filter((p) => p.length >= 2);
+  for (const p of parts) out.add(p);
+  if (parts.length >= 2) {
+    out.add(parts.slice(-1)[0]!);
+    out.add(parts.slice(0, 2).join(" "));
+  }
+  return [...out];
 }
 
 function housingMatches(got: string, want: string): boolean {
@@ -289,10 +323,16 @@ export async function findConstructionRecordByNewEntryOnce(
       const rec = row.record;
       if (!rec || typeof rec !== "object") continue;
       const recObj = rec as Record<string, unknown>;
-      const name = coercePlainString(
+      let name = coercePlainString(
         pickRecordValueByFieldAliases(recObj, opts.customerFieldId),
       );
-      if (!nameMatchesLoose(name, wantName)) continue;
+      if (
+        !nameMatchesLoose(name, wantName) &&
+        !nameAppearsInRecordObject(recObj, wantName)
+      ) {
+        continue;
+      }
+      if (!name) name = wantName;
 
       const housing = coercePlainString(
         pickRecordValueByFieldAliases(recObj, opts.housingFieldId),
@@ -345,36 +385,55 @@ export async function findConstructionRecordByNewEntryOnce(
     appEnv: "CALENDAR_APP_ID",
   } as const;
 
-  const byName = await fetchRecordsList(
+  const recentFirst = await fetchRecordsList(
     calAppId,
-    {
-      limit: "100",
-      page: "1",
-      fields: fieldsCsv,
-      query: wantName,
-    },
+    { limit: "120", page: "1", fields: fieldsCsv },
     auth,
     listOpts,
   );
-  considerRows(byName.records ?? []);
+  considerRows(recentFirst.records ?? []);
   if (newestNameMatchId) {
     return {
       recordId: newestNameMatchId,
       uniqueKey: newestNameMatchKey,
     };
   }
-  if (bestScore >= 35 && (bestId || bestKey)) {
-    return { recordId: bestId, uniqueKey: bestKey };
+
+  for (const q of customerNameSearchQueries(wantName).slice(0, 2)) {
+    const byName = await fetchRecordsList(
+      calAppId,
+      {
+        limit: "100",
+        page: "1",
+        fields: fieldsCsv,
+        query: q,
+      },
+      auth,
+      listOpts,
+    );
+    considerRows(byName.records ?? []);
+    if (newestNameMatchId) {
+      return {
+        recordId: newestNameMatchId,
+        uniqueKey: newestNameMatchKey,
+      };
+    }
+    if (bestScore >= 35 && (bestId || bestKey)) {
+      return { recordId: bestId, uniqueKey: bestKey };
+    }
   }
 
   /** fields 指定だと列が欠けることがあるため、全フィールドで再検索 */
-  const byNameFull = await fetchRecordsList(
-    calAppId,
-    { limit: "80", page: "1", query: wantName },
-    auth,
-    listOpts,
-  );
-  considerRows(byNameFull.records ?? []);
+  for (const q of customerNameSearchQueries(wantName).slice(0, 3)) {
+    const byNameFull = await fetchRecordsList(
+      calAppId,
+      { limit: "80", page: "1", query: q },
+      auth,
+      listOpts,
+    );
+    considerRows(byNameFull.records ?? []);
+    if (newestNameMatchId) break;
+  }
   if (newestNameMatchId) {
     return {
       recordId: newestNameMatchId,

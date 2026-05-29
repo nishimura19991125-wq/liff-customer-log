@@ -117,7 +117,7 @@ export async function resolveConstructionRecordAfterCreate(
     recordIdFromCreateRawBody(createResult);
   let uniqueKey: string | null = null;
 
-  const delays = [0, 600, 1500] as const;
+  const delays = [0, 1000, 2500] as const;
   for (const delay of delays) {
     if (delay > 0) await sleep(delay);
     if (recordId && uniqueKey) break;

@@ -31,7 +31,7 @@ import {
 } from "@/lib/calendar-empty-fill-options";
 import { isLiffSwrSessionExpired, liffAuthedJsonFetch } from "@/lib/liff-swr";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
-import { initLiffAndGetToken } from "@/lib/liff-session";
+import { initLiffAndGetToken, refreshLiffIdToken } from "@/lib/liff-session";
 
 type HandlerStaffRow = {
   staffRecordId: string;
@@ -145,6 +145,21 @@ function ConstructionHandlerStaffSelect({
 }
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
+
+async function idTokenForConstructionSubmit(
+  current: string | null,
+  onSessionExpired?: () => void,
+): Promise<string | null> {
+  if (LIFF_ID) {
+    const fresh = await refreshLiffIdToken(LIFF_ID);
+    if (!fresh) {
+      onSessionExpired?.();
+      return null;
+    }
+    return fresh;
+  }
+  return current;
+}
 
 const WEEK_LABELS = ["日", "月", "火", "水", "木", "金", "土"] as const;
 const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
@@ -401,7 +416,7 @@ function EmptySlotCard({
         !selectedHandlerStaffId.trim()));
 
   async function handleSubmit() {
-    if (!rid || !idToken) return;
+    if (!rid) return;
     const name = customerName.trim();
     const hs = housingStatus.trim();
     if (!name || !hs) return;
@@ -413,11 +428,13 @@ function EmptySlotCard({
     setSubmitting(true);
     setFeedback(null);
     try {
+      const token = await idTokenForConstructionSubmit(idToken, onSessionExpired);
+      if (!token) return;
       const res = await fetch("/api/calendar/fill-empty-slot", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           recordId: rid,
@@ -767,18 +784,19 @@ function NewConstructionRecordPanel({
   }, [housingStatus]);
 
   async function handleSubmit() {
-    if (!idToken) return;
     const name = customerName.trim();
     const hs = housingStatus.trim();
     if (!name || !hs) return;
     setSubmitting(true);
     setFeedback(null);
     try {
+      const token = await idTokenForConstructionSubmit(idToken, onSessionExpired);
+      if (!token) return;
       const res = await fetch("/api/calendar/create-record", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           customerName: name,

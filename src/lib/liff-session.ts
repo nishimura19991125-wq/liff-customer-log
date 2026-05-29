@@ -71,3 +71,15 @@ export async function initLiffAndGetToken(
 
   return { status: "ok", token };
 }
+
+/**
+ * API 呼び出し直前に ID トークンを再取得（長時間処理で期限切れになるのを防ぐ）。
+ * 期限切れ・未ログイン時は null。
+ */
+export async function refreshLiffIdToken(liffId: string): Promise<string | null> {
+  await liff.init({ liffId });
+  if (!liff.isLoggedIn()) return null;
+  const token = liff.getIDToken();
+  if (!token || isIdTokenExpired(token)) return null;
+  return token;
+}
