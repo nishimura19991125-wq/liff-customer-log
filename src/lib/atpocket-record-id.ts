@@ -265,6 +265,31 @@ export type ConstructionRecordMatch = {
   uniqueKey: string | null;
 };
 
+export type PostCreateLookupOptions = {
+  /** ページ走査の上限（未指定時は env または 2） */
+  maxPages?: number;
+  /** true のとき全フィールド1ページ照合を省略（タイムアウト抑制） */
+  skipFullFieldScan?: boolean;
+};
+
+function recordIdFromCreateRawBody(
+  createResult: AtPocketCreateRecordResult,
+): string | null {
+  const raw = createResult.rawBody?.trim();
+  if (!raw) return null;
+  try {
+    const id = atPocketRecordIdFromCreateResponse(
+      JSON.parse(raw) as Record<string, unknown>,
+      createResult.location,
+    );
+    if (id) return id;
+  } catch {
+    /* 非 JSON 応答 */
+  }
+  const m = raw.match(/\/records\/(\d+)(?:\/|$|[?#])/i);
+  return m?.[1]?.trim() || null;
+}
+
 function uniqueKeyFromPocketRow(
   row: AtPocketRecordRow | Record<string, unknown> | null | undefined,
   tNumberFieldId: string | undefined,
@@ -311,6 +336,7 @@ export async function findConstructionRecordByNewEntryOnce(
   calAppId: string,
   opts: ConstructionLookupOpts,
   auth: AtPocketFetchAuth,
+  lookupOpts?: PostCreateLookupOptions,
 ): Promise<ConstructionRecordMatch> {
   const wantName = opts.customerName.trim();
   const wantHousing = opts.housingStatus.trim();
@@ -416,11 +442,14 @@ export async function findConstructionRecordByNewEntryOnce(
     return null;
   };
 
+  let fieldQueryAttempted = false;
+
   /** 一覧の先頭ページだけでは新規行に届かないため、お客様名列のフィールド式で直接絞る */
   for (const nameQuery of buildFieldEqualsQueryVariants(
     opts.customerFieldId,
     wantName,
   )) {
+    fieldQueryAttempted = true;
     try {
       const byNameField = await fetchRecordsList(
         calAppId,
@@ -448,11 +477,13 @@ export async function findConstructionRecordByNewEntryOnce(
     10,
     Math.max(
       1,
-      Number(process.env.CALENDAR_POST_CREATE_LOOKUP_MAX_PAGES) || 5,
+      lookupOpts?.maxPages ??
+        (Number(process.env.CALENDAR_POST_CREATE_LOOKUP_MAX_PAGES) || 2),
     ),
   );
 
-  for (let page = 1; page <= maxPages; page++) {
+  const pageScanCap = fieldQueryAttempted ? Math.min(maxPages, 1) : maxPages;
+  for (let page = 1; page <= pageScanCap; page++) {
     const data = await fetchRecordsList(
       calAppId,
       {
@@ -472,16 +503,17 @@ export async function findConstructionRecordByNewEntryOnce(
     if ((data.records?.length ?? 0) < 200) break;
   }
 
-  /** fields 指定だと列が欠けることがあるため、全フィールドで1ページだけ照合 */
-  const fullFieldsFirst = await fetchRecordsList(
-    calAppId,
-    { limit: "80", page: "1" },
-    auth,
-    listOpts,
-  );
-  considerRows(fullFieldsFirst.records ?? []);
-  const fullHit = finishIfMatched();
-  if (fullHit) return fullHit;
+  if (!lookupOpts?.skipFullFieldScan && !fieldQueryAttempted) {
+    const fullFieldsFirst = await fetchRecordsList(
+      calAppId,
+      { limit: "80", page: "1" },
+      auth,
+      listOpts,
+    );
+    considerRows(fullFieldsFirst.records ?? []);
+    const fullHit = finishIfMatched();
+    if (fullHit) return fullHit;
+  }
 
   return { recordId: bestId, uniqueKey: bestKey };
 }
@@ -580,7 +612,9 @@ export async function findConstructionRecordByNewEntry(
   let last: ConstructionRecordMatch = { recordId: null, uniqueKey: null };
   for (const delay of POST_CREATE_LOOKUP_DELAYS_MS) {
     if (delay > 0) await sleep(delay);
-    last = await findConstructionRecordByNewEntryOnce(calAppId, opts, auth);
+    last = await findConstructionRecordByNewEntryOnce(calAppId, opts, auth, {
+      skipFullFieldScan: true,
+    });
     if (last.recordId && last.uniqueKey) return last;
     if (last.recordId) return last;
     if (last.uniqueKey) return last;
@@ -610,7 +644,9 @@ export async function resolveConstructionRecordAfterCreate(
     .filter((id, i, arr) => id && arr.indexOf(id) === i)
     .join(",");
 
-  let recordId = atPocketRecordIdFromCreateResult(createResult);
+  let recordId =
+    atPocketRecordIdFromCreateResult(createResult) ??
+    recordIdFromCreateRawBody(createResult);
   let uniqueKey = tField ? uniqueKeyFromPocketRow(createResult.row, tField) : null;
 
   if (!recordId) {

@@ -146,6 +146,17 @@ function ConstructionHandlerStaffSelect({
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
+function calendarSubmitCatchMessage(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (
+    e instanceof TypeError ||
+    /failed to fetch|networkerror|load failed|network/i.test(msg)
+  ) {
+    return "通信に失敗しました。処理に時間がかかりすぎた可能性があります。工事アプリに登録されている場合はカレンダーを更新して確認してください。";
+  }
+  return msg.trim() || "通信に失敗しました";
+}
+
 async function idTokenForConstructionSubmit(
   current: string | null,
   onSessionExpired?: () => void,
@@ -466,12 +477,20 @@ function EmptySlotCard({
             : {}),
         }),
       });
-      const data = (await res.json()) as {
+      const rawBody = await res.text();
+      let data: {
         error?: string;
         customerInfoSynced?: boolean;
         constructionSaved?: boolean;
         calendarPatch?: CalendarRecordMonthPatch;
-      };
+      } = {};
+      if (rawBody.trim()) {
+        try {
+          data = JSON.parse(rawBody) as typeof data;
+        } catch {
+          data = {};
+        }
+      }
       if (!res.ok) {
         if (res.status === 401 && isLineSessionExpiredPayload(data)) {
           onSessionExpired?.();
@@ -486,15 +505,25 @@ function EmptySlotCard({
           setElectricWorkDate("");
           setAppSettingsDayDate("");
           setOpen(false);
-          await onSaved(data.calendarPatch ?? null);
+          try {
+            await onSaved(data.calendarPatch ?? null);
+          } catch {
+            /* 保存済みのため UI はエラー表示を優先 */
+          }
         }
+        const gatewayTimeout =
+          res.status === 504 ||
+          res.status === 408 ||
+          (res.status === 502 && !data.error?.trim() && !data.constructionSaved);
         setFeedback({
           kind: "err",
           text:
-            data.error ??
-            (data.constructionSaved
-              ? "工事アプリへの保存は完了しましたが、お客様情報アプリへの連携に失敗しました。"
-              : "保存に失敗しました"),
+            data.error?.trim() ||
+            (gatewayTimeout
+              ? "処理がタイムアウトしたか、サーバーが応答を返せませんでした。工事アプリに登録されている可能性があります。カレンダーを更新して確認してください。"
+              : data.constructionSaved
+                ? "工事アプリへの保存は完了しましたが、お客様情報アプリへの連携に失敗しました。"
+                : `保存に失敗しました（HTTP ${res.status}）。しばらくしてから再度お試しください。`),
         });
         return;
       }
@@ -506,15 +535,20 @@ function EmptySlotCard({
       setElectricWorkDate("");
       setAppSettingsDayDate("");
       setOpen(false);
-      await onSaved(data.calendarPatch ?? null);
+      try {
+        await onSaved(data.calendarPatch ?? null);
+      } catch (e) {
+        setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
+        return;
+      }
       setFeedback({
         kind: "ok",
         text: data.customerInfoSynced
           ? "保存しました。@pocket に反映し、お客様情報アプリにも連携しました。"
           : "保存しました。@pocket にも反映済みです。",
       });
-    } catch {
-      setFeedback({ kind: "err", text: "通信に失敗しました" });
+    } catch (e) {
+      setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
     } finally {
       setSubmitting(false);
     }
@@ -870,15 +904,20 @@ function NewConstructionRecordPanel({
       setPanelWorkDate("");
       setElectricWorkDate("");
       setAppSettingsDayDate("");
-      await onSaved(data.calendarPatch ?? null);
+      try {
+        await onSaved(data.calendarPatch ?? null);
+      } catch (e) {
+        setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
+        return;
+      }
       setFeedback({
         kind: "ok",
         text: data.customerInfoSynced
           ? "登録しました。@pocket で T番号が採番され、お客様情報アプリにも連携しました。"
           : "登録しました。@pocket で T番号が採番されています。",
       });
-    } catch {
-      setFeedback({ kind: "err", text: "通信に失敗しました" });
+    } catch (e) {
+      setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
     } finally {
       setSubmitting(false);
     }
