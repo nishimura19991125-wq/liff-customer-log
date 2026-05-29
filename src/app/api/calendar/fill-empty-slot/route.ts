@@ -10,6 +10,7 @@ import {
   pickRecordValueByFieldAliases,
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
+  resolveConstructionTNumberFieldId,
 } from "@/lib/calendar-kojo";
 import {
   apiKeyForCalendarPocket,
@@ -220,29 +221,13 @@ export async function POST(request: Request) {
     }
 
     const fids = resolveConstructionFieldIds(constructionFields);
-    const tNumberRaw =
-      process.env.CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID?.trim() ||
-      fids.tNumber?.trim();
-
-    if (!tNumberRaw) {
-      return NextResponse.json(
-        {
-          error:
-            "T番号フィールドの uniqueId が分かりません。CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID を .env に設定するか、アプリに「T番号」見出しのフィールドを用意してください。",
-        },
-        { status: 500 },
-      );
-    }
-
-    const resolvedTNumber = resolveConfiguredFieldToSchemaUniqueId(
-      tNumberRaw,
-      constructionFields,
-    );
+    const resolvedTNumber =
+      resolveConstructionTNumberFieldId(constructionFields);
     if (!resolvedTNumber) {
       return NextResponse.json(
         {
           error:
-            `T番号フィールド「${tNumberRaw}」が工事アプリのフィールド定義と一致しません。GET /api/apps/{アプリID}/fields で返る uniqueId を設定してください。`,
+            "T番号フィールドの uniqueId が分かりません。CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID を .env に設定するか、アプリに「T番号」見出しのフィールドを用意してください。",
         },
         { status: 500 },
       );

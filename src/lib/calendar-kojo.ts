@@ -324,6 +324,22 @@ export function resolveConstructionFieldIds(
   return base;
 }
 
+/** 工事アプリの T番号（自動採番列）の uniqueId。環境変数 → 見出し「T番号」の順で解決 */
+export function resolveConstructionTNumberFieldId(
+  fields: AtPocketFieldRow[],
+): string | null {
+  const fromEnv =
+    process.env.CALENDAR_CONSTRUCTION_UNIQUE_KEY_FIELD_ID?.trim() ||
+    process.env.CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID?.trim();
+  if (fromEnv) {
+    return resolveConfiguredFieldToSchemaUniqueId(fromEnv, fields);
+  }
+  const fids = resolveConstructionFieldIds(fields);
+  const t = fids.tNumber?.trim();
+  if (!t) return null;
+  return resolveConfiguredFieldToSchemaUniqueId(t, fields);
+}
+
 export function resolveReportFieldIds(
   fields: AtPocketFieldRow[],
 ): ReportFieldIds {

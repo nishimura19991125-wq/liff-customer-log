@@ -171,7 +171,7 @@ function apiKeyForCreateRecord(appsId: string): string {
   }
   const calAppId = process.env.CALENDAR_APP_ID?.trim();
   if (calAppId && appsId === calAppId) {
-    return apiKeyForCalendarPocket();
+    return apiKeyForCalendarWrite();
   }
   const customerInfoAppId = process.env.CUSTOMER_INFO_APP_ID?.trim();
   if (customerInfoAppId && appsId === customerInfoAppId) {

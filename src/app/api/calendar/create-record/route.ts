@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 
 import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
 import {
-  apiKeyForCalendarPocket,
+  apiKeyForCalendarWrite,
   createRecord,
   fetchAppFields,
 } from "@/lib/atpocket";
+import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { buildCalendarPatchAfterConstructionSave } from "@/lib/calendar-record-patch-server";
 import { syncConstructionRecordToCustomerInfoApp } from "@/lib/sync-construction-to-customer-info";
@@ -17,6 +18,7 @@ import {
 import {
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
+  resolveConstructionTNumberFieldId,
 } from "@/lib/calendar-kojo";
 import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
 import {
@@ -140,7 +142,7 @@ export async function POST(request: Request) {
     handlerPutValue = resolvedName.name;
   }
 
-  const pocketAuth = { apiKey: apiKeyForCalendarPocket() };
+  const pocketAuth = { apiKey: apiKeyForCalendarWrite() };
 
   let constructionSaved = false;
 
@@ -216,6 +218,12 @@ export async function POST(request: Request) {
       }
     }
 
+    const resolvedTNumber = resolveConstructionTNumberFieldId(constructionFields);
+    if (resolvedTNumber) {
+      /** 自動採番: 空で送り @pocket に付番させる（取込キー検証を通す） */
+      record[resolvedTNumber] = "";
+    }
+
     const createdRow = await createRecord(calAppId, record, pocketAuth);
     constructionSaved = true;
     invalidateAllCalendarPayloadCache();
@@ -284,7 +292,8 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     console.error("[api/calendar/create-record]", e);
-    const detail = e instanceof Error ? e.message : String(e);
+    const rawDetail = e instanceof Error ? e.message : String(e);
+    const detail = formatConstructionCreateRecordError(rawDetail);
     if (constructionSaved) {
       return NextResponse.json(
         {
@@ -297,7 +306,9 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "レコードの登録に失敗しました。APIキーの登録権限や@pocketの必須項目を確認してください。",
+          detail.includes("@pocket:")
+            ? detail
+            : "レコードの登録に失敗しました。APIキーの登録権限や@pocketの必須項目を確認してください。",
       },
       { status: 502 },
     );

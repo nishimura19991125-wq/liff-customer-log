@@ -14,6 +14,7 @@ import {
   pickRecordValueByFieldAliases,
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
+  resolveConstructionTNumberFieldId,
 } from "@/lib/calendar-kojo";
 import {
   resolveConstructionRegistrationNumberFieldIds,
@@ -96,22 +97,6 @@ function coercePocketPlainString(raw: unknown): string {
     }
   }
   return String(raw).trim();
-}
-
-/** 工事アプリのレコードからお客様情報連携用ユニークキー（既定は T番号）の uniqueId を決める */
-function constructionUniqueKeyFieldConfigured(
-  constructionFields: AtPocketFieldRow[],
-): string | null {
-  const fromEnv =
-    process.env.CALENDAR_CONSTRUCTION_UNIQUE_KEY_FIELD_ID?.trim() ||
-    process.env.CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID?.trim();
-  if (fromEnv) {
-    return resolveConfiguredFieldToSchemaUniqueId(fromEnv, constructionFields);
-  }
-  const fids = resolveConstructionFieldIds(constructionFields);
-  const t = fids.tNumber?.trim();
-  if (!t) return null;
-  return resolveConfiguredFieldToSchemaUniqueId(t, constructionFields);
 }
 
 /**
@@ -212,7 +197,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     };
   }
 
-  const constructionKeyField = constructionUniqueKeyFieldConfigured(
+  const constructionKeyField = resolveConstructionTNumberFieldId(
     opts.constructionFields,
   );
   if (!constructionKeyField) {
