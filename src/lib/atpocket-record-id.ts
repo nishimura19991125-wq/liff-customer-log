@@ -91,17 +91,16 @@ function nameAppearsInRecordObject(
   return false;
 }
 
-function customerNameSearchQueries(wantName: string): string[] {
-  const n = normalizeMatchText(wantName);
-  const out = new Set<string>();
-  if (n) out.add(n);
-  const parts = n.split(" ").filter((p) => p.length >= 2);
-  for (const p of parts) out.add(p);
-  if (parts.length >= 2) {
-    out.add(parts.slice(-1)[0]!);
-    out.add(parts.slice(0, 2).join(" "));
-  }
-  return [...out];
+/** @pocket 一覧の query はフィールド式のみ（自由テキスト不可） */
+function escapePocketQueryValue(val: string): string {
+  return val.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function buildFieldEqualsQuery(fieldId: string, value: string): string {
+  const id = fieldId.trim();
+  const v = escapePocketQueryValue(normalizeMatchText(value));
+  if (!id || !v) return "";
+  return `(${id} = "${v}")`;
 }
 
 function housingMatches(got: string, want: string): boolean {
@@ -385,33 +384,26 @@ export async function findConstructionRecordByNewEntryOnce(
     appEnv: "CALENDAR_APP_ID",
   } as const;
 
-  const recentFirst = await fetchRecordsList(
-    calAppId,
-    { limit: "120", page: "1", fields: fieldsCsv },
-    auth,
-    listOpts,
+  const maxPages = Math.min(
+    10,
+    Math.max(
+      1,
+      Number(process.env.CALENDAR_POST_CREATE_LOOKUP_MAX_PAGES) || 5,
+    ),
   );
-  considerRows(recentFirst.records ?? []);
-  if (newestNameMatchId) {
-    return {
-      recordId: newestNameMatchId,
-      uniqueKey: newestNameMatchKey,
-    };
-  }
 
-  for (const q of customerNameSearchQueries(wantName).slice(0, 2)) {
-    const byName = await fetchRecordsList(
+  for (let page = 1; page <= maxPages; page++) {
+    const data = await fetchRecordsList(
       calAppId,
       {
-        limit: "100",
-        page: "1",
+        limit: "200",
+        page: String(page),
         fields: fieldsCsv,
-        query: q,
       },
       auth,
       listOpts,
     );
-    considerRows(byName.records ?? []);
+    considerRows(data.records ?? []);
     if (newestNameMatchId) {
       return {
         recordId: newestNameMatchId,
@@ -421,50 +413,17 @@ export async function findConstructionRecordByNewEntryOnce(
     if (bestScore >= 35 && (bestId || bestKey)) {
       return { recordId: bestId, uniqueKey: bestKey };
     }
+    if ((data.records?.length ?? 0) < 200) break;
   }
 
-  /** fields 指定だと列が欠けることがあるため、全フィールドで再検索 */
-  for (const q of customerNameSearchQueries(wantName).slice(0, 3)) {
-    const byNameFull = await fetchRecordsList(
-      calAppId,
-      { limit: "80", page: "1", query: q },
-      auth,
-      listOpts,
-    );
-    considerRows(byNameFull.records ?? []);
-    if (newestNameMatchId) break;
-  }
-  if (newestNameMatchId) {
-    return {
-      recordId: newestNameMatchId,
-      uniqueKey: newestNameMatchKey,
-    };
-  }
-  if (bestScore >= 12 && (bestId || bestKey)) {
-    return { recordId: bestId, uniqueKey: bestKey };
-  }
-
-  /** 検索未反映時: 末尾付近を最大2ページだけ走査（API 回数を抑える） */
-  let tailRows: AtPocketRecordRow[] = [];
-  for (let page = 1; page <= 2; page++) {
-    const data = await fetchRecordsList(
-      calAppId,
-      { limit: "200", page: String(page), fields: fieldsCsv },
-      auth,
-      listOpts,
-    );
-    tailRows = data.records ?? [];
-    considerRows(tailRows);
-    if (newestNameMatchId) {
-      return {
-        recordId: newestNameMatchId,
-        uniqueKey: newestNameMatchKey,
-      };
-    }
-    if (tailRows.length < 200) break;
-  }
-
-  considerRows(tailRows, true);
+  /** fields 指定だと列が欠けることがあるため、全フィールドで1ページだけ照合 */
+  const fullFieldsFirst = await fetchRecordsList(
+    calAppId,
+    { limit: "80", page: "1" },
+    auth,
+    listOpts,
+  );
+  considerRows(fullFieldsFirst.records ?? []);
   if (newestNameMatchId) {
     return {
       recordId: newestNameMatchId,
@@ -524,8 +483,11 @@ export async function findConstructionRecordIdByTNumber(
     return (data.records?.length ?? 0) < 500 ? "end" : null;
   };
 
-  const qHit = await scanPage(1, want);
-  if (typeof qHit === "string" && qHit !== "end") return qHit;
+  const fieldQuery = buildFieldEqualsQuery(fieldId, want);
+  if (fieldQuery) {
+    const qHit = await scanPage(1, fieldQuery);
+    if (typeof qHit === "string" && qHit !== "end") return qHit;
+  }
 
   for (let page = 1; page <= 15; page++) {
     const hit = await scanPage(page);
