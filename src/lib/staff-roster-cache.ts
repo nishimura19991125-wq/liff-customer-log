@@ -3,8 +3,8 @@ import "server-only";
 import type { AtPocketRecordRow } from "@/lib/atpocket";
 import {
   apiKeyForStaffPocketRead,
-  fetchAllRecordsPages,
   fetchRecordsList,
+  isPocketApiRateLimited,
 } from "@/lib/atpocket";
 import { staffImportKeyFieldIdResolved } from "@/lib/staff-import-key";
 import { staffRecordMatchesLineUser } from "@/lib/staff-line-binding";
@@ -42,21 +42,23 @@ export function staffRosterCacheTtlMs(): number {
   return Math.min(3_600_000, Math.floor(n));
 }
 
-function staffRosterMaxPages(): number {
+/** 1000 件超の名簿のみ追加ページ取得（既定 1 ページ＝最大 1 回の追加 API） */
+function staffRosterExtraPagesAfterFull(): number {
   const raw = process.env.STAFF_ROSTER_MAX_PAGES?.trim();
-  const n = raw ? Number(raw) : 10;
-  if (!Number.isFinite(n) || n < 1) return 10;
-  return Math.min(50, Math.floor(n));
+  const n = raw ? Number(raw) : 1;
+  if (!Number.isFinite(n) || n < 0) return 1;
+  return Math.min(20, Math.floor(n));
 }
 
 function staffRosterMinRefetchMs(): number {
   const raw = process.env.STAFF_ROSTER_MIN_REFETCH_MS?.trim();
-  const n = raw ? Number(raw) : 120_000;
-  if (!Number.isFinite(n) || n < 0) return 120_000;
+  const n = raw ? Number(raw) : 300_000;
+  if (!Number.isFinite(n) || n < 0) return 300_000;
   return Math.min(600_000, Math.floor(n));
 }
 
-const STAFF_LIST_FETCH_OPTIONS = { maxRetries: 1 } as const;
+/** 429 時の再試行は上限をさらに消費するため行わない */
+const STAFF_LIST_FETCH_OPTIONS = { maxRetries: 0 } as const;
 
 function rosterCacheKey(): string | null {
   const staffAppId = process.env.STAFF_APP_ID?.trim();
@@ -141,35 +143,32 @@ async function fetchStaffRosterRowsFromPocket(
   const auth = { apiKey: apiKeyForStaffPocketRead() };
   const ctx = { operation: "staff:名簿一覧", appEnv: "STAFF_APP_ID" };
   const staffNameFieldId = process.env.STAFF_NAME_FIELD_ID?.trim() ?? "";
+  const fields = lineOn ? staffRosterListFieldsCsv() : staffNameFieldId;
 
-  if (lineOn) {
-    const fieldsCsv = staffRosterListFieldsCsv();
-    return fetchAllRecordsPages(
-      staffAppId,
-      fieldsCsv,
-      auth,
-      null,
-      ctx,
-      {
-        maxPages: staffRosterMaxPages(),
-        maxRetries: STAFF_LIST_FETCH_OPTIONS.maxRetries,
-      },
-    );
-  }
+  const first = await fetchRecordsList(
+    staffAppId,
+    { limit: "1000", page: "1", fields },
+    auth,
+    ctx,
+    STAFF_LIST_FETCH_OPTIONS,
+  );
+  const rows: AtPocketRecordRow[] = [...(first.records ?? [])];
+  if (rows.length < 1000) return rows;
 
-  return (
-    await fetchRecordsList(
+  const extraPages = staffRosterExtraPagesAfterFull();
+  for (let page = 2; page <= 1 + extraPages; page++) {
+    const data = await fetchRecordsList(
       staffAppId,
-      {
-        limit: "1000",
-        page: "1",
-        fields: staffNameFieldId,
-      },
+      { limit: "1000", page: String(page), fields },
       auth,
       ctx,
       STAFF_LIST_FETCH_OPTIONS,
-    )
-  ).records ?? [];
+    );
+    const recs = data.records ?? [];
+    rows.push(...recs);
+    if (recs.length < 1000) break;
+  }
+  return rows;
 }
 
 /** スタッフ名簿一覧（メモリキャッシュ・429 時は古い名簿を返して API 連打を抑止） */
@@ -191,8 +190,11 @@ export async function fetchStaffRosterRowsCached(): Promise<
   const staleEntry =
     rosterCache && rosterCache.key === key ? rosterCache : null;
 
+  const staffAuth = { apiKey: apiKeyForStaffPocketRead() };
+  const globallyLimited = isPocketApiRateLimited(staffAuth);
+
   if (staleRows && staleRows.length > 0) {
-    if (isRateLimited(now)) {
+    if (isRateLimited(now) || globallyLimited) {
       warnStaleRosterOnce(new Error("rate limit backoff active"));
       return staleRows;
     }
@@ -203,6 +205,13 @@ export async function fetchStaffRosterRowsCached(): Promise<
     ) {
       return staleRows;
     }
+  }
+
+  if ((isRateLimited(now) || globallyLimited) && !staleRows?.length) {
+    console.warn(
+      "[staff-roster-cache] skip @pocket fetch during rate limit (no cached roster)",
+    );
+    return [];
   }
 
   if (rosterInflight) return rosterInflight;

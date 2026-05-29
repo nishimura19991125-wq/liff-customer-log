@@ -230,6 +230,33 @@ function parseRetryAfterMs(headers: Headers): number | null {
 const POCKET_GET_RETRY_MAX = 5;
 const POCKET_GET_RETRY_BASE_MS = 450;
 
+/** @pocket の 100 秒ウィンドウ（同一 API キーでアプリ横断） */
+const POCKET_RATE_LIMIT_WINDOW_MS = 100_000;
+const pocketRateLimitedUntil = new Map<string, number>();
+
+function pocketRateLimitKey(auth?: AtPocketFetchAuth): string {
+  return auth?.apiKey?.trim() || apiKey();
+}
+
+/** 直近の 429 を記録（工事カレンダー等の連打後にスタッフ名簿が巻き添えにならないよう） */
+export function markPocketApiRateLimited(auth?: AtPocketFetchAuth): void {
+  pocketRateLimitedUntil.set(
+    pocketRateLimitKey(auth),
+    Date.now() + POCKET_RATE_LIMIT_WINDOW_MS,
+  );
+}
+
+export function isPocketApiRateLimited(auth?: AtPocketFetchAuth): boolean {
+  return Date.now() < (pocketRateLimitedUntil.get(pocketRateLimitKey(auth)) ?? 0);
+}
+
+export function pocketApiRateLimitRemainingMs(
+  auth?: AtPocketFetchAuth,
+): number {
+  const until = pocketRateLimitedUntil.get(pocketRateLimitKey(auth)) ?? 0;
+  return Math.max(0, until - Date.now());
+}
+
 export type PocketListFetchOptions = {
   /** 429 時の最大再試行回数（既定 5）。スタッフ名簿などは 1 推奨 */
   maxRetries?: number;
@@ -245,10 +272,37 @@ async function fetchWithMethodOverrideWithRetry(
     1,
     Math.min(POCKET_GET_RETRY_MAX, options?.maxRetries ?? POCKET_GET_RETRY_MAX),
   );
+  if (isPocketApiRateLimited(auth)) {
+    const retrySec = Math.max(
+      1,
+      Math.ceil(pocketApiRateLimitRemainingMs(auth) / 1000),
+    );
+    return new Response(
+      JSON.stringify({
+        errors: {
+          code: 429,
+          message: "Too Many Request",
+          details: [
+            {
+              message: "Request exhausted per 100 second (backoff active)",
+            },
+          ],
+        },
+      }),
+      {
+        status: 429,
+        headers: { "Retry-After": String(retrySec) },
+      },
+    );
+  }
+
   let last: Response | undefined;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const res = await fetchWithMethodOverride(pathWithQuery, auth);
     last = res;
+    if (res.status === 429) {
+      markPocketApiRateLimited(auth);
+    }
     if (res.status !== 429) return res;
     if (attempt === maxAttempts - 1) return res;
     await res.text();

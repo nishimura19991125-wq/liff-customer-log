@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 
 import {
+  apiKeyForStaffPocketRead,
+  isPocketApiRateLimited,
+  pocketApiRateLimitRemainingMs,
+} from "@/lib/atpocket";
+import {
   boundStaffFromRosterRows,
   fetchStaffRosterRowsCached,
   getStaffRosterRowsBestEffort,
@@ -19,6 +24,11 @@ import {
   staffImportKeyFieldIdResolved,
 } from "@/lib/staff-import-key";
 export const dynamic = "force-dynamic";
+
+function isPocketRateLimitError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return msg.includes("429") || msg.includes("Too Many Request");
+}
 
 export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);
@@ -44,13 +54,24 @@ export async function GET(request: Request) {
 
     let rows: Awaited<ReturnType<typeof fetchStaffRosterRowsCached>>;
     let rosterStale = false;
+    let rateLimited = false;
+    const staffAuth = { apiKey: apiKeyForStaffPocketRead() };
     try {
       rows = await fetchStaffRosterRowsCached();
+      if (!rows.length && isPocketApiRateLimited(staffAuth)) {
+        rateLimited = true;
+        rosterStale = true;
+      }
     } catch (e) {
       const fallback = getStaffRosterRowsBestEffort();
       if (fallback.length > 0) {
         console.warn("[api/staff] using stale roster after fetch error", e);
         rows = fallback;
+        rosterStale = true;
+      } else if (isPocketRateLimitError(e)) {
+        console.warn("[api/staff] rate limited with no cached roster", e);
+        rows = [];
+        rateLimited = true;
         rosterStale = true;
       } else {
         throw e;
@@ -90,12 +111,23 @@ export async function GET(request: Request) {
       lineUserId: caller.lineUserId,
       bindingEnabled: lineBindingOn,
       ...(rosterStale ? { rosterStale: true } : {}),
+      ...(rateLimited
+        ? {
+            rateLimited: true,
+            rosterMessage:
+              "担当者一覧の取得が混み合っています。しばらくしてから再度お試しください。",
+          }
+        : {}),
       ...(lineConfigError && !lineBindingOn
         ? { bindingConfigError: lineConfigError }
         : {}),
     });
-    if (rosterStale) {
-      res.headers.set("Retry-After", "120");
+    if (rosterStale || rateLimited) {
+      const retrySec = Math.max(
+        60,
+        Math.ceil(pocketApiRateLimitRemainingMs(staffAuth) / 1000) || 120,
+      );
+      res.headers.set("Retry-After", String(retrySec));
     }
     return res;
   } catch (e) {

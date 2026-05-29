@@ -1,7 +1,8 @@
 /** ブラウザ sessionStorage 上の /api/staff 応答キャッシュ（429 連打防止） */
 
 export const STAFF_API_SESSION_CACHE_KEY = "liff_staff_api_cache_v1";
-const STAFF_API_SESSION_CACHE_TTL_MS = 5 * 60 * 1000;
+/** サーバー名簿 TTL（既定 30 分）に合わせ、429 連打を抑える */
+const STAFF_API_SESSION_CACHE_TTL_MS = 30 * 60 * 1000;
 
 export type StaffApiSessionCachePayload = {
   savedAt: number;
@@ -11,14 +12,21 @@ export type StaffApiSessionCachePayload = {
   bindingConfigError?: string;
 };
 
-export function readStaffApiSessionCache(): StaffApiSessionCachePayload | null {
+export function readStaffApiSessionCache(
+  allowExpired = false,
+): StaffApiSessionCachePayload | null {
   if (typeof sessionStorage === "undefined") return null;
   try {
     const raw = sessionStorage.getItem(STAFF_API_SESSION_CACHE_KEY);
     if (!raw) return null;
     const j = JSON.parse(raw) as StaffApiSessionCachePayload;
     if (!j.savedAt || !Array.isArray(j.staff)) return null;
-    if (Date.now() - j.savedAt > STAFF_API_SESSION_CACHE_TTL_MS) return null;
+    if (
+      !allowExpired &&
+      Date.now() - j.savedAt > STAFF_API_SESSION_CACHE_TTL_MS
+    ) {
+      return null;
+    }
     return j;
   } catch {
     return null;
@@ -46,6 +54,8 @@ export async function fetchStaffApiWithSessionCache(
   data: StaffApiSessionCachePayload & {
     lineUserId?: string;
     rosterStale?: boolean;
+    rateLimited?: boolean;
+    rosterMessage?: string;
     error?: string;
   };
   fromCache: boolean;
@@ -68,8 +78,37 @@ export async function fetchStaffApiWithSessionCache(
   const data = (await res.json()) as StaffApiSessionCachePayload & {
     lineUserId?: string;
     rosterStale?: boolean;
+    rateLimited?: boolean;
+    rosterMessage?: string;
     error?: string;
   };
+
+  if (res.status === 429) {
+    const stale = readStaffApiSessionCache(true);
+    if (stale) {
+      return {
+        res: new Response(null, { status: 200 }),
+        data: { ...stale, rosterStale: true, rateLimited: true },
+        fromCache: true,
+      };
+    }
+  }
+
+  if (
+    res.ok &&
+    Array.isArray(data.staff) &&
+    data.staff.length === 0 &&
+    data.rateLimited
+  ) {
+    const stale = readStaffApiSessionCache(true);
+    if (stale?.staff.length) {
+      return {
+        res: new Response(null, { status: 200 }),
+        data: { ...stale, rosterStale: true, rateLimited: true },
+        fromCache: true,
+      };
+    }
+  }
 
   if (res.ok && Array.isArray(data.staff)) {
     writeStaffApiSessionCache({
