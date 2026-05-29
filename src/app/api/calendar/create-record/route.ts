@@ -10,7 +10,7 @@ import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construct
 import {
   buildConstructionFillPatch,
   ensureConstructionTNumberOnRecord,
-  resolveRecordIdAfterConstructionCreate,
+  resolveConstructionRecordAfterCreate,
   uniqueFieldsCsv,
 } from "@/lib/calendar-construction-pocket-common";
 import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
@@ -238,7 +238,7 @@ export async function POST(request: Request) {
     constructionSaved = true;
     invalidateAllCalendarPayloadCache();
 
-    const recordId = await resolveRecordIdAfterConstructionCreate(
+    const constructionMatch = await resolveConstructionRecordAfterCreate(
       calAppId,
       createResult,
       {
@@ -252,53 +252,60 @@ export async function POST(request: Request) {
       pocketAuth,
     );
 
-    if (!recordId) {
+    const recordId = constructionMatch.recordId;
+    let uniqueKey = constructionMatch.uniqueKey;
+
+    if (!recordId && !uniqueKey) {
       return NextResponse.json(
         {
           error:
-            "工事レコードは登録されましたが、レコード ID を取得できませんでした。しばらくしてからカレンダーを更新し、登録された案件を確認してください。",
+            `工事レコードは登録されましたが、登録内容を再取得できませんでした（お客様名「${customerName}」で検索）。@pocket に案件があるか、CALENDAR_EMPTY_FILL_CUSTOMER_NAME_FIELD_ID がお客様名列の uniqueId と一致しているか確認してください。`,
           constructionSaved: true,
         },
         { status: 502 },
       );
     }
 
-    const tNumber = await ensureConstructionTNumberOnRecord(
-      calAppId,
-      recordId,
-      resolvedTNumber,
-      pocketAuth,
-      fieldsCsv,
-    );
-    if (!tNumber) {
-      return NextResponse.json(
-        {
-          error:
-            "登録したレコードから T番号 を取得できませんでした。@pocket で T番号 が採番されているか、フィールド設定を確認してください。",
-          constructionSaved: true,
-        },
-        { status: 409 },
+    if (recordId) {
+      const tNumber = await ensureConstructionTNumberOnRecord(
+        calAppId,
+        recordId,
+        resolvedTNumber,
+        pocketAuth,
+        fieldsCsv,
       );
+      uniqueKey = uniqueKey ?? tNumber;
+      if (!uniqueKey) {
+        return NextResponse.json(
+          {
+            error:
+              "登録したレコードから T番号 を取得できませんでした。@pocket で T番号 が採番されているか、フィールド設定を確認してください。",
+            constructionSaved: true,
+          },
+          { status: 409 },
+        );
+      }
+
+      const patch = buildConstructionFillPatch({
+        resolvedCustomer,
+        resolvedHousing,
+        resolvedTNumber,
+        tNumberValue: uniqueKey,
+        customerName,
+        housingRaw,
+        resolvedHandlerField,
+        handlerValue: handlerValueToPut,
+        fids,
+        ...patchDates,
+      });
+
+      await updateRecord(calAppId, recordId, patch, pocketAuth);
     }
-
-    const patch = buildConstructionFillPatch({
-      resolvedCustomer,
-      resolvedHousing,
-      resolvedTNumber,
-      tNumberValue: tNumber,
-      customerName,
-      housingRaw,
-      resolvedHandlerField,
-      handlerValue: handlerValueToPut,
-      fids,
-      ...patchDates,
-    });
-
-    await updateRecord(calAppId, recordId, patch, pocketAuth);
 
     return finalizeConstructionCalendarSave({
       calAppId,
       constructionRecordId: recordId,
+      constructionUniqueKey: uniqueKey,
       customerName,
       constructionFields,
       calendarAuth: pocketAuth,

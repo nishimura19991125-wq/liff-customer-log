@@ -3,10 +3,12 @@ import "server-only";
 import type { AtPocketCreateRecordResult, AtPocketFetchAuth, AtPocketRecordRow } from "@/lib/atpocket";
 import { fetchRecordById } from "@/lib/atpocket";
 import {
+  atPocketRecordIdFromCreateResponse,
   atPocketRecordIdFromCreateResult,
   findConstructionRecordByNewEntryOnce,
   pollConstructionTNumberByRecordId,
   type ConstructionLookupOpts,
+  type ConstructionRecordMatch,
 } from "@/lib/atpocket-record-id";
 import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
 import {
@@ -78,21 +80,74 @@ export function readConstructionTNumberFromRecord(
   return t || null;
 }
 
-/** 新規 POST 直後: 応答の recordId → 取れなければお客様名で1回だけ一覧照合 */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function recordIdFromCreateRawBody(
+  createResult: AtPocketCreateRecordResult,
+): string | null {
+  const raw = createResult.rawBody?.trim();
+  if (!raw) return null;
+  try {
+    const id = atPocketRecordIdFromCreateResponse(
+      JSON.parse(raw) as Record<string, unknown>,
+      createResult.location,
+    );
+    if (id) return id;
+  } catch {
+    /* 非 JSON 応答 */
+  }
+  const m = raw.match(/\/records\/(\d+)(?:\/|$|[?#])/i);
+  return m?.[1]?.trim() || null;
+}
+
+/**
+ * 新規 POST 直後: 応答・一覧から recordId / T番号 を解決（リトライ付き）。
+ * recordId が無くても T番号が取れればお客様情報連携可能。
+ */
+export async function resolveConstructionRecordAfterCreate(
+  calAppId: string,
+  createResult: AtPocketCreateRecordResult,
+  lookup: ConstructionLookupOpts,
+  auth: AtPocketFetchAuth,
+): Promise<ConstructionRecordMatch> {
+  let recordId =
+    atPocketRecordIdFromCreateResult(createResult) ??
+    recordIdFromCreateRawBody(createResult);
+  let uniqueKey: string | null = null;
+
+  const delays = [0, 600, 1500] as const;
+  for (const delay of delays) {
+    if (delay > 0) await sleep(delay);
+    if (recordId && uniqueKey) break;
+    const listed = await findConstructionRecordByNewEntryOnce(
+      calAppId,
+      lookup,
+      auth,
+    );
+    recordId = recordId ?? listed.recordId;
+    uniqueKey = uniqueKey ?? listed.uniqueKey;
+    if (recordId || uniqueKey) break;
+  }
+
+  return { recordId, uniqueKey };
+}
+
+/** @deprecated resolveConstructionRecordAfterCreate を使用 */
 export async function resolveRecordIdAfterConstructionCreate(
   calAppId: string,
   createResult: AtPocketCreateRecordResult,
   lookup: ConstructionLookupOpts,
   auth: AtPocketFetchAuth,
 ): Promise<string | null> {
-  const fromCreate = atPocketRecordIdFromCreateResult(createResult);
-  if (fromCreate) return fromCreate;
-  const listed = await findConstructionRecordByNewEntryOnce(
+  const m = await resolveConstructionRecordAfterCreate(
     calAppId,
+    createResult,
     lookup,
     auth,
   );
-  return listed.recordId;
+  return m.recordId;
 }
 
 /** 自動採番直後: GET で T番号が付くまで短く待つ（空枠は既存 T を読むだけ） */

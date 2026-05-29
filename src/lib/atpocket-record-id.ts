@@ -58,6 +58,18 @@ function nameMatches(got: string, want: string): boolean {
   return normalizeMatchText(got) === normalizeMatchText(want);
 }
 
+/** 登録直後の一覧照合: 表記ゆれ（空白・旧字体）を許容 */
+function nameMatchesLoose(got: string, want: string): boolean {
+  const a = normalizeMatchText(got);
+  const b = normalizeMatchText(want);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length >= 2 && b.length >= 2 && (a.includes(b) || b.includes(a))) {
+    return true;
+  }
+  return false;
+}
+
 function housingMatches(got: string, want: string): boolean {
   const a = normalizeMatchText(got);
   const b = normalizeMatchText(want);
@@ -280,7 +292,7 @@ export async function findConstructionRecordByNewEntryOnce(
       const name = coercePlainString(
         pickRecordValueByFieldAliases(recObj, opts.customerFieldId),
       );
-      if (!nameMatches(name, wantName)) continue;
+      if (!nameMatchesLoose(name, wantName)) continue;
 
       const housing = coercePlainString(
         pickRecordValueByFieldAliases(recObj, opts.housingFieldId),
@@ -300,7 +312,7 @@ export async function findConstructionRecordByNewEntryOnce(
       const n = rid ? recordIdNumeric(rid) : -1;
       const ts = rowTimestampMs(row);
       /** 登録直後は createdAt が無いことがあるため、お客様名一致なら最大 recordId を採用 */
-      if (n > newestNameMatchNumeric) {
+      if (rid && n > newestNameMatchNumeric) {
         newestNameMatchNumeric = n;
         newestNameMatchId = rid;
         newestNameMatchKey = tNum.trim() || newestNameMatchKey;
@@ -352,6 +364,24 @@ export async function findConstructionRecordByNewEntryOnce(
     };
   }
   if (bestScore >= 35 && (bestId || bestKey)) {
+    return { recordId: bestId, uniqueKey: bestKey };
+  }
+
+  /** fields 指定だと列が欠けることがあるため、全フィールドで再検索 */
+  const byNameFull = await fetchRecordsList(
+    calAppId,
+    { limit: "80", page: "1", query: wantName },
+    auth,
+    listOpts,
+  );
+  considerRows(byNameFull.records ?? []);
+  if (newestNameMatchId) {
+    return {
+      recordId: newestNameMatchId,
+      uniqueKey: newestNameMatchKey,
+    };
+  }
+  if (bestScore >= 12 && (bestId || bestKey)) {
     return { recordId: bestId, uniqueKey: bestKey };
   }
 

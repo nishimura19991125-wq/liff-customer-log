@@ -17,6 +17,8 @@ export type AtPocketCreateRecordResult = {
   location?: string | null;
   /** Location / Content-Location 等から抽出した recordId */
   recordIdHint?: string | null;
+  /** POST 応答の生テキスト（JSON 以外・URL 埋め込み用） */
+  rawBody?: string | null;
 };
 
 export type AtPocketListResponse = {
@@ -547,7 +549,7 @@ export async function createRecord(
       row = {};
     }
   }
-  return { row, location, recordIdHint };
+  return { row, location, recordIdHint, rawBody: text || null };
 }
 
 /** レコード更新 PUT /api/apps/{appsId}/records/{recordId} */
