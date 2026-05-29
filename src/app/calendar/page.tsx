@@ -731,7 +731,6 @@ function NewConstructionRecordPanel({
   viewMonth,
   onSaved,
   onSessionExpired,
-  constructionHandlerUsesStaffDirectory,
 }: {
   idToken: string | null;
   open: boolean;
@@ -740,17 +739,9 @@ function NewConstructionRecordPanel({
   viewMonth: number;
   onSaved: (patch?: CalendarRecordMonthPatch | null) => Promise<void>;
   onSessionExpired?: () => void;
-  constructionHandlerUsesStaffDirectory?: boolean;
 }) {
   const [customerName, setCustomerName] = useState("");
   const [housingStatus, setHousingStatus] = useState<string>("");
-  const [selectedHandlerStaffId, setSelectedHandlerStaffId] =
-    useState("");
-  const [handlerRows, setHandlerRows] = useState<HandlerStaffRow[]>([]);
-  const [handlerListStatus, setHandlerListStatus] = useState<
-    "idle" | "loading" | "ok" | "err"
-  >("idle");
-  const [handlerListError, setHandlerListError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
     kind: "ok" | "err";
@@ -760,11 +751,6 @@ function NewConstructionRecordPanel({
   const [panelWorkDate, setPanelWorkDate] = useState("");
   const [electricWorkDate, setElectricWorkDate] = useState("");
   const [appSettingsDayDate, setAppSettingsDayDate] = useState("");
-
-  const handlerFromStaff =
-    constructionHandlerUsesStaffDirectory === true;
-  const handlerMisconfigured =
-    constructionHandlerUsesStaffDirectory === false;
 
   const canSubmit = Boolean(idToken);
 
@@ -780,83 +766,11 @@ function NewConstructionRecordPanel({
     }
   }, [housingStatus]);
 
-  useEffect(() => {
-    if (!open || !idToken || !handlerFromStaff) {
-      if (!open) {
-        setSelectedHandlerStaffId("");
-        setHandlerRows([]);
-        setHandlerListStatus("idle");
-        setHandlerListError("");
-      }
-      return;
-    }
-
-    let cancelled = false;
-
-    (async () => {
-      setSelectedHandlerStaffId("");
-      setHandlerRows([]);
-      setHandlerListStatus("loading");
-      setHandlerListError("");
-      try {
-        const res = await fetch("/api/calendar/construction-handler-staff", {
-          headers: { Authorization: `Bearer ${idToken}` },
-        });
-        const data = (await res.json()) as {
-          handlers?: unknown;
-          registrants?: unknown;
-          error?: string;
-        };
-        if (cancelled) return;
-        if (res.status === 401 && isLineSessionExpiredPayload(data)) {
-          onSessionExpired?.();
-          setHandlerListStatus("err");
-          setHandlerListError(
-            "ログインの有効期限が切れました。画面を更新してください。",
-          );
-          return;
-        }
-        if (!res.ok) {
-          setHandlerListStatus("err");
-          setHandlerListError(
-            typeof data.error === "string"
-              ? data.error
-              : "工事対応者リストを取得できませんでした",
-          );
-          return;
-        }
-        setHandlerRows(parseConstructionHandlerStaffApiPayload(data));
-        setHandlerListStatus("ok");
-      } catch {
-        if (!cancelled) {
-          setHandlerListStatus("err");
-          setHandlerListError("通信に失敗しました");
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, idToken, handlerFromStaff, onSessionExpired]);
-
-  const handlerBlocking =
-    handlerMisconfigured ||
-    (handlerFromStaff &&
-      (handlerListStatus !== "ok" ||
-        handlerRows.length === 0 ||
-        !selectedHandlerStaffId.trim()));
-
   async function handleSubmit() {
     if (!idToken) return;
     const name = customerName.trim();
     const hs = housingStatus.trim();
     if (!name || !hs) return;
-    if (handlerFromStaff) {
-      if (handlerListStatus !== "ok" || handlerRows.length === 0) return;
-      if (!selectedHandlerStaffId.trim()) return;
-    }
-    if (handlerMisconfigured) return;
     setSubmitting(true);
     setFeedback(null);
     try {
@@ -871,12 +785,6 @@ function NewConstructionRecordPanel({
           housingStatus: hs,
           viewYear,
           viewMonth,
-          ...(handlerFromStaff
-            ? {
-                constructionHandlerStaffRecordId:
-                  selectedHandlerStaffId.trim(),
-              }
-            : {}),
           ...(hs === EMPTY_FILL_HOUSING_STATUS_NEW_BUILD
             ? {
                 ...(shigumiDate.trim()
@@ -909,7 +817,6 @@ function NewConstructionRecordPanel({
         if (data.constructionSaved) {
           setCustomerName("");
           setHousingStatus("");
-          setSelectedHandlerStaffId("");
           setShigumiDate("");
           setPanelWorkDate("");
           setElectricWorkDate("");
@@ -928,7 +835,6 @@ function NewConstructionRecordPanel({
       }
       setCustomerName("");
       setHousingStatus("");
-      setSelectedHandlerStaffId("");
       setShigumiDate("");
       setPanelWorkDate("");
       setElectricWorkDate("");
@@ -951,13 +857,13 @@ function NewConstructionRecordPanel({
     <div className="min-w-0 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm ring-1 ring-slate-100">
       <button
         type="button"
-        className="w-full rounded-xl bg-[#06C755] py-3 text-[14px] font-bold text-white shadow-sm transition active:scale-[0.99]"
+        className="w-full rounded-xl bg-[#06C755] px-2 py-3 text-[12px] font-bold leading-none tracking-tight text-white shadow-sm transition active:scale-[0.99] whitespace-nowrap sm:text-[13px]"
         onClick={() => {
           onToggleOpen();
           setFeedback(null);
         }}
       >
-        {open ? "入力を閉じる" : "新規作成"}
+        {open ? "入力を閉じる" : "工事日未定案件登録"}
       </button>
 
       {open ? (
@@ -965,13 +871,13 @@ function NewConstructionRecordPanel({
           <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
             {isNewBuildHousing ? (
               <>
-                住宅ステータスが「新築案件」のときは、お客様名に加えて工事日程を任意で指定できます（未入力でも登録できます）。工事対応者フィールドが有効な場合のみ工事対応者は必須です。T番号は
+                工事日が未定の案件を登録します。住宅ステータス・お客様名は必須です。新築案件のときは工事日程を任意で指定できます（未入力でも登録できます）。T番号は
                 @pocket の自動採番により付与されます。
               </>
             ) : (
               <>
-                住宅ステータス・お客様名・工事対応者（設定時）を入力して登録します。T番号は
-                @pocket の自動採番により付与されます（空枠の更新と同じ項目です）。
+                工事日が未定の案件を登録します。住宅ステータス・お客様名を入力してください。T番号は
+                @pocket の自動採番により付与されます。
               </>
             )}
           </p>
@@ -1076,23 +982,6 @@ function NewConstructionRecordPanel({
               </label>
             </>
           ) : null}
-          {handlerMisconfigured ? (
-            <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-amber-900 ring-1 ring-amber-100">
-              工事対応者にスタッフ名簿を使うには、STAFF_APP_ID・STAFF_NAME_FIELD_ID・STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID
-              を設定してください。
-            </p>
-          ) : null}
-          {handlerFromStaff ? (
-            <ConstructionHandlerStaffSelect
-              submitting={submitting}
-              canSubmit={canSubmit}
-              handlerListStatus={handlerListStatus}
-              handlerListError={handlerListError}
-              handlerRows={handlerRows}
-              selectedHandlerStaffId={selectedHandlerStaffId}
-              setSelectedHandlerStaffId={setSelectedHandlerStaffId}
-            />
-          ) : null}
           {!idToken ? (
             <p className="mt-3 text-[12px] font-semibold text-amber-800">
               ログイン情報がありません。この画面からは登録できません。
@@ -1105,8 +994,7 @@ function NewConstructionRecordPanel({
               submitting ||
               !customerName.trim() ||
               !housingStatus.trim() ||
-              !canSubmit ||
-              handlerBlocking
+              !canSubmit
             }
             onClick={() => void handleSubmit()}
           >
@@ -1466,10 +1354,6 @@ export default function CalendarPage() {
             onToggleOpen={() => setNewRecordOpen((o) => !o)}
             viewYear={ym.year}
             viewMonth={ym.month}
-            constructionHandlerUsesStaffDirectory={
-              data?.emptyFillConstructionHandlerUsesStaffDirectory ??
-              data?.emptyFillConstructionRegistrantUsesStaffDirectory
-            }
             onSaved={applyCalendarSaveToView}
             onSessionExpired={() => setPhase("session-expired")}
           />

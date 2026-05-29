@@ -112,7 +112,8 @@ export async function POST(request: Request) {
   let handlerPutValue: string | undefined;
   let resolvedHandlerField: string | undefined;
 
-  if (handlerFieldEnv) {
+  /** 工事日未定案件登録では工事対応者は任意。送信されたときのみ検証して書き込む */
+  if (handlerFieldEnv && constructionHandlerStaffRecordId) {
     if (!constructionHandlerStaffConfigReady()) {
       return NextResponse.json(
         {
@@ -120,12 +121,6 @@ export async function POST(request: Request) {
             "工事対応者はスタッフ名簿と連携する必要があります。STAFF_APP_ID・STAFF_NAME_FIELD_ID・STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID を設定してください。",
         },
         { status: 503 },
-      );
-    }
-    if (!constructionHandlerStaffRecordId) {
-      return NextResponse.json(
-        { error: "工事対応者を選択してください" },
-        { status: 400 },
       );
     }
     const resolvedName = await resolveConstructionHandlerNameForActiveStaff(
