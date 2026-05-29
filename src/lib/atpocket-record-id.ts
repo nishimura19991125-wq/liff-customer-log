@@ -59,6 +59,12 @@ function housingMatches(got: string, want: string): boolean {
   return a === b || a.includes(b) || b.includes(a);
 }
 
+function tNumberKeysMatch(cellValue: string, wantKey: string): boolean {
+  const a = normalizeMatchText(cellValue);
+  const b = normalizeMatchText(wantKey);
+  return Boolean(a && b && a === b);
+}
+
 function rowTimestampMs(row: AtPocketRecordRow): number {
   for (const raw of [row.updatedAt, row.createdAt]) {
     if (!raw) continue;
@@ -345,6 +351,86 @@ async function findConstructionRecordByNewEntryOnce(
 }
 
 /**
+ * 工事アプリで T番号（取込キー）が一致するレコード ID を返す。お客様情報のキー照合と同様の考え方。
+ */
+export async function findConstructionRecordIdByTNumber(
+  calAppId: string,
+  tNumberFieldId: string,
+  tNumber: string,
+  auth: AtPocketFetchAuth,
+): Promise<string | null> {
+  const want = normalizeMatchText(tNumber);
+  const fieldId = tNumberFieldId.trim();
+  if (!want || !fieldId) return null;
+
+  const listOpts = {
+    operation: "calendar:工事アプリT番号照合",
+    appEnv: "CALENDAR_APP_ID",
+  } as const;
+
+  const scanPage = async (
+    page: number,
+    query?: string,
+  ): Promise<string | null | "end"> => {
+    const data = await fetchRecordsList(
+      calAppId,
+      {
+        limit: "500",
+        page: String(page),
+        fields: fieldId,
+        ...(query ? { query } : {}),
+      },
+      auth,
+      listOpts,
+    );
+    for (const row of data.records ?? []) {
+      const rec = row.record;
+      if (!rec || typeof rec !== "object") continue;
+      const cell = coercePlainString(
+        pickRecordValueByFieldAliases(rec as Record<string, unknown>, fieldId),
+      );
+      if (!tNumberKeysMatch(cell, want)) continue;
+      const id = atPocketRecordIdFromRow(row);
+      if (id) return id;
+    }
+    return (data.records?.length ?? 0) < 500 ? "end" : null;
+  };
+
+  const qHit = await scanPage(1, want);
+  if (typeof qHit === "string" && qHit !== "end") return qHit;
+
+  for (let page = 1; page <= 15; page++) {
+    const hit = await scanPage(page);
+    if (typeof hit === "string") {
+      if (hit === "end") return null;
+      return hit;
+    }
+  }
+  return null;
+}
+
+/** T番号が分かれば工事レコード ID を検索で解決（登録 API の ID に依存しない） */
+export async function resolveConstructionRecordIdByTNumber(
+  calAppId: string,
+  tNumber: string,
+  tNumberFieldId: string,
+  auth: AtPocketFetchAuth,
+): Promise<string | null> {
+  const delays = [0, 400, 1000, 2000, 3500];
+  for (const delay of delays) {
+    if (delay > 0) await sleep(delay);
+    const id = await findConstructionRecordIdByTNumber(
+      calAppId,
+      tNumberFieldId,
+      tNumber,
+      auth,
+    );
+    if (id) return id;
+  }
+  return null;
+}
+
+/**
  * 登録 API が ID を返さないとき、お客様名・住宅ステータス等で直近レコードを照合する（リトライ付き）。
  */
 export async function findConstructionRecordByNewEntry(
@@ -364,7 +450,9 @@ export async function findConstructionRecordByNewEntry(
   return last;
 }
 
-/** 工事登録 POST 直後に recordId / T番号 を可能な限り解決する */
+/**
+ * 工事登録 POST 直後: まず T番号を得て、T番号検索で工事レコード ID を解決する（ID 取得に依存しない）。
+ */
 export async function resolveConstructionRecordAfterCreate(
   calAppId: string,
   createResult: AtPocketCreateRecordResult,
@@ -381,35 +469,43 @@ export async function resolveConstructionRecordAfterCreate(
     .filter((id, i, arr) => id && arr.indexOf(id) === i)
     .join(",");
 
-  let recordId = atPocketRecordIdFromCreateResult(createResult);
+  const recordIdHint = atPocketRecordIdFromCreateResult(createResult);
   let uniqueKey = tField ? uniqueKeyFromPocketRow(createResult.row, tField) : null;
 
-  if (recordId && !uniqueKey && tField) {
+  if (!uniqueKey && recordIdHint && tField) {
     uniqueKey = await pollConstructionTNumber(
       calAppId,
-      recordId,
+      recordIdHint,
       tField,
       auth,
       fieldsCsv,
     );
   }
 
-  if (recordId && uniqueKey) {
-    return { recordId, uniqueKey };
+  if (!uniqueKey) {
+    const listed = await findConstructionRecordByNewEntry(calAppId, lookup, auth);
+    uniqueKey = listed.uniqueKey;
   }
 
-  const listed = await findConstructionRecordByNewEntry(calAppId, lookup, auth);
-  recordId = recordId ?? listed.recordId;
-  uniqueKey = uniqueKey ?? listed.uniqueKey;
+  if (!uniqueKey) {
+    return { recordId: recordIdHint, uniqueKey: null };
+  }
 
-  if (recordId && !uniqueKey && tField) {
-    uniqueKey = await pollConstructionTNumber(
+  let recordId: string | null = null;
+  if (tField) {
+    recordId = await resolveConstructionRecordIdByTNumber(
       calAppId,
-      recordId,
+      uniqueKey,
       tField,
       auth,
-      fieldsCsv,
     );
+  }
+  if (!recordId) {
+    recordId = recordIdHint;
+  }
+  if (!recordId) {
+    const listed = await findConstructionRecordByNewEntry(calAppId, lookup, auth);
+    recordId = listed.recordId;
   }
 
   return { recordId, uniqueKey };
