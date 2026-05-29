@@ -831,12 +831,15 @@ function NewConstructionRecordPanel({
           setAppSettingsDayDate("");
           await onSaved(data.calendarPatch ?? null);
         }
-        const fallback =
-          res.status === 504 || res.status === 408
-            ? "処理がタイムアウトしました。工事アプリに登録されている可能性があります。カレンダーを更新して確認してください。"
-            : data.constructionSaved
-              ? "工事アプリへの登録は完了しましたが、お客様情報アプリへの連携に失敗しました。"
-              : `登録に失敗しました（HTTP ${res.status}）。しばらくしてから再度お試しください。`;
+        const gatewayTimeout =
+          res.status === 504 ||
+          res.status === 408 ||
+          (res.status === 502 && !data.error?.trim() && !data.constructionSaved);
+        const fallback = gatewayTimeout
+          ? "処理がタイムアウトしたか、サーバーが応答を返せませんでした。工事アプリに登録されている可能性があります。カレンダーを更新して確認してください。"
+          : data.constructionSaved
+            ? "工事アプリへの登録は完了しましたが、お客様情報アプリへの連携に失敗しました。"
+            : `登録に失敗しました（HTTP ${res.status}）。しばらくしてから再度お試しください。`;
         setFeedback({
           kind: "err",
           text: data.error?.trim() || fallback,

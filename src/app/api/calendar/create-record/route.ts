@@ -253,7 +253,6 @@ export async function POST(request: Request) {
         tNumberFieldId: resolvedTNumber,
       },
       pocketReadAuth,
-      pocketWriteAuth,
     );
 
     return finalizeConstructionCalendarSave({

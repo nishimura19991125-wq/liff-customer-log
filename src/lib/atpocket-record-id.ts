@@ -7,8 +7,9 @@ function sleep(ms: number): Promise<void> {
 }
 
 /** Netlify 等のサーバーレス（約10秒制限）向け。長い待機はタイムアウト→「登録に失敗しました」になる */
-const POST_CREATE_LOOKUP_DELAYS_MS = [0, 400, 1200, 2500] as const;
-const POST_CREATE_TNUMBER_POLL_DELAYS_MS = [0, 500, 1200, 2500] as const;
+/** 1回の照合で @pocket 一覧 API を最大3回まで（Netlify 10秒制限対策） */
+const POST_CREATE_LOOKUP_DELAYS_MS = [0, 800] as const;
+const POST_CREATE_TNUMBER_POLL_DELAYS_MS = [0, 500, 1200] as const;
 export const SYNC_TNUMBER_POLL_DELAYS_MS = [0, 400, 1200] as const;
 
 /** accessEditUrl / Location からレコード ID を抽出（…/records/123/edit 等） */
@@ -332,95 +333,57 @@ async function findConstructionRecordByNewEntryOnce(
     appEnv: "CALENDAR_APP_ID",
   } as const;
 
-  const considerByNamePages = async (withFields: boolean) => {
-    for (let page = 1; page <= 5; page++) {
-      const data = await fetchRecordsList(
-        calAppId,
-        {
-          limit: "100",
-          page: String(page),
-          ...(withFields && fieldsCsv ? { fields: fieldsCsv } : {}),
-          query: wantName,
-        },
-        auth,
-        listOpts,
-      );
-      const rows = data.records ?? [];
-      considerRows(rows);
-      if (newestNameMatchId) return true;
-      if (bestScore >= 35 && (bestId || bestKey)) return true;
-      if (rows.length < 100) break;
-    }
-    return false;
-  };
-
-  if (await considerByNamePages(true)) {
-    return {
-      recordId: newestNameMatchId ?? bestId,
-      uniqueKey: newestNameMatchKey ?? bestKey,
-    };
-  }
-
-  await considerByNamePages(false);
-
-  if (newestNameMatchId) {
-    return {
-      recordId: newestNameMatchId,
-      uniqueKey: newestNameMatchKey,
-    };
-  }
-  if (bestScore >= 35 && (bestId || bestKey)) {
-    return { recordId: bestId, uniqueKey: bestKey };
-  }
-
-  const recent = await fetchRecordsList(
+  const byName = await fetchRecordsList(
     calAppId,
-    { limit: "200", page: "1", fields: fieldsCsv },
+    {
+      limit: "100",
+      page: "1",
+      fields: fieldsCsv,
+      query: wantName,
+    },
     auth,
     listOpts,
   );
-  considerRows(recent.records ?? []);
-  if (bestScore >= 35 && (bestId || bestKey)) {
-    return { recordId: bestId, uniqueKey: bestKey };
-  }
+  considerRows(byName.records ?? []);
   if (newestNameMatchId) {
     return {
       recordId: newestNameMatchId,
       uniqueKey: newestNameMatchKey,
     };
   }
+  if (bestScore >= 35 && (bestId || bestKey)) {
+    return { recordId: bestId, uniqueKey: bestKey };
+  }
 
-  /** 一覧が古い順のとき、新規レコードは末尾ページに出ることがある */
+  /** 検索未反映時: 末尾付近を最大2ページだけ走査（API 回数を抑える） */
   let tailRows: AtPocketRecordRow[] = [];
-  for (let page = 1; page <= 4; page++) {
+  for (let page = 1; page <= 2; page++) {
     const data = await fetchRecordsList(
       calAppId,
-      { limit: "300", page: String(page), fields: fieldsCsv },
+      { limit: "200", page: String(page), fields: fieldsCsv },
       auth,
       listOpts,
     );
     tailRows = data.records ?? [];
-    if (tailRows.length < 300) break;
+    considerRows(tailRows);
+    if (newestNameMatchId) {
+      return {
+        recordId: newestNameMatchId,
+        uniqueKey: newestNameMatchKey,
+      };
+    }
+    if (tailRows.length < 200) break;
   }
-  considerRows(tailRows);
 
+  considerRows(tailRows, true);
   if (newestNameMatchId) {
     return {
       recordId: newestNameMatchId,
       uniqueKey: newestNameMatchKey,
     };
   }
-
-  considerRows(recent.records ?? [], true);
   if (bestScore >= 12 && (bestId || bestKey)) {
     return { recordId: bestId, uniqueKey: bestKey };
-  }
-
-  if (newestNameMatchId) {
-    return {
-      recordId: newestNameMatchId,
-      uniqueKey: newestNameMatchKey,
-    };
   }
 
   return { recordId: bestId, uniqueKey: bestKey };
@@ -529,11 +492,13 @@ export async function findConstructionRecordByNewEntry(
  * 工事登録 POST 直後: 登録レコードを特定し GET で T番号を取得する。
  * 1) recordId（POST 応答 or 一覧照合） 2) GET ポーリングで T番号 3) T番号のみのときは検索で ID
  */
-async function resolveConstructionRecordAfterCreateWithAuth(
+/** 登録 POST 直後に工事レコード ID / T番号を解決（@pocket 呼び出し回数を抑える） */
+export async function resolveConstructionRecordAfterCreate(
   calAppId: string,
   createResult: AtPocketCreateRecordResult,
   lookup: ConstructionLookupOpts,
   auth: AtPocketFetchAuth,
+  _fallbackAuth?: AtPocketFetchAuth,
 ): Promise<ConstructionRecordMatch> {
   const tField = lookup.tNumberFieldId?.trim();
   const fieldsCsv = [
@@ -564,45 +529,7 @@ async function resolveConstructionRecordAfterCreateWithAuth(
     );
   }
 
-  if (!recordId) {
-    const once = await findConstructionRecordByNewEntryOnce(
-      calAppId,
-      lookup,
-      auth,
-    );
-    recordId = once.recordId;
-    uniqueKey = uniqueKey ?? once.uniqueKey;
-  }
-
   return { recordId, uniqueKey };
-}
-
-/** 登録 POST 直後に工事レコード ID / T番号を解決（一覧・GET は参照キー推奨） */
-export async function resolveConstructionRecordAfterCreate(
-  calAppId: string,
-  createResult: AtPocketCreateRecordResult,
-  lookup: ConstructionLookupOpts,
-  auth: AtPocketFetchAuth,
-  fallbackAuth?: AtPocketFetchAuth,
-): Promise<ConstructionRecordMatch> {
-  let match = await resolveConstructionRecordAfterCreateWithAuth(
-    calAppId,
-    createResult,
-    lookup,
-    auth,
-  );
-  const fallbackKey = fallbackAuth?.apiKey?.trim();
-  const primaryKey = auth.apiKey?.trim();
-  if (!match.recordId && fallbackAuth && fallbackKey && fallbackKey !== primaryKey) {
-    const alt = await resolveConstructionRecordAfterCreateWithAuth(
-      calAppId,
-      createResult,
-      lookup,
-      fallbackAuth,
-    );
-    if (alt.recordId || alt.uniqueKey) match = alt;
-  }
-  return match;
 }
 
 /** @deprecated resolveConstructionRecordAfterCreate を使用 */
