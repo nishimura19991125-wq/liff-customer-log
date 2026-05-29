@@ -106,7 +106,10 @@ function coercePocketPlainString(raw: unknown): string {
  */
 export async function syncConstructionRecordToCustomerInfoApp(opts: {
   calAppId: string;
-  constructionRecordId: string;
+  /** 工事レコード ID（空枠更新時は必須。新規で取れないときは constructionUniqueKey と併用） */
+  constructionRecordId?: string;
+  /** 工事 T番号（recordId 未取得時に空枠登録と同様の連携を行う） */
+  constructionUniqueKey?: string;
   customerName: string;
   constructionFields: AtPocketFieldRow[];
   calendarAuth: AtPocketFetchAuth;
@@ -176,7 +179,8 @@ async function applyApClStaffFromLineUserToCustomerRecord(
 
 async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   calAppId: string;
-  constructionRecordId: string;
+  constructionRecordId?: string;
+  constructionUniqueKey?: string;
   customerName: string;
   constructionFields: AtPocketFieldRow[];
   calendarAuth: AtPocketFetchAuth;
@@ -185,6 +189,16 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   const customerAppId = process.env.CUSTOMER_INFO_APP_ID?.trim();
   if (!customerAppId) {
     return { kind: "skipped" };
+  }
+
+  const constructionRecordId = opts.constructionRecordId?.trim() || "";
+  const keyFromOpts = opts.constructionUniqueKey?.trim() || "";
+  if (!constructionRecordId && !keyFromOpts) {
+    return {
+      kind: "failed",
+      error:
+        "工事レコードを特定できませんでした。お客様情報アプリへの連携に必要な T番号またはレコード ID が取得できません。",
+    };
   }
 
   const customerUniqueKeyFieldEnv =
@@ -280,28 +294,39 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     .filter((id, i, arr) => id && arr.indexOf(id) === i)
     .join(",");
 
-  let recRow = await fetchRecordById(
-    opts.calAppId,
-    opts.constructionRecordId,
-    opts.calendarAuth,
-    fieldsCsv,
-  );
-  if (!recRow?.record) {
-    recRow = await fetchRecordById(
+  let recObj: Record<string, unknown> | null = null;
+  let uniqueKey = keyFromOpts;
+
+  if (constructionRecordId) {
+    let recRow = await fetchRecordById(
       opts.calAppId,
-      opts.constructionRecordId,
+      constructionRecordId,
       opts.calendarAuth,
+      fieldsCsv,
     );
+    if (!recRow?.record) {
+      recRow = await fetchRecordById(
+        opts.calAppId,
+        constructionRecordId,
+        opts.calendarAuth,
+      );
+    }
+
+    if (!recRow?.record || typeof recRow.record !== "object") {
+      return {
+        kind: "failed",
+        error: "工事アプリのレコードを再取得できませんでした。",
+      };
+    }
+
+    recObj = recRow.record as Record<string, unknown>;
+    if (!uniqueKey) {
+      uniqueKey = coercePocketPlainString(
+        pickRecordValueByFieldAliases(recObj, constructionKeyField),
+      );
+    }
   }
 
-  if (!recRow?.record || typeof recRow.record !== "object") {
-    return { kind: "failed", error: "工事アプリのレコードを再取得できませんでした。" };
-  }
-
-  const recObj = recRow.record as Record<string, unknown>;
-  const uniqueKey = coercePocketPlainString(
-    pickRecordValueByFieldAliases(recObj, constructionKeyField),
-  );
   if (!uniqueKey) {
     return {
       kind: "failed",
@@ -317,12 +342,14 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     customerRecord[resolvedCustomerName] = opts.customerName.trim();
   }
 
-  for (const pair of registrationPairs) {
-    const regValue = coercePocketPlainString(
-      pickRecordValueByFieldAliases(recObj, pair.constructionFieldId),
-    );
-    if (regValue) {
-      customerRecord[pair.customerFieldId] = regValue;
+  if (recObj) {
+    for (const pair of registrationPairs) {
+      const regValue = coercePocketPlainString(
+        pickRecordValueByFieldAliases(recObj, pair.constructionFieldId),
+      );
+      if (regValue) {
+        customerRecord[pair.customerFieldId] = regValue;
+      }
     }
   }
 

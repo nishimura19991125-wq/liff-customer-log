@@ -168,7 +168,7 @@ export function atPocketRecordIdFromCreateResult(
   );
 }
 
-type ConstructionLookupOpts = {
+export type ConstructionLookupOpts = {
   customerName: string;
   housingStatus: string;
   customerFieldId: string;
@@ -177,14 +177,21 @@ type ConstructionLookupOpts = {
   tNumberFieldId?: string;
 };
 
-async function findConstructionRecordIdByNewEntryOnce(
+export type ConstructionRecordMatch = {
+  recordId: string | null;
+  uniqueKey: string | null;
+};
+
+async function findConstructionRecordByNewEntryOnce(
   calAppId: string,
   opts: ConstructionLookupOpts,
   auth: AtPocketFetchAuth,
-): Promise<string | null> {
+): Promise<ConstructionRecordMatch> {
   const wantName = opts.customerName.trim();
   const wantHousing = opts.housingStatus.trim();
-  if (!wantName || !wantHousing) return null;
+  if (!wantName || !wantHousing) {
+    return { recordId: null, uniqueKey: null };
+  }
 
   const fieldParts = [
     opts.customerFieldId,
@@ -196,6 +203,7 @@ async function findConstructionRecordIdByNewEntryOnce(
 
   const recentCutoff = Date.now() - 5 * 60 * 1000;
   let bestId: string | null = null;
+  let bestKey: string | null = null;
   let bestScore = -1;
   let bestNumeric = -1;
 
@@ -243,6 +251,7 @@ async function findConstructionRecordIdByNewEntryOnce(
         bestScore = score;
         bestNumeric = n;
         bestId = rid;
+        bestKey = tNum.trim() || bestKey;
       }
     }
   };
@@ -266,7 +275,9 @@ async function findConstructionRecordIdByNewEntryOnce(
     );
     const rows = data.records ?? [];
     considerRows(rows);
-    if (bestScore >= 38) return bestId;
+    if (bestScore >= 38) {
+      return { recordId: bestId, uniqueKey: bestKey };
+    }
     if (rows.length < 200) break;
   }
 
@@ -277,35 +288,60 @@ async function findConstructionRecordIdByNewEntryOnce(
     listOpts,
   );
   considerRows(data.records ?? []);
-  return bestScore >= 18 ? bestId : null;
+  if (bestScore >= 18) {
+    return { recordId: bestId, uniqueKey: bestKey };
+  }
+  return { recordId: null, uniqueKey: null };
 }
 
 /**
  * 登録 API が ID を返さないとき、お客様名・住宅ステータス等で直近レコードを照合する（リトライ付き）。
  */
-export async function findConstructionRecordIdByNewEntry(
+export async function findConstructionRecordByNewEntry(
   calAppId: string,
   opts: ConstructionLookupOpts,
   auth: AtPocketFetchAuth,
-): Promise<string | null> {
+): Promise<ConstructionRecordMatch> {
   const delays = [0, 350, 900, 1800];
-  let last: string | null = null;
+  let last: ConstructionRecordMatch = { recordId: null, uniqueKey: null };
   for (const delay of delays) {
     if (delay > 0) await sleep(delay);
-    last = await findConstructionRecordIdByNewEntryOnce(calAppId, opts, auth);
-    if (last) return last;
+    last = await findConstructionRecordByNewEntryOnce(calAppId, opts, auth);
+    if (last.recordId || last.uniqueKey) return last;
   }
   return last;
 }
 
-/** 工事登録 POST 直後に recordId を可能な限り解決する */
+/** 工事登録 POST 直後に recordId / T番号 を可能な限り解決する */
+export async function resolveConstructionRecordAfterCreate(
+  calAppId: string,
+  createResult: AtPocketCreateRecordResult,
+  lookup: ConstructionLookupOpts,
+  auth: AtPocketFetchAuth,
+): Promise<ConstructionRecordMatch> {
+  const fromCreate = atPocketRecordIdFromCreateResult(createResult);
+  if (fromCreate) {
+    const listed = await findConstructionRecordByNewEntry(calAppId, lookup, auth);
+    return {
+      recordId: fromCreate,
+      uniqueKey: listed.uniqueKey,
+    };
+  }
+  return findConstructionRecordByNewEntry(calAppId, lookup, auth);
+}
+
+/** @deprecated resolveConstructionRecordAfterCreate を使用 */
 export async function resolveConstructionRecordIdAfterCreate(
   calAppId: string,
   createResult: AtPocketCreateRecordResult,
   lookup: ConstructionLookupOpts,
   auth: AtPocketFetchAuth,
 ): Promise<string | null> {
-  const fromCreate = atPocketRecordIdFromCreateResult(createResult);
-  if (fromCreate) return fromCreate;
-  return findConstructionRecordIdByNewEntry(calAppId, lookup, auth);
+  const m = await resolveConstructionRecordAfterCreate(
+    calAppId,
+    createResult,
+    lookup,
+    auth,
+  );
+  return m.recordId;
 }

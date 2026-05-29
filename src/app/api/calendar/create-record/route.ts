@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 
-import { resolveConstructionRecordIdAfterCreate } from "@/lib/atpocket-record-id";
+import { resolveConstructionRecordAfterCreate } from "@/lib/atpocket-record-id";
 import {
   apiKeyForCalendarWrite,
   createRecord,
   fetchAppFields,
 } from "@/lib/atpocket";
+import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
 import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
-import { buildCalendarPatchAfterConstructionSave } from "@/lib/calendar-record-patch-server";
-import { syncConstructionRecordToCustomerInfoApp } from "@/lib/sync-construction-to-customer-info";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import {
   EMPTY_FILL_HOUSING_STATUS_NEW_BUILD,
@@ -229,7 +228,7 @@ export async function POST(request: Request) {
     constructionSaved = true;
     invalidateAllCalendarPayloadCache();
 
-    const constructionRecordId = await resolveConstructionRecordIdAfterCreate(
+    const constructionMatch = await resolveConstructionRecordAfterCreate(
       calAppId,
       createResult,
       {
@@ -244,65 +243,17 @@ export async function POST(request: Request) {
       pocketAuth,
     );
 
-    if (process.env.CUSTOMER_INFO_APP_ID?.trim()) {
-      if (!constructionRecordId) {
-        return NextResponse.json(
-          {
-            error:
-              "工事レコードは登録されましたが、レコード ID を取得できませんでした。お客様情報アプリへの連携は行えません。しばらくしてからカレンダーを更新し、登録された案件を確認してください。",
-            constructionSaved: true,
-          },
-          { status: 502 },
-        );
-      }
-      const customerSync = await syncConstructionRecordToCustomerInfoApp({
-        calAppId,
-        constructionRecordId,
-        customerName,
-        constructionFields,
-        calendarAuth: pocketAuth,
-        lineUserId: auth.lineUserId,
-      });
-      if (customerSync.kind === "failed") {
-        return NextResponse.json(
-          {
-            error: `${customerSync.error}（工事アプリへの登録は完了しています）`,
-            constructionSaved: true,
-          },
-          { status: 502 },
-        );
-      }
-      const calendarPatch = await buildCalendarPatchAfterConstructionSave(
-        calAppId,
-        constructionRecordId,
-        pocketAuth,
-        body.viewYear,
-        body.viewMonth,
-      );
-
-      return NextResponse.json({
-        ok: true,
-        customerInfoSynced: customerSync.kind === "synced",
-        recordId: constructionRecordId,
-        ...(calendarPatch ? { calendarPatch } : {}),
-      });
-    }
-
-    const calendarPatch =
-      constructionRecordId != null
-        ? await buildCalendarPatchAfterConstructionSave(
-            calAppId,
-            constructionRecordId,
-            pocketAuth,
-            body.viewYear,
-            body.viewMonth,
-          )
-        : null;
-
-    return NextResponse.json({
-      ok: true,
-      ...(constructionRecordId ? { recordId: constructionRecordId } : {}),
-      ...(calendarPatch ? { calendarPatch } : {}),
+    return finalizeConstructionCalendarSave({
+      calAppId,
+      constructionRecordId: constructionMatch.recordId,
+      constructionUniqueKey: constructionMatch.uniqueKey,
+      customerName,
+      constructionFields,
+      calendarAuth: pocketAuth,
+      lineUserId: auth.lineUserId,
+      viewYear: body.viewYear,
+      viewMonth: body.viewMonth,
+      savedVerb: "登録",
     });
   } catch (e) {
     console.error("[api/calendar/create-record]", e);

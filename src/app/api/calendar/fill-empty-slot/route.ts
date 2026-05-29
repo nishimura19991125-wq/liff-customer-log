@@ -20,8 +20,7 @@ import {
 } from "@/lib/atpocket";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
-import { buildCalendarPatchAfterConstructionSave } from "@/lib/calendar-record-patch-server";
-import { syncConstructionRecordToCustomerInfoApp } from "@/lib/sync-construction-to-customer-info";
+import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -310,37 +309,16 @@ export async function POST(request: Request) {
     constructionUpdated = true;
     invalidateAllCalendarPayloadCache();
 
-    const customerSync = await syncConstructionRecordToCustomerInfoApp({
+    return finalizeConstructionCalendarSave({
       calAppId,
       constructionRecordId: recordId,
       customerName,
       constructionFields,
       calendarAuth: pocketAuth,
       lineUserId: auth.lineUserId,
-    });
-    if (customerSync.kind === "failed") {
-      return NextResponse.json(
-        {
-          error: `${customerSync.error}（工事アプリへの更新は完了しています）`,
-          constructionSaved: true,
-        },
-        { status: 502 },
-      );
-    }
-
-    const calendarPatch = await buildCalendarPatchAfterConstructionSave(
-      calAppId,
-      recordId,
-      pocketAuth,
-      body.viewYear,
-      body.viewMonth,
-    );
-
-    return NextResponse.json({
-      ok: true,
-      customerInfoSynced: customerSync.kind === "synced",
-      recordId,
-      ...(calendarPatch ? { calendarPatch } : {}),
+      viewYear: body.viewYear,
+      viewMonth: body.viewMonth,
+      savedVerb: "更新",
     });
   } catch (e) {
     console.error("[api/calendar/fill-empty-slot]", e);
