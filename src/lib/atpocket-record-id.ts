@@ -6,6 +6,11 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Netlify 等のサーバーレス（約10秒制限）向け。長い待機はタイムアウト→「登録に失敗しました」になる */
+const POST_CREATE_LOOKUP_DELAYS_MS = [0, 600, 1800] as const;
+const POST_CREATE_TNUMBER_POLL_DELAYS_MS = [0, 500, 1200, 2500] as const;
+export const SYNC_TNUMBER_POLL_DELAYS_MS = [0, 400, 1200] as const;
+
 /** accessEditUrl / Location からレコード ID を抽出（…/records/123/edit 等） */
 export function recordIdFromAccessEditUrl(url: string): string | null {
   const s = url.trim();
@@ -210,10 +215,10 @@ export async function pollConstructionTNumberByRecordId(
   tNumberFieldId: string,
   auth: AtPocketFetchAuth,
   fieldsCsv?: string,
+  pollDelaysMs: readonly number[] = POST_CREATE_TNUMBER_POLL_DELAYS_MS,
 ): Promise<string | null> {
   const csv = fieldsCsv?.trim() || tNumberFieldId;
-  const delays = [0, 400, 900, 1800, 3000, 5000, 8000, 12000];
-  for (const delay of delays) {
+  for (const delay of pollDelaysMs) {
     if (delay > 0) await sleep(delay);
     let row: Awaited<ReturnType<typeof fetchRecordById>> = null;
     try {
@@ -328,6 +333,12 @@ async function findConstructionRecordByNewEntryOnce(
   considerRows(recent.records ?? []);
   if (bestScore >= 35 && (bestId || bestKey)) {
     return { recordId: bestId, uniqueKey: bestKey };
+  }
+  if (newestNameMatchId) {
+    return {
+      recordId: newestNameMatchId,
+      uniqueKey: newestNameMatchKey,
+    };
   }
 
   for (let page = 1; page <= 5; page++) {
@@ -453,9 +464,8 @@ export async function findConstructionRecordByNewEntry(
   opts: ConstructionLookupOpts,
   auth: AtPocketFetchAuth,
 ): Promise<ConstructionRecordMatch> {
-  const delays = [0, 500, 1200, 2500, 4000, 6500, 10000];
   let last: ConstructionRecordMatch = { recordId: null, uniqueKey: null };
-  for (const delay of delays) {
+  for (const delay of POST_CREATE_LOOKUP_DELAYS_MS) {
     if (delay > 0) await sleep(delay);
     last = await findConstructionRecordByNewEntryOnce(calAppId, opts, auth);
     if (last.recordId && last.uniqueKey) return last;
@@ -504,28 +514,14 @@ export async function resolveConstructionRecordAfterCreate(
     );
   }
 
-  if (uniqueKey && !recordId && tField) {
-    recordId = await resolveConstructionRecordIdByTNumber(
+  if (!recordId) {
+    const once = await findConstructionRecordByNewEntryOnce(
       calAppId,
-      uniqueKey,
-      tField,
+      lookup,
       auth,
     );
-  }
-
-  if (!recordId) {
-    const listed = await findConstructionRecordByNewEntry(calAppId, lookup, auth);
-    recordId = listed.recordId;
-    uniqueKey = uniqueKey ?? listed.uniqueKey;
-    if (recordId && !uniqueKey && tField) {
-      uniqueKey = await pollConstructionTNumberByRecordId(
-        calAppId,
-        recordId,
-        tField,
-        auth,
-        fieldsCsv,
-      );
-    }
+    recordId = once.recordId;
+    uniqueKey = uniqueKey ?? once.uniqueKey;
   }
 
   return { recordId, uniqueKey };

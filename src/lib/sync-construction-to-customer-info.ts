@@ -3,6 +3,7 @@ import "server-only";
 import {
   atPocketRecordIdFromCreateResult,
   pollConstructionTNumberByRecordId,
+  SYNC_TNUMBER_POLL_DELAYS_MS,
 } from "@/lib/atpocket-record-id";
 import type { AtPocketFieldRow, AtPocketFetchAuth } from "@/lib/atpocket";
 import {
@@ -337,6 +338,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       constructionKeyField,
       opts.calendarAuth,
       fieldsCsv,
+      SYNC_TNUMBER_POLL_DELAYS_MS,
     );
     if (polledKey) uniqueKey = polledKey;
     if (uniqueKey && !recObj) {

@@ -5,6 +5,10 @@
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
+# Next.js の API（工事日未定登録など）の実行上限（秒）。Pro で最大26。Free は10固定。
+[functions]
+  node_bundler = "esbuild"
+
 [build.environment]
   NODE_VERSION = "20"
   # Secrets Controller がビルド成果物に埋め込まれた値と突き合わせる。

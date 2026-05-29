@@ -30,6 +30,8 @@ import {
 } from "@/lib/staff-construction-handler-candidates";
 
 export const dynamic = "force-dynamic";
+/** Netlify Pro 等で延長可能。Free はプラットフォーム上限（約10秒） */
+export const maxDuration = 26;
 
 /** 新築案件の任意日程（YYYY-MM-DD）。未送信・空は書き込まない */
 type Body = {

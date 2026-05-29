@@ -803,12 +803,20 @@ function NewConstructionRecordPanel({
             : {}),
         }),
       });
-      const data = (await res.json()) as {
+      const rawBody = await res.text();
+      let data: {
         error?: string;
         customerInfoSynced?: boolean;
         constructionSaved?: boolean;
         calendarPatch?: CalendarRecordMonthPatch;
-      };
+      } = {};
+      if (rawBody.trim()) {
+        try {
+          data = JSON.parse(rawBody) as typeof data;
+        } catch {
+          data = {};
+        }
+      }
       if (!res.ok) {
         if (res.status === 401 && isLineSessionExpiredPayload(data)) {
           onSessionExpired?.();
@@ -823,13 +831,15 @@ function NewConstructionRecordPanel({
           setAppSettingsDayDate("");
           await onSaved(data.calendarPatch ?? null);
         }
+        const fallback =
+          res.status === 504 || res.status === 408
+            ? "処理がタイムアウトしました。工事アプリに登録されている可能性があります。カレンダーを更新して確認してください。"
+            : data.constructionSaved
+              ? "工事アプリへの登録は完了しましたが、お客様情報アプリへの連携に失敗しました。"
+              : `登録に失敗しました（HTTP ${res.status}）。しばらくしてから再度お試しください。`;
         setFeedback({
           kind: "err",
-          text:
-            data.error ??
-            (data.constructionSaved
-              ? "工事アプリへの登録は完了しましたが、お客様情報アプリへの連携に失敗しました。"
-              : "登録に失敗しました"),
+          text: data.error?.trim() || fallback,
         });
         return;
       }
