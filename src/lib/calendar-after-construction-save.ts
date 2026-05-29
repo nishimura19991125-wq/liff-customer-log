@@ -30,7 +30,7 @@ export async function finalizeConstructionCalendarSave(opts: {
       {
         error:
           savedVerb === "登録"
-            ? "工事レコードは登録されましたが、登録内容を再取得できませんでした。お客様情報アプリへの連携は行えません。しばらくしてからカレンダーを更新し、登録された案件を確認してください。"
+            ? `工事レコードは登録されましたが、登録内容を再取得できませんでした（お客様名「${opts.customerName}」で工事アプリを検索）。お客様情報アプリへの連携は行えません。@pocket に案件があるか、CALENDAR_EMPTY_FILL_CUSTOMER_NAME_FIELD_ID・CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID の uniqueId を確認してください。`
             : "工事レコードは更新されましたが、レコードを再取得できませんでした。お客様情報アプリへの連携は行えません。",
         constructionSaved: true,
       },

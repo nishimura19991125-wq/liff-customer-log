@@ -144,6 +144,7 @@ export async function POST(request: Request) {
     handlerPutValue = resolvedName.name;
   }
 
+  /** 書込専用キー未設定時は CALENDAR_ATPOCKET_API_KEY が登録・一覧の両方に使われる */
   const pocketWriteAuth = { apiKey: apiKeyForCalendarWrite() };
   const pocketReadAuth = { apiKey: apiKeyForCalendarPocket() };
 

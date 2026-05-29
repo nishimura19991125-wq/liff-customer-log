@@ -332,13 +332,37 @@ async function findConstructionRecordByNewEntryOnce(
     appEnv: "CALENDAR_APP_ID",
   } as const;
 
-  const byName = await fetchRecordsList(
-    calAppId,
-    { limit: "100", page: "1", fields: fieldsCsv, query: wantName },
-    auth,
-    listOpts,
-  );
-  considerRows(byName.records ?? []);
+  const considerByNamePages = async (withFields: boolean) => {
+    for (let page = 1; page <= 5; page++) {
+      const data = await fetchRecordsList(
+        calAppId,
+        {
+          limit: "100",
+          page: String(page),
+          ...(withFields && fieldsCsv ? { fields: fieldsCsv } : {}),
+          query: wantName,
+        },
+        auth,
+        listOpts,
+      );
+      const rows = data.records ?? [];
+      considerRows(rows);
+      if (newestNameMatchId) return true;
+      if (bestScore >= 35 && (bestId || bestKey)) return true;
+      if (rows.length < 100) break;
+    }
+    return false;
+  };
+
+  if (await considerByNamePages(true)) {
+    return {
+      recordId: newestNameMatchId ?? bestId,
+      uniqueKey: newestNameMatchKey ?? bestKey,
+    };
+  }
+
+  await considerByNamePages(false);
+
   if (newestNameMatchId) {
     return {
       recordId: newestNameMatchId,
@@ -366,24 +390,25 @@ async function findConstructionRecordByNewEntryOnce(
     };
   }
 
-  for (let page = 1; page <= 5; page++) {
+  /** 一覧が古い順のとき、新規レコードは末尾ページに出ることがある */
+  let tailRows: AtPocketRecordRow[] = [];
+  for (let page = 1; page <= 4; page++) {
     const data = await fetchRecordsList(
       calAppId,
-      {
-        limit: "200",
-        page: String(page),
-        fields: fieldsCsv,
-        query: wantName,
-      },
+      { limit: "300", page: String(page), fields: fieldsCsv },
       auth,
       listOpts,
     );
-    const rows = data.records ?? [];
-    considerRows(rows);
-    if (bestScore >= 35 && (bestId || bestKey)) {
-      return { recordId: bestId, uniqueKey: bestKey };
-    }
-    if (rows.length < 200) break;
+    tailRows = data.records ?? [];
+    if (tailRows.length < 300) break;
+  }
+  considerRows(tailRows);
+
+  if (newestNameMatchId) {
+    return {
+      recordId: newestNameMatchId,
+      uniqueKey: newestNameMatchKey,
+    };
   }
 
   considerRows(recent.records ?? [], true);
