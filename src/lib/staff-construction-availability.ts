@@ -9,10 +9,17 @@ export function pocketTableCellToPlainString(raw: unknown): string {
   }
   if (typeof raw === "object") {
     const o = raw as Record<string, unknown>;
+    const value = o.value;
+    if (typeof value === "string") return value.trim();
+    if (typeof value === "number" || typeof value === "boolean") {
+      return String(value).trim();
+    }
     const label = o.label;
     if (typeof label === "string") return label.trim();
     const text = o.text;
     if (typeof text === "string") return text.trim();
+    const displayValue = o.displayValue;
+    if (typeof displayValue === "string") return displayValue.trim();
     const caption = o.caption;
     if (typeof caption === "string") return caption.trim();
   }

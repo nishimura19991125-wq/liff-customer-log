@@ -6,10 +6,13 @@ import { mergeStaffNameOptions } from "@/lib/staff-name-options";
 
 type ApClStaffRolePicker = {
   options: string[];
+  defaultName?: string | null;
 };
 
 type ApClStaffPickerPayload = {
   configured: boolean;
+  configError?: string;
+  rosterEmpty?: boolean;
   ap: ApClStaffRolePicker;
   cl: ApClStaffRolePicker;
 };
@@ -516,12 +519,27 @@ export function CustomerInfoEditForm({
         };
         if (cancelled) return;
         if (!res.ok) {
-          setApClStaff(null);
+          setApClStaff({
+            configured: false,
+            configError:
+              typeof data.error === "string"
+                ? data.error
+                : "AP/CL担当者リストの取得に失敗しました",
+            ap: { options: [], defaultName: null },
+            cl: { options: [], defaultName: null },
+          });
           return;
         }
         setApClStaff(data);
       } catch {
-        if (!cancelled) setApClStaff(null);
+        if (!cancelled) {
+          setApClStaff({
+            configured: false,
+            configError: "AP/CL担当者リストの取得に失敗しました（通信エラー）",
+            ap: { options: [], defaultName: null },
+            cl: { options: [], defaultName: null },
+          });
+        }
       } finally {
         if (!cancelled) setApClStaffLoading(false);
       }
@@ -561,8 +579,11 @@ export function CustomerInfoEditForm({
         }
         if (f.key === "apStaff" || f.key === "clStaff") {
           const role = f.key === "apStaff" ? "ap" : "cl";
-          if (apClStaffLoading || !apClStaff?.configured) {
+          if (apClStaffLoading) {
             return { ...f, options: [], optionsPending: true };
+          }
+          if (!apClStaff?.configured) {
+            return { ...f, options: [], optionsPending: false };
           }
           const picker = apClStaff[role];
           return {
@@ -716,14 +737,27 @@ export function CustomerInfoEditForm({
           ) : null}
           {(() => {
             if (field.key === "apStaff" || field.key === "clStaff") {
+              const roleKey = field.key === "apStaff" ? "ap" : "cl";
               const roleLabel = field.key === "apStaff" ? "AP" : "CL";
               return (
-                <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                <p
+                  className={`mt-1 text-[11px] leading-relaxed ${
+                    apClStaff?.configError
+                      ? "font-semibold text-amber-800"
+                      : "text-slate-500"
+                  }`}
+                >
                   {apClStaffLoading
                     ? `${roleLabel}担当者一覧を読み込み中…`
-                    : apClStaff?.configured
-                      ? `スタッフ名簿の${roleLabel}稼働状況が「稼働」の社員から選択`
-                      : "スタッフ名簿の設定（STAFF_APP_ID・氏名列・AP/CL稼働状況・LINE_USER_ID①②の環境変数）を確認してください"}
+                    : apClStaff?.configError
+                      ? apClStaff.configError
+                      : apClStaff?.configured
+                        ? apClStaff.rosterEmpty
+                          ? "スタッフ名簿を取得できませんでした。しばらくしてから画面を更新してください。"
+                          : (apClStaff[roleKey].options.length === 0
+                              ? `「稼働」の${roleLabel}担当者が名簿にいません。AP/CL稼働状況の値を確認してください。`
+                              : `スタッフ名簿の${roleLabel}稼働状況が「稼働」の社員から選択`)
+                        : "スタッフ名簿の設定（STAFF_APP_ID・氏名列・AP/CL稼働状況・LINE_USER_ID①②の環境変数）を確認してください"}
                 </p>
               );
             }

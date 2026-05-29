@@ -1,6 +1,7 @@
 import "server-only";
 
 import { fetchRecordById } from "@/lib/atpocket";
+import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
 import { fetchStaffRosterRowsCached } from "@/lib/staff-roster-cache";
 import {
   readStaffImportKeyFromRawRecord,
@@ -77,13 +78,15 @@ export async function fetchConstructionHandlerStaffCandidates(): Promise<
     const ro = rec as Record<string, unknown>;
     if (
       !staffConstructionAvailabilityIsActive(
-        ro[cfg.availabilityFieldId],
+        pickRecordValueByFieldAliases(ro, cfg.availabilityFieldId),
         cfg.activeLabel,
       )
     ) {
       continue;
     }
-    const name = pocketTableCellToPlainString(ro[cfg.nameFieldId]);
+    const name = pocketTableCellToPlainString(
+      pickRecordValueByFieldAliases(ro, cfg.nameFieldId),
+    );
     if (!name) continue;
     const importKey = importKeyId
       ? readStaffImportKeyFromRawRecord(ro)
@@ -133,11 +136,13 @@ export async function resolveConstructionHandlerNameForActiveStaff(
     return { ok: false, reason: "not_found" };
   }
   const rec = row.record as Record<string, unknown>;
-  const name = pocketTableCellToPlainString(rec[cfg.nameFieldId]);
+  const name = pocketTableCellToPlainString(
+    pickRecordValueByFieldAliases(rec, cfg.nameFieldId),
+  );
   if (!name) return { ok: false, reason: "no_name" };
   if (
     !staffConstructionAvailabilityIsActive(
-      rec[cfg.availabilityFieldId],
+      pickRecordValueByFieldAliases(rec, cfg.availabilityFieldId),
       cfg.activeLabel,
     )
   ) {

@@ -27,9 +27,25 @@ export async function GET(request: Request) {
     return NextResponse.json(payload);
   } catch (e) {
     console.error("[api/customer-info/ap-cl-staff]", e);
+    const msg = e instanceof Error ? e.message : String(e);
+    const rateLimited =
+      msg.includes("429") || msg.includes("Too Many Request");
     return NextResponse.json(
-      { error: "AP/CL担当者リストの取得に失敗しました" },
-      { status: 502 },
+      {
+        configured: false,
+        ap: { options: [], defaultName: null },
+        cl: { options: [], defaultName: null },
+        error: rateLimited
+          ? "担当者一覧の取得が混み合っています。しばらくしてから再度お試しください。"
+          : "AP/CL担当者リストの取得に失敗しました",
+        configError: rateLimited
+          ? "担当者一覧の取得が混み合っています。しばらくしてから再度お試しください。"
+          : undefined,
+      },
+      {
+        status: rateLimited ? 429 : 502,
+        ...(rateLimited ? { headers: { "Retry-After": "120" } } : {}),
+      },
     );
   }
 }
