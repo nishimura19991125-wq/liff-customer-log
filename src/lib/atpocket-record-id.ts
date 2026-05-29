@@ -1,5 +1,5 @@
 import type { AtPocketCreateRecordResult, AtPocketFetchAuth, AtPocketRecordRow } from "@/lib/atpocket";
-import { fetchRecordsList } from "@/lib/atpocket";
+import { fetchRecordById, fetchRecordsList } from "@/lib/atpocket";
 import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
 
 function sleep(ms: number): Promise<void> {
@@ -182,6 +182,50 @@ export type ConstructionRecordMatch = {
   uniqueKey: string | null;
 };
 
+function uniqueKeyFromPocketRow(
+  row: AtPocketRecordRow | Record<string, unknown> | null | undefined,
+  tNumberFieldId: string | undefined,
+): string | null {
+  if (!tNumberFieldId?.trim() || !row || typeof row !== "object") return null;
+  const rec =
+    "record" in row && row.record && typeof row.record === "object"
+      ? (row.record as Record<string, unknown>)
+      : (row as Record<string, unknown>);
+  const key = coercePlainString(
+    pickRecordValueByFieldAliases(rec, tNumberFieldId),
+  );
+  return key || null;
+}
+
+/** 自動採番直後は T番号が空のことがあるため、GET で反映を待つ */
+async function pollConstructionTNumber(
+  calAppId: string,
+  recordId: string,
+  tNumberFieldId: string,
+  auth: AtPocketFetchAuth,
+  fieldsCsv?: string,
+): Promise<string | null> {
+  const csv =
+    fieldsCsv?.trim() ||
+    tNumberFieldId;
+  const delays = [0, 400, 900, 1800, 3000, 5000];
+  for (const delay of delays) {
+    if (delay > 0) await sleep(delay);
+    let row: Awaited<ReturnType<typeof fetchRecordById>> = null;
+    try {
+      row = await fetchRecordById(calAppId, recordId, auth, csv);
+      if (!row?.record) {
+        row = await fetchRecordById(calAppId, recordId, auth);
+      }
+    } catch {
+      continue;
+    }
+    const key = uniqueKeyFromPocketRow(row, tNumberFieldId);
+    if (key) return key;
+  }
+  return null;
+}
+
 async function findConstructionRecordByNewEntryOnce(
   calAppId: string,
   opts: ConstructionLookupOpts,
@@ -201,13 +245,13 @@ async function findConstructionRecordByNewEntryOnce(
   ].filter((id, i, arr) => id && arr.indexOf(id) === i);
   const fieldsCsv = fieldParts.join(",");
 
-  const recentCutoff = Date.now() - 5 * 60 * 1000;
+  const recentCutoff = Date.now() - 15 * 60 * 1000;
   let bestId: string | null = null;
   let bestKey: string | null = null;
   let bestScore = -1;
   let bestNumeric = -1;
 
-  const considerRows = (rows: AtPocketRecordRow[]) => {
+  const considerRows = (rows: AtPocketRecordRow[], nameOnly = false) => {
     for (const row of rows) {
       const rec = row.record;
       if (!rec || typeof rec !== "object") continue;
@@ -232,25 +276,25 @@ async function findConstructionRecordByNewEntryOnce(
         : "";
 
       let score = 10;
-      if (housingMatches(housing, wantHousing)) {
-        score += 30;
-      } else if (housing.trim()) {
-        continue;
+      if (!nameOnly) {
+        if (housingMatches(housing, wantHousing)) {
+          score += 30;
+        } else if (housing.trim()) {
+          continue;
+        }
+        if (opts.startDateFieldId && !startRaw.trim()) score += 8;
       }
-
-      if (opts.startDateFieldId && !startRaw.trim()) score += 8;
-      if (tNum.trim()) score += 5;
+      if (tNum.trim()) score += 12;
 
       const ts = rowTimestampMs(row);
       if (ts >= recentCutoff) score += 15;
 
       const rid = atPocketRecordIdFromRow(row);
-      if (!rid) continue;
-      const n = recordIdNumeric(rid);
+      const n = rid ? recordIdNumeric(rid) : -1;
       if (score > bestScore || (score === bestScore && n > bestNumeric)) {
         bestScore = score;
         bestNumeric = n;
-        bestId = rid;
+        bestId = rid || bestId;
         bestKey = tNum.trim() || bestKey;
       }
     }
@@ -260,6 +304,17 @@ async function findConstructionRecordByNewEntryOnce(
     operation: "calendar:新規登録後のrecordId照合",
     appEnv: "CALENDAR_APP_ID",
   } as const;
+
+  const recent = await fetchRecordsList(
+    calAppId,
+    { limit: "150", page: "1", fields: fieldsCsv },
+    auth,
+    listOpts,
+  );
+  considerRows(recent.records ?? []);
+  if (bestScore >= 35 && (bestId || bestKey)) {
+    return { recordId: bestId, uniqueKey: bestKey };
+  }
 
   for (let page = 1; page <= 5; page++) {
     const data = await fetchRecordsList(
@@ -275,23 +330,18 @@ async function findConstructionRecordByNewEntryOnce(
     );
     const rows = data.records ?? [];
     considerRows(rows);
-    if (bestScore >= 38) {
+    if (bestScore >= 35 && (bestId || bestKey)) {
       return { recordId: bestId, uniqueKey: bestKey };
     }
     if (rows.length < 200) break;
   }
 
-  const data = await fetchRecordsList(
-    calAppId,
-    { limit: "300", page: "1", fields: fieldsCsv },
-    auth,
-    listOpts,
-  );
-  considerRows(data.records ?? []);
-  if (bestScore >= 18) {
+  considerRows(recent.records ?? [], true);
+  if (bestScore >= 12 && (bestId || bestKey)) {
     return { recordId: bestId, uniqueKey: bestKey };
   }
-  return { recordId: null, uniqueKey: null };
+
+  return { recordId: bestId, uniqueKey: bestKey };
 }
 
 /**
@@ -302,12 +352,14 @@ export async function findConstructionRecordByNewEntry(
   opts: ConstructionLookupOpts,
   auth: AtPocketFetchAuth,
 ): Promise<ConstructionRecordMatch> {
-  const delays = [0, 350, 900, 1800];
+  const delays = [0, 500, 1200, 2500, 4000];
   let last: ConstructionRecordMatch = { recordId: null, uniqueKey: null };
   for (const delay of delays) {
     if (delay > 0) await sleep(delay);
     last = await findConstructionRecordByNewEntryOnce(calAppId, opts, auth);
-    if (last.recordId || last.uniqueKey) return last;
+    if (last.recordId && last.uniqueKey) return last;
+    if (last.uniqueKey) return last;
+    if (last.recordId) return last;
   }
   return last;
 }
@@ -319,15 +371,48 @@ export async function resolveConstructionRecordAfterCreate(
   lookup: ConstructionLookupOpts,
   auth: AtPocketFetchAuth,
 ): Promise<ConstructionRecordMatch> {
-  const fromCreate = atPocketRecordIdFromCreateResult(createResult);
-  if (fromCreate) {
-    const listed = await findConstructionRecordByNewEntry(calAppId, lookup, auth);
-    return {
-      recordId: fromCreate,
-      uniqueKey: listed.uniqueKey,
-    };
+  const tField = lookup.tNumberFieldId?.trim();
+  const fieldsCsv = [
+    lookup.customerFieldId,
+    lookup.housingFieldId,
+    lookup.startDateFieldId,
+    tField,
+  ]
+    .filter((id, i, arr) => id && arr.indexOf(id) === i)
+    .join(",");
+
+  let recordId = atPocketRecordIdFromCreateResult(createResult);
+  let uniqueKey = tField ? uniqueKeyFromPocketRow(createResult.row, tField) : null;
+
+  if (recordId && !uniqueKey && tField) {
+    uniqueKey = await pollConstructionTNumber(
+      calAppId,
+      recordId,
+      tField,
+      auth,
+      fieldsCsv,
+    );
   }
-  return findConstructionRecordByNewEntry(calAppId, lookup, auth);
+
+  if (recordId && uniqueKey) {
+    return { recordId, uniqueKey };
+  }
+
+  const listed = await findConstructionRecordByNewEntry(calAppId, lookup, auth);
+  recordId = recordId ?? listed.recordId;
+  uniqueKey = uniqueKey ?? listed.uniqueKey;
+
+  if (recordId && !uniqueKey && tField) {
+    uniqueKey = await pollConstructionTNumber(
+      calAppId,
+      recordId,
+      tField,
+      auth,
+      fieldsCsv,
+    );
+  }
+
+  return { recordId, uniqueKey };
 }
 
 /** @deprecated resolveConstructionRecordAfterCreate を使用 */
