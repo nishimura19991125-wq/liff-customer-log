@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   boundStaffFromRosterRows,
   fetchStaffRosterRowsCached,
+  getStaffRosterRowsBestEffort,
 } from "@/lib/staff-roster-cache";
 import {
   lineAuthUnauthorizedResponse,
@@ -41,7 +42,20 @@ export async function GET(request: Request) {
     const lineBindingOn = staffLineBindingEnabled(lineIds);
     const lineConfigError = staffLineBindingConfigError();
 
-    const rows = await fetchStaffRosterRowsCached();
+    let rows: Awaited<ReturnType<typeof fetchStaffRosterRowsCached>>;
+    let rosterStale = false;
+    try {
+      rows = await fetchStaffRosterRowsCached();
+    } catch (e) {
+      const fallback = getStaffRosterRowsBestEffort();
+      if (fallback.length > 0) {
+        console.warn("[api/staff] using stale roster after fetch error", e);
+        rows = fallback;
+        rosterStale = true;
+      } else {
+        throw e;
+      }
+    }
     const includeImportKey = Boolean(staffImportKeyFieldIdResolved());
 
     const staff = rows
@@ -70,20 +84,35 @@ export async function GET(request: Request) {
       ? boundStaffFromRosterRows(rows, caller.lineUserId)
       : null;
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       staff,
       boundStaff,
       lineUserId: caller.lineUserId,
       bindingEnabled: lineBindingOn,
+      ...(rosterStale ? { rosterStale: true } : {}),
       ...(lineConfigError && !lineBindingOn
         ? { bindingConfigError: lineConfigError }
         : {}),
     });
+    if (rosterStale) {
+      res.headers.set("Retry-After", "120");
+    }
+    return res;
   } catch (e) {
     console.error("[api/staff]", e);
+    const msg = e instanceof Error ? e.message : String(e);
+    const isRateLimited =
+      msg.includes("429") || msg.includes("Too Many Request");
     return NextResponse.json(
-      { error: "担当者一覧の取得に失敗しました" },
-      { status: 502 },
+      {
+        error: isRateLimited
+          ? "担当者一覧の取得が混み合っています。しばらくしてから再度お試しください。"
+          : "担当者一覧の取得に失敗しました",
+      },
+      {
+        status: isRateLimited ? 429 : 502,
+        ...(isRateLimited ? { headers: { "Retry-After": "120" } } : {}),
+      },
     );
   }
 }

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { LIFF_PROFILE_CACHE_KEY } from "@/lib/liff-profile-cache-key";
+import { fetchStaffApiWithSessionCache } from "@/lib/staff-api-session-cache";
 
 type StaffApiPayload = {
   staff?: { id: string; name: string; importKey?: string }[];
@@ -75,12 +76,9 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
           /* ignore */
         }
 
-        const res = await fetch("/api/staff", {
-          headers: { Authorization: `Bearer ${idToken}` },
-        });
-        const data = (await res.json()) as StaffApiPayload;
+        const { res, data } = await fetchStaffApiWithSessionCache(idToken);
         if (cancelled) return;
-        if (!res.ok) {
+        if (!res.ok && !data.staff?.length) {
           if (res.status === 401 && isLineSessionExpiredPayload(data)) {
             setSessionExpired(true);
           }

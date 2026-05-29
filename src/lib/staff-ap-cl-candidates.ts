@@ -6,7 +6,10 @@ import type {
   AtPocketRequestContext,
 } from "@/lib/atpocket";
 import { apiKeyForStaffPocketRead, fetchAppFields } from "@/lib/atpocket";
-import { fetchStaffRosterRowsCached } from "@/lib/staff-roster-cache";
+import {
+  fetchStaffRosterRowsCached,
+  staffRosterCacheTtlMs,
+} from "@/lib/staff-roster-cache";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import {
   pocketTableCellToPlainString,
@@ -120,10 +123,7 @@ const pickerCache = new Map<string, PickerCacheEntry>();
 const pickerInflight = new Map<string, Promise<ApClStaffPickerPayload>>();
 
 function pickerCacheTtlMs(): number {
-  const raw = process.env.STAFF_ROSTER_CACHE_TTL_MS?.trim();
-  const n = raw ? Number(raw) : 180_000;
-  if (!Number.isFinite(n) || n < 5_000) return 180_000;
-  return Math.min(600_000, Math.floor(n));
+  return staffRosterCacheTtlMs();
 }
 
 function buildApClPickerPayload(

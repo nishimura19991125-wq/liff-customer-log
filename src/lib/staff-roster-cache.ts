@@ -16,7 +16,7 @@ import {
 
 type RosterCacheEntry = {
   key: string;
-  expiresAt: number;
+  freshUntil: number;
   rows: AtPocketRecordRow[];
 };
 
@@ -25,17 +25,38 @@ let rosterInflight: Promise<AtPocketRecordRow[]> | null = null;
 /** @pocket 429 後はこの時刻まで新規取得を試みない */
 let rosterFetchBlockedUntil = 0;
 let lastRosterStaleWarnAt = 0;
+/** 連続した @pocket 取得の間隔を空ける（TTL 切れ直後の連打防止） */
+let lastFetchAttemptAt = 0;
 
 /** @pocket の 100 秒ウィンドウに合わせる */
 const ROSTER_429_BACKOFF_MS = 100_000;
 const ROSTER_STALE_WARN_COOLDOWN_MS = 300_000;
+/** fresh TTL 切れ後も古い名簿を返してよい最長時間 */
+const ROSTER_STALE_SERVE_MS = 6 * 60 * 60 * 1000;
 
-function rosterCacheTtlMs(): number {
+/** スタッフ名簿キャッシュ TTL（既定 30 分・最大 1 時間） */
+export function staffRosterCacheTtlMs(): number {
   const raw = process.env.STAFF_ROSTER_CACHE_TTL_MS?.trim();
-  const n = raw ? Number(raw) : 600_000;
-  if (!Number.isFinite(n) || n < 5_000) return 600_000;
+  const n = raw ? Number(raw) : 1_800_000;
+  if (!Number.isFinite(n) || n < 5_000) return 1_800_000;
+  return Math.min(3_600_000, Math.floor(n));
+}
+
+function staffRosterMaxPages(): number {
+  const raw = process.env.STAFF_ROSTER_MAX_PAGES?.trim();
+  const n = raw ? Number(raw) : 10;
+  if (!Number.isFinite(n) || n < 1) return 10;
+  return Math.min(50, Math.floor(n));
+}
+
+function staffRosterMinRefetchMs(): number {
+  const raw = process.env.STAFF_ROSTER_MIN_REFETCH_MS?.trim();
+  const n = raw ? Number(raw) : 120_000;
+  if (!Number.isFinite(n) || n < 0) return 120_000;
   return Math.min(600_000, Math.floor(n));
 }
+
+const STAFF_LIST_FETCH_OPTIONS = { maxRetries: 1 } as const;
 
 function rosterCacheKey(): string | null {
   const staffAppId = process.env.STAFF_APP_ID?.trim();
@@ -53,8 +74,8 @@ function isRateLimited(now: number): boolean {
 function blockRosterFetchAfterRateLimit(now: number): void {
   rosterFetchBlockedUntil = now + ROSTER_429_BACKOFF_MS;
   if (rosterCache) {
-    rosterCache.expiresAt = Math.max(
-      rosterCache.expiresAt,
+    rosterCache.freshUntil = Math.max(
+      rosterCache.freshUntil,
       now + ROSTER_429_BACKOFF_MS,
     );
   }
@@ -75,6 +96,18 @@ function warnStaleRosterOnce(error: unknown): void {
   );
 }
 
+function staleServeAllowed(now: number, entry: RosterCacheEntry): boolean {
+  if (!entry.rows.length) return false;
+  return now < entry.freshUntil + ROSTER_STALE_SERVE_MS;
+}
+
+/** エラー時のフォールバック用（メモリ上の名簿があれば返す） */
+export function getStaffRosterRowsBestEffort(): AtPocketRecordRow[] {
+  const key = rosterCacheKey();
+  if (!key || !rosterCache || rosterCache.key !== key) return [];
+  return rosterCache.rows;
+}
+
 function staffRosterListFieldsCsv(): string {
   const parts: string[] = [];
   const name = process.env.STAFF_NAME_FIELD_ID?.trim();
@@ -91,6 +124,7 @@ function staffRosterListFieldsCsv(): string {
     "STAFF_AP_AVAILABILITY_FIELD_ID",
     "STAFF_CL_AVAILABILITY_FIELD_ID",
     "STAFF_WORKPLACE_FIELD_ID",
+    "STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID",
     "STAFF_PIN_HASH_FIELD_ID",
   ] as const) {
     const id = process.env[envKey]?.trim();
@@ -116,6 +150,10 @@ async function fetchStaffRosterRowsFromPocket(
       auth,
       null,
       ctx,
+      {
+        maxPages: staffRosterMaxPages(),
+        maxRetries: STAFF_LIST_FETCH_OPTIONS.maxRetries,
+      },
     );
   }
 
@@ -129,6 +167,7 @@ async function fetchStaffRosterRowsFromPocket(
       },
       auth,
       ctx,
+      STAFF_LIST_FETCH_OPTIONS,
     )
   ).records ?? [];
 }
@@ -142,24 +181,34 @@ export async function fetchStaffRosterRowsCached(): Promise<
   if (!key || !staffAppId) return [];
 
   const now = Date.now();
-  if (
-    rosterCache &&
-    rosterCache.key === key &&
-    rosterCache.expiresAt > now
-  ) {
+
+  if (rosterCache && rosterCache.key === key && now < rosterCache.freshUntil) {
     return rosterCache.rows;
   }
 
   const staleRows =
     rosterCache && rosterCache.key === key ? rosterCache.rows : null;
+  const staleEntry =
+    rosterCache && rosterCache.key === key ? rosterCache : null;
 
-  if (staleRows && staleRows.length > 0 && isRateLimited(now)) {
-    return staleRows;
+  if (staleRows && staleRows.length > 0) {
+    if (isRateLimited(now)) {
+      warnStaleRosterOnce(new Error("rate limit backoff active"));
+      return staleRows;
+    }
+    if (
+      staleEntry &&
+      staleServeAllowed(now, staleEntry) &&
+      now - lastFetchAttemptAt < staffRosterMinRefetchMs()
+    ) {
+      return staleRows;
+    }
   }
 
   if (rosterInflight) return rosterInflight;
 
   rosterInflight = (async () => {
+    lastFetchAttemptAt = Date.now();
     try {
       const lineIds = staffLineUserIdFieldIdsFromEnv();
       const lineOn = staffLineBindingEnabled(lineIds);
@@ -167,7 +216,7 @@ export async function fetchStaffRosterRowsCached(): Promise<
 
       rosterCache = {
         key,
-        expiresAt: Date.now() + rosterCacheTtlMs(),
+        freshUntil: Date.now() + staffRosterCacheTtlMs(),
         rows,
       };
       rosterFetchBlockedUntil = 0;
@@ -207,7 +256,7 @@ export function invalidateStaffRosterCache(hard = false): void {
     return;
   }
   if (rosterCache) {
-    rosterCache.expiresAt = Date.now();
+    rosterCache.freshUntil = Date.now();
   }
 }
 
@@ -234,7 +283,7 @@ export function patchStaffRosterAfterLineBind(opts: {
     }
     base[opts.lineFieldId] = opts.lineUserId;
     row.record = base;
-    rosterCache.expiresAt = Date.now() + rosterCacheTtlMs();
+    rosterCache.freshUntil = Date.now() + staffRosterCacheTtlMs();
     return;
   }
 }

@@ -218,17 +218,27 @@ function parseRetryAfterMs(headers: Headers): number | null {
 const POCKET_GET_RETRY_MAX = 5;
 const POCKET_GET_RETRY_BASE_MS = 450;
 
+export type PocketListFetchOptions = {
+  /** 429 時の最大再試行回数（既定 5）。スタッフ名簿などは 1 推奨 */
+  maxRetries?: number;
+};
+
 /** 429 のとき指数バックオフで再試行（429 応答は本文を読み捨て済みであること） */
 async function fetchWithMethodOverrideWithRetry(
   pathWithQuery: string,
   auth?: AtPocketFetchAuth,
+  options?: PocketListFetchOptions,
 ): Promise<Response> {
+  const maxAttempts = Math.max(
+    1,
+    Math.min(POCKET_GET_RETRY_MAX, options?.maxRetries ?? POCKET_GET_RETRY_MAX),
+  );
   let last: Response | undefined;
-  for (let attempt = 0; attempt < POCKET_GET_RETRY_MAX; attempt++) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const res = await fetchWithMethodOverride(pathWithQuery, auth);
     last = res;
     if (res.status !== 429) return res;
-    if (attempt === POCKET_GET_RETRY_MAX - 1) return res;
+    if (attempt === maxAttempts - 1) return res;
     await res.text();
     const wait =
       parseRetryAfterMs(res.headers) ??
@@ -249,6 +259,7 @@ export async function fetchRecordsList(
   },
   auth?: AtPocketFetchAuth,
   ctx?: AtPocketRequestContext,
+  options?: PocketListFetchOptions,
 ): Promise<AtPocketListResponse> {
   const params = new URLSearchParams();
   params.set("limit", searchParams?.limit ?? "1000");
@@ -258,7 +269,7 @@ export async function fetchRecordsList(
   const qs = params.toString();
   const path = `/api/apps/${appsId}/records${qs ? `?${qs}` : ""}`;
 
-  const res = await fetchWithMethodOverrideWithRetry(path, auth);
+  const res = await fetchWithMethodOverrideWithRetry(path, auth, options);
 
   const text = await res.text();
   if (!res.ok) {
@@ -414,6 +425,11 @@ export async function fetchAppFieldUniqueIdsSetTryKeys(
 const CALENDAR_PAGE_LIMIT = 1000;
 const CALENDAR_MAX_PAGES = 200;
 
+export type FetchAllRecordsPagesOptions = PocketListFetchOptions & {
+  /** 最大ページ数（未指定時は CALENDAR_MAX_PAGES） */
+  maxPages?: number;
+};
+
 /** @pocket 一覧をページングで全件取得（工事カレンダーなど） */
 export async function fetchAllRecordsPages(
   appsId: string,
@@ -421,9 +437,20 @@ export async function fetchAllRecordsPages(
   auth?: AtPocketFetchAuth,
   pocketQuery?: string | null,
   ctx?: AtPocketRequestContext,
+  options?: FetchAllRecordsPagesOptions,
 ): Promise<AtPocketRecordRow[]> {
+  const pageCap = Math.max(
+    1,
+    Math.min(
+      CALENDAR_MAX_PAGES,
+      options?.maxPages ?? CALENDAR_MAX_PAGES,
+    ),
+  );
+  const listOptions: PocketListFetchOptions = {
+    maxRetries: options?.maxRetries,
+  };
   const all: AtPocketRecordRow[] = [];
-  for (let page = 1; page <= CALENDAR_MAX_PAGES; page++) {
+  for (let page = 1; page <= pageCap; page++) {
     const data = await fetchRecordsList(
       appsId,
       {
@@ -434,6 +461,7 @@ export async function fetchAllRecordsPages(
       },
       auth,
       ctx,
+      listOptions,
     );
     const recs = data.records ?? [];
     all.push(...recs);

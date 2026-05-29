@@ -1,11 +1,8 @@
 import "server-only";
 
 import type { AtPocketFieldRow, AtPocketRequestContext } from "@/lib/atpocket";
-import {
-  apiKeyForStaffPocketRead,
-  fetchAllRecordsPages,
-  fetchAppFields,
-} from "@/lib/atpocket";
+import { apiKeyForStaffPocketRead, fetchAppFields } from "@/lib/atpocket";
+import { fetchStaffRosterRowsCached } from "@/lib/staff-roster-cache";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { pocketTableCellToPlainString } from "@/lib/staff-construction-availability";
 
@@ -73,19 +70,7 @@ async function staffNameToWorkplaceMap(
   const cacheKey = `${cfg.staffAppId}\0${cfg.nameFieldId}\0${cfg.workplaceFieldId}`;
   if (cachedMap && cachedMapKey === cacheKey) return cachedMap;
 
-  const auth = staffPocketAuth();
-  const listCtx: AtPocketRequestContext = {
-    operation: "customer-info:AP/CL所属支店(名簿一覧)",
-    appEnv: "STAFF_APP_ID",
-  };
-  const csv = [cfg.nameFieldId, cfg.workplaceFieldId].join(",");
-  const rows = await fetchAllRecordsPages(
-    cfg.staffAppId,
-    csv,
-    auth,
-    null,
-    listCtx,
-  );
+  const rows = await fetchStaffRosterRowsCached();
   const map = new Map<string, string>();
   for (const row of rows) {
     const rec = row.record;

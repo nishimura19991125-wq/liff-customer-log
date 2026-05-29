@@ -12,6 +12,7 @@ import {
   markPinUnlockSession,
   touchPinUnlockSession,
 } from "@/lib/pin-lock-session";
+import { fetchStaffApiWithSessionCache } from "@/lib/staff-api-session-cache";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -80,17 +81,12 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
         }
         setIdToken(result.token);
 
-        const staffRes = await fetch("/api/staff", {
-          headers: { Authorization: `Bearer ${result.token}` },
-        });
-        const staffData = (await staffRes.json()) as {
-          boundStaff?: { id: string; name: string } | null;
-          bindingEnabled?: boolean;
-        };
+        const { res: staffRes, data: staffData } =
+          await fetchStaffApiWithSessionCache(result.token);
         if (cancelled) return;
 
         if (
-          !staffRes.ok ||
+          (!staffRes.ok && !staffData.boundStaff?.id) ||
           !staffData.bindingEnabled ||
           !staffData.boundStaff?.id
         ) {

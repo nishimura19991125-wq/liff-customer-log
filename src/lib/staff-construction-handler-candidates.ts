@@ -1,9 +1,7 @@
 import "server-only";
 
-import {
-  fetchAllRecordsPages,
-  fetchRecordById,
-} from "@/lib/atpocket";
+import { fetchRecordById } from "@/lib/atpocket";
+import { fetchStaffRosterRowsCached } from "@/lib/staff-roster-cache";
 import {
   readStaffImportKeyFromRawRecord,
   staffImportKeyFieldIdResolved,
@@ -63,12 +61,7 @@ export async function fetchConstructionHandlerStaffCandidates(): Promise<
   if (!cfg) return [];
 
   const importKeyId = staffImportKeyFieldIdResolved();
-  const csv = uniqueFieldsCsv(
-    cfg.nameFieldId,
-    cfg.availabilityFieldId,
-    importKeyId,
-  );
-  const rows = await fetchAllRecordsPages(cfg.staffAppId, csv);
+  const rows = await fetchStaffRosterRowsCached();
 
   const picked: Array<{
     staffRecordId: string;
