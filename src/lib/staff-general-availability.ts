@@ -1,0 +1,126 @@
+import "server-only";
+
+import type { AtPocketFieldRow } from "@/lib/atpocket";
+import {
+  apiKeyForStaffPocketRead1,
+  fetchAppFields,
+} from "@/lib/atpocket";
+import {
+  pickRecordValueByFieldAliases,
+  resolveConfiguredFieldToSchemaUniqueId,
+} from "@/lib/calendar-kojo";
+import { staffConstructionAvailabilityIsActive } from "@/lib/staff-construction-availability";
+
+export type StaffGeneralAvailabilityConfig = {
+  fieldId: string;
+  activeLabel: string;
+};
+
+let resolvedCfg: StaffGeneralAvailabilityConfig | null | undefined;
+let resolveError: string | null = null;
+
+function nfkc(s: string): string {
+  return s.normalize("NFKC").trim();
+}
+
+function pickFieldUniqueIdByExactCaption(
+  fields: AtPocketFieldRow[],
+  caption: string,
+): string | null {
+  const target = nfkc(caption).toLowerCase();
+  for (const f of fields) {
+    const cap = f.caption ? nfkc(String(f.caption)).toLowerCase() : "";
+    if (cap && cap === target) {
+      const id = f.uniqueId?.trim();
+      return id || null;
+    }
+  }
+  return null;
+}
+
+function pickFieldUniqueIdByCaptions(
+  fields: AtPocketFieldRow[],
+  captions: string[],
+): string | null {
+  for (const caption of captions) {
+    const id = pickFieldUniqueIdByExactCaption(fields, caption);
+    if (id) return id;
+  }
+  return null;
+}
+
+function resolveSchemaFieldId(
+  configuredId: string | undefined,
+  fields: AtPocketFieldRow[],
+  captionAlts: string[],
+): string | null {
+  const fromEnv = configuredId?.trim();
+  if (fromEnv) {
+    return resolveConfiguredFieldToSchemaUniqueId(fromEnv, fields);
+  }
+  const picked = pickFieldUniqueIdByCaptions(fields, captionAlts);
+  if (!picked) return null;
+  return resolveConfiguredFieldToSchemaUniqueId(picked, fields) ?? picked;
+}
+
+export function staffGeneralAvailabilityActiveLabel(): string {
+  return (
+    process.env.STAFF_AVAILABILITY_ACTIVE_LABEL?.trim() ||
+    process.env.STAFF_CONSTRUCTION_AVAILABILITY_ACTIVE_LABEL?.trim() ||
+    "稼働"
+  );
+}
+
+/** LINE 紐付け名簿リスト用：稼働状況列の uniqueId（メモリキャッシュ） */
+export async function resolveStaffGeneralAvailabilityConfig(): Promise<
+  | { ok: true; cfg: StaffGeneralAvailabilityConfig }
+  | { ok: false; error: string }
+> {
+  if (resolvedCfg) return { ok: true, cfg: resolvedCfg };
+  if (resolveError) return { ok: false, error: resolveError };
+
+  const staffAppId = process.env.STAFF_APP_ID?.trim();
+  if (!staffAppId) {
+    resolveError = "STAFF_APP_ID が未設定です";
+    return { ok: false, error: resolveError };
+  }
+
+  try {
+    const appFields = await fetchAppFields(
+      staffAppId,
+      { apiKey: apiKeyForStaffPocketRead1() },
+      { operation: "staff:稼働状況(列定義)", appEnv: "STAFF_APP_ID" },
+    );
+
+    const fieldId = resolveSchemaFieldId(
+      process.env.STAFF_AVAILABILITY_FIELD_ID,
+      appFields,
+      ["稼働状況", "稼働 状況"],
+    );
+    if (!fieldId) {
+      resolveError =
+        "スタッフ名簿に「稼働状況」列が見つかりません。見出し名を確認するか STAFF_AVAILABILITY_FIELD_ID を設定してください。";
+      return { ok: false, error: resolveError };
+    }
+
+    resolvedCfg = {
+      fieldId,
+      activeLabel: staffGeneralAvailabilityActiveLabel(),
+    };
+    return { ok: true, cfg: resolvedCfg };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    resolveError = `稼働状況列の取得に失敗しました: ${msg}`;
+    return { ok: false, error: resolveError };
+  }
+}
+
+export function staffRowGeneralAvailabilityIsActive(
+  rec: Record<string, unknown>,
+  cfg: StaffGeneralAvailabilityConfig,
+): boolean {
+  return staffConstructionAvailabilityIsActive(
+    pickRecordValueByFieldAliases(rec, cfg.fieldId),
+    cfg.activeLabel,
+  );
+}

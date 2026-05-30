@@ -8,6 +8,7 @@ import {
 } from "@/lib/atpocket";
 import { staffImportKeyFieldIdResolved } from "@/lib/staff-import-key";
 import { staffRecordMatchesLineUser } from "@/lib/staff-line-binding";
+import { resolveStaffGeneralAvailabilityConfig } from "@/lib/staff-general-availability";
 import {
   staffLineBindingEnabled,
   staffLineUserIdFieldIdsFromEnv,
@@ -123,6 +124,7 @@ function staffRosterListFieldsCsv(): string {
   if (importKey) parts.push(importKey);
 
   for (const envKey of [
+    "STAFF_AVAILABILITY_FIELD_ID",
     "STAFF_AP_AVAILABILITY_FIELD_ID",
     "STAFF_CL_AVAILABILITY_FIELD_ID",
     "STAFF_WORKPLACE_FIELD_ID",
@@ -143,7 +145,23 @@ async function fetchStaffRosterRowsFromPocket(
   const auth = { apiKey: apiKeyForStaffPocketRead() };
   const ctx = { operation: "staff:名簿一覧", appEnv: "STAFF_APP_ID" };
   const staffNameFieldId = process.env.STAFF_NAME_FIELD_ID?.trim() ?? "";
-  const fields = lineOn ? staffRosterListFieldsCsv() : staffNameFieldId;
+  let fields = lineOn ? staffRosterListFieldsCsv() : staffNameFieldId;
+  if (lineOn) {
+    const avail = await resolveStaffGeneralAvailabilityConfig();
+    if (avail.ok) {
+      const extra = avail.cfg.fieldId.trim();
+      if (extra) {
+        const parts = new Set(
+          fields
+            .split(",")
+            .map((p) => p.trim())
+            .filter(Boolean),
+        );
+        parts.add(extra);
+        fields = [...parts].join(",");
+      }
+    }
+  }
 
   const first = await fetchRecordsList(
     staffAppId,

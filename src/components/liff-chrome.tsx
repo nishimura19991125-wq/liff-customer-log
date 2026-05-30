@@ -351,8 +351,8 @@ export function LiffStaffBindPanel({
         スタッフ名簿と紐づけ（必須）
       </p>
       <p className="mt-1 text-[12px] leading-snug text-amber-900/85 dark:text-amber-200/85">
-        利用前に一覧から自分の名前を選んでください。@pocket のスタッフ名簿に LINE
-        ID が保存されます。
+        利用前に一覧から自分の名前を選んでください（稼働状況が「稼働」の社員のみ表示）。@pocket
+        のスタッフ名簿に LINE ID が保存されます。
       </p>
       <form onSubmit={handleSubmit} className="mt-3 flex flex-col gap-2">
         <select

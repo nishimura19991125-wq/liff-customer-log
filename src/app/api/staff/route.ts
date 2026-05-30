@@ -23,6 +23,10 @@ import {
   readStaffImportKeyFromRawRecord,
   staffImportKeyFieldIdResolved,
 } from "@/lib/staff-import-key";
+import {
+  resolveStaffGeneralAvailabilityConfig,
+  staffRowGeneralAvailabilityIsActive,
+} from "@/lib/staff-general-availability";
 export const dynamic = "force-dynamic";
 
 function isPocketRateLimitError(error: unknown): boolean {
@@ -79,6 +83,17 @@ export async function GET(request: Request) {
     }
     const includeImportKey = Boolean(staffImportKeyFieldIdResolved());
 
+    let availabilityCfg: Awaited<
+      ReturnType<typeof resolveStaffGeneralAvailabilityConfig>
+    > | null = null;
+    let availabilityConfigError: string | undefined;
+    if (lineBindingOn) {
+      availabilityCfg = await resolveStaffGeneralAvailabilityConfig();
+      if (!availabilityCfg.ok) {
+        availabilityConfigError = availabilityCfg.error;
+      }
+    }
+
     const staff = rows
       .map((row) => {
         const id =
@@ -96,10 +111,25 @@ export async function GET(request: Request) {
         return {
           id,
           name,
+          rec,
           ...(includeImportKey ? { importKey } : {}),
         };
       })
-      .filter((s) => s.id && s.name);
+      .filter((s) => {
+        if (!s.id || !s.name) return false;
+        if (!lineBindingOn) return true;
+        if (!availabilityCfg?.ok) return false;
+        if (!s.rec || typeof s.rec !== "object") return false;
+        return staffRowGeneralAvailabilityIsActive(
+          s.rec as Record<string, unknown>,
+          availabilityCfg.cfg,
+        );
+      })
+      .map(({ id, name, importKey }) => ({
+        id,
+        name,
+        ...(importKey !== undefined ? { importKey } : {}),
+      }));
 
     const boundStaff = lineBindingOn
       ? boundStaffFromRosterRows(rows, caller.lineUserId)
@@ -120,6 +150,17 @@ export async function GET(request: Request) {
         : {}),
       ...(lineConfigError && !lineBindingOn
         ? { bindingConfigError: lineConfigError }
+        : {}),
+      ...(availabilityConfigError
+        ? { bindingConfigError: availabilityConfigError }
+        : {}),
+      ...(lineBindingOn &&
+      availabilityCfg?.ok &&
+      staff.length === 0 &&
+      rows.length > 0
+        ? {
+            rosterMessage: `稼働状況が「${availabilityCfg.cfg.activeLabel}」の社員が名簿にいません。`,
+          }
         : {}),
     });
     if (rosterStale || rateLimited) {

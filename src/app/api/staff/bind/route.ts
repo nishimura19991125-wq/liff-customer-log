@@ -29,6 +29,10 @@ import {
   staffLineUserIdFieldIdsFromEnv,
 } from "@/lib/staff-line-field-config";
 import {
+  resolveStaffGeneralAvailabilityConfig,
+  staffRowGeneralAvailabilityIsActive,
+} from "@/lib/staff-general-availability";
+import {
   resolveBindLineSlot,
   staffRecordMatchesLineUser,
 } from "@/lib/staff-line-binding";
@@ -178,6 +182,23 @@ export async function POST(request: Request) {
     }
 
     const recordFromList = rec as Record<string, unknown>;
+
+    const availabilityCfg = await resolveStaffGeneralAvailabilityConfig();
+    if (availabilityCfg.ok) {
+      if (
+        !staffRowGeneralAvailabilityIsActive(
+          recordFromList,
+          availabilityCfg.cfg,
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error: `選択した社員は稼働状況が「${availabilityCfg.cfg.activeLabel}」ではありません。一覧を更新して選び直してください。`,
+          },
+          { status: 409 },
+        );
+      }
+    }
 
     let recordObj = recordFromList;
     try {
