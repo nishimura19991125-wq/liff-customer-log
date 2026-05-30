@@ -231,6 +231,36 @@ export function apiKeyForSalesDashboardApoPocket1(): string {
   return requireAppApiKey("SALES_DASHBOARD_APO", 1, []);
 }
 
+/** PT集計表・読取③（一覧の429分散・未設定時は読取②） */
+export function apiKeyForSalesDashboardPtPocket2(): string {
+  return (
+    firstEnvApiKey("SALES_DASHBOARD_PT_ATPOCKET_API_KEY_2") ??
+    apiKeyForSalesDashboardPtPocket1()
+  );
+}
+
+/** アポ取得情報・読取③（一覧の429分散・未設定時は読取②） */
+export function apiKeyForSalesDashboardApoPocket2(): string {
+  return (
+    firstEnvApiKey("SALES_DASHBOARD_APO_ATPOCKET_API_KEY_2") ??
+    apiKeyForSalesDashboardApoPocket1()
+  );
+}
+
+/** 機能別3キーを重複なく列挙（一覧のページローテーション用） */
+export function listAuthsForAppPrefix(prefix: string): AtPocketFetchAuth[] {
+  const keys: string[] = [];
+  for (const envName of [
+    `${prefix}_ATPOCKET_API_KEY_1`,
+    `${prefix}_ATPOCKET_API_KEY`,
+    `${prefix}_ATPOCKET_API_KEY_2`,
+  ]) {
+    const k = process.env[envName]?.trim();
+    if (k && !keys.includes(k)) keys.push(k);
+  }
+  return keys.map((apiKey) => ({ apiKey }));
+}
+
 export type AtPocketFetchAuth = {
   apiKey?: string;
 };

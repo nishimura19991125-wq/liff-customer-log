@@ -148,7 +148,7 @@ export function aggregateApoRecords(
   return m;
 }
 
-function sortApoAgg(items: ApoAggItem[]): ApoAggItem[] {
+export function sortApoAgg(items: ApoAggItem[]): ApoAggItem[] {
   const visible = items.filter(
     (it) => !isExcludedSalesDashboardRankingName(it.name),
   );

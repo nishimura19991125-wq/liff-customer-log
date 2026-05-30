@@ -1,15 +1,14 @@
 import "server-only";
 
-import type { AtPocketFetchAuth } from "@/lib/atpocket";
-import { fetchAppFields, fetchRecordsList } from "@/lib/atpocket";
+import { fetchAppFields } from "@/lib/atpocket";
+import { customerInfoPocketAuth } from "@/lib/customer-info-config";
+import { apiKeyForSalesDashboardPtPocket } from "@/lib/atpocket";
+import { buildApoAndTenkaSections } from "@/lib/sales-dashboard-apo-tenka-bundle";
 import {
-  customerInfoPocketAuth,
-  customerInfoPocketAuth1,
-} from "@/lib/customer-info-config";
-import {
-  apiKeyForSalesDashboardPtPocket,
-  apiKeyForSalesDashboardPtPocket1,
-} from "@/lib/atpocket";
+  customerInfoListAuths,
+  fetchSalesDashboardRecordPages,
+  salesDashboardPtListAuths,
+} from "@/lib/sales-dashboard-list-fetch";
 import {
   coerceCustomerInfoDisplayString,
   readCustomerInfoFieldValue,
@@ -20,8 +19,6 @@ import {
   resolveSalesDashboardPeriod,
   type SalesDashboardPeriodKey,
 } from "@/lib/sales-dashboard-period";
-import { buildApoDashboardSection } from "@/lib/sales-dashboard-apo-aggregate";
-import { buildTenkaDashboardSection } from "@/lib/sales-dashboard-tenka-aggregate";
 import { isExcludedSalesDashboardRankingName } from "@/lib/sales-dashboard-ranking-exclude";
 import type {
   ApoDashboardKpi,
@@ -38,9 +35,6 @@ import {
 } from "@/lib/sales-dashboard-fields";
 
 export type { ApoDashboardKpi, ApoDashboardRankingRow };
-
-const PAGE_LIMIT = 1000;
-const DEFAULT_MAX_PAGES = 25;
 
 export type SalesDashboardKpi = {
   pt: number;
@@ -76,6 +70,9 @@ export type SalesDashboardPayload = {
   tenkaError: string | null;
   tenkaKpi: { totalTargetCount: number } | null;
   tenkaRanking: ApoDashboardRankingRow[];
+  /** 429 時にサーバー共有キャッシュの古い集計を返したとき */
+  rateLimited?: boolean;
+  dashboardStale?: boolean;
 };
 
 type StaffAgg = {
@@ -84,13 +81,6 @@ type StaffAgg = {
   salesAmount: number;
   contractCount: number;
 };
-
-function dashboardMaxPages(): number {
-  const raw = process.env.SALES_DASHBOARD_MAX_PAGES?.trim();
-  const n = raw ? Number(raw) : DEFAULT_MAX_PAGES;
-  if (!Number.isFinite(n) || n < 1) return DEFAULT_MAX_PAGES;
-  return Math.min(50, Math.floor(n));
-}
 
 function parseNumber(raw: string): number {
   const digits = raw.replace(/[^\d]/g, "");
@@ -252,29 +242,6 @@ function buildRanking(
   }));
 }
 
-async function fetchAllPages(
-  appId: string,
-  fieldsCsv: string,
-  auth: AtPocketFetchAuth,
-  operation: string,
-): Promise<Array<{ record?: unknown }>> {
-  const all: Array<{ record?: unknown }> = [];
-  const maxPages = dashboardMaxPages();
-
-  for (let page = 1; page <= maxPages; page++) {
-    const data = await fetchRecordsList(
-      appId,
-      { limit: String(PAGE_LIMIT), page: String(page), fields: fieldsCsv },
-      auth,
-      { operation, appEnv: "SALES_DASHBOARD_PT_APP_ID" },
-    );
-    const rows = data.records ?? [];
-    all.push(...rows);
-    if (rows.length < PAGE_LIMIT) break;
-  }
-  return all;
-}
-
 export async function buildSalesDashboardPayload(
   boundStaffName: string,
   periodKey: SalesDashboardPeriodKey,
@@ -283,21 +250,19 @@ export async function buildSalesDashboardPayload(
   if (!ptAppId) return null;
 
   const ptFieldAuth = { apiKey: apiKeyForSalesDashboardPtPocket() };
-  const ptListAuth = { apiKey: apiKeyForSalesDashboardPtPocket1() };
+  const ptListAuths = salesDashboardPtListAuths();
   const contractFieldAuth = customerInfoPocketAuth();
-  const contractListAuth = customerInfoPocketAuth1();
+  const contractListAuths = customerInfoListAuths();
   const period = resolveSalesDashboardPeriod(periodKey);
   const bound = normApClStaffName(boundStaffName);
   const contractAppId = salesDashboardContractAppId();
 
   const [
-    apoSection,
-    tenkaSection,
+    apoTenka,
     ptFields,
     contractFields,
   ] = await Promise.all([
-    buildApoDashboardSection(boundStaffName, periodKey),
-    buildTenkaDashboardSection(boundStaffName, periodKey),
+    buildApoAndTenkaSections(boundStaffName, periodKey),
     fetchAppFields(ptAppId, ptFieldAuth, {
       operation: "sales-dashboard:pt-fields",
       appEnv: "SALES_DASHBOARD_PT_APP_ID",
@@ -312,6 +277,9 @@ export async function buildSalesDashboardPayload(
         })
       : Promise.resolve(null),
   ]);
+
+  const apoSection = apoTenka.apo;
+  const tenkaSection = apoTenka.tenka;
 
   const ptFieldMap = resolvePtDashboardFieldMap(ptFields);
   if (!ptFieldMap) return null;
@@ -337,18 +305,24 @@ export async function buildSalesDashboardPayload(
     : "";
 
   const [ptRecords, contractRecords] = await Promise.all([
-    fetchAllPages(
+    fetchSalesDashboardRecordPages(
       ptAppId,
       ptWanted.join(","),
-      ptListAuth,
-      "sales-dashboard:pt-records",
+      ptListAuths,
+      {
+        operation: "sales-dashboard:pt-records",
+        appEnv: "SALES_DASHBOARD_PT_APP_ID",
+      },
     ),
     contractAppId && contractCsv
-      ? fetchAllPages(
+      ? fetchSalesDashboardRecordPages(
           contractAppId,
           contractCsv,
-          contractListAuth,
-          "sales-dashboard:contract-records",
+          contractListAuths,
+          {
+            operation: "sales-dashboard:contract-records",
+            appEnv: "SALES_DASHBOARD_CONTRACT_APP_ID",
+          },
         ).catch((e) => {
           console.warn("[sales-dashboard] contract records skipped", e);
           return [] as Array<{ record?: unknown }>;

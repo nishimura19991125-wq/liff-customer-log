@@ -1,12 +1,21 @@
 import { NextResponse } from "next/server";
 
+import {
+  apiKeyForSalesDashboardPtPocket,
+  isPocketHttpRateLimitError,
+  pocketApiRateLimitRemainingMs,
+} from "@/lib/atpocket";
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
 import { personalizeSalesDashboardPayload } from "@/lib/sales-dashboard-personalize";
-import { getOrComputeSalesDashboardCore } from "@/lib/sales-dashboard-response-cache";
+import {
+  getAnyStaleSalesDashboardCore,
+  getOrComputeSalesDashboardCore,
+  getStaleSalesDashboardCore,
+} from "@/lib/sales-dashboard-response-cache";
 import { parseSalesDashboardPeriodParam } from "@/lib/sales-dashboard-period";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
@@ -53,6 +62,42 @@ export async function GET(request: Request) {
     return NextResponse.json(payload);
   } catch (e) {
     console.error("[api/sales-dashboard]", e);
+    if (isPocketHttpRateLimitError(e)) {
+      const stale =
+        getStaleSalesDashboardCore(period) ??
+        getAnyStaleSalesDashboardCore();
+      const retrySec = Math.max(
+        60,
+        Math.ceil(
+          pocketApiRateLimitRemainingMs({
+            apiKey: apiKeyForSalesDashboardPtPocket(),
+          }) / 1000,
+        ) || 90,
+      );
+      if (stale) {
+        const boundStaffName = await resolveBoundStaffNameForLineUser(
+          auth.lineUserId,
+        );
+        if (!boundStaffName) {
+          return NextResponse.json({ needsStaffBind: true });
+        }
+        const payload = personalizeSalesDashboardPayload(stale, boundStaffName);
+        return NextResponse.json({
+          ...payload,
+          rateLimited: true,
+          dashboardStale: true,
+          rosterMessage:
+            "データ取得の利用上限に達したため、直近の集計結果を表示しています。1〜2分後に再度お試しください。",
+        });
+      }
+      return NextResponse.json(
+        {
+          error:
+            "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。",
+        },
+        { status: 429, headers: { "Retry-After": String(retrySec) } },
+      );
+    }
     const msg =
       e instanceof Error ? e.message : "営業ダッシュボードの取得に失敗しました";
     return NextResponse.json({ error: msg }, { status: 502 });

@@ -90,6 +90,9 @@ export default function SalesDashboardPage() {
     error?: string;
     disabled?: boolean;
     needsStaffBind?: boolean;
+    rateLimited?: boolean;
+    dashboardStale?: boolean;
+    rosterMessage?: string;
   };
 
   const dashboardPath = canFetchDashboard
@@ -110,11 +113,26 @@ export default function SalesDashboardPage() {
         setPhase("session-expired");
         return;
       }
+      if (swrError.status === 429) {
+        setFeedback(
+          swrError.message ||
+            "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。",
+        );
+        return;
+      }
       setFeedback(swrError.message);
       return;
     }
     if (data) {
-      setFeedback(null);
+      if (data.rosterMessage?.trim()) {
+        setFeedback(data.rosterMessage.trim());
+      } else if (data.rateLimited || data.dashboardStale) {
+        setFeedback(
+          "データ取得の利用上限に達したため、直近の集計結果を表示しています。1〜2分後に再度お試しください。",
+        );
+      } else {
+        setFeedback(null);
+      }
       resetLiffScroll();
     }
   }, [idToken, phase, data, swrError]);
