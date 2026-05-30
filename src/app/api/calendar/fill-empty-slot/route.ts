@@ -20,6 +20,10 @@ import {
   updateRecord,
 } from "@/lib/atpocket";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
+import {
+  calendarSlotConflictResponse,
+  readFreshConstructionEmptySlotState,
+} from "@/lib/calendar-slot-reservation";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
 import {
@@ -229,13 +233,8 @@ export async function POST(request: Request) {
 
     const recObj = recRow.record as Record<string, unknown>;
     if (!constructionTitleFieldIsEmpty(recObj, resolvedCustomer)) {
-      return NextResponse.json(
-        {
-          error:
-            "このレコードはお客様名が既に入っているため、工事空枠として更新できません",
-        },
-        { status: 409 },
-      );
+      const { status, body } = calendarSlotConflictResponse();
+      return NextResponse.json(body, { status });
     }
 
     const existingT = readConstructionTNumberFromRecord(recObj, resolvedTNumber);
@@ -264,6 +263,20 @@ export async function POST(request: Request) {
       electricWorkDate: body.electricWorkDate,
       appSettingsDayDate: body.appSettingsDayDate,
     });
+
+    const freshSlot = await readFreshConstructionEmptySlotState(
+      calAppId,
+      recordId,
+      readAuth,
+      resolvedCustomer,
+    );
+    if (!freshSlot.ok) {
+      return NextResponse.json({ error: "レコードが見つかりません" }, { status: 404 });
+    }
+    if (!freshSlot.isEmpty) {
+      const { status, body: conflictBody } = calendarSlotConflictResponse();
+      return NextResponse.json(conflictBody, { status });
+    }
 
     await updateRecord(calAppId, recordId, patch, writeAuth);
     constructionUpdated = true;

@@ -14,6 +14,7 @@ import {
   LiffStaffBindPanel,
   LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
+import { CalendarMonthSkeleton } from "@/components/calendar-month-skeleton";
 import { MapNavigationButton } from "@/components/map-navigation-button";
 import { NewsMarquee } from "@/components/news-marquee";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -29,7 +30,16 @@ import {
   EMPTY_FILL_HOUSING_STATUS_NEW_BUILD,
   EMPTY_FILL_HOUSING_STATUS_VALUES,
 } from "@/lib/calendar-empty-fill-options";
-import { isLiffSwrSessionExpired, liffAuthedJsonFetch } from "@/lib/liff-swr";
+import {
+  CALENDAR_SLOT_CONFLICT_MESSAGE,
+  isCalendarSlotConflictApiResponse,
+  verifyConstructionEmptySlotBeforeSubmit,
+} from "@/lib/calendar-slot-verify-client";
+import {
+  isLiffSwrSessionExpired,
+  LIFF_SWR_CALENDAR_OPTIONS,
+  liffAuthedJsonFetch,
+} from "@/lib/liff-swr";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { initLiffAndGetToken, refreshLiffIdToken } from "@/lib/liff-session";
 import { mergeStaffNameOptions } from "@/lib/staff-name-options";
@@ -308,6 +318,7 @@ function EmptySlotCard({
   viewYear,
   viewMonth,
   onSaved,
+  onSlotConflict,
   onSessionExpired,
   constructionHandlerUsesStaffDirectory,
 }: {
@@ -316,6 +327,8 @@ function EmptySlotCard({
   viewYear: number;
   viewMonth: number;
   onSaved: (patch?: CalendarRecordMonthPatch | null) => Promise<void>;
+  /** 他者が先に枠を確定したとき（アラート後にカレンダー強制再取得） */
+  onSlotConflict?: () => Promise<void>;
   onSessionExpired?: () => void;
   /** undefined: 工事対応者なし。true: スタッフ名簿。false: 工事対応者フィールドのみ設定でスタッフ側不足 */
   constructionHandlerUsesStaffDirectory?: boolean;
@@ -442,6 +455,22 @@ function EmptySlotCard({
     try {
       const token = await idTokenForConstructionSubmit(idToken, onSessionExpired);
       if (!token) return;
+
+      const verify = await verifyConstructionEmptySlotBeforeSubmit(token, rid);
+      if ("sessionExpired" in verify) {
+        onSessionExpired?.();
+        return;
+      }
+      if ("conflict" in verify) {
+        window.alert(CALENDAR_SLOT_CONFLICT_MESSAGE);
+        await onSlotConflict?.();
+        return;
+      }
+      if ("error" in verify) {
+        setFeedback({ kind: "err", text: verify.error });
+        return;
+      }
+
       const res = await fetch("/api/calendar/fill-empty-slot", {
         method: "POST",
         headers: {
@@ -495,6 +524,11 @@ function EmptySlotCard({
       if (!res.ok) {
         if (res.status === 401 && isLineSessionExpiredPayload(data)) {
           onSessionExpired?.();
+          return;
+        }
+        if (isCalendarSlotConflictApiResponse(res.status, data)) {
+          window.alert(CALENDAR_SLOT_CONFLICT_MESSAGE);
+          await onSlotConflict?.();
           return;
         }
         if (data.constructionSaved) {
@@ -1226,7 +1260,11 @@ export default function CalendarPage() {
     error: calendarError,
     isLoading: calendarLoading,
     mutate: mutateCalendar,
-  } = useLiffSwr<CalendarApiPayload>(calendarPath, idToken);
+  } = useLiffSwr<CalendarApiPayload>(
+    calendarPath,
+    idToken,
+    LIFF_SWR_CALENDAR_OPTIONS,
+  );
 
   useEffect(() => {
     if (!idToken) return;
@@ -1259,12 +1297,20 @@ export default function CalendarPage() {
     }
     if (data) {
       setErrorMessage(null);
-      setPhase("ready");
     } else if (calendarLoading) {
-      setPhase("loading");
       setErrorMessage(null);
     }
   }, [idToken, data, calendarError, calendarLoading]);
+
+  const forceRefreshCalendar = useCallback(async () => {
+    const t = idToken;
+    if (!t || !calendarPath) return;
+    const refreshUrl = `${calendarPath}&refresh=1`;
+    await mutateCalendar(
+      () => liffAuthedJsonFetch<CalendarApiPayload>(refreshUrl, t),
+      { revalidate: false },
+    );
+  }, [idToken, calendarPath, mutateCalendar]);
 
   const applyCalendarSaveToView = useCallback(
     async (patch?: CalendarRecordMonthPatch | null) => {
@@ -1278,9 +1324,9 @@ export default function CalendarPage() {
         const primaryDay = patch.dayKeys[0];
         if (primaryDay) setSelectedDayKey(primaryDay);
       }
-      await mutateCalendar(undefined, { revalidate: true });
+      await forceRefreshCalendar();
     },
-    [idToken, ym.year, ym.month, mutateCalendar],
+    [idToken, forceRefreshCalendar, mutateCalendar],
   );
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
@@ -1304,6 +1350,7 @@ export default function CalendarPage() {
           return;
         }
         setIdToken(result.token);
+        setPhase("ready");
       } catch (e) {
         if (cancelled) return;
         console.error(e);
@@ -1368,21 +1415,17 @@ export default function CalendarPage() {
     setSelectedDayKey(cell.dayKey);
   }
 
+  const showCalendarSkeleton =
+    phase === "ready" && idToken && !data && calendarLoading;
+
   if (phase === "init" || phase === "need-login") {
     return (
-      <LiffLoadingBlock
-        message="LINE でログインしています"
-        footer={<LiffGhostLink href="/">メニューへ</LiffGhostLink>}
-      />
-    );
-  }
-
-  if (phase === "loading") {
-    return (
-      <LiffLoadingBlock
-        message="カレンダーを読み込んでいます"
-        footer={<LiffGhostLink href="/">メニューへ</LiffGhostLink>}
-      />
+      <LiffScreen>
+        <LiffLoadingBlock
+          message="LINE でログインしています"
+          footer={<LiffGhostLink href="/">メニューへ</LiffGhostLink>}
+        />
+      </LiffScreen>
     );
   }
 
@@ -1564,6 +1607,10 @@ export default function CalendarPage() {
 
         <LiffCard>
           <div className="w-full p-2 sm:p-4">
+            {showCalendarSkeleton ? (
+              <CalendarMonthSkeleton />
+            ) : (
+            <>
             {/* grid-cols-7 は画面幅いっぱいに収め、セルは min-w-0 で縮小可能にする（横スクロールなし） */}
             <div className="grid w-full grid-cols-7 gap-px rounded-xl bg-slate-300/90 p-px dark:bg-slate-600/80 sm:gap-0.5 sm:rounded-2xl sm:p-0.5">
               {WEEK_LABELS.map((w, wi) => (
@@ -1666,10 +1713,12 @@ export default function CalendarPage() {
                 );
               })}
             </div>
+            </>
+            )}
           </div>
         </LiffCard>
 
-        {selectedDayKey ? (
+        {selectedDayKey && !showCalendarSkeleton ? (
           <section className="mt-5" aria-labelledby="day-detail-heading">
             <h2
               id="day-detail-heading"
@@ -1803,6 +1852,7 @@ export default function CalendarPage() {
                                         data?.emptyFillConstructionRegistrantUsesStaffDirectory
                                       }
                                       onSaved={applyCalendarSaveToView}
+                                      onSlotConflict={forceRefreshCalendar}
                                       onSessionExpired={() =>
                                         setPhase("session-expired")
                                       }

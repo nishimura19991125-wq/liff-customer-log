@@ -5,7 +5,8 @@ import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
-import { buildSalesDashboardPayload } from "@/lib/sales-dashboard-data";
+import { personalizeSalesDashboardPayload } from "@/lib/sales-dashboard-personalize";
+import { getOrComputeSalesDashboardCore } from "@/lib/sales-dashboard-response-cache";
 import { parseSalesDashboardPeriodParam } from "@/lib/sales-dashboard-period";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
@@ -35,7 +36,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ needsStaffBind: true });
     }
 
-    const payload = await buildSalesDashboardPayload(boundStaffName, period);
+    const core = await getOrComputeSalesDashboardCore(period);
+    const payload = core
+      ? personalizeSalesDashboardPayload(core, boundStaffName)
+      : null;
     if (!payload) {
       return NextResponse.json(
         {

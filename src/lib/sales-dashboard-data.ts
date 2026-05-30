@@ -288,16 +288,31 @@ export async function buildSalesDashboardPayload(
   const contractListAuth = customerInfoPocketAuth1();
   const period = resolveSalesDashboardPeriod(periodKey);
   const bound = normApClStaffName(boundStaffName);
-  const apoSectionPromise = buildApoDashboardSection(boundStaffName, periodKey);
-  const tenkaSectionPromise = buildTenkaDashboardSection(
-    boundStaffName,
-    periodKey,
-  );
+  const contractAppId = salesDashboardContractAppId();
 
-  const ptFields = await fetchAppFields(ptAppId, ptFieldAuth, {
-    operation: "sales-dashboard:pt-fields",
-    appEnv: "SALES_DASHBOARD_PT_APP_ID",
-  });
+  const [
+    apoSection,
+    tenkaSection,
+    ptFields,
+    contractFields,
+  ] = await Promise.all([
+    buildApoDashboardSection(boundStaffName, periodKey),
+    buildTenkaDashboardSection(boundStaffName, periodKey),
+    fetchAppFields(ptAppId, ptFieldAuth, {
+      operation: "sales-dashboard:pt-fields",
+      appEnv: "SALES_DASHBOARD_PT_APP_ID",
+    }),
+    contractAppId
+      ? fetchAppFields(contractAppId, contractFieldAuth, {
+          operation: "sales-dashboard:contract-fields",
+          appEnv: "SALES_DASHBOARD_CONTRACT_APP_ID",
+        }).catch((e) => {
+          console.warn("[sales-dashboard] contract fields skipped", e);
+          return null;
+        })
+      : Promise.resolve(null),
+  ]);
+
   const ptFieldMap = resolvePtDashboardFieldMap(ptFields);
   if (!ptFieldMap) return null;
 
@@ -308,50 +323,47 @@ export async function buildSalesDashboardPayload(
     ptFieldMap.sales,
   ].filter(Boolean) as string[];
 
-  const ptRecords = await fetchAllPages(
-    ptAppId,
-    ptWanted.join(","),
-    ptListAuth,
-    "sales-dashboard:pt-records",
-  );
+  const contractFieldMap = contractFields
+    ? resolveContractCountFieldMap(contractFields)
+    : null;
+  const contractCsv = contractFieldMap
+    ? [
+        contractFieldMap.date,
+        contractFieldMap.clPerson,
+        contractFieldMap.customerStatus,
+      ]
+        .filter(Boolean)
+        .join(",")
+    : "";
 
-  const byStaff = aggregatePtRecords(ptRecords, ptFieldMap, periodKey);
-
-  const contractAppId = salesDashboardContractAppId();
-  if (contractAppId) {
-    try {
-      const contractFields = await fetchAppFields(
-        contractAppId,
-        contractFieldAuth,
-        {
-          operation: "sales-dashboard:contract-fields",
-          appEnv: "SALES_DASHBOARD_CONTRACT_APP_ID",
-        },
-      );
-      const contractFieldMap = resolveContractCountFieldMap(contractFields);
-      if (contractFieldMap) {
-        const contractCsv = [
-          contractFieldMap.date,
-          contractFieldMap.clPerson,
-          contractFieldMap.customerStatus,
-        ]
-          .filter(Boolean)
-          .join(",");
-        const contractRecords = await fetchAllPages(
+  const [ptRecords, contractRecords] = await Promise.all([
+    fetchAllPages(
+      ptAppId,
+      ptWanted.join(","),
+      ptListAuth,
+      "sales-dashboard:pt-records",
+    ),
+    contractAppId && contractCsv
+      ? fetchAllPages(
           contractAppId,
           contractCsv,
           contractListAuth,
           "sales-dashboard:contract-records",
-        );
-        const contractMap = buildContractCountByMonth(
-          contractRecords,
-          contractFieldMap,
-        );
-        mergeContractCounts(byStaff, contractMap, periodKey);
-      }
-    } catch (e) {
-      console.warn("[sales-dashboard] contract count merge skipped", e);
-    }
+        ).catch((e) => {
+          console.warn("[sales-dashboard] contract records skipped", e);
+          return [] as Array<{ record?: unknown }>;
+        })
+      : Promise.resolve([] as Array<{ record?: unknown }>),
+  ]);
+
+  const byStaff = aggregatePtRecords(ptRecords, ptFieldMap, periodKey);
+
+  if (contractFieldMap && contractRecords.length > 0) {
+    const contractMap = buildContractCountByMonth(
+      contractRecords,
+      contractFieldMap,
+    );
+    mergeContractCounts(byStaff, contractMap, periodKey);
   }
 
   const sorted = sortStaffAgg([...byStaff.values()]);
@@ -369,11 +381,6 @@ export async function buildSalesDashboardPayload(
         ? Math.round(companySales / companyCount)
         : 0,
   };
-
-  const [apoSection, tenkaSection] = await Promise.all([
-    apoSectionPromise,
-    tenkaSectionPromise,
-  ]);
 
   return {
     staffName: boundStaffName,

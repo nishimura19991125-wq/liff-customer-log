@@ -16,6 +16,7 @@ import {
 } from "@/components/liff-chrome";
 import { resetLiffScroll } from "@/components/liff-scroll-reset";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
+import { CustomerListSkeleton } from "@/components/customer-list-skeleton";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
 import { isLiffSwrSessionExpired } from "@/lib/liff-swr";
 import { initLiffAndGetToken } from "@/lib/liff-session";
@@ -128,6 +129,7 @@ export default function CustomerListPage() {
         }
         setIdToken(result.token);
         setPhase("ready");
+        setListFeedback(null);
       } catch (e) {
         if (cancelled) return;
         console.error(e);
@@ -209,10 +211,11 @@ export default function CustomerListPage() {
     if (phase === "ready") resetLiffScroll();
   }, [phase, filter]);
 
-  if (phase === "init" || phase === "loading") {
+  if (phase === "init") {
     return (
       <LiffScreen>
-        <LiffLoadingBlock message="読み込み中…" />
+        <LiffPageHeader title="担当顧客一覧" />
+        <CustomerListSkeleton />
       </LiffScreen>
     );
   }
@@ -307,8 +310,8 @@ export default function CustomerListPage() {
             />
           </div>
 
-          {listLoading ? (
-            <LiffLoadingBlock message="案件を読み込み中…" />
+          {listLoading && customers.length === 0 ? (
+            <CustomerListSkeleton />
           ) : (
             <div className="flex flex-col gap-3">
               {listMessage && displayedCustomers.length === 0 ? (

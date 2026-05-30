@@ -77,11 +77,27 @@ export type LiffSwrKey = readonly [path: string, token: string];
  * デフォルト SWR 設定（メモリ内 Stale-While-Revalidate）。
  * provider / persist 等の永続化は使わない。
  */
+/** 一覧・カレンダー等（メモリ内のみ・localStorage 不使用） */
 export const LIFF_SWR_DEFAULT_OPTIONS: SWRConfiguration = {
-  revalidateOnFocus: true,
+  revalidateOnFocus: false,
   revalidateOnReconnect: true,
   revalidateIfStale: true,
-  dedupingInterval: 30_000,
+  dedupingInterval: 120_000,
+  focusThrottleInterval: 120_000,
   keepPreviousData: true,
-  errorRetryCount: 2,
+  errorRetryCount: 1,
+};
+
+/** 営業ダッシュボード（サーバー共有キャッシュと揃えた間隔） */
+export const LIFF_SWR_DASHBOARD_OPTIONS: SWRConfiguration = {
+  ...LIFF_SWR_DEFAULT_OPTIONS,
+  dedupingInterval: 180_000,
+  focusThrottleInterval: 180_000,
+};
+
+/** 工事カレンダー（月単位・空枠の鮮度優先。ダッシュボード等とは別設定） */
+export const LIFF_SWR_CALENDAR_OPTIONS: SWRConfiguration = {
+  ...LIFF_SWR_DEFAULT_OPTIONS,
+  dedupingInterval: 60_000,
+  focusThrottleInterval: 60_000,
 };

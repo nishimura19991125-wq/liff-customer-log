@@ -8,11 +8,11 @@ import {
   type DashboardPayload,
   type DashboardPeriod,
 } from "@/components/sales-dashboard-cyber-view";
+import { SalesDashboardSkeleton } from "@/components/sales-dashboard-skeleton";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   LiffAccountBar,
   LiffGhostLink,
-  LiffLoadingBlock,
   LiffPageHeader,
   LiffScreen,
   LiffSessionExpiredPanel,
@@ -22,7 +22,7 @@ import {
 import { resetLiffScroll } from "@/components/liff-scroll-reset";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
-import { isLiffSwrSessionExpired } from "@/lib/liff-swr";
+import { LIFF_SWR_DASHBOARD_OPTIONS, isLiffSwrSessionExpired } from "@/lib/liff-swr";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
@@ -36,7 +36,6 @@ export default function SalesDashboardPage() {
   const [phase, setPhase] = useState<
     | "init"
     | "need-login"
-    | "loading"
     | "ready"
     | "error"
     | "session-expired"
@@ -56,6 +55,12 @@ export default function SalesDashboardPage() {
     !account.loading &&
     account.staff.length > 0;
 
+  const canFetchDashboard =
+    Boolean(idToken) &&
+    (!account.bindingEnabled ||
+      Boolean(account.boundStaffName) ||
+      (!account.loading && account.staff.length === 0));
+
   useEffect(() => {
     if (!LIFF_ID) return;
     let cancelled = false;
@@ -68,7 +73,7 @@ export default function SalesDashboardPage() {
           return;
         }
         setIdToken(result.token);
-        setPhase("loading");
+        setPhase("ready");
       } catch (e) {
         if (cancelled) return;
         console.error(e);
@@ -87,64 +92,51 @@ export default function SalesDashboardPage() {
     needsStaffBind?: boolean;
   };
 
-  const dashboardPath =
-    idToken && !needsStaffBind && !account.loading
-      ? `/api/sales-dashboard?period=${encodeURIComponent(period)}`
-      : null;
+  const dashboardPath = canFetchDashboard
+    ? `/api/sales-dashboard?period=${encodeURIComponent(period)}`
+    : null;
 
   const {
     data,
     error: swrError,
     isLoading: dashboardLoading,
-  } = useLiffSwr<DashboardApiBody>(dashboardPath, idToken);
+    isValidating,
+  } = useLiffSwr<DashboardApiBody>(dashboardPath, idToken, LIFF_SWR_DASHBOARD_OPTIONS);
 
   useEffect(() => {
-    if (!idToken) return;
-    if (needsStaffBind || account.loading) {
-      if (phase === "loading") setPhase("ready");
-      return;
-    }
+    if (!idToken || phase !== "ready") return;
     if (swrError) {
       if (isLiffSwrSessionExpired(swrError)) {
         setPhase("session-expired");
         return;
       }
       setFeedback(swrError.message);
-      setPhase("ready");
       return;
     }
     if (data) {
       setFeedback(null);
-      setPhase("ready");
       resetLiffScroll();
-    } else if (dashboardLoading && phase !== "session-expired") {
-      setPhase("loading");
     }
-  }, [
-    idToken,
-    data,
-    swrError,
-    dashboardLoading,
-    needsStaffBind,
-    account.loading,
-    phase,
-  ]);
+  }, [idToken, phase, data, swrError]);
 
-  const listLoading = dashboardLoading && !data;
+  const showDashboardSkeleton =
+    canFetchDashboard && !data && (dashboardLoading || isValidating);
 
-  if (
-    phase === "init" ||
-    phase === "need-login" ||
-    (phase === "loading" && !needsStaffBind && !data)
-  ) {
+  if (phase === "init") {
     return (
-      <LiffLoadingBlock
-        message={
-          phase === "need-login"
-            ? "LINE でログインしています"
-            : "ダッシュボードを読み込んでいます"
-        }
-      />
+      <LiffScreen>
+        <SalesDashboardSkeleton />
+      </LiffScreen>
+    );
+  }
+
+  if (phase === "need-login") {
+    return (
+      <LiffScreen>
+        <p className="py-10 text-center text-[14px] text-slate-600">
+          LINE でログインしています…
+        </p>
+      </LiffScreen>
     );
   }
 
@@ -224,7 +216,7 @@ export default function SalesDashboardPage() {
                   key={tab.id}
                   type="button"
                   onClick={() => setPeriod(tab.id)}
-                  disabled={listLoading}
+                  disabled={showDashboardSkeleton && active}
                   className={`shrink-0 rounded-2xl px-5 py-2.5 text-[15px] transition-all duration-300 active:scale-[0.98] disabled:opacity-60 ${
                     active
                       ? "cyber-tab-active"
@@ -244,8 +236,8 @@ export default function SalesDashboardPage() {
           </p>
         ) : null}
 
-        {listLoading && !data ? (
-          <LiffLoadingBlock message="集計中…" />
+        {showDashboardSkeleton ? (
+          <SalesDashboardSkeleton />
         ) : data ? (
           <SalesDashboardCyberView
             data={data}
