@@ -13,14 +13,21 @@ import { resolveConstructionMapAddressFieldIds } from "@/lib/map-address-fields"
 import {
   buildCalendarPayloadCacheKey,
   getOrComputeCalendarPayload,
+  getStaleCalendarPayload,
   invalidateCalendarPayloadCacheForMonth,
 } from "@/lib/calendar-response-cache";
 import {
-  type AtPocketRecordRow,
+  calendarReportRateLimitRetryAfterSec,
+  fetchCalendarReportRecordsCached,
+} from "@/lib/calendar-report-records-cache";
+import {
   apiKeyForCalendarPocket,
-  apiKeyForCalendarReportPocket,
+  apiKeyForCalendarPocket1,
+  apiKeyForCalendarReportPocket1,
   fetchAllRecordsPages,
   fetchAppFields,
+  isPocketHttpRateLimitError,
+  pocketApiRateLimitRemainingMs,
 } from "@/lib/atpocket";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import {
@@ -37,6 +44,22 @@ function calendarCacheTtlMs(): number {
   if (!Number.isFinite(sec)) return 60_000;
   const clamped = Math.min(180, Math.max(15, sec));
   return clamped * 1000;
+}
+
+function rateLimitedCalendarResponse(
+  cacheKey: string,
+  stale: CalendarApiPayload,
+  retryAfterSec: number,
+): NextResponse {
+  const res = NextResponse.json({
+    ...stale,
+    rateLimited: true,
+    calendarStale: true,
+    rosterMessage:
+      "データ取得の利用上限に達したため、直近に取得した内容を表示しています。1〜2分待ってから再度お試しください。",
+  });
+  res.headers.set("Retry-After", String(retryAfterSec));
+  return res;
 }
 
 export async function GET(request: Request) {
@@ -88,56 +111,56 @@ export async function GET(request: Request) {
   }
 
   const cacheKey = buildCalendarPayloadCacheKey(year, month);
+  const calAuth = { apiKey: apiKeyForCalendarPocket() };
+  const calFieldsAuth = { apiKey: apiKeyForCalendarPocket1() };
+  const reportFieldsAuth = { apiKey: apiKeyForCalendarReportPocket1() };
 
   try {
     const payload = await getOrComputeCalendarPayload(
       cacheKey,
       refresh ? 0 : calendarCacheTtlMs(),
       async (): Promise<CalendarApiPayload> => {
-        const calAuth = { apiKey: apiKeyForCalendarPocket() };
-        const reportAuth = { apiKey: apiKeyForCalendarReportPocket() };
-
-        const [constructionFields, reportFields] = await Promise.all([
-          fetchAppFields(calAppId, calAuth),
-          reportAppId
-            ? fetchAppFields(reportAppId, reportAuth)
-            : Promise.resolve(null),
-        ]);
+        const constructionFields = await fetchAppFields(calAppId, calFieldsAuth, {
+          operation: "calendar:工事fields",
+          appEnv: "CALENDAR_APP_ID",
+        });
 
         const fids = resolveConstructionFieldIds(constructionFields);
         const mapAddressIds =
           resolveConstructionMapAddressFieldIds(constructionFields);
         const csv = collectConstructionFieldsCsv(fids, mapAddressIds);
 
-        const pocketQuery =
-          recordsQueryFilterEnabled
-            ? buildConstructionRecordsMonthOverlapQuery(fids, year, month)
-            : undefined;
+        const pocketQuery = recordsQueryFilterEnabled
+          ? buildConstructionRecordsMonthOverlapQuery(fids, year, month)
+          : undefined;
 
-        let reportRecordsPromise: Promise<AtPocketRecordRow[] | null> =
-          Promise.resolve(null);
+        const constructionRecords = await fetchAllRecordsPages(
+          calAppId,
+          csv,
+          calAuth,
+          pocketQuery ?? undefined,
+          { operation: "calendar:工事一覧", appEnv: "CALENDAR_APP_ID" },
+          { maxRetries: 2 },
+        );
 
-        if (reportAppId && reportFields) {
-          const rf = resolveReportFieldIds(reportFields);
-          const rcsv = collectReportFieldsCsv(rf);
-          if (rcsv) {
-            reportRecordsPromise = fetchAllRecordsPages(
-              reportAppId,
-              rcsv,
-              reportAuth,
-            );
-          }
+        let reportRecords: Awaited<
+          ReturnType<typeof fetchCalendarReportRecordsCached>
+        > | null = null;
+        let reportFields: Awaited<ReturnType<typeof fetchAppFields>> | null =
+          null;
+
+        if (reportAppId) {
+          reportFields = await fetchAppFields(reportAppId, reportFieldsAuth, {
+            operation: "calendar:工事報告fields",
+            appEnv: "CALENDAR_REPORT_APP_ID",
+          });
+          const rcsv = collectReportFieldsCsv(
+            resolveReportFieldIds(reportFields),
+          );
+          reportRecords = rcsv
+            ? await fetchCalendarReportRecordsCached(reportAppId, rcsv)
+            : [];
         }
-
-        const [constructionRecords, reportRecords] = await Promise.all([
-          fetchAllRecordsPages(
-            calAppId,
-            csv,
-            calAuth,
-            pocketQuery ?? undefined,
-          ),
-          reportRecordsPromise,
-        ]);
 
         return buildCalendarPayload(
           year,
@@ -164,6 +187,28 @@ export async function GET(request: Request) {
     return NextResponse.json(withHandler);
   } catch (e) {
     console.error("[api/calendar]", e);
+    if (isPocketHttpRateLimitError(e)) {
+      const stale = getStaleCalendarPayload(cacheKey);
+      const retrySec = Math.max(
+        60,
+        Math.ceil(
+          Math.max(
+            pocketApiRateLimitRemainingMs(calAuth),
+            pocketApiRateLimitRemainingMs(reportFieldsAuth),
+          ) / 1000,
+        ) || calendarReportRateLimitRetryAfterSec(reportFieldsAuth),
+      );
+      if (stale) {
+        return rateLimitedCalendarResponse(cacheKey, stale, retrySec);
+      }
+      return NextResponse.json(
+        {
+          error:
+            "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。",
+        },
+        { status: 429, headers: { "Retry-After": String(retrySec) } },
+      );
+    }
     return NextResponse.json(
       {
         error:

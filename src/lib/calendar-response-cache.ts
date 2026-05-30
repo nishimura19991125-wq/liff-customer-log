@@ -1,14 +1,21 @@
 import "server-only";
 
 import type { CalendarApiPayload } from "@/lib/calendar-api-types";
+import { invalidateCalendarReportRecordsCache } from "@/lib/calendar-report-records-cache";
 
 /**
  * 認証済みユーザー間で共有できるカレンダー JSON のみキャッシュする。
  * （ペイロードは LINE ユーザー別フィルタなし・組織共通データ前提）
  */
-type Entry = { expiresAt: number; payload: CalendarApiPayload };
+type Entry = {
+  expiresAt: number;
+  staleUntil: number;
+  payload: CalendarApiPayload;
+};
 const store = new Map<string, Entry>();
 const inflight = new Map<string, Promise<CalendarApiPayload>>();
+
+const CALENDAR_PAYLOAD_STALE_SERVE_MS = 6 * 60 * 60 * 1000;
 
 /** GET /api/calendar と同じキー（route と invalidate で共有） */
 export function buildCalendarPayloadCacheKey(year: number, month: number): string {
@@ -49,6 +56,16 @@ export function invalidateCalendarPayloadCacheForMonth(
 export function invalidateAllCalendarPayloadCache(): void {
   store.clear();
   inflight.clear();
+  invalidateCalendarReportRecordsCache();
+}
+
+/** 429 時などに期限切れでも返せるペイロード（あれば） */
+export function getStaleCalendarPayload(
+  cacheKey: string,
+): CalendarApiPayload | null {
+  const hit = store.get(cacheKey);
+  if (!hit || Date.now() > hit.staleUntil) return null;
+  return hit.payload;
 }
 
 export async function getOrComputeCalendarPayload(
@@ -68,8 +85,10 @@ export async function getOrComputeCalendarPayload(
   const p = (async () => {
     try {
       const payload = await compute();
+      const now = Date.now();
       store.set(cacheKey, {
-        expiresAt: Date.now() + ttlMs,
+        expiresAt: now + ttlMs,
+        staleUntil: now + ttlMs + CALENDAR_PAYLOAD_STALE_SERVE_MS,
         payload,
       });
       return payload;

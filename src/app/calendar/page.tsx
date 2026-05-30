@@ -1244,6 +1244,15 @@ export default function CalendarPage() {
         setPhase("disabled");
         return;
       }
+      if (calendarError.status === 429) {
+        const body = calendarError.body as { error?: string } | null;
+        setErrorMessage(
+          body?.error ??
+            "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。",
+        );
+        setPhase("error");
+        return;
+      }
       setErrorMessage(calendarError.message);
       setPhase("error");
       return;
@@ -1467,6 +1476,15 @@ export default function CalendarPage() {
           staffName={account.boundStaffName}
           className="-mx-4 mb-4 sm:-mx-0"
         />
+
+        {data?.rateLimited && data.rosterMessage ? (
+          <p
+            className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] font-medium leading-relaxed text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-100"
+            role="status"
+          >
+            {data.rosterMessage}
+          </p>
+        ) : null}
 
         <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
         <LiffStaffBindPanel

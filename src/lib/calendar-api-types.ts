@@ -38,4 +38,8 @@ export type CalendarApiPayload = {
   emptyFillConstructionHandlerUsesStaffDirectory?: boolean;
   /** @deprecated emptyFillConstructionHandlerUsesStaffDirectory を参照してください */
   emptyFillConstructionRegistrantUsesStaffDirectory?: boolean;
+  /** 429 時に古いキャッシュを返したとき */
+  rateLimited?: boolean;
+  calendarStale?: boolean;
+  rosterMessage?: string;
 };

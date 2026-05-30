@@ -10,10 +10,9 @@ import {
 import { resolveConstructionMapAddressFieldIds } from "@/lib/map-address-fields";
 import type { CalendarRecordMonthPatch } from "@/lib/calendar-api-types";
 import type { AtPocketFetchAuth, AtPocketRecordRow } from "@/lib/atpocket";
+import { fetchCalendarReportRecordsCached } from "@/lib/calendar-report-records-cache";
 import {
-  apiKeyForCalendarPocket,
-  apiKeyForCalendarReportPocket,
-  fetchAllRecordsPages,
+  apiKeyForCalendarReportPocket1,
   fetchAppFields,
   fetchRecordById,
 } from "@/lib/atpocket";
@@ -68,17 +67,17 @@ export async function buildCalendarPatchAfterConstructionSave(
   let reportRecords: AtPocketRecordRow[] | null = null;
   let reportFields: Awaited<ReturnType<typeof fetchAppFields>> | null = null;
   if (reportAppId) {
-    const reportAuth = { apiKey: apiKeyForCalendarReportPocket() };
-    reportFields = await fetchAppFields(reportAppId, reportAuth);
-    const rf = resolveReportFieldIds(reportFields);
-    const rcsv = collectReportFieldsCsv(rf);
-    if (rcsv) {
-      reportRecords = await fetchAllRecordsPages(
-        reportAppId,
-        rcsv,
-        reportAuth,
-      );
-    }
+    const reportFieldsAuth = {
+      apiKey: apiKeyForCalendarReportPocket1(),
+    };
+    reportFields = await fetchAppFields(reportAppId, reportFieldsAuth, {
+      operation: "calendar:工事報告fields(patch)",
+      appEnv: "CALENDAR_REPORT_APP_ID",
+    });
+    const rcsv = collectReportFieldsCsv(resolveReportFieldIds(reportFields));
+    reportRecords = rcsv
+      ? await fetchCalendarReportRecordsCached(reportAppId, rcsv)
+      : [];
   }
 
   return buildCalendarMonthPatchForConstructionRecord(

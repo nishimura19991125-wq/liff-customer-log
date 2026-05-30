@@ -128,7 +128,7 @@ export function apiKeyForCalendarWrite(): string {
   ]);
 }
 
-/** 工事報告アプリ・読取（未設定時は工事カレンダー読取②） */
+/** 工事報告アプリ・読取①（一覧など） */
 export function apiKeyForCalendarReportPocket(): string {
   const key = firstEnvApiKey(
     "CALENDAR_REPORT_ATPOCKET_API_KEY",
@@ -137,6 +137,16 @@ export function apiKeyForCalendarReportPocket(): string {
   );
   if (key) return key;
   return apiKeyForCalendarPocket1();
+}
+
+/** 工事報告アプリ・読取②（fields など・429 分散用） */
+export function apiKeyForCalendarReportPocket1(): string {
+  const key = firstEnvApiKey(
+    "CALENDAR_REPORT_ATPOCKET_API_KEY_1",
+    "CALENDAR_REPORT_ATPOCKET_API_KEY_2",
+  );
+  if (key) return key;
+  return apiKeyForCalendarReportPocket();
 }
 
 /** スタッフ名簿・読取①（名簿一覧・勤務場所・PIN照会など） */
@@ -420,6 +430,11 @@ export function pocketApiRateLimitRemainingMs(
 ): number {
   const until = pocketRateLimitedUntil.get(pocketRateLimitKey(auth)) ?? 0;
   return Math.max(0, until - Date.now());
+}
+
+export function isPocketHttpRateLimitError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return msg.includes("429") || msg.includes("Too Many Request");
 }
 
 export type PocketListFetchOptions = {
