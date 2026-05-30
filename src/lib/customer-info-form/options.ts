@@ -109,6 +109,15 @@ export const INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY = new Set<string>([
   "パワコン取替のみ",
 ]);
 
+/** パネル品番・枚数を非表示にし @pocket へ "-" を送る設置種別 */
+export const INSTALLATION_TYPES_HIDE_PANEL = new Set<string>(["蓄電池のみ"]);
+
+export function installationTypeHidesPanelSection(
+  installationType: string | undefined,
+): boolean {
+  return INSTALLATION_TYPES_HIDE_PANEL.has((installationType ?? "").trim());
+}
+
 /** 付近見取り図 */
 export const VICINITY_SKETCH_OPTIONS = [
   "未作成",
