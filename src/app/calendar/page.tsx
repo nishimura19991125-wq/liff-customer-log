@@ -32,6 +32,7 @@ import {
 import { isLiffSwrSessionExpired, liffAuthedJsonFetch } from "@/lib/liff-swr";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { initLiffAndGetToken, refreshLiffIdToken } from "@/lib/liff-session";
+import { mergeStaffNameOptions } from "@/lib/staff-name-options";
 
 type HandlerStaffRow = {
   staffRecordId: string;
@@ -804,6 +805,11 @@ function NewConstructionRecordPanel({
   const [appSettingsDayDate, setAppSettingsDayDate] = useState("");
   const [scheduledStartDate, setScheduledStartDate] = useState("");
   const [contractor, setContractor] = useState("");
+  const [contractorOptions, setContractorOptions] = useState<string[]>([]);
+  const [contractorOptionsLoading, setContractorOptionsLoading] =
+    useState(false);
+  const [contractorOptionsConfigured, setContractorOptionsConfigured] =
+    useState(false);
 
   const canSubmit = Boolean(idToken);
 
@@ -818,6 +824,52 @@ function NewConstructionRecordPanel({
       setAppSettingsDayDate("");
     }
   }, [housingStatus]);
+
+  useEffect(() => {
+    if (!idToken || !open) {
+      setContractorOptions([]);
+      setContractorOptionsLoading(false);
+      setContractorOptionsConfigured(false);
+      return;
+    }
+    let cancelled = false;
+    setContractorOptionsLoading(true);
+    void (async () => {
+      try {
+        const res = await fetch("/api/calendar/construction-contractors", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const data = (await res.json()) as {
+          options?: string[];
+          configured?: boolean;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok) {
+          setContractorOptions([]);
+          setContractorOptionsConfigured(false);
+          return;
+        }
+        setContractorOptions(data.options ?? []);
+        setContractorOptionsConfigured(data.configured !== false);
+      } catch {
+        if (!cancelled) {
+          setContractorOptions([]);
+          setContractorOptionsConfigured(false);
+        }
+      } finally {
+        if (!cancelled) setContractorOptionsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [idToken, open]);
+
+  const contractorSelectOptions = useMemo(
+    () => mergeStaffNameOptions(contractorOptions, contractor),
+    [contractorOptions, contractor],
+  );
 
   async function handleSubmit() {
     const name = customerName.trim();
@@ -1009,14 +1061,32 @@ function NewConstructionRecordPanel({
               施工会社
               <span className="font-medium text-slate-500"> （任意）</span>
             </span>
-            <input
-              type="text"
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
+            <select
+              className={HANDLER_STAFF_SELECT_CLASS}
               value={contractor}
               onChange={(e) => setContractor(e.target.value)}
-              placeholder="例：〇〇工務店"
-              disabled={submitting || !canSubmit}
-            />
+              disabled={submitting || !canSubmit || contractorOptionsLoading}
+            >
+              <option value="">
+                {contractorOptionsLoading
+                  ? "一覧を読み込み中…"
+                  : contractorOptionsConfigured
+                    ? "選択してください"
+                    : "一覧を取得できません"}
+              </option>
+              {contractorSelectOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+              {contractorOptionsLoading
+                ? "取引先会社一覧を読み込み中…"
+                : contractorOptionsConfigured
+                  ? "取引先会社一覧（会社種別＝施工店・取引状況＝取引中）から選択"
+                  : "TRADING_PARTNER_APP_ID および取引先列の環境変数を確認してください"}
+            </p>
           </label>
           {isNewBuildHousing ? (
             <>

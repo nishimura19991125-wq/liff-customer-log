@@ -17,6 +17,7 @@ import {
 
 const COMPANY_TYPE_MANUFACTURER = "メーカー";
 const COMPANY_TYPE_CREDIT = "信販会社";
+const COMPANY_TYPE_CONSTRUCTION_SHOP = "施工店";
 const TRADE_STATUS_ACTIVE = "取引中";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -238,7 +239,9 @@ async function resolveTradingPartnerIdsForFetch(
   return resolveTradingPartnerFieldIds(appFields);
 }
 
-async function fetchManufacturerOptionsUncached(): Promise<string[] | null> {
+async function fetchCompanyOptionsUncached(
+  expectedCompanyTypeLabel: string,
+): Promise<string[] | null> {
   const appId = tradingPartnerAppId();
   if (!appId) return null;
 
@@ -255,16 +258,15 @@ async function fetchManufacturerOptionsUncached(): Promise<string[] | null> {
   let names = collectTradingPartnerCompanyNames(
     rows,
     ids,
-    COMPANY_TYPE_MANUFACTURER,
+    expectedCompanyTypeLabel,
   );
 
-  // fields 指定で値が欠ける・キーがずれる場合に全項目取得で再試行
   if (names.length <= 1 && rows.length >= 2) {
     const fullRows = await fetchAllRecordsPages(appId, "", auth);
     const retryNames = collectTradingPartnerCompanyNames(
       fullRows,
       ids,
-      COMPANY_TYPE_MANUFACTURER,
+      expectedCompanyTypeLabel,
     );
     if (retryNames.length > names.length) {
       names = retryNames;
@@ -272,6 +274,10 @@ async function fetchManufacturerOptionsUncached(): Promise<string[] | null> {
   }
 
   return names;
+}
+
+async function fetchManufacturerOptionsUncached(): Promise<string[] | null> {
+  return fetchCompanyOptionsUncached(COMPANY_TYPE_MANUFACTURER);
 }
 
 type CompanyOptionsCache = {
@@ -283,39 +289,11 @@ let creditCache: CompanyOptionsCache | null = null;
 let creditInflight: Promise<string[] | null> | null = null;
 
 async function fetchCreditCompanyOptionsUncached(): Promise<string[] | null> {
-  const appId = tradingPartnerAppId();
-  if (!appId) return null;
+  return fetchCompanyOptionsUncached(COMPANY_TYPE_CREDIT);
+}
 
-  const auth = tradingPartnerPocketAuth();
-  const ids = await resolveTradingPartnerIdsForFetch(appId);
-  if (!ids) {
-    return [];
-  }
-
-  const fieldsCsv = [ids.companyType, ids.tradeStatus, ids.companyName].join(
-    ",",
-  );
-  let rows = await fetchAllRecordsPages(appId, fieldsCsv, auth);
-  let names = collectTradingPartnerCompanyNames(
-    rows,
-    ids,
-    COMPANY_TYPE_CREDIT,
-  );
-
-  // fields 指定で値が欠ける・キーがずれる場合に全項目取得で再試行
-  if (names.length <= 1 && rows.length >= 2) {
-    const fullRows = await fetchAllRecordsPages(appId, "", auth);
-    const retryNames = collectTradingPartnerCompanyNames(
-      fullRows,
-      ids,
-      COMPANY_TYPE_CREDIT,
-    );
-    if (retryNames.length > names.length) {
-      names = retryNames;
-    }
-  }
-
-  return names;
+async function fetchConstructionShopOptionsUncached(): Promise<string[] | null> {
+  return fetchCompanyOptionsUncached(COMPANY_TYPE_CONSTRUCTION_SHOP);
 }
 
 /** 取引先会社一覧から信販会社（取引中）の会社名リスト。未設定時は null */
@@ -341,6 +319,42 @@ export async function fetchTradingPartnerCreditCompanyOptions(): Promise<
   })();
 
   return creditInflight;
+}
+
+let constructionShopCache: CompanyOptionsCache | null = null;
+let constructionShopInflight: Promise<string[] | null> | null = null;
+
+/** 取引先会社一覧から施工店（取引中）の会社名リスト。未設定時は null */
+export async function fetchTradingPartnerConstructionShopOptions(): Promise<
+  string[] | null
+> {
+  const now = Date.now();
+  if (constructionShopCache && constructionShopCache.expiresAt > now) {
+    return constructionShopCache.options;
+  }
+  if (constructionShopInflight) return constructionShopInflight;
+
+  constructionShopInflight = (async () => {
+    try {
+      const options = await fetchConstructionShopOptionsUncached();
+      constructionShopCache = {
+        expiresAt: Date.now() + CACHE_TTL_MS,
+        options,
+      };
+      return options;
+    } catch (e) {
+      console.error(
+        "[trading-partner-manufacturers] construction shop options fetch failed",
+        e,
+      );
+      constructionShopCache = { expiresAt: Date.now() + 60_000, options: [] };
+      return [];
+    } finally {
+      constructionShopInflight = null;
+    }
+  })();
+
+  return constructionShopInflight;
 }
 
 /** 取引先会社一覧からメーカー（取引中）の会社名リスト。未設定時は null */
