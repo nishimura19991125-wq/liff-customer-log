@@ -6,6 +6,8 @@ import {
   INSTALLATION_TYPES_WITH_SOLAR_PANEL,
   PAYMENT_METHODS_WITH_CASH,
   PAYMENT_METHODS_WITH_LOAN,
+  introductionRequiresBuilderName,
+  introductionRequiresReferralFee,
   preApplicationRequiresDocuments,
   subsidyIncludesCity,
   subsidyIncludesOther,
@@ -29,10 +31,15 @@ const POCKET_ZERO_WHEN_EMPTY_KEYS = new Set([
   "panelCount1",
   "panelCount2",
   "extraPartsAmount",
+  "referralFee",
 ]);
 
 /** 非表示時に @pocket へ 0 を送る金額フィールド（"-" は半角数字エラーになる） */
-const POCKET_ZERO_WHEN_HIDDEN_KEYS = new Set(["cashAmount", "loanAmount"]);
+const POCKET_ZERO_WHEN_HIDDEN_KEYS = new Set([
+  "cashAmount",
+  "loanAmount",
+  "referralFee",
+]);
 
 /** 未入力・非表示時に @pocket へ "-" を送るフィールド */
 const POCKET_DASH_WHEN_EMPTY_KEYS = new Set([
@@ -50,6 +57,7 @@ const COMMA_INTEGER_KEYS = new Set([
   "contractAmount",
   "cashAmount",
   "loanAmount",
+  "referralFee",
 ]);
 
 function isEmptyPocketInput(raw: string): boolean {
@@ -129,8 +137,13 @@ export function isCustomerInfoFormFieldVisible(
   const subsidy = norm(values.subsidy);
   const indoorSurveyStatus = norm(values.indoorSurveyStatus);
   const preApplication = norm(values.preApplication);
+  const introduction = norm(values.introduction);
 
   switch (key) {
+    case "referralFee":
+      return introductionRequiresReferralFee(introduction);
+    case "builderOrTorachiName":
+      return introductionRequiresBuilderName(introduction);
     case "panelModel2":
     case "panelCount2":
       return panelCombo === "有";
