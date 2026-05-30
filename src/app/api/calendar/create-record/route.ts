@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import {
-  apiKeyForCalendarPocket,
+  apiKeyForCalendarPocket1,
+  apiKeyForCalendarWrite,
   createRecord,
   fetchAppFields,
   updateRecord,
@@ -127,12 +128,13 @@ export async function POST(request: Request) {
   }
   const contractor = body.contractor?.trim() ?? "";
 
-  const pocketAuth = { apiKey: apiKeyForCalendarPocket() };
+  const readAuth = { apiKey: apiKeyForCalendarPocket1() };
+  const writeAuth = { apiKey: apiKeyForCalendarWrite() };
 
   let constructionSaved = false;
 
   try {
-    const constructionFields = await fetchAppFields(calAppId, pocketAuth);
+    const constructionFields = await fetchAppFields(calAppId, readAuth);
 
     const resolvedCustomer = resolveConfiguredFieldToSchemaUniqueId(
       customerField,
@@ -252,7 +254,7 @@ export async function POST(request: Request) {
         fids,
         ...patchExtras,
       }),
-      pocketAuth,
+      writeAuth,
     );
     constructionSaved = true;
     invalidateAllCalendarPayloadCache();
@@ -268,7 +270,7 @@ export async function POST(request: Request) {
         startDateFieldId: fids.startDate?.trim() || undefined,
         tNumberFieldId: resolvedTNumber,
       },
-      pocketAuth,
+      readAuth,
     );
 
     const recordId = constructionMatch.recordId;
@@ -290,7 +292,7 @@ export async function POST(request: Request) {
         calAppId,
         recordId,
         resolvedTNumber,
-        pocketAuth,
+        writeAuth,
         fieldsCsv,
       );
       uniqueKey = uniqueKey ?? tNumber;
@@ -318,7 +320,7 @@ export async function POST(request: Request) {
         ...patchExtras,
       });
 
-      await updateRecord(calAppId, recordId, patch, pocketAuth);
+      await updateRecord(calAppId, recordId, patch, writeAuth);
     }
 
     return finalizeConstructionCalendarSave({
@@ -327,7 +329,7 @@ export async function POST(request: Request) {
       constructionUniqueKey: uniqueKey,
       customerName,
       constructionFields,
-      calendarAuth: pocketAuth,
+      calendarAuth: writeAuth,
       lineUserId: auth.lineUserId,
       viewYear: body.viewYear,
       viewMonth: body.viewMonth,

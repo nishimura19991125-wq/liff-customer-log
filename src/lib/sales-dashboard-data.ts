@@ -2,8 +2,14 @@ import "server-only";
 
 import type { AtPocketFetchAuth } from "@/lib/atpocket";
 import { fetchAppFields, fetchRecordsList } from "@/lib/atpocket";
-import { customerInfoPocketAuth } from "@/lib/customer-info-config";
-import { apiKeyForSalesDashboardPtPocket } from "@/lib/atpocket";
+import {
+  customerInfoPocketAuth,
+  customerInfoPocketAuth1,
+} from "@/lib/customer-info-config";
+import {
+  apiKeyForSalesDashboardPtPocket,
+  apiKeyForSalesDashboardPtPocket1,
+} from "@/lib/atpocket";
 import {
   coerceCustomerInfoDisplayString,
   readCustomerInfoFieldValue,
@@ -276,8 +282,10 @@ export async function buildSalesDashboardPayload(
   const ptAppId = salesDashboardPtAppId();
   if (!ptAppId) return null;
 
-  const ptAuth = { apiKey: apiKeyForSalesDashboardPtPocket() };
-  const contractAuth = customerInfoPocketAuth();
+  const ptFieldAuth = { apiKey: apiKeyForSalesDashboardPtPocket() };
+  const ptListAuth = { apiKey: apiKeyForSalesDashboardPtPocket1() };
+  const contractFieldAuth = customerInfoPocketAuth();
+  const contractListAuth = customerInfoPocketAuth1();
   const period = resolveSalesDashboardPeriod(periodKey);
   const bound = normApClStaffName(boundStaffName);
   const apoSectionPromise = buildApoDashboardSection(boundStaffName, periodKey);
@@ -286,7 +294,7 @@ export async function buildSalesDashboardPayload(
     periodKey,
   );
 
-  const ptFields = await fetchAppFields(ptAppId, ptAuth, {
+  const ptFields = await fetchAppFields(ptAppId, ptFieldAuth, {
     operation: "sales-dashboard:pt-fields",
     appEnv: "SALES_DASHBOARD_PT_APP_ID",
   });
@@ -303,7 +311,7 @@ export async function buildSalesDashboardPayload(
   const ptRecords = await fetchAllPages(
     ptAppId,
     ptWanted.join(","),
-    ptAuth,
+    ptListAuth,
     "sales-dashboard:pt-records",
   );
 
@@ -312,10 +320,14 @@ export async function buildSalesDashboardPayload(
   const contractAppId = salesDashboardContractAppId();
   if (contractAppId) {
     try {
-      const contractFields = await fetchAppFields(contractAppId, contractAuth, {
-        operation: "sales-dashboard:contract-fields",
-        appEnv: "SALES_DASHBOARD_CONTRACT_APP_ID",
-      });
+      const contractFields = await fetchAppFields(
+        contractAppId,
+        contractFieldAuth,
+        {
+          operation: "sales-dashboard:contract-fields",
+          appEnv: "SALES_DASHBOARD_CONTRACT_APP_ID",
+        },
+      );
       const contractFieldMap = resolveContractCountFieldMap(contractFields);
       if (contractFieldMap) {
         const contractCsv = [
@@ -328,7 +340,7 @@ export async function buildSalesDashboardPayload(
         const contractRecords = await fetchAllPages(
           contractAppId,
           contractCsv,
-          contractAuth,
+          contractListAuth,
           "sales-dashboard:contract-records",
         );
         const contractMap = buildContractCountByMonth(

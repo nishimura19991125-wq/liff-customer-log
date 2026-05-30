@@ -2,7 +2,7 @@ import "server-only";
 
 import {
   customerInfoAppId,
-  customerInfoPocketAuth,
+  customerInfoPocketAuth1,
 } from "@/lib/customer-info-config";
 import {
   customerInfoRecordIdFromRow,
@@ -43,7 +43,7 @@ export async function findCustomerInfoRecordIdByUniqueKey(
   const want = normalizeConstructionUniqueKey(uniqueKey);
   if (!want) return null;
 
-  const auth = customerInfoPocketAuth();
+  const auth = customerInfoPocketAuth1();
   const pocketCtx = {
     operation: "customer-info:キー項目照合(T番号)",
     appEnv: "CUSTOMER_INFO_APP_ID",

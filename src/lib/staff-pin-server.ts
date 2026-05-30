@@ -4,6 +4,7 @@ import { timingSafeEqual } from "node:crypto";
 
 import {
   apiKeyForStaffPocketRead,
+  apiKeyForStaffPocketRead1,
   apiKeyForStaffWrite,
   fetchAppFieldUniqueIdsSetTryKeys,
   fetchAppFields,
@@ -159,9 +160,9 @@ async function putStaffPinPartialUpdate(
   const lineIds = staffLineUserIdFieldIdsFromEnv();
   const staffNameFieldId = process.env.STAFF_NAME_FIELD_ID?.trim() ?? "";
   const writeAuth = { apiKey: apiKeyForStaffWrite() };
-  const readKey = process.env.ATPOCKET_API_KEY?.trim() ?? "";
   const schemaUniqueIds = await fetchAppFieldUniqueIdsSetTryKeys(staffAppId, [
-    readKey,
+    apiKeyForStaffPocketRead(),
+    apiKeyForStaffPocketRead1(),
     apiKeyForStaffWrite(),
   ]);
 

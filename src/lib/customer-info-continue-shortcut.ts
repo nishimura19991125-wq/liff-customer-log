@@ -4,7 +4,7 @@ import {
   customerInfoAppId,
   customerInfoConfigReady,
   customerInfoNameFieldId,
-  customerInfoPocketAuth,
+  customerInfoPocketAuth1,
   customerInfoSubtitleFieldId,
 } from "@/lib/customer-info-config";
 import {
@@ -161,7 +161,7 @@ export async function findCustomerInfoPendingRecords(
   const appId = customerInfoAppId();
   if (!appId) return [];
 
-  const auth = customerInfoPocketAuth();
+  const auth = customerInfoPocketAuth1();
   const pocketCtx = {
     operation: "customer-info:続き入力ショートカット",
     appEnv: "CUSTOMER_INFO_APP_ID",

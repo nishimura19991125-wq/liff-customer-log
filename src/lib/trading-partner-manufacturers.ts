@@ -2,7 +2,8 @@ import "server-only";
 
 import type { AtPocketFetchAuth, AtPocketFieldRow } from "@/lib/atpocket";
 import {
-  apiKeyForCustomerInfoPocket,
+  apiKeyForTradingPartnerPocket,
+  apiKeyForTradingPartnerPocket1,
   fetchAllRecordsPages,
   fetchAppFieldsTryKeys,
 } from "@/lib/atpocket";
@@ -39,8 +40,7 @@ function tradingPartnerAppId(): string | null {
 }
 
 function tradingPartnerPocketAuth(): AtPocketFetchAuth {
-  const k = process.env.TRADING_PARTNER_ATPOCKET_API_KEY?.trim();
-  return { apiKey: k || apiKeyForCustomerInfoPocket() };
+  return { apiKey: apiKeyForTradingPartnerPocket() };
 }
 
 function pickFieldUniqueIdByExactCaption(
@@ -208,9 +208,8 @@ function pocketApiKeysForTradingPartner(): string[] {
   const dedup = new Set<string>();
   const keys: string[] = [];
   for (const k of [
-    process.env.TRADING_PARTNER_ATPOCKET_API_KEY?.trim(),
-    process.env.CUSTOMER_INFO_ATPOCKET_API_KEY?.trim(),
-    process.env.ATPOCKET_API_KEY?.trim(),
+    apiKeyForTradingPartnerPocket(),
+    apiKeyForTradingPartnerPocket1(),
   ]) {
     if (k && !dedup.has(k)) {
       dedup.add(k);
@@ -232,7 +231,7 @@ async function resolveTradingPartnerIdsForFetch(
   );
   if (!appFields) {
     console.warn(
-      "[trading-partner-manufacturers] 取引先会社一覧の fields API が 403 等で失敗しました。TRADING_PARTNER_*_FIELD_ID を3つとも設定するか、取引先アプリ参照権限のある API キーを TRADING_PARTNER_ATPOCKET_API_KEY に指定してください。",
+      "[trading-partner-manufacturers] 取引先会社一覧の fields API が 403 等で失敗しました。TRADING_PARTNER_*_FIELD_ID を3つとも設定するか、TRADING_PARTNER_ATPOCKET_API_KEY / _1 / _2 を確認してください。",
     );
     return null;
   }

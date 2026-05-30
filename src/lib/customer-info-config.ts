@@ -1,15 +1,30 @@
 import "server-only";
 
 import type { AtPocketFetchAuth } from "@/lib/atpocket";
-import { apiKeyForCustomerInfoPocket } from "@/lib/atpocket";
+import {
+  apiKeyForCustomerInfoPocket,
+  apiKeyForCustomerInfoPocket1,
+  apiKeyForCustomerInfoWrite,
+} from "@/lib/atpocket";
 
 export function customerInfoAppId(): string | null {
   const id = process.env.CUSTOMER_INFO_APP_ID?.trim();
   return id || null;
 }
 
+/** お客様情報・読取① */
 export function customerInfoPocketAuth(): AtPocketFetchAuth {
   return { apiKey: apiKeyForCustomerInfoPocket() };
+}
+
+/** お客様情報・読取② */
+export function customerInfoPocketAuth1(): AtPocketFetchAuth {
+  return { apiKey: apiKeyForCustomerInfoPocket1() };
+}
+
+/** お客様情報・更新③ */
+export function customerInfoPocketAuthWrite(): AtPocketFetchAuth {
+  return { apiKey: apiKeyForCustomerInfoWrite() };
 }
 
 export function customerInfoNameFieldId(): string | null {

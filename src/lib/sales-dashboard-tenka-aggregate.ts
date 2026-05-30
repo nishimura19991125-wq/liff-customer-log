@@ -2,6 +2,7 @@ import "server-only";
 
 import {
   apiKeyForSalesDashboardApoPocket,
+  apiKeyForSalesDashboardApoPocket1,
   fetchAppFields,
   fetchRecordsList,
   type AtPocketFetchAuth,
@@ -171,11 +172,12 @@ export async function buildTenkaDashboardSection(
   }
 
   try {
-    const auth = { apiKey: apiKeyForSalesDashboardApoPocket() };
+    const fieldAuth = { apiKey: apiKeyForSalesDashboardApoPocket() };
+    const listAuth = { apiKey: apiKeyForSalesDashboardApoPocket1() };
     const bound = normApClStaffName(boundStaffName);
     const filterValues = salesDashboardApoTenkaTypeFilterValues();
 
-    const apoFields = await fetchAppFields(apoAppId, auth, {
+    const apoFields = await fetchAppFields(apoAppId, fieldAuth, {
       operation: "sales-dashboard:tenka-fields",
       appEnv: "SALES_DASHBOARD_APO_APP_ID",
     });
@@ -200,7 +202,7 @@ export async function buildTenkaDashboardSection(
       .filter(Boolean)
       .join(",");
 
-    const records = await fetchAllPages(apoAppId, wanted, auth);
+    const records = await fetchAllPages(apoAppId, wanted, listAuth);
     const byStaff = aggregateTenkaRecords(
       records,
       fieldMap,

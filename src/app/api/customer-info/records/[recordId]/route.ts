@@ -4,6 +4,8 @@ import {
   customerInfoConfigReady,
   customerInfoEditableFieldIds,
   customerInfoPocketAuth,
+  customerInfoPocketAuth1,
+  customerInfoPocketAuthWrite,
   customerInfoSubtitleFieldId,
   customerInfoUsesLegacyEditableList,
 } from "@/lib/customer-info-config";
@@ -306,10 +308,11 @@ export async function PUT(request: Request, ctx: RouteCtx) {
     );
   }
 
-  const pocketAuth = customerInfoPocketAuth();
+  const readAuth = customerInfoPocketAuth1();
+  const writeAuth = customerInfoPocketAuthWrite();
 
   try {
-    const appFields = await fetchAppFields(cfg.appId, pocketAuth, {
+    const appFields = await fetchAppFields(cfg.appId, readAuth, {
       operation: "customer-info:レコード保存(列定義)",
       appEnv: "CUSTOMER_INFO_APP_ID",
     });
@@ -355,7 +358,7 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         values,
         resolved,
         appFields,
-        pocketAuth,
+        writeAuth,
       );
       if (Object.keys(payload).length === 0) {
         return NextResponse.json(
@@ -367,7 +370,7 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       const keyErr = await attachImportKeyAndUpdate(
         cfg.appId,
         recordId,
-        pocketAuth,
+        writeAuth,
         appFields,
         payload,
       );
@@ -412,7 +415,7 @@ export async function PUT(request: Request, ctx: RouteCtx) {
     const keyErr = await attachImportKeyAndUpdate(
       cfg.appId,
       recordId,
-      pocketAuth,
+      writeAuth,
       appFields,
       patch,
     );

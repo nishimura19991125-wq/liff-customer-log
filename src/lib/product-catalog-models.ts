@@ -2,7 +2,8 @@ import "server-only";
 
 import type { AtPocketFetchAuth, AtPocketFieldRow } from "@/lib/atpocket";
 import {
-  apiKeyForCustomerInfoPocket,
+  apiKeyForProductCatalogPocket,
+  apiKeyForProductCatalogPocket1,
   fetchAllRecordsPages,
   fetchAppFieldsTryKeys,
 } from "@/lib/atpocket";
@@ -78,8 +79,7 @@ function productCatalogAppId(): string | null {
 }
 
 function productCatalogPocketAuth(): AtPocketFetchAuth {
-  const k = process.env.PRODUCT_CATALOG_ATPOCKET_API_KEY?.trim();
-  return { apiKey: k || apiKeyForCustomerInfoPocket() };
+  return { apiKey: apiKeyForProductCatalogPocket() };
 }
 
 function pickFieldUniqueIdByExactCaption(
@@ -160,9 +160,8 @@ function pocketApiKeysForProductCatalog(): string[] {
   const dedup = new Set<string>();
   const keys: string[] = [];
   for (const k of [
-    process.env.PRODUCT_CATALOG_ATPOCKET_API_KEY?.trim(),
-    process.env.CUSTOMER_INFO_ATPOCKET_API_KEY?.trim(),
-    process.env.ATPOCKET_API_KEY?.trim(),
+    apiKeyForProductCatalogPocket(),
+    apiKeyForProductCatalogPocket1(),
   ]) {
     if (k && !dedup.has(k)) {
       dedup.add(k);

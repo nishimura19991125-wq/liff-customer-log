@@ -47,68 +47,178 @@ function authHeaderName(): string {
   );
 }
 
-function apiKey(): string {
-  const key = process.env.ATPOCKET_API_KEY?.trim();
+/**
+ * 環境変数のうち最初に値がある API キー。
+ * スタッフ名簿: ATPOCKET_API_KEY / ATPOCKET_API_KEY_1 / ATPOCKET_API_KEY_2（名簿権限のみ）
+ * その他アプリ: {PREFIX}_ATPOCKET_API_KEY / _1 / _2（読取①・読取②・更新③・429分散）
+ */
+function firstEnvApiKey(...envNames: string[]): string | undefined {
+  for (const name of envNames) {
+    const v = process.env[name]?.trim();
+    if (v) return v;
+  }
+  return undefined;
+}
+
+function apiKeyForScope(
+  scopedNames: string[],
+  fallback: () => string,
+): string {
+  return firstEnvApiKey(...scopedNames) ?? fallback();
+}
+
+function resolvePassedApiKey(auth?: AtPocketFetchAuth): string {
+  const key = auth?.apiKey?.trim();
   if (!key) {
-    throw new Error("ATPOCKET_API_KEY is not set");
+    throw new Error(
+      "@pocket API 呼び出しに apiKey が未指定です。機能別の環境変数からキーを渡してください",
+    );
   }
   return key;
 }
 
-/** 工事カレンダー用アプリの読み取りキー（未設定時は ATPOCKET_API_KEY） */
+/** スタッフ名簿用3キー（いずれも名簿権限のみ） */
+function requireStaffApiKey(
+  slot: "ATPOCKET_API_KEY" | "ATPOCKET_API_KEY_1" | "ATPOCKET_API_KEY_2",
+  legacyEnvNames: string[],
+): string {
+  const key = firstEnvApiKey(...legacyEnvNames, slot);
+  if (!key) {
+    throw new Error(
+      `スタッフ名簿用 ${slot} を設定してください（従来名: ${legacyEnvNames.join(" / ")}）`,
+    );
+  }
+  return key;
+}
+
+/** 機能別3キー（読取① / 読取② / 更新③） */
+function requireAppApiKey(
+  prefix: string,
+  slot: 0 | 1 | 2,
+  legacyEnvNames: string[] = [],
+): string {
+  const envName =
+    slot === 0
+      ? `${prefix}_ATPOCKET_API_KEY`
+      : `${prefix}_ATPOCKET_API_KEY_${slot}`;
+  const key = firstEnvApiKey(...legacyEnvNames, envName);
+  if (!key) {
+    throw new Error(
+      `${prefix} 用 ${envName} を設定してください${legacyEnvNames.length ? `（従来名: ${legacyEnvNames.join(" / ")}）` : ""}`,
+    );
+  }
+  return key;
+}
+
+/** 工事カレンダー・読取①（月一覧など） */
 export function apiKeyForCalendarPocket(): string {
-  const k = process.env.CALENDAR_ATPOCKET_API_KEY?.trim();
-  if (k) return k;
-  return apiKey();
+  return requireAppApiKey("CALENDAR", 0, []);
 }
 
-/** 工事報告アプリ読み取り用キー（未設定時は工事カレンダー用キー／それも無ければ ATPOCKET_API_KEY） */
-export function apiKeyForCalendarReportPocket(): string {
-  const k = process.env.CALENDAR_REPORT_ATPOCKET_API_KEY?.trim();
-  if (k) return k;
-  return apiKeyForCalendarPocket();
+/** 工事カレンダー・読取②（fields 取得など） */
+export function apiKeyForCalendarPocket1(): string {
+  return requireAppApiKey("CALENDAR", 1, []);
 }
 
-/** 工事カレンダーアプリのレコード更新用（書き込み権限のあるキー。未設定時は CALENDAR_ATPOCKET_API_KEY → ATPOCKET_API_KEY） */
+/** 工事カレンダー・更新③（空枠・新規登録など） */
 export function apiKeyForCalendarWrite(): string {
-  const w = process.env.CALENDAR_WRITE_ATPOCKET_API_KEY?.trim();
-  if (w) return w;
-  return apiKeyForCalendarPocket();
+  return requireAppApiKey("CALENDAR", 2, [
+    "CALENDAR_WRITE_ATPOCKET_API_KEY",
+    "CALENDAR_WRITE_ATPOCKET_API_KEY_2",
+  ]);
 }
 
-/** スタッフ名簿アプリの読み取り用（お客様情報の勤務場所参照など。未設定時は ATPOCKET_API_KEY） */
+/** 工事報告アプリ・読取（未設定時は工事カレンダー読取②） */
+export function apiKeyForCalendarReportPocket(): string {
+  const key = firstEnvApiKey(
+    "CALENDAR_REPORT_ATPOCKET_API_KEY",
+    "CALENDAR_REPORT_ATPOCKET_API_KEY_1",
+    "CALENDAR_REPORT_ATPOCKET_API_KEY_2",
+  );
+  if (key) return key;
+  return apiKeyForCalendarPocket1();
+}
+
+/** スタッフ名簿・読取①（名簿一覧・勤務場所・PIN照会など） */
 export function apiKeyForStaffPocketRead(): string {
-  const k = process.env.STAFF_READ_ATPOCKET_API_KEY?.trim();
-  if (k) return k;
-  return apiKey();
+  return requireStaffApiKey("ATPOCKET_API_KEY", [
+    "STAFF_READ_ATPOCKET_API_KEY",
+  ]);
 }
 
-/** スタッフ名簿アプリの LINE 紐付け更新用（未設定時は ATPOCKET_API_KEY・書き込み権限が必要） */
+/** スタッフ名簿・読取②（AP/CL担当者・工事対応者リストなど） */
+export function apiKeyForStaffPocketRead1(): string {
+  return requireStaffApiKey("ATPOCKET_API_KEY_1", [
+    "STAFF_READ_ATPOCKET_API_KEY_1",
+  ]);
+}
+
+/** スタッフ名簿・更新③（LINE紐付け・PIN設定など） */
 export function apiKeyForStaffWrite(): string {
-  const w = process.env.STAFF_WRITE_ATPOCKET_API_KEY?.trim();
-  if (w) return w;
-  return apiKey();
+  return requireStaffApiKey("ATPOCKET_API_KEY_2", [
+    "STAFF_WRITE_ATPOCKET_API_KEY",
+    "STAFF_WRITE_ATPOCKET_API_KEY_1",
+  ]);
 }
 
-/** お客様情報アプリの読み取り・登録とも同じキー（未設定時は ATPOCKET_API_KEY） */
+/** お客様情報・読取①（CRM一覧・単票GETなど） */
 export function apiKeyForCustomerInfoPocket(): string {
-  const k = process.env.CUSTOMER_INFO_ATPOCKET_API_KEY?.trim();
-  if (k) return k;
-  return apiKey();
+  return requireAppApiKey("CUSTOMER_INFO", 0, []);
 }
 
-/** PT集計表（営業ダッシュボード）読み取り専用。未設定時はお客様情報キー → ATPOCKET_API_KEY */
+/** お客様情報・読取②（検索・未入力一覧・キー照合など） */
+export function apiKeyForCustomerInfoPocket1(): string {
+  return requireAppApiKey("CUSTOMER_INFO", 1, []);
+}
+
+/** お客様情報・更新③（PUT・工事連携登録など） */
+export function apiKeyForCustomerInfoWrite(): string {
+  return requireAppApiKey("CUSTOMER_INFO", 2, []);
+}
+
+/** 取引先会社一覧・読取① */
+export function apiKeyForTradingPartnerPocket(): string {
+  return requireAppApiKey("TRADING_PARTNER", 0, []);
+}
+
+/** 取引先会社一覧・読取②（fields 再試行など） */
+export function apiKeyForTradingPartnerPocket1(): string {
+  return requireAppApiKey("TRADING_PARTNER", 1, []);
+}
+
+/** 商品一覧・読取① */
+export function apiKeyForProductCatalogPocket(): string {
+  return requireAppApiKey("PRODUCT_CATALOG", 0, []);
+}
+
+/** 商品一覧・読取② */
+export function apiKeyForProductCatalogPocket1(): string {
+  return requireAppApiKey("PRODUCT_CATALOG", 1, []);
+}
+
+/** ログアプリ・更新③ */
+export function apiKeyForLogPocketWrite(): string {
+  return requireAppApiKey("LOG", 2, ["LOG_ATPOCKET_API_KEY"]);
+}
+
+/** PT集計表・読取① */
 export function apiKeyForSalesDashboardPtPocket(): string {
-  const k = process.env.SALES_DASHBOARD_PT_ATPOCKET_API_KEY?.trim();
-  if (k) return k;
-  return apiKeyForCustomerInfoPocket();
+  return requireAppApiKey("SALES_DASHBOARD_PT", 0, []);
 }
 
-/** アポ取得情報連携（営業ダッシュボード）読み取り専用 */
+/** PT集計表・読取② */
+export function apiKeyForSalesDashboardPtPocket1(): string {
+  return requireAppApiKey("SALES_DASHBOARD_PT", 1, []);
+}
+
+/** アポ取得情報・読取① */
 export function apiKeyForSalesDashboardApoPocket(): string {
-  const k = process.env.SALES_DASHBOARD_APO_ATPOCKET_API_KEY?.trim();
-  if (k) return k;
-  return apiKeyForCustomerInfoPocket();
+  return requireAppApiKey("SALES_DASHBOARD_APO", 0, []);
+}
+
+/** アポ取得情報・読取② */
+export function apiKeyForSalesDashboardApoPocket1(): string {
+  return requireAppApiKey("SALES_DASHBOARD_APO", 1, []);
 }
 
 export type AtPocketFetchAuth = {
@@ -122,31 +232,81 @@ export type AtPocketRequestContext = {
 };
 
 function authKeyEnvLabel(auth?: AtPocketFetchAuth): string {
-  const key = (auth?.apiKey ?? apiKey()).trim();
+  const key = auth?.apiKey?.trim();
+  if (!key) return "unset";
   const candidates: Array<[string, string | undefined]> = [
+    [
+      "SALES_DASHBOARD_PT_ATPOCKET_API_KEY_2",
+      process.env.SALES_DASHBOARD_PT_ATPOCKET_API_KEY_2?.trim(),
+    ],
     [
       "SALES_DASHBOARD_PT_ATPOCKET_API_KEY",
       process.env.SALES_DASHBOARD_PT_ATPOCKET_API_KEY?.trim(),
     ],
     [
+      "SALES_DASHBOARD_APO_ATPOCKET_API_KEY_2",
+      process.env.SALES_DASHBOARD_APO_ATPOCKET_API_KEY_2?.trim(),
+    ],
+    [
       "SALES_DASHBOARD_APO_ATPOCKET_API_KEY",
       process.env.SALES_DASHBOARD_APO_ATPOCKET_API_KEY?.trim(),
     ],
+    [
+      "CUSTOMER_INFO_ATPOCKET_API_KEY_2",
+      process.env.CUSTOMER_INFO_ATPOCKET_API_KEY_2?.trim(),
+    ],
     ["CUSTOMER_INFO_ATPOCKET_API_KEY", process.env.CUSTOMER_INFO_ATPOCKET_API_KEY?.trim()],
+    [
+      "STAFF_READ_ATPOCKET_API_KEY_1",
+      process.env.STAFF_READ_ATPOCKET_API_KEY_1?.trim(),
+    ],
     ["STAFF_READ_ATPOCKET_API_KEY", process.env.STAFF_READ_ATPOCKET_API_KEY?.trim()],
+    [
+      "STAFF_WRITE_ATPOCKET_API_KEY_1",
+      process.env.STAFF_WRITE_ATPOCKET_API_KEY_1?.trim(),
+    ],
     ["STAFF_WRITE_ATPOCKET_API_KEY", process.env.STAFF_WRITE_ATPOCKET_API_KEY?.trim()],
+    [
+      "CALENDAR_ATPOCKET_API_KEY_2",
+      process.env.CALENDAR_ATPOCKET_API_KEY_2?.trim(),
+    ],
     ["CALENDAR_ATPOCKET_API_KEY", process.env.CALENDAR_ATPOCKET_API_KEY?.trim()],
+    [
+      "CALENDAR_WRITE_ATPOCKET_API_KEY_2",
+      process.env.CALENDAR_WRITE_ATPOCKET_API_KEY_2?.trim(),
+    ],
     ["CALENDAR_WRITE_ATPOCKET_API_KEY", process.env.CALENDAR_WRITE_ATPOCKET_API_KEY?.trim()],
-    ["CALENDAR_REPORT_ATPOCKET_API_KEY", process.env.CALENDAR_REPORT_ATPOCKET_API_KEY?.trim()],
-    ["TRADING_PARTNER_ATPOCKET_API_KEY", process.env.TRADING_PARTNER_ATPOCKET_API_KEY?.trim()],
-    ["PRODUCT_CATALOG_ATPOCKET_API_KEY", process.env.PRODUCT_CATALOG_ATPOCKET_API_KEY?.trim()],
+    [
+      "CALENDAR_REPORT_ATPOCKET_API_KEY_2",
+      process.env.CALENDAR_REPORT_ATPOCKET_API_KEY_2?.trim(),
+    ],
+    [
+      "CALENDAR_REPORT_ATPOCKET_API_KEY",
+      process.env.CALENDAR_REPORT_ATPOCKET_API_KEY?.trim(),
+    ],
+    [
+      "TRADING_PARTNER_ATPOCKET_API_KEY_2",
+      process.env.TRADING_PARTNER_ATPOCKET_API_KEY_2?.trim(),
+    ],
+    [
+      "TRADING_PARTNER_ATPOCKET_API_KEY",
+      process.env.TRADING_PARTNER_ATPOCKET_API_KEY?.trim(),
+    ],
+    [
+      "PRODUCT_CATALOG_ATPOCKET_API_KEY_2",
+      process.env.PRODUCT_CATALOG_ATPOCKET_API_KEY_2?.trim(),
+    ],
+    [
+      "PRODUCT_CATALOG_ATPOCKET_API_KEY",
+      process.env.PRODUCT_CATALOG_ATPOCKET_API_KEY?.trim(),
+    ],
+    ["LOG_ATPOCKET_API_KEY_2", process.env.LOG_ATPOCKET_API_KEY_2?.trim()],
     ["LOG_ATPOCKET_API_KEY", process.env.LOG_ATPOCKET_API_KEY?.trim()],
-    ["ATPOCKET_API_KEY", process.env.ATPOCKET_API_KEY?.trim()],
   ];
   for (const [name, envVal] of candidates) {
     if (envVal && key === envVal) return name;
   }
-  return auth?.apiKey ? "custom(apiKey)" : "ATPOCKET_API_KEY(default)";
+  return "custom(apiKey)";
 }
 
 function formatPocketHttpError(
@@ -177,7 +337,10 @@ function formatPocketHttpError(
 /** ログアプリ・工事カレンダーアプリへのレコード登録用キー */
 function apiKeyForCreateRecord(appsId: string): string {
   const logAppId = process.env.LOG_APP_ID?.trim();
-  const logKey = process.env.LOG_ATPOCKET_API_KEY?.trim();
+  const logKey = firstEnvApiKey(
+    "LOG_ATPOCKET_API_KEY_2",
+    "LOG_ATPOCKET_API_KEY",
+  );
   if (logAppId && appsId === logAppId && logKey) {
     return logKey;
   }
@@ -187,9 +350,11 @@ function apiKeyForCreateRecord(appsId: string): string {
   }
   const customerInfoAppId = process.env.CUSTOMER_INFO_APP_ID?.trim();
   if (customerInfoAppId && appsId === customerInfoAppId) {
-    return apiKeyForCustomerInfoPocket();
+    return apiKeyForCustomerInfoWrite();
   }
-  return apiKey();
+  throw new Error(
+    `@pocket レコード登録用の API キーが未設定です（appsId=${appsId}）。該当アプリ用の *_ATPOCKET_API_KEY を設定してください`,
+  );
 }
 
 async function fetchWithMethodOverride(
@@ -197,7 +362,7 @@ async function fetchWithMethodOverride(
   auth?: AtPocketFetchAuth,
 ): Promise<Response> {
   const url = `${baseUrl()}${pathWithQuery}`;
-  const key = auth?.apiKey ?? apiKey();
+  const key = resolvePassedApiKey(auth);
   return fetch(url, {
     method: "POST",
     headers: {
@@ -235,7 +400,7 @@ const POCKET_RATE_LIMIT_WINDOW_MS = 100_000;
 const pocketRateLimitedUntil = new Map<string, number>();
 
 function pocketRateLimitKey(auth?: AtPocketFetchAuth): string {
-  return auth?.apiKey?.trim() || apiKey();
+  return resolvePassedApiKey(auth);
 }
 
 /** 直近の 429 を記録（工事カレンダー等の連打後にスタッフ名簿が巻き添えにならないよう） */
@@ -614,7 +779,7 @@ export async function updateRecord(
   auth?: AtPocketFetchAuth,
 ): Promise<void> {
   const url = `${baseUrl()}/api/apps/${appsId}/records/${encodeURIComponent(recordId)}`;
-  const key = auth?.apiKey ?? apiKey();
+  const key = resolvePassedApiKey(auth);
   const res = await fetch(url, {
     method: "PUT",
     headers: {

@@ -6,7 +6,7 @@ import type {
   AtPocketRequestContext,
 } from "@/lib/atpocket";
 import {
-  apiKeyForStaffPocketRead,
+  apiKeyForStaffPocketRead1,
   fetchAppFields,
   fetchRecordsList,
 } from "@/lib/atpocket";
@@ -130,7 +130,7 @@ async function resolveStaffApClConfig(): Promise<
     };
   }
 
-  const auth = { apiKey: apiKeyForStaffPocketRead() };
+  const auth = { apiKey: apiKeyForStaffPocketRead1() };
   const fieldsCtx: AtPocketRequestContext = {
     operation: "customer-info:AP/CL担当者(列定義)",
     appEnv: "STAFF_APP_ID",
@@ -233,7 +233,7 @@ async function fetchStaffRowsForApClPicker(
     return { rows: stale, rosterEmpty: false };
   }
 
-  const auth = { apiKey: apiKeyForStaffPocketRead() };
+  const auth = { apiKey: apiKeyForStaffPocketRead1() };
   const fieldsCsv = uniqueFieldsCsv(
     cfg.nameFieldId,
     cfg.apAvailabilityFieldId,

@@ -7,7 +7,7 @@ import {
 } from "@/lib/atpocket-record-id";
 import type { AtPocketFieldRow, AtPocketFetchAuth } from "@/lib/atpocket";
 import {
-  apiKeyForCustomerInfoPocket,
+  apiKeyForCustomerInfoWrite,
   createRecord,
   fetchAppFields,
   fetchRecordById,
@@ -55,13 +55,13 @@ function pocketSyncErrorMessage(e: unknown): string {
   if (raw.includes("403")) {
     return (
       "お客様情報アプリのフィールド一覧を取得できません（403 Forbidden）。" +
-      "CUSTOMER_INFO_ATPOCKET_API_KEY が CUSTOMER_INFO_APP_ID のお客様情報アプリに対して「参照」権限を持っているか確認してください。"
+      "CUSTOMER_INFO_ATPOCKET_API_KEY_2 が CUSTOMER_INFO_APP_ID のお客様情報アプリに対して「登録・更新」権限を持っているか確認してください。"
     );
   }
   if (raw.includes("401")) {
     return (
       "お客様情報アプリへの認証に失敗しました（401）。" +
-      "CUSTOMER_INFO_ATPOCKET_API_KEY を確認してください。"
+      "CUSTOMER_INFO_ATPOCKET_API_KEY_2（お客様情報アプリの登録権限のあるキー）を確認してください。"
     );
   }
   if (raw.includes("list fields failed")) {
@@ -227,7 +227,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   }
 
   const customerAuth: AtPocketFetchAuth = {
-    apiKey: apiKeyForCustomerInfoPocket(),
+    apiKey: apiKeyForCustomerInfoWrite(),
   };
 
   const customerFields = await fetchAppFields(customerAppId, customerAuth);

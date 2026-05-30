@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import {
+  apiKeyForStaffPocketRead,
+  apiKeyForStaffPocketRead1,
   apiKeyForStaffWrite,
   fetchAppFieldUniqueIdsSetTryKeys,
   fetchRecordById,
@@ -254,10 +256,13 @@ export async function POST(request: Request) {
       });
     }
 
-    const readKey = process.env.ATPOCKET_API_KEY?.trim() ?? "";
     const schemaUniqueIds = await fetchAppFieldUniqueIdsSetTryKeys(
       staffAppId,
-      [readKey, apiKeyForStaffWrite()],
+      [
+        apiKeyForStaffPocketRead(),
+        apiKeyForStaffPocketRead1(),
+        apiKeyForStaffWrite(),
+      ],
     );
 
     const preserveHyphen = pocketHyphenNumericFieldKeysToPreserveForStaffBind({

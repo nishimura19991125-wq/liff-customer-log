@@ -3,7 +3,7 @@ import "server-only";
 import {
   customerInfoAppId,
   customerInfoNameFieldId,
-  customerInfoPocketAuth,
+  customerInfoPocketAuth1,
   customerInfoSubtitleFieldId,
 } from "@/lib/customer-info-config";
 import {
@@ -54,7 +54,7 @@ export async function searchCustomerInfoRecordsByName(
   const q = normalizeCustomerInfoSearchText(queryRaw);
   if (!q) return [];
 
-  const auth = customerInfoPocketAuth();
+  const auth = customerInfoPocketAuth1();
   const pocketCtx = {
     operation: "customer-info:お客様名検索",
     appEnv: "CUSTOMER_INFO_APP_ID",

@@ -14,7 +14,8 @@ import {
   resolveConstructionTNumberFieldId,
 } from "@/lib/calendar-kojo";
 import {
-  apiKeyForCalendarPocket,
+  apiKeyForCalendarPocket1,
+  apiKeyForCalendarWrite,
   fetchAppFields,
   updateRecord,
 } from "@/lib/atpocket";
@@ -109,12 +110,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const pocketAuth = { apiKey: apiKeyForCalendarPocket() };
+  const readAuth = { apiKey: apiKeyForCalendarPocket1() };
+  const writeAuth = { apiKey: apiKeyForCalendarWrite() };
 
   let constructionUpdated = false;
 
   try {
-    const constructionFields = await fetchAppFields(calAppId, pocketAuth);
+    const constructionFields = await fetchAppFields(calAppId, readAuth);
 
     const resolvedCustomer = resolveConfiguredFieldToSchemaUniqueId(
       customerField,
@@ -217,7 +219,7 @@ export async function POST(request: Request) {
     const recRow = await fetchConstructionRecordRow(
       calAppId,
       recordId,
-      pocketAuth,
+      readAuth,
       fieldsCsv,
     );
 
@@ -263,7 +265,7 @@ export async function POST(request: Request) {
       appSettingsDayDate: body.appSettingsDayDate,
     });
 
-    await updateRecord(calAppId, recordId, patch, pocketAuth);
+    await updateRecord(calAppId, recordId, patch, writeAuth);
     constructionUpdated = true;
     invalidateAllCalendarPayloadCache();
 
@@ -272,7 +274,7 @@ export async function POST(request: Request) {
       constructionRecordId: recordId,
       customerName,
       constructionFields,
-      calendarAuth: pocketAuth,
+      calendarAuth: writeAuth,
       lineUserId: auth.lineUserId,
       viewYear: body.viewYear,
       viewMonth: body.viewMonth,
@@ -294,7 +296,7 @@ export async function POST(request: Request) {
       {
         error:
           detail.includes("list fields failed") || detail.includes("403")
-            ? `工事アプリの設定取得に失敗しました。CALENDAR_ATPOCKET_API_KEY と CALENDAR_APP_ID を確認してください。(${detail})`
+            ? `工事アプリの設定取得に失敗しました。CALENDAR_ATPOCKET_API_KEY（工事アプリ参照権限のあるキー）と CALENDAR_APP_ID を確認してください。(${detail})`
             : "レコードの更新に失敗しました。しばらくしてから再度お試しください。",
       },
       { status: 502 },
