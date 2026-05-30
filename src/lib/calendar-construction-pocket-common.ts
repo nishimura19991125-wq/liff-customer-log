@@ -125,6 +125,10 @@ export function buildConstructionFillPatch(opts: {
   panelWorkDate?: string;
   electricWorkDate?: string;
   appSettingsDayDate?: string;
+  /** 施工予定日（YYYY-MM-DD・任意） */
+  scheduledStartDate?: string;
+  /** 施工会社（任意） */
+  contractor?: string;
 }): Record<string, unknown> {
   const patch: Record<string, unknown> = {
     [opts.resolvedTNumber]: opts.tNumberValue,
@@ -134,6 +138,12 @@ export function buildConstructionFillPatch(opts: {
   if (opts.resolvedHandlerField != null && opts.handlerValue != null) {
     patch[opts.resolvedHandlerField] = opts.handlerValue;
   }
+  const startYmd = optionalCalendarYmd(opts.scheduledStartDate);
+  const startId = opts.fids.startDate?.trim();
+  if (startYmd && startId) patch[startId] = startYmd;
+  const contractor = opts.contractor?.trim();
+  const contractorId = opts.fids.contractor?.trim();
+  if (contractor && contractorId) patch[contractorId] = contractor;
   if (opts.housingRaw === EMPTY_FILL_HOUSING_STATUS_NEW_BUILD) {
     const quad: Array<[fieldId: string | undefined, raw: string | undefined]> =
       [

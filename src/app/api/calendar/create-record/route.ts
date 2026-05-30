@@ -17,6 +17,7 @@ import { formatConstructionCreateRecordError } from "@/lib/calendar-construction
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import { isValidEmptyFillHousingStatus } from "@/lib/calendar-empty-fill-options";
+import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
 import {
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
@@ -45,12 +46,16 @@ type Body = {
   panelWorkDate?: string;
   electricWorkDate?: string;
   appSettingsDayDate?: string;
+  /** 施工予定日 YYYY-MM-DD（任意） */
+  scheduledStartDate?: string;
+  /** 施工会社（任意） */
+  contractor?: string;
   viewYear?: number;
   viewMonth?: number;
 };
 
 /**
- * 工事日未定案件登録。工事空枠登録（fill-empty-slot）と同じ流れ:
+ * 工事カレンダー新規登録（工事日未定・日程都度調整案件）。工事空枠登録（fill-empty-slot）と同じ流れ:
  * 工事アプリへ書き込み → recordId 確定 → GET で T番号確認 → PUT → お客様情報連携
  */
 export async function POST(request: Request) {
@@ -112,6 +117,16 @@ export async function POST(request: Request) {
     );
   }
 
+  const scheduledStartDateRaw = body.scheduledStartDate?.trim() ?? "";
+  const scheduledStartDate = optionalCalendarYmd(scheduledStartDateRaw);
+  if (scheduledStartDateRaw && !scheduledStartDate) {
+    return NextResponse.json(
+      { error: "施工予定日は YYYY-MM-DD 形式で入力してください" },
+      { status: 400 },
+    );
+  }
+  const contractor = body.contractor?.trim() ?? "";
+
   const pocketAuth = { apiKey: apiKeyForCalendarPocket() };
 
   let constructionSaved = false;
@@ -151,7 +166,7 @@ export async function POST(request: Request) {
     let resolvedHandlerField: string | undefined;
     let handlerValueToPut: string | undefined;
 
-    /** 工事日未定案件登録では工事対応者は任意。送信されたときのみ検証して書き込む */
+    /** 新規登録では工事対応者は任意。送信されたときのみ検証して書き込む */
     if (handlerFieldEnv && constructionHandlerStaffRecordId) {
       if (!constructionHandlerStaffConfigReady()) {
         return NextResponse.json(
@@ -210,13 +225,17 @@ export async function POST(request: Request) {
       resolvedCustomer,
       resolvedHousing,
       resolvedTNumber,
+      fids.startDate,
+      fids.contractor,
     );
 
-    const patchDates = {
+    const patchExtras = {
       shigumiDate: body.shigumiDate,
       panelWorkDate: body.panelWorkDate,
       electricWorkDate: body.electricWorkDate,
       appSettingsDayDate: body.appSettingsDayDate,
+      scheduledStartDate: scheduledStartDate ?? undefined,
+      contractor: contractor || undefined,
     };
 
     const createResult = await createRecord(
@@ -231,7 +250,7 @@ export async function POST(request: Request) {
         resolvedHandlerField,
         handlerValue: handlerValueToPut,
         fids,
-        ...patchDates,
+        ...patchExtras,
       }),
       pocketAuth,
     );
@@ -296,7 +315,7 @@ export async function POST(request: Request) {
         resolvedHandlerField,
         handlerValue: handlerValueToPut,
         fids,
-        ...patchDates,
+        ...patchExtras,
       });
 
       await updateRecord(calAppId, recordId, patch, pocketAuth);

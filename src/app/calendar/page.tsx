@@ -802,6 +802,8 @@ function NewConstructionRecordPanel({
   const [panelWorkDate, setPanelWorkDate] = useState("");
   const [electricWorkDate, setElectricWorkDate] = useState("");
   const [appSettingsDayDate, setAppSettingsDayDate] = useState("");
+  const [scheduledStartDate, setScheduledStartDate] = useState("");
+  const [contractor, setContractor] = useState("");
 
   const canSubmit = Boolean(idToken);
 
@@ -837,6 +839,10 @@ function NewConstructionRecordPanel({
           housingStatus: hs,
           viewYear,
           viewMonth,
+          ...(scheduledStartDate.trim()
+            ? { scheduledStartDate: scheduledStartDate.trim() }
+            : {}),
+          ...(contractor.trim() ? { contractor: contractor.trim() } : {}),
           ...(hs === EMPTY_FILL_HOUSING_STATUS_NEW_BUILD
             ? {
                 ...(shigumiDate.trim()
@@ -881,6 +887,8 @@ function NewConstructionRecordPanel({
           setPanelWorkDate("");
           setElectricWorkDate("");
           setAppSettingsDayDate("");
+          setScheduledStartDate("");
+          setContractor("");
           await onSaved(data.calendarPatch ?? null);
         }
         const gatewayTimeout =
@@ -904,6 +912,8 @@ function NewConstructionRecordPanel({
       setPanelWorkDate("");
       setElectricWorkDate("");
       setAppSettingsDayDate("");
+      setScheduledStartDate("");
+      setContractor("");
       try {
         await onSaved(data.calendarPatch ?? null);
       } catch (e) {
@@ -933,23 +943,17 @@ function NewConstructionRecordPanel({
           setFeedback(null);
         }}
       >
-        {open ? "入力を閉じる" : "工事日未定案件登録"}
+        {open ? "閉じる" : "新規登録"}
       </button>
 
       {open ? (
         <div className="mt-4 min-w-0 border-t border-slate-200/90 pt-4">
           <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
-            {isNewBuildHousing ? (
-              <>
-                工事日が未定の案件を登録します。住宅ステータス・お客様名は必須です。新築案件のときは工事日程を任意で指定できます（未入力でも登録できます）。T番号は
-                @pocket の自動採番により付与されます。
-              </>
-            ) : (
-              <>
-                工事日が未定の案件を登録します。住宅ステータス・お客様名を入力してください。T番号は
-                @pocket の自動採番により付与されます。
-              </>
-            )}
+            工事日未定案件や、工事日程を都度調整する案件をここから登録します。住宅ステータス・お客様名は必須です。施工予定日・施工会社は任意です。
+            {isNewBuildHousing
+              ? " 新築案件のときは仕込日などの工事日程も任意で指定できます。"
+              : null}
+            T番号は @pocket の自動採番により付与されます。
           </p>
           <label className="block">
             <span className="mb-1 block text-[12px] font-bold text-slate-700">
@@ -982,6 +986,35 @@ function NewConstructionRecordPanel({
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
               placeholder="例：山田太郎"
+              disabled={submitting || !canSubmit}
+            />
+          </label>
+          <label className="mt-3 block">
+            <span className="mb-1 block text-[12px] font-bold text-slate-700">
+              施工予定日
+              <span className="font-medium text-slate-500"> （任意）</span>
+            </span>
+            <div className="construction-schedule-date-field">
+              <input
+                type="date"
+                className={CALENDAR_DATE_INPUT_CLASS}
+                value={scheduledStartDate}
+                onChange={(e) => setScheduledStartDate(e.target.value)}
+                disabled={submitting || !canSubmit}
+              />
+            </div>
+          </label>
+          <label className="mt-3 block">
+            <span className="mb-1 block text-[12px] font-bold text-slate-700">
+              施工会社
+              <span className="font-medium text-slate-500"> （任意）</span>
+            </span>
+            <input
+              type="text"
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
+              value={contractor}
+              onChange={(e) => setContractor(e.target.value)}
+              placeholder="例：〇〇工務店"
               disabled={submitting || !canSubmit}
             />
           </label>
