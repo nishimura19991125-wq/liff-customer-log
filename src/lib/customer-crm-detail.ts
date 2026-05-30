@@ -19,6 +19,10 @@ import {
   matchCustomerInfoPendingAudience,
   resolveCustomerInfoCreatorFieldId,
 } from "@/lib/customer-info-creator-field";
+import {
+  recordIsCustomerStatusCancelled,
+  resolveCrmCustomerStatusFieldId,
+} from "@/lib/customer-crm-status";
 import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
 import {
   readCustomerInfoFieldValue,
@@ -39,6 +43,7 @@ export type CustomerCrmDetail = {
   isSubsidyTarget: boolean;
   combinedSubsidyName: string | null;
   isConstructionDateUnset: boolean;
+  isCancelled: boolean;
   constructionDate: string;
   /** 補助金有無の生の値（「無」含む） */
   subsidyPresence: string;
@@ -115,6 +120,7 @@ export async function fetchCustomerCrmDetail(
   const constructionDateFieldId = resolveCrmConstructionDateFieldId(appFields);
   const subsidyFieldIds = resolveCrmSubsidyFieldIds(appFields);
   const mapAddressIds = resolveCustomerInfoMapAddressFieldIds(appFields);
+  const customerStatusFieldId = resolveCrmCustomerStatusFieldId(appFields);
 
   const row = await fetchRecordById(appId, recordId, auth);
   if (!row?.record || typeof row.record !== "object") {
@@ -186,6 +192,10 @@ export async function fetchCustomerCrmDetail(
       isConstructionDateUnset: isCrmConstructionDateUnset(
         recObj,
         constructionDateFieldId,
+      ),
+      isCancelled: recordIsCustomerStatusCancelled(
+        recObj,
+        customerStatusFieldId,
       ),
       constructionDate: constructionDate || "—",
       subsidyPresence: subsidyPresence || "—",

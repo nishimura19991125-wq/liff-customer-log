@@ -18,6 +18,7 @@ const FILTERS = new Set<CustomerCrmFilter>([
   "missing_docs",
   "no_construction_date",
   "subsidy",
+  "cancelled",
 ]);
 
 function parseFilter(raw: string | null): CustomerCrmFilter {

@@ -27,6 +27,10 @@ import {
   resolveCustomerInfoCreatorFieldId,
 } from "@/lib/customer-info-creator-field";
 import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
+import {
+  recordIsCustomerStatusCancelled,
+  resolveCrmCustomerStatusFieldId,
+} from "@/lib/customer-crm-status";
 import type { AtPocketFieldRow } from "@/lib/atpocket";
 import { fetchAppFields, fetchRecordsList } from "@/lib/atpocket";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
@@ -35,7 +39,8 @@ export type CustomerCrmFilter =
   | "all"
   | "missing_docs"
   | "no_construction_date"
-  | "subsidy";
+  | "subsidy"
+  | "cancelled";
 
 export type CustomerCrmListItem = {
   recordId: string;
@@ -45,6 +50,7 @@ export type CustomerCrmListItem = {
   isSubsidyTarget: boolean;
   combinedSubsidyName: string | null;
   isConstructionDateUnset: boolean;
+  isCancelled: boolean;
 };
 
 const PAGE_LIMIT = 1000;
@@ -111,6 +117,8 @@ function passesCrmFilter(
       return item.isConstructionDateUnset;
     case "subsidy":
       return item.isSubsidyTarget;
+    case "cancelled":
+      return item.isCancelled;
     default:
       return true;
   }
@@ -125,6 +133,7 @@ type CrmFieldContext = {
   constructionDateFieldId: string | null;
   subsidyFieldIds: CrmSubsidyFieldIds;
   sortFieldId: string | null;
+  customerStatusFieldId: string | null;
   docFields: ReturnType<typeof resolveCrmDocumentFields>;
   fieldsCsv: string;
 };
@@ -145,6 +154,7 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
   const constructionDateFieldId = resolveCrmConstructionDateFieldId(appFields);
   const subsidyFieldIds = resolveCrmSubsidyFieldIds(appFields);
   const sortFieldId = resolveCrmSortDateFieldId(appFields);
+  const customerStatusFieldId = resolveCrmCustomerStatusFieldId(appFields);
 
   const apFieldId = resolveCustomerInfoFormFieldId(
     "apStaff",
@@ -177,6 +187,7 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
   if (apFieldId) fieldIdSet.add(apFieldId);
   if (clFieldId) fieldIdSet.add(clFieldId);
   if (creatorFieldId) fieldIdSet.add(creatorFieldId);
+  if (customerStatusFieldId) fieldIdSet.add(customerStatusFieldId);
   for (const d of docFields) fieldIdSet.add(d.fieldId);
 
   return {
@@ -188,6 +199,7 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
     constructionDateFieldId,
     subsidyFieldIds,
     sortFieldId,
+    customerStatusFieldId,
     docFields,
     fieldsCsv: [...fieldIdSet].join(","),
   };
@@ -264,6 +276,11 @@ async function fetchCustomerCrmCandidatesFromPocket(
         ctx.constructionDateFieldId,
       );
 
+      const isCancelled = recordIsCustomerStatusCancelled(
+        recObj,
+        ctx.customerStatusFieldId,
+      );
+
       candidates.push({
         recordId,
         customerName,
@@ -274,6 +291,7 @@ async function fetchCustomerCrmCandidatesFromPocket(
         isSubsidyTarget,
         combinedSubsidyName,
         isConstructionDateUnset,
+        isCancelled,
         sortKey: crmSortKeyFromRecord(recObj, recordId, ctx.sortFieldId),
       });
     }

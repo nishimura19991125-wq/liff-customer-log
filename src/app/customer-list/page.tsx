@@ -22,7 +22,12 @@ import { initLiffAndGetToken } from "@/lib/liff-session";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
-type CrmFilter = "all" | "missing_docs" | "no_construction_date" | "subsidy";
+type CrmFilter =
+  | "all"
+  | "missing_docs"
+  | "no_construction_date"
+  | "subsidy"
+  | "cancelled";
 
 type CustomerRow = {
   recordId: string;
@@ -32,18 +37,29 @@ type CustomerRow = {
   isSubsidyTarget: boolean;
   combinedSubsidyName: string | null;
   isConstructionDateUnset: boolean;
+  isCancelled: boolean;
 };
 
-function applyCrmFilter(rows: CustomerRow[], filter: CrmFilter): CustomerRow[] {
+function applyCrmFilter(
+  rows: CustomerRow[],
+  filter: CrmFilter,
+  showCancelled: boolean,
+): CustomerRow[] {
+  let base = rows;
+  if (filter !== "cancelled" && !showCancelled) {
+    base = base.filter((r) => !r.isCancelled);
+  }
   switch (filter) {
     case "missing_docs":
-      return rows.filter((r) => r.isDocumentMissing);
+      return base.filter((r) => r.isDocumentMissing);
     case "no_construction_date":
-      return rows.filter((r) => r.isConstructionDateUnset);
+      return base.filter((r) => r.isConstructionDateUnset);
     case "subsidy":
-      return rows.filter((r) => r.isSubsidyTarget);
+      return base.filter((r) => r.isSubsidyTarget);
+    case "cancelled":
+      return base.filter((r) => r.isCancelled);
     default:
-      return rows;
+      return base;
   }
 }
 
@@ -52,6 +68,7 @@ const FILTER_TABS: Array<{ id: CrmFilter; label: string }> = [
   { id: "missing_docs", label: "未回収あり" },
   { id: "no_construction_date", label: "工事日未定" },
   { id: "subsidy", label: "補助金対象" },
+  { id: "cancelled", label: "キャンセル案件" },
 ];
 
 function ChevronRightIcon() {
@@ -88,6 +105,7 @@ export default function CustomerListPage() {
   );
   const [idToken, setIdToken] = useState<string | null>(null);
   const [filter, setFilter] = useState<CrmFilter>("all");
+  const [showCancelled, setShowCancelled] = useState(false);
   const [listFeedback, setListFeedback] = useState<string | null>(null);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
@@ -174,8 +192,8 @@ export default function CustomerListPage() {
   ]);
 
   const displayedCustomers = useMemo(
-    () => applyCrmFilter(customers, filter),
-    [customers, filter],
+    () => applyCrmFilter(customers, filter, showCancelled),
+    [customers, filter, showCancelled],
   );
 
   const listMessage = useMemo(() => {
@@ -331,6 +349,11 @@ export default function CustomerListPage() {
                       {row.isConstructionDateUnset ? (
                         <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
                           ⌛ 工事日未定
+                        </span>
+                      ) : null}
+                      {row.isCancelled ? (
+                        <span className="inline-flex items-center rounded-full bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 dark:bg-slate-600/60 dark:text-slate-100">
+                          キャンセル
                         </span>
                       ) : null}
                     </div>

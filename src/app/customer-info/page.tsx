@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   LiffAccountBar,
@@ -35,6 +42,7 @@ import {
   findMissingRequiredCustomerInfoFields,
   formatCustomerInfoRequiredValidationError,
 } from "@/lib/customer-info-form/validate";
+import { isCustomerStatusCancelled } from "@/lib/customer-status-label";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -117,6 +125,14 @@ function CustomerInfoPageContent() {
     ReadonlySet<string>
   >(() => new Set());
   const saveBarRef = useRef<HTMLDivElement>(null);
+
+  const editIsCancelled = useMemo(() => {
+    if (view !== "edit" || !detail) return false;
+    const fromForm = editValues.customerStatus?.trim();
+    if (fromForm) return isCustomerStatusCancelled(fromForm);
+    const row = detail.display.find((r) => r.label.trim() === "顧客ステータス");
+    return isCustomerStatusCancelled(row?.value);
+  }, [view, detail, editValues.customerStatus]);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -426,8 +442,12 @@ function CustomerInfoPageContent() {
         </Link>
 
         <LiffPageHeader
-          title="お客様情報入力"
-          subtitle="お客様名で検索し、該当レコードを編集して @pocket に保存します。"
+          title={view === "edit" ? "契約情報入力" : "お客様情報入力"}
+          subtitle={
+            view === "edit"
+              ? "契約情報を編集して @pocket に保存します。"
+              : "お客様名で検索し、該当レコードを編集して @pocket に保存します。"
+          }
           action={
             <div className="flex shrink-0 items-center gap-2">
               <ThemeToggle />
@@ -584,9 +604,16 @@ function CustomerInfoPageContent() {
                     </dl>
                   </div>
                 ) : null}
-                <p className="mb-2 text-[12px] font-bold text-slate-700">
-                  編集
-                </p>
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <p className="text-[12px] font-bold text-slate-700">
+                    契約情報入力
+                  </p>
+                  {editIsCancelled ? (
+                    <span className="inline-flex items-center rounded-full bg-slate-200 px-2.5 py-0.5 text-[11px] font-bold text-slate-700 dark:bg-slate-600/70 dark:text-slate-100">
+                      キャンセル
+                    </span>
+                  ) : null}
+                </div>
                 {detail.usesFormSchema && formFields.length > 0 ? (
                   <CustomerInfoEditForm
                     formFields={formFields}

@@ -38,6 +38,7 @@ type DetailPayload = {
   isSubsidyTarget: boolean;
   combinedSubsidyName: string | null;
   isConstructionDateUnset: boolean;
+  isCancelled: boolean;
   constructionDate: string;
   subsidyPresence: string;
   documents: DocumentRow[];
@@ -237,6 +238,11 @@ export default function CustomerDetailPage() {
               </div>
 
               <div className="mb-4 flex flex-wrap gap-2">
+                {detail.isCancelled ? (
+                  <span className="inline-flex items-center rounded-xl bg-slate-200 px-3 py-2 text-[14px] font-semibold text-slate-800 dark:bg-slate-600/60 dark:text-slate-100">
+                    キャンセル
+                  </span>
+                ) : null}
                 {detail.isDocumentMissing ? (
                   <span className="inline-flex items-center rounded-xl bg-rose-100 px-3 py-2 text-[14px] font-semibold text-rose-800">
                     ⚠️ 書類未回収

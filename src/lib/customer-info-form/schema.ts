@@ -54,6 +54,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     type: "select",
     options: [...INPUT_STATUS_OPTIONS],
   },
+  { key: "customerStatus", caption: "顧客ステータス", type: "text" },
   {
     key: "pt",
     caption: "",
