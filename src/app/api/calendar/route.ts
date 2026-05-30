@@ -10,8 +10,10 @@ import {
   resolveReportFieldIds,
 } from "@/lib/calendar-kojo";
 import { resolveConstructionMapAddressFieldIds } from "@/lib/map-address-fields";
+import { fetchCalendarConstructionRecordsCached } from "@/lib/calendar-construction-records-cache";
 import {
   buildCalendarPayloadCacheKey,
+  getAnyStaleCalendarPayload,
   getOrComputeCalendarPayload,
   getStaleCalendarPayload,
   invalidateCalendarPayloadCacheForMonth,
@@ -22,9 +24,7 @@ import {
 } from "@/lib/calendar-report-records-cache";
 import {
   apiKeyForCalendarPocket,
-  apiKeyForCalendarPocket1,
   apiKeyForCalendarReportPocket1,
-  fetchAllRecordsPages,
   fetchAppFields,
   isPocketHttpRateLimitError,
   pocketApiRateLimitRemainingMs,
@@ -40,9 +40,9 @@ export const dynamic = "force-dynamic";
 
 function calendarCacheTtlMs(): number {
   const raw = process.env.CALENDAR_RESPONSE_CACHE_SECONDS?.trim();
-  const sec = raw ? Number(raw) : 60;
-  if (!Number.isFinite(sec)) return 60_000;
-  const clamped = Math.min(180, Math.max(15, sec));
+  const sec = raw ? Number(raw) : 120;
+  if (!Number.isFinite(sec)) return 120_000;
+  const clamped = Math.min(600, Math.max(30, sec));
   return clamped * 1000;
 }
 
@@ -112,13 +112,13 @@ export async function GET(request: Request) {
 
   const cacheKey = buildCalendarPayloadCacheKey(year, month);
   const calAuth = { apiKey: apiKeyForCalendarPocket() };
-  const calFieldsAuth = { apiKey: apiKeyForCalendarPocket1() };
+  const calFieldsAuth = { apiKey: apiKeyForCalendarPocket() };
   const reportFieldsAuth = { apiKey: apiKeyForCalendarReportPocket1() };
 
   try {
     const payload = await getOrComputeCalendarPayload(
       cacheKey,
-      refresh ? 0 : calendarCacheTtlMs(),
+      calendarCacheTtlMs(),
       async (): Promise<CalendarApiPayload> => {
         const constructionFields = await fetchAppFields(calAppId, calFieldsAuth, {
           operation: "calendar:工事fields",
@@ -134,13 +134,10 @@ export async function GET(request: Request) {
           ? buildConstructionRecordsMonthOverlapQuery(fids, year, month)
           : undefined;
 
-        const constructionRecords = await fetchAllRecordsPages(
+        const constructionRecords = await fetchCalendarConstructionRecordsCached(
           calAppId,
           csv,
-          calAuth,
-          pocketQuery ?? undefined,
-          { operation: "calendar:工事一覧", appEnv: "CALENDAR_APP_ID" },
-          { maxRetries: 2 },
+          pocketQuery,
         );
 
         let reportRecords: Awaited<
@@ -188,7 +185,8 @@ export async function GET(request: Request) {
   } catch (e) {
     console.error("[api/calendar]", e);
     if (isPocketHttpRateLimitError(e)) {
-      const stale = getStaleCalendarPayload(cacheKey);
+      const stale =
+        getStaleCalendarPayload(cacheKey) ?? getAnyStaleCalendarPayload();
       const retrySec = Math.max(
         60,
         Math.ceil(

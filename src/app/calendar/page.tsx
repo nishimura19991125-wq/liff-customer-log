@@ -1278,19 +1278,7 @@ export default function CalendarPage() {
         const primaryDay = patch.dayKeys[0];
         if (primaryDay) setSelectedDayKey(primaryDay);
       }
-      const qs = new URLSearchParams({
-        year: String(ym.year),
-        month: String(ym.month),
-        refresh: "1",
-      });
-      await mutateCalendar(
-        () =>
-          liffAuthedJsonFetch<CalendarApiPayload>(
-            `/api/calendar?${qs}`,
-            t,
-          ),
-        { revalidate: false },
-      );
+      await mutateCalendar(undefined, { revalidate: true });
     },
     [idToken, ym.year, ym.month, mutateCalendar],
   );

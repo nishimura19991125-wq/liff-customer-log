@@ -1,7 +1,9 @@
 import "server-only";
 
 import type { CalendarApiPayload } from "@/lib/calendar-api-types";
+import { invalidateCalendarConstructionRecordsCache } from "@/lib/calendar-construction-records-cache";
 import { invalidateCalendarReportRecordsCache } from "@/lib/calendar-report-records-cache";
+import { isPocketHttpRateLimitError } from "@/lib/atpocket";
 
 /**
  * 認証済みユーザー間で共有できるカレンダー JSON のみキャッシュする。
@@ -50,6 +52,7 @@ export function invalidateCalendarPayloadCacheForMonth(
   const key = buildCalendarPayloadCacheKey(year, month);
   store.delete(key);
   inflight.delete(key);
+  invalidateCalendarConstructionRecordsCache();
 }
 
 /** 表示月が不明なとき用（組織共通キャッシュをすべて破棄） */
@@ -57,6 +60,7 @@ export function invalidateAllCalendarPayloadCache(): void {
   store.clear();
   inflight.clear();
   invalidateCalendarReportRecordsCache();
+  invalidateCalendarConstructionRecordsCache();
 }
 
 /** 429 時などに期限切れでも返せるペイロード（あれば） */
@@ -66,6 +70,19 @@ export function getStaleCalendarPayload(
   const hit = store.get(cacheKey);
   if (!hit || Date.now() > hit.staleUntil) return null;
   return hit.payload;
+}
+
+/** 別月でもよいので直近のカレンダー JSON（429 フォールバック） */
+export function getAnyStaleCalendarPayload(): CalendarApiPayload | null {
+  const now = Date.now();
+  let best: Entry | null = null;
+  for (const entry of store.values()) {
+    if (entry.staleUntil <= now) continue;
+    if (!best || entry.staleUntil > best.staleUntil) {
+      best = entry;
+    }
+  }
+  return best?.payload ?? null;
 }
 
 export async function getOrComputeCalendarPayload(
@@ -92,6 +109,19 @@ export async function getOrComputeCalendarPayload(
         payload,
       });
       return payload;
+    } catch (e) {
+      if (isPocketHttpRateLimitError(e)) {
+        const stale =
+          getStaleCalendarPayload(cacheKey) ?? getAnyStaleCalendarPayload();
+        if (stale) {
+          console.warn(
+            "[calendar-response-cache] serving stale payload after 429",
+            cacheKey,
+          );
+          return stale;
+        }
+      }
+      throw e;
     } finally {
       inflight.delete(cacheKey);
     }

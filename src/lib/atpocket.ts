@@ -674,6 +674,8 @@ const CALENDAR_MAX_PAGES = 200;
 export type FetchAllRecordsPagesOptions = PocketListFetchOptions & {
   /** 最大ページ数（未指定時は CALENDAR_MAX_PAGES） */
   maxPages?: number;
+  /** ページごとにキーをローテーション（429 分散） */
+  authKeys?: AtPocketFetchAuth[];
 };
 
 /** @pocket 一覧をページングで全件取得（工事カレンダーなど） */
@@ -695,8 +697,14 @@ export async function fetchAllRecordsPages(
   const listOptions: PocketListFetchOptions = {
     maxRetries: options?.maxRetries,
   };
+  const authKeys =
+    options?.authKeys?.filter((a) => a.apiKey?.trim()) ?? [];
   const all: AtPocketRecordRow[] = [];
   for (let page = 1; page <= pageCap; page++) {
+    const pageAuth =
+      authKeys.length > 0
+        ? authKeys[(page - 1) % authKeys.length]
+        : auth;
     const data = await fetchRecordsList(
       appsId,
       {
@@ -705,7 +713,7 @@ export async function fetchAllRecordsPages(
         fields: fieldsCsv,
         ...(pocketQuery?.trim() ? { query: pocketQuery.trim() } : {}),
       },
-      auth,
+      pageAuth,
       ctx,
       listOptions,
     );
