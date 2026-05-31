@@ -2,9 +2,11 @@ import "server-only";
 
 import type { AtPocketFetchAuth } from "@/lib/atpocket";
 import {
+  apiKeyForAppFields,
   apiKeyForCustomerInfoPocket,
   apiKeyForCustomerInfoPocket1,
   apiKeyForCustomerInfoWrite,
+  listAuthsForAppList,
 } from "@/lib/atpocket";
 
 export function customerInfoAppId(): string | null {
@@ -25,6 +27,24 @@ export function customerInfoPocketAuth1(): AtPocketFetchAuth {
 /** お客様情報・更新③ */
 export function customerInfoPocketAuthWrite(): AtPocketFetchAuth {
   return { apiKey: apiKeyForCustomerInfoWrite() };
+}
+
+/** 営業ダッシュボード・契約件数用 fields（未設定時は読取①） */
+export function customerInfoDashboardFieldAuth(): AtPocketFetchAuth {
+  return {
+    apiKey: apiKeyForAppFields("CUSTOMER_INFO", [
+      "CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_FIELDS",
+    ]),
+  };
+}
+
+/** 営業ダッシュボード・契約件数用一覧（サブキーで顧客一覧と分離） */
+export function customerInfoDashboardListAuths(): AtPocketFetchAuth[] {
+  return listAuthsForAppList("CUSTOMER_INFO", [
+    "CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_LIST_1",
+    "CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_LIST_2",
+    "CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_LIST_3",
+  ]);
 }
 
 export function customerInfoNameFieldId(): string | null {

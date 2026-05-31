@@ -1,9 +1,6 @@
 import "server-only";
 
-import {
-  apiKeyForSalesDashboardApoPocket,
-  fetchAppFields,
-} from "@/lib/atpocket";
+import { apiKeyForAppFields, fetchAppFields } from "@/lib/atpocket";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import {
   aggregateApoRecords,
@@ -86,7 +83,7 @@ export async function buildApoAndTenkaSections(
   const tenkaFilterValues = salesDashboardApoTenkaTypeFilterValues();
 
   try {
-    const fieldAuth = { apiKey: apiKeyForSalesDashboardApoPocket() };
+    const fieldAuth = { apiKey: apiKeyForAppFields("SALES_DASHBOARD_APO") };
     const apoFields = await fetchAppFields(apoAppId, fieldAuth, {
       operation: "sales-dashboard:apo-tenka-fields",
       appEnv: "SALES_DASHBOARD_APO_APP_ID",

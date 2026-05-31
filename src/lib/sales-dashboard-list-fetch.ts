@@ -1,17 +1,12 @@
 import "server-only";
 
 import {
-  apiKeyForCustomerInfoPocket,
-  apiKeyForSalesDashboardApoPocket,
-  apiKeyForSalesDashboardApoPocket1,
-  apiKeyForSalesDashboardPtPocket,
-  apiKeyForSalesDashboardPtPocket1,
   fetchAllRecordsPages,
-  listAuthsForAppPrefix,
+  listAuthsForAppList,
   type AtPocketFetchAuth,
   type AtPocketRecordRow,
 } from "@/lib/atpocket";
-import { customerInfoPocketAuth1 } from "@/lib/customer-info-config";
+import { customerInfoDashboardListAuths } from "@/lib/customer-info-config";
 
 const PAGE_LIMIT = 1000;
 const DEFAULT_MAX_PAGES = 25;
@@ -23,14 +18,6 @@ function dashboardMaxPages(): number {
   return Math.min(50, Math.floor(n));
 }
 
-function customerInfoListAuths(): AtPocketFetchAuth[] {
-  const fromPrefix = listAuthsForAppPrefix("CUSTOMER_INFO");
-  if (fromPrefix.length > 0) return fromPrefix;
-  return [
-    customerInfoPocketAuth1(),
-    { apiKey: apiKeyForCustomerInfoPocket() },
-  ];
-}
 
 /** 営業ダッシュボード用レコード一覧（ページごとにキーローテーション・429時の再試行は抑える） */
 export async function fetchSalesDashboardRecordPages(
@@ -51,21 +38,14 @@ export async function fetchSalesDashboardRecordPages(
 }
 
 export function salesDashboardPtListAuths(): AtPocketFetchAuth[] {
-  const fromEnv = listAuthsForAppPrefix("SALES_DASHBOARD_PT");
-  if (fromEnv.length > 0) return fromEnv;
-  return [
-    { apiKey: apiKeyForSalesDashboardPtPocket1() },
-    { apiKey: apiKeyForSalesDashboardPtPocket() },
-  ];
+  return listAuthsForAppList("SALES_DASHBOARD_PT");
 }
 
 export function salesDashboardApoListAuths(): AtPocketFetchAuth[] {
-  const fromEnv = listAuthsForAppPrefix("SALES_DASHBOARD_APO");
-  if (fromEnv.length > 0) return fromEnv;
-  return [
-    { apiKey: apiKeyForSalesDashboardApoPocket1() },
-    { apiKey: apiKeyForSalesDashboardApoPocket() },
-  ];
+  return listAuthsForAppList("SALES_DASHBOARD_APO");
 }
 
-export { customerInfoListAuths, PAGE_LIMIT };
+export {
+  customerInfoDashboardListAuths as customerInfoListAuths,
+  PAGE_LIMIT,
+};

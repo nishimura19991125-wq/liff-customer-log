@@ -211,54 +211,93 @@ export function apiKeyForLogPocketWrite(): string {
   return requireAppApiKey("LOG", 2, ["LOG_ATPOCKET_API_KEY"]);
 }
 
-/** PT集計表・読取① */
+/** PT集計表・読取①（fields） */
 export function apiKeyForSalesDashboardPtPocket(): string {
-  return requireAppApiKey("SALES_DASHBOARD_PT", 0, []);
+  return apiKeyForAppFields("SALES_DASHBOARD_PT");
 }
 
-/** PT集計表・読取② */
+/** PT集計表・読取②（list・後方互換） */
 export function apiKeyForSalesDashboardPtPocket1(): string {
-  return requireAppApiKey("SALES_DASHBOARD_PT", 1, []);
+  const auths = listAuthsForAppList("SALES_DASHBOARD_PT");
+  return auths[0]?.apiKey ?? requireAppApiKey("SALES_DASHBOARD_PT", 1, []);
 }
 
-/** アポ取得情報・読取① */
+/** アポ取得情報・読取①（fields） */
 export function apiKeyForSalesDashboardApoPocket(): string {
-  return requireAppApiKey("SALES_DASHBOARD_APO", 0, []);
+  return apiKeyForAppFields("SALES_DASHBOARD_APO");
 }
 
-/** アポ取得情報・読取② */
+/** アポ取得情報・読取②（list・後方互換） */
 export function apiKeyForSalesDashboardApoPocket1(): string {
-  return requireAppApiKey("SALES_DASHBOARD_APO", 1, []);
+  const auths = listAuthsForAppList("SALES_DASHBOARD_APO");
+  return auths[0]?.apiKey ?? requireAppApiKey("SALES_DASHBOARD_APO", 1, []);
 }
 
-/** PT集計表・読取③（一覧の429分散・未設定時は読取②） */
+/** PT集計表・読取③（list ローテ用サブキー・未設定時は LIST_2 → 読取②） */
 export function apiKeyForSalesDashboardPtPocket2(): string {
   return (
-    firstEnvApiKey("SALES_DASHBOARD_PT_ATPOCKET_API_KEY_2") ??
-    apiKeyForSalesDashboardPtPocket1()
+    firstEnvApiKey(
+      "SALES_DASHBOARD_PT_ATPOCKET_API_KEY_LIST_2",
+      "SALES_DASHBOARD_PT_ATPOCKET_API_KEY_2",
+    ) ?? apiKeyForSalesDashboardPtPocket1()
   );
 }
 
-/** アポ取得情報・読取③（一覧の429分散・未設定時は読取②） */
+/** アポ取得情報・読取③（list ローテ用サブキー・未設定時は LIST_2 → 読取②） */
 export function apiKeyForSalesDashboardApoPocket2(): string {
   return (
-    firstEnvApiKey("SALES_DASHBOARD_APO_ATPOCKET_API_KEY_2") ??
-    apiKeyForSalesDashboardApoPocket1()
+    firstEnvApiKey(
+      "SALES_DASHBOARD_APO_ATPOCKET_API_KEY_LIST_2",
+      "SALES_DASHBOARD_APO_ATPOCKET_API_KEY_2",
+    ) ?? apiKeyForSalesDashboardApoPocket1()
   );
 }
 
-/** 機能別3キーを重複なく列挙（一覧のページローテーション用） */
-export function listAuthsForAppPrefix(prefix: string): AtPocketFetchAuth[] {
+function collectDistinctApiKeys(envNames: string[]): AtPocketFetchAuth[] {
   const keys: string[] = [];
-  for (const envName of [
-    `${prefix}_ATPOCKET_API_KEY_1`,
-    `${prefix}_ATPOCKET_API_KEY`,
-    `${prefix}_ATPOCKET_API_KEY_2`,
-  ]) {
+  for (const envName of envNames) {
     const k = process.env[envName]?.trim();
     if (k && !keys.includes(k)) keys.push(k);
   }
   return keys.map((apiKey) => ({ apiKey }));
+}
+
+/** fields 用サブキー（未設定時は読取①） */
+export function apiKeyForAppFields(
+  prefix: string,
+  extraEnvNames: string[] = [],
+): string {
+  const key = firstEnvApiKey(
+    ...extraEnvNames,
+    `${prefix}_ATPOCKET_API_KEY_FIELDS`,
+    `${prefix}_ATPOCKET_API_KEY`,
+  );
+  if (key) return key;
+  return requireAppApiKey(prefix, 0, []);
+}
+
+/** 一覧ページング用サブキー（未設定時は読取②③①の順で重複除外） */
+export function listAuthsForAppList(
+  prefix: string,
+  extraEnvNames: string[] = [],
+): AtPocketFetchAuth[] {
+  const auths = collectDistinctApiKeys([
+    ...extraEnvNames,
+    `${prefix}_ATPOCKET_API_KEY_LIST_3`,
+    `${prefix}_ATPOCKET_API_KEY_LIST_2`,
+    `${prefix}_ATPOCKET_API_KEY_LIST_1`,
+    `${prefix}_ATPOCKET_API_KEY_LIST`,
+    `${prefix}_ATPOCKET_API_KEY_2`,
+    `${prefix}_ATPOCKET_API_KEY_1`,
+    `${prefix}_ATPOCKET_API_KEY`,
+  ]);
+  if (auths.length > 0) return auths;
+  return [{ apiKey: requireAppApiKey(prefix, 1, []) }];
+}
+
+/** @deprecated listAuthsForAppList を使用 */
+export function listAuthsForAppPrefix(prefix: string): AtPocketFetchAuth[] {
+  return listAuthsForAppList(prefix);
 }
 
 export type AtPocketFetchAuth = {
@@ -276,8 +315,60 @@ function authKeyEnvLabel(auth?: AtPocketFetchAuth): string {
   if (!key) return "unset";
   const candidates: Array<[string, string | undefined]> = [
     [
+      "SALES_DASHBOARD_PT_ATPOCKET_API_KEY_LIST_3",
+      process.env.SALES_DASHBOARD_PT_ATPOCKET_API_KEY_LIST_3?.trim(),
+    ],
+    [
+      "SALES_DASHBOARD_PT_ATPOCKET_API_KEY_LIST_2",
+      process.env.SALES_DASHBOARD_PT_ATPOCKET_API_KEY_LIST_2?.trim(),
+    ],
+    [
+      "SALES_DASHBOARD_PT_ATPOCKET_API_KEY_LIST_1",
+      process.env.SALES_DASHBOARD_PT_ATPOCKET_API_KEY_LIST_1?.trim(),
+    ],
+    [
+      "SALES_DASHBOARD_PT_ATPOCKET_API_KEY_FIELDS",
+      process.env.SALES_DASHBOARD_PT_ATPOCKET_API_KEY_FIELDS?.trim(),
+    ],
+    [
+      "SALES_DASHBOARD_APO_ATPOCKET_API_KEY_LIST_3",
+      process.env.SALES_DASHBOARD_APO_ATPOCKET_API_KEY_LIST_3?.trim(),
+    ],
+    [
+      "SALES_DASHBOARD_APO_ATPOCKET_API_KEY_LIST_2",
+      process.env.SALES_DASHBOARD_APO_ATPOCKET_API_KEY_LIST_2?.trim(),
+    ],
+    [
+      "SALES_DASHBOARD_APO_ATPOCKET_API_KEY_LIST_1",
+      process.env.SALES_DASHBOARD_APO_ATPOCKET_API_KEY_LIST_1?.trim(),
+    ],
+    [
+      "SALES_DASHBOARD_APO_ATPOCKET_API_KEY_FIELDS",
+      process.env.SALES_DASHBOARD_APO_ATPOCKET_API_KEY_FIELDS?.trim(),
+    ],
+    [
+      "CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_LIST_3",
+      process.env.CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_LIST_3?.trim(),
+    ],
+    [
+      "CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_LIST_2",
+      process.env.CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_LIST_2?.trim(),
+    ],
+    [
+      "CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_LIST_1",
+      process.env.CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_LIST_1?.trim(),
+    ],
+    [
+      "CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_FIELDS",
+      process.env.CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_FIELDS?.trim(),
+    ],
+    [
       "SALES_DASHBOARD_PT_ATPOCKET_API_KEY_2",
       process.env.SALES_DASHBOARD_PT_ATPOCKET_API_KEY_2?.trim(),
+    ],
+    [
+      "SALES_DASHBOARD_PT_ATPOCKET_API_KEY_1",
+      process.env.SALES_DASHBOARD_PT_ATPOCKET_API_KEY_1?.trim(),
     ],
     [
       "SALES_DASHBOARD_PT_ATPOCKET_API_KEY",
@@ -288,12 +379,20 @@ function authKeyEnvLabel(auth?: AtPocketFetchAuth): string {
       process.env.SALES_DASHBOARD_APO_ATPOCKET_API_KEY_2?.trim(),
     ],
     [
+      "SALES_DASHBOARD_APO_ATPOCKET_API_KEY_1",
+      process.env.SALES_DASHBOARD_APO_ATPOCKET_API_KEY_1?.trim(),
+    ],
+    [
       "SALES_DASHBOARD_APO_ATPOCKET_API_KEY",
       process.env.SALES_DASHBOARD_APO_ATPOCKET_API_KEY?.trim(),
     ],
     [
       "CUSTOMER_INFO_ATPOCKET_API_KEY_2",
       process.env.CUSTOMER_INFO_ATPOCKET_API_KEY_2?.trim(),
+    ],
+    [
+      "CUSTOMER_INFO_ATPOCKET_API_KEY_1",
+      process.env.CUSTOMER_INFO_ATPOCKET_API_KEY_1?.trim(),
     ],
     ["CUSTOMER_INFO_ATPOCKET_API_KEY", process.env.CUSTOMER_INFO_ATPOCKET_API_KEY?.trim()],
     [

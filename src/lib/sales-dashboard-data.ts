@@ -1,8 +1,11 @@
 import "server-only";
 
 import { fetchAppFields } from "@/lib/atpocket";
-import { customerInfoPocketAuth } from "@/lib/customer-info-config";
-import { apiKeyForSalesDashboardPtPocket } from "@/lib/atpocket";
+import {
+  customerInfoDashboardFieldAuth,
+  customerInfoDashboardListAuths,
+} from "@/lib/customer-info-config";
+import { apiKeyForAppFields } from "@/lib/atpocket";
 import { buildApoAndTenkaSections } from "@/lib/sales-dashboard-apo-tenka-bundle";
 import {
   customerInfoListAuths,
@@ -234,10 +237,10 @@ export async function buildSalesDashboardPayload(
   const ptAppId = salesDashboardPtAppId();
   if (!ptAppId) return null;
 
-  const ptFieldAuth = { apiKey: apiKeyForSalesDashboardPtPocket() };
+  const ptFieldAuth = { apiKey: apiKeyForAppFields("SALES_DASHBOARD_PT") };
   const ptListAuths = salesDashboardPtListAuths();
-  const contractFieldAuth = customerInfoPocketAuth();
-  const contractListAuths = customerInfoListAuths();
+  const contractFieldAuth = customerInfoDashboardFieldAuth();
+  const contractListAuths = customerInfoDashboardListAuths();
   const period = resolveSalesDashboardPeriod(periodKey);
   const bound = normApClStaffName(boundStaffName);
   const contractAppId = salesDashboardContractAppId();
