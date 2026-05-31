@@ -62,7 +62,7 @@ export function resolvePtDashboardFieldMap(
   const date = pickByEnvOrKeywords(
     "SALES_DASHBOARD_PT_DATE_FIELD_ID",
     fields,
-    ["計上日", "契約日", "日付", "実績日", "売上日", "登録日", "PT加算日"],
+    ["PT加算日", "計上日", "契約日", "日付", "実績日", "売上日", "登録日"],
   );
   if (!salesperson || !date) return null;
 

@@ -9,10 +9,8 @@ import {
   fetchSalesDashboardRecordPages,
   salesDashboardPtListAuths,
 } from "@/lib/sales-dashboard-list-fetch";
-import {
-  coerceCustomerInfoDisplayString,
-  readCustomerInfoFieldValue,
-} from "@/lib/customer-info-record";
+import { readCustomerInfoFieldValue } from "@/lib/customer-info-record";
+import { parseSalesDashboardRecordYmFromField } from "@/lib/sales-dashboard-record-date";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import {
   isYmInPeriod,
@@ -88,19 +86,6 @@ function parseNumber(raw: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function parseRecordYm(
-  raw: unknown,
-): { year: number; month1: number } | null {
-  const s = coerceCustomerInfoDisplayString(raw);
-  const digits = s.replace(/[^\d]/g, "");
-  if (digits.length < 6) return null;
-  const year = Number(digits.slice(0, 4));
-  const month1 = Number(digits.slice(4, 6));
-  if (!Number.isFinite(year) || !Number.isFinite(month1)) return null;
-  if (month1 < 1 || month1 > 12) return null;
-  return { year, month1 };
-}
-
 function monthKeyFromYm(year: number, month1: number): string {
   return `${year}-${String(month1).padStart(2, "0")}`;
 }
@@ -124,7 +109,7 @@ function aggregatePtRecords(
     );
     if (!name || isExcludedSalesDashboardRankingName(name)) continue;
 
-    const ym = parseRecordYm(recObj[fieldMap.date]);
+    const ym = parseSalesDashboardRecordYmFromField(recObj, fieldMap.date);
     if (!ym || !isYmInPeriod(ym.year, ym.month1, period)) continue;
 
     const pt = fieldMap.pt
@@ -174,7 +159,7 @@ function buildContractCountByMonth(
     );
     if (!name || isExcludedSalesDashboardRankingName(name)) continue;
 
-    const ym = parseRecordYm(recObj[fieldMap.date]);
+    const ym = parseSalesDashboardRecordYmFromField(recObj, fieldMap.date);
     if (!ym) continue;
 
     const monthKey = monthKeyFromYm(ym.year, ym.month1);

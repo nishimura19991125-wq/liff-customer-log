@@ -30,7 +30,7 @@ function cacheTtlMs(): number {
 
 function cacheKey(periodKey: SalesDashboardPeriodKey): string {
   return JSON.stringify({
-    v: 2,
+    v: 3,
     period: periodKey,
     pt: salesDashboardPtAppId() ?? "",
     contract: salesDashboardContractAppId() ?? "",

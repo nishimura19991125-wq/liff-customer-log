@@ -7,10 +7,10 @@ import {
   fetchRecordsList,
   type AtPocketFetchAuth,
 } from "@/lib/atpocket";
+import { readCustomerInfoFieldValue } from "@/lib/customer-info-record";
 import {
-  coerceCustomerInfoDisplayString,
-  readCustomerInfoFieldValue,
-} from "@/lib/customer-info-record";
+  parseSalesDashboardRecordYmFromField,
+} from "@/lib/sales-dashboard-record-date";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import {
   isYmInPeriod,
@@ -56,35 +56,8 @@ function dashboardMaxPages(): number {
   return Math.min(50, Math.floor(n));
 }
 
-function parseRecordYm(
-  raw: unknown,
-): { year: number; month1: number } | null {
-  const s = coerceCustomerInfoDisplayString(raw);
-  if (!s) return null;
-
-  const slashIso = s.replace(/\//g, "-");
-  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(slashIso);
-  if (iso) {
-    const year = Number(iso[1]);
-    const month1 = Number(iso[2]);
-    if (month1 >= 1 && month1 <= 12) return { year, month1 };
-  }
-
-  const digits = s.replace(/[^\d]/g, "");
-  if (digits.length < 6) return null;
-  const year = Number(digits.slice(0, 4));
-  const month1 = Number(digits.slice(4, 6));
-  if (!Number.isFinite(year) || !Number.isFinite(month1)) return null;
-  if (month1 < 1 || month1 > 12) return null;
-  return { year, month1 };
-}
-
-export function parseRecordYmFromField(
-  recObj: Record<string, unknown>,
-  fieldId: string,
-): { year: number; month1: number } | null {
-  return parseRecordYm(readCustomerInfoFieldValue(recObj, fieldId));
-}
+/** @deprecated parseSalesDashboardRecordYmFromField を使用 */
+export const parseRecordYmFromField = parseSalesDashboardRecordYmFromField;
 
 function normalizeStatus(s: string): string {
   return s
