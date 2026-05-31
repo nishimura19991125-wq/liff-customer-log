@@ -138,15 +138,31 @@ function staffRosterListFieldsCsv(): string {
   return [...new Set(parts.map((p) => p.trim()).filter(Boolean))].join(",");
 }
 
+/** 名簿一覧で AP/CL・勤務場所・LINE 等を fields に含めるか */
+function staffRosterUseExtendedFieldsCsv(): boolean {
+  const lineIds = staffLineUserIdFieldIdsFromEnv();
+  if (lineIds.lineField1 || lineIds.lineField2) return true;
+  for (const envKey of [
+    "STAFF_AP_AVAILABILITY_FIELD_ID",
+    "STAFF_CL_AVAILABILITY_FIELD_ID",
+    "STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID",
+    "STAFF_WORKPLACE_FIELD_ID",
+    "STAFF_AVAILABILITY_FIELD_ID",
+  ] as const) {
+    if (process.env[envKey]?.trim()) return true;
+  }
+  return false;
+}
+
 async function fetchStaffRosterRowsFromPocket(
   staffAppId: string,
-  lineOn: boolean,
 ): Promise<AtPocketRecordRow[]> {
   const auth = { apiKey: apiKeyForStaffPocketRead() };
   const ctx = { operation: "staff:名簿一覧", appEnv: "STAFF_APP_ID" };
   const staffNameFieldId = process.env.STAFF_NAME_FIELD_ID?.trim() ?? "";
-  let fields = lineOn ? staffRosterListFieldsCsv() : staffNameFieldId;
-  if (lineOn) {
+  const extended = staffRosterUseExtendedFieldsCsv();
+  let fields = extended ? staffRosterListFieldsCsv() : staffNameFieldId;
+  if (extended) {
     const avail = await resolveStaffGeneralAvailabilityConfig();
     if (avail.ok) {
       const extra = avail.cfg.fieldId.trim();
@@ -237,9 +253,7 @@ export async function fetchStaffRosterRowsCached(): Promise<
   rosterInflight = (async () => {
     lastFetchAttemptAt = Date.now();
     try {
-      const lineIds = staffLineUserIdFieldIdsFromEnv();
-      const lineOn = staffLineBindingEnabled(lineIds);
-      const rows = await fetchStaffRosterRowsFromPocket(staffAppId, lineOn);
+      const rows = await fetchStaffRosterRowsFromPocket(staffAppId);
 
       rosterCache = {
         key,

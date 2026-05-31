@@ -163,6 +163,32 @@ export function apiKeyForStaffPocketRead1(): string {
   ]);
 }
 
+/** AP/CL担当者リスト等（読取②→読取①へフォールバック） */
+export function apiKeyForStaffPocketReadApClList(): string {
+  const key = firstEnvApiKey(
+    "ATPOCKET_API_KEY_1",
+    "STAFF_READ_ATPOCKET_API_KEY_1",
+    "ATPOCKET_API_KEY",
+    "STAFF_READ_ATPOCKET_API_KEY",
+  );
+  if (key) return key;
+  return requireStaffApiKey("ATPOCKET_API_KEY_1", [
+    "STAFF_READ_ATPOCKET_API_KEY_1",
+  ]);
+}
+
+/** AP/CL・工事対応者リスト用の読取キー（②と①を重複なく） */
+export function staffPocketReadAuthsForStaffLists(): AtPocketFetchAuth[] {
+  const keys: string[] = [];
+  for (const k of [
+    apiKeyForStaffPocketReadApClList(),
+    apiKeyForStaffPocketRead(),
+  ]) {
+    if (!keys.includes(k)) keys.push(k);
+  }
+  return keys.map((apiKey) => ({ apiKey }));
+}
+
 /** スタッフ名簿・更新③（LINE紐付け・PIN設定など） */
 export function apiKeyForStaffWrite(): string {
   return requireStaffApiKey("ATPOCKET_API_KEY_2", [

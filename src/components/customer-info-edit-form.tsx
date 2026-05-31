@@ -127,6 +127,8 @@ function joinCheckboxValue(selected: Set<string>): string {
 const FIELD_INVALID_CLASS =
   "border-red-300 ring-2 ring-red-200 focus:border-red-400 focus:ring-red-200";
 
+const AP_CL_STAFF_KEYS = new Set(["apStaff", "clStaff"]);
+
 function FieldControl({
   field,
   value,
@@ -221,17 +223,20 @@ function FieldControl({
     );
   }
 
+  const forceSelectList =
+    AP_CL_STAFF_KEYS.has(field.key) && !field.optionsPending;
+
   if (
     field.type === "select" &&
-    field.options &&
-    field.options.length > 0 &&
-    !field.optionsPending
+    !field.optionsPending &&
+    (forceSelectList || (field.options && field.options.length > 0))
   ) {
     const trimmed = value.trim();
+    const baseOptions = field.options ?? [];
     const selectOptions =
-      trimmed && !field.options.includes(trimmed)
-        ? [...field.options, trimmed]
-        : field.options;
+      trimmed && !baseOptions.includes(trimmed)
+        ? [...baseOptions, trimmed]
+        : baseOptions;
     return (
       <select
         className={selectClass}
@@ -347,8 +352,6 @@ function ContractAmountHint({ values }: { values: CustomerInfoFormValues }) {
     </p>
   );
 }
-
-const AP_CL_STAFF_KEYS = new Set(["apStaff", "clStaff"]);
 
 export function CustomerInfoEditForm({
   formFields,
@@ -520,7 +523,8 @@ export function CustomerInfoEditForm({
         if (cancelled) return;
         if (!res.ok) {
           setApClStaff({
-            configured: false,
+            configured: true,
+            rosterEmpty: true,
             configError:
               typeof data.error === "string"
                 ? data.error
@@ -534,7 +538,8 @@ export function CustomerInfoEditForm({
       } catch {
         if (!cancelled) {
           setApClStaff({
-            configured: false,
+            configured: true,
+            rosterEmpty: true,
             configError: "AP/CL担当者リストの取得に失敗しました（通信エラー）",
             ap: { options: [], defaultName: null },
             cl: { options: [], defaultName: null },
@@ -580,17 +585,14 @@ export function CustomerInfoEditForm({
         if (f.key === "apStaff" || f.key === "clStaff") {
           const role = f.key === "apStaff" ? "ap" : "cl";
           if (apClStaffLoading) {
-            return { ...f, options: [], optionsPending: true };
+            return { ...f, type: "select" as const, options: [], optionsPending: true };
           }
-          if (!apClStaff?.configured) {
-            return { ...f, options: [], optionsPending: false };
-          }
-          const picker = apClStaff[role];
+          const picker = apClStaff?.[role];
           return {
             ...f,
             type: "select" as const,
             options: mergeStaffNameOptions(
-              picker.options,
+              picker?.options ?? [],
               displayValues[f.key],
             ),
             optionsPending: false,

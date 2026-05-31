@@ -6,9 +6,10 @@ import type {
   AtPocketRequestContext,
 } from "@/lib/atpocket";
 import {
-  apiKeyForStaffPocketRead1,
+  apiKeyForStaffPocketReadApClList,
+  fetchAllRecordsPages,
   fetchAppFields,
-  fetchRecordsList,
+  staffPocketReadAuthsForStaffLists,
 } from "@/lib/atpocket";
 import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
 import {
@@ -130,7 +131,7 @@ async function resolveStaffApClConfig(): Promise<
     };
   }
 
-  const auth = { apiKey: apiKeyForStaffPocketRead1() };
+  const auth = { apiKey: apiKeyForStaffPocketReadApClList() };
   const fieldsCtx: AtPocketRequestContext = {
     operation: "customer-info:AP/CL担当者(列定義)",
     appEnv: "STAFF_APP_ID",
@@ -233,7 +234,6 @@ async function fetchStaffRowsForApClPicker(
     return { rows: stale, rosterEmpty: false };
   }
 
-  const auth = { apiKey: apiKeyForStaffPocketRead1() };
   const fieldsCsv = uniqueFieldsCsv(
     cfg.nameFieldId,
     cfg.apAvailabilityFieldId,
@@ -241,17 +241,22 @@ async function fetchStaffRowsForApClPicker(
     cfg.lineField1,
     cfg.lineField2,
   );
-  const data = await fetchRecordsList(
+  const listAuths = staffPocketReadAuthsForStaffLists();
+  const rows = await fetchAllRecordsPages(
     cfg.staffAppId,
-    { limit: "1000", page: "1", fields: fieldsCsv },
-    auth,
+    fieldsCsv,
+    listAuths[0],
+    null,
     {
       operation: "customer-info:AP/CL担当者(名簿)",
       appEnv: "STAFF_APP_ID",
     },
-    { maxRetries: 0 },
+    {
+      maxPages: 5,
+      authKeys: listAuths,
+      maxRetries: 0,
+    },
   );
-  const rows = data.records ?? [];
   return { rows, rosterEmpty: rows.length === 0 };
 }
 
@@ -328,15 +333,15 @@ export async function fetchApClStaffPickerPayload(
   lineUserId: string,
 ): Promise<ApClStaffPickerPayload> {
   const wantLine = nfkc(lineUserId);
-  if (!wantLine) return emptyPicker();
+  const cacheKey = wantLine || "__no_line__";
 
   const now = Date.now();
-  const cached = pickerCache.get(wantLine);
+  const cached = pickerCache.get(cacheKey);
   if (cached && cached.expiresAt > now) {
     return cached.payload;
   }
 
-  const pending = pickerInflight.get(wantLine);
+  const pending = pickerInflight.get(cacheKey);
   if (pending) return pending;
 
   const promise = (async () => {
@@ -359,17 +364,17 @@ export async function fetchApClStaffPickerPayload(
       ) {
         payload.configError = `「${cfg.activeLabel}」の担当者が名簿にいません。AP/CL稼働状況の値と STAFF_AP_CL_AVAILABILITY_ACTIVE_LABEL（既定: 稼働）を確認してください。`;
       }
-      pickerCache.set(wantLine, {
+      pickerCache.set(cacheKey, {
         expiresAt: Date.now() + pickerCacheTtlMs(),
         payload,
       });
       return payload;
     } finally {
-      pickerInflight.delete(wantLine);
+      pickerInflight.delete(cacheKey);
     }
   })();
 
-  pickerInflight.set(wantLine, promise);
+  pickerInflight.set(cacheKey, promise);
   return promise;
 }
 

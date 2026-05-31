@@ -32,7 +32,8 @@ export async function GET(request: Request) {
       msg.includes("429") || msg.includes("Too Many Request");
     return NextResponse.json(
       {
-        configured: false,
+        configured: true,
+        rosterEmpty: true,
         ap: { options: [], defaultName: null },
         cl: { options: [], defaultName: null },
         error: rateLimited
@@ -40,7 +41,7 @@ export async function GET(request: Request) {
           : "AP/CL担当者リストの取得に失敗しました",
         configError: rateLimited
           ? "担当者一覧の取得が混み合っています。しばらくしてから再度お試しください。"
-          : undefined,
+          : "AP/CL担当者リストの取得に失敗しました。しばらくしてから画面を更新してください。",
       },
       {
         status: rateLimited ? 429 : 502,

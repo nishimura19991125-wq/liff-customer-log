@@ -35,8 +35,10 @@ const POCKET_ZERO_WHEN_EMPTY_KEYS = new Set([
   "referralFee",
 ]);
 
-/** 非表示時に @pocket へ 0 を送る金額フィールド（"-" は半角数字エラーになる） */
+/** 非表示時に @pocket へ 0 を送るフィールド（"-" は半角数字エラーになる） */
 const POCKET_ZERO_WHEN_HIDDEN_KEYS = new Set([
+  "panelCount1",
+  "panelCount2",
   "cashAmount",
   "loanAmount",
   "referralFee",
@@ -61,9 +63,6 @@ const COMMA_INTEGER_KEYS = new Set([
   "referralFee",
 ]);
 
-/** 非表示時は "0" ではなく "-" を送る（蓄電池のみでパネル欄を隠すとき等） */
-const PANEL_COUNT_KEYS = new Set(["panelCount1", "panelCount2"]);
-
 function isEmptyPocketInput(raw: string): boolean {
   const t = raw.trim();
   return t === "" || t === "-";
@@ -82,9 +81,6 @@ function pocketFieldValueForPut(
   }
   if (COMMA_INTEGER_KEYS.has(key)) {
     if (!visible) {
-      if (PANEL_COUNT_KEYS.has(key)) {
-        return hiddenFallback;
-      }
       if (
         POCKET_ZERO_WHEN_HIDDEN_KEYS.has(key) ||
         POCKET_ZERO_WHEN_EMPTY_KEYS.has(key)
