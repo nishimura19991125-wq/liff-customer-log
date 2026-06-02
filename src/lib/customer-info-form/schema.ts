@@ -69,7 +69,12 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     options: [],
     optionsPending: true,
   },
-  { key: "apBranch", caption: "AP所属支店", type: "text" },
+  {
+    key: "apBranch",
+    caption: "AP所属支店",
+    type: "text",
+    hiddenInForm: true,
+  },
   {
     key: "clStaff",
     caption: "CL担当者",
@@ -77,7 +82,12 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     options: [],
     optionsPending: true,
   },
-  { key: "clBranch", caption: "CL所属支店", type: "text" },
+  {
+    key: "clBranch",
+    caption: "CL所属支店",
+    type: "text",
+    hiddenInForm: true,
+  },
   {
     key: "introduction",
     caption: "導入経緯",

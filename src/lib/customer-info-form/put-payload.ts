@@ -95,7 +95,7 @@ function applyPtTransferToPayload(
 
 const BRANCH_FALLBACK = "-";
 
-/** AP/CL所属支店＝担当者名簿の勤務場所（フォーム非表示） */
+/** AP所属支店＝AP担当者の名簿レコードの勤務場所、CL所属支店＝CL担当者の勤務場所（フォーム非表示） */
 async function applyStaffBranchesToPayload(
   values: CustomerInfoFormValues,
   resolved: CustomerInfoFormFieldResolved[],

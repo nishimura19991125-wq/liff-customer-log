@@ -236,7 +236,7 @@ export function buildCustomerInfoFormPayload(
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
   for (const field of resolved) {
-    if (field.liffOnly) continue;
+    if (field.liffOnly || field.hiddenInForm) continue;
     const visible = isCustomerInfoFormFieldVisible(field.key, values);
     if (field.type === "checkbox-group") {
       payload[field.fieldId] = visible

@@ -182,16 +182,18 @@ export async function GET(request: Request, ctx: RouteCtx) {
         resolved,
         transferResolve.resolved,
       );
-      const formFieldsBase = resolved.map((f) => ({
-        key: f.key,
-        fieldId: f.fieldId,
-        label: f.label,
-        type: f.type,
-        options: f.options ? [...f.options] : undefined,
-        optionsPending: f.optionsPending,
-        liffOnly: f.liffOnly === true,
-        value: values[f.key] ?? "",
-      }));
+      const formFieldsBase = resolved
+        .filter((f) => !f.hiddenInForm)
+        .map((f) => ({
+          key: f.key,
+          fieldId: f.fieldId,
+          label: f.label,
+          type: f.type,
+          options: f.options ? [...f.options] : undefined,
+          optionsPending: f.optionsPending,
+          liffOnly: f.liffOnly === true,
+          value: values[f.key] ?? "",
+        }));
       const formFields = await enrichCustomerInfoFormFieldsWithManufacturers(
         formFieldsBase,
         values.manufacturer,

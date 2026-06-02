@@ -22,6 +22,8 @@ export type CustomerInfoFormFieldDef = {
   formLabel?: string;
   /** true のとき @pocket へは保存せず LIFF の表示制御のみ */
   liffOnly?: boolean;
+  /** true のとき入力フォームに出さない（保存時にサーバーで @pocket へ転記） */
+  hiddenInForm?: boolean;
   type: CustomerInfoFieldType;
   options?: readonly string[];
   /** 選択肢は後日 @pocket 連携予定のとき true（当面はテキスト入力） */
