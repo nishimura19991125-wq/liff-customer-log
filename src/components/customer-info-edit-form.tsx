@@ -303,12 +303,24 @@ function FieldControl({
     );
   }
 
+  const autoComplete =
+    field.key === "prefecture"
+      ? "address-level1"
+      : field.key === "city"
+        ? "address-level2"
+        : field.key === "address"
+          ? "street-address"
+          : field.key === "customerName"
+            ? "name"
+            : undefined;
+
   return (
     <input
       type="text"
       className={controlClass}
       value={value}
       disabled={disabled}
+      autoComplete={autoComplete}
       placeholder={
         field.optionsPending ? "一覧連携前のため直接入力" : undefined
       }

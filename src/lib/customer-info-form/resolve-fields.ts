@@ -39,16 +39,83 @@ function nfkc(s: string): string {
 function pickFieldUniqueIdByExactCaption(
   fields: AtPocketFieldRow[],
   caption: string,
+  usedIds?: ReadonlySet<string>,
 ): string | null {
   const target = nfkc(caption).toLowerCase();
   for (const f of fields) {
     const cap = f.caption ? nfkc(String(f.caption)).toLowerCase() : "";
     if (cap && cap === target) {
       const id = f.uniqueId?.trim();
-      return id || null;
+      if (!id) continue;
+      if (usedIds?.has(id)) continue;
+      return id;
     }
   }
   return null;
+}
+
+type CaptionResolveRule = {
+  captions: string[];
+  /** 見出しに含まれていたら除外（例: 都道府県補助金・都道府県+市区町村） */
+  rejectIfCaptionIncludes?: string[];
+};
+
+/** 住所・補助金など見出しが似た列の取り違え防止 */
+const FORM_KEY_CAPTION_RULES: Partial<Record<string, CaptionResolveRule>> = {
+  postalCode: {
+    captions: ["郵便番号", "〒"],
+    rejectIfCaptionIncludes: ["都道府県", "補助", "市区", "町村"],
+  },
+  prefecture: {
+    captions: ["都道府県"],
+    rejectIfCaptionIncludes: [
+      "補助",
+      "市区",
+      "町村",
+      "郵便",
+      "+",
+      "と",
+      "事前",
+    ],
+  },
+  city: {
+    captions: ["市区郡", "市区町村"],
+    rejectIfCaptionIncludes: ["補助", "郵便", "番地"],
+  },
+  address: {
+    captions: ["町村+番地", "町村＋番地", "町村・番地", "番地"],
+    rejectIfCaptionIncludes: ["補助", "郵便"],
+  },
+};
+
+function captionMatchesRule(caption: string, rule: CaptionResolveRule): boolean {
+  const cap = nfkc(caption).toLowerCase();
+  if (!cap) return false;
+  for (const reject of rule.rejectIfCaptionIncludes ?? []) {
+    const r = nfkc(reject).toLowerCase();
+    if (r && cap.includes(r)) return false;
+  }
+  const targets = rule.captions.map((c) => nfkc(c).toLowerCase());
+  return targets.some((t) => t && cap === t);
+}
+
+function pickCustomerInfoFieldUniqueId(
+  fields: AtPocketFieldRow[],
+  key: string,
+  caption: string,
+  usedIds: ReadonlySet<string>,
+): string | null {
+  const rule = FORM_KEY_CAPTION_RULES[key];
+  if (rule) {
+    for (const f of fields) {
+      const cap = f.caption ? String(f.caption) : "";
+      if (!captionMatchesRule(cap, rule)) continue;
+      const id = f.uniqueId?.trim();
+      if (id && !usedIds.has(id)) return id;
+    }
+    return null;
+  }
+  return pickFieldUniqueIdByExactCaption(fields, caption, usedIds);
 }
 
 /** CUSTOMER_INFO_FIELD_PT 形式の環境変数（キーは apStaff → AP_STAFF） */
@@ -64,18 +131,23 @@ export function resolveCustomerInfoFormFieldId(
   key: string,
   caption: string,
   appFields: AtPocketFieldRow[],
+  usedIds: ReadonlySet<string> = new Set(),
 ): string | null {
   const fromEnv = envFieldIdForFormKey(key);
   if (fromEnv) {
-    return resolveConfiguredFieldToSchemaUniqueId(fromEnv, appFields);
+    const id = resolveConfiguredFieldToSchemaUniqueId(fromEnv, appFields);
+    if (id && usedIds.has(id)) return null;
+    return id;
   }
   if (key === "customerName") {
     const nameEnv = customerInfoNameFieldId();
     if (nameEnv) {
-      return resolveConfiguredFieldToSchemaUniqueId(nameEnv, appFields);
+      const id = resolveConfiguredFieldToSchemaUniqueId(nameEnv, appFields);
+      if (id && usedIds.has(id)) return null;
+      return id;
     }
   }
-  return pickFieldUniqueIdByExactCaption(appFields, caption);
+  return pickCustomerInfoFieldUniqueId(appFields, key, caption, usedIds);
 }
 
 export function resolveCustomerInfoFormFields(
@@ -86,6 +158,7 @@ export function resolveCustomerInfoFormFields(
 } {
   const resolved: CustomerInfoFormFieldResolved[] = [];
   const missingCaptions: string[] = [];
+  const usedFieldIds = new Set<string>();
 
   for (const def of CUSTOMER_INFO_FORM_FIELDS) {
     if (def.liffOnly) {
@@ -101,6 +174,7 @@ export function resolveCustomerInfoFormFields(
       def.key,
       def.caption,
       appFields,
+      usedFieldIds,
     );
     if (!fieldId) {
       missingCaptions.push(def.caption);
@@ -111,6 +185,7 @@ export function resolveCustomerInfoFormFields(
       missingCaptions.push(def.caption);
       continue;
     }
+    usedFieldIds.add(fieldId);
     resolved.push({
       ...def,
       fieldId,
@@ -268,6 +343,14 @@ export function readCustomerInfoFormValuesFromRecord(
   if (ptField?.liffOnly) {
     values.pt = inferPtFromRecord(recObj, transferResolved);
   }
+
+  // 列の取り違え・旧データで都道府県列に郵便番号だけ入っているときの表示補正
+  const pref = (values.prefecture ?? "").replace(/\s/g, "");
+  if (/^\d{3}-?\d{4}$/.test(pref) && !(values.postalCode ?? "").trim()) {
+    values.postalCode = formatPostalCodeInput(pref);
+    values.prefecture = "";
+  }
+
   return values;
 }
 

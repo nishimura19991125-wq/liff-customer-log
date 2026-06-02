@@ -20,6 +20,7 @@ import {
   ROOF_MATERIAL_OPTIONS,
 } from "@/lib/customer-info-form/schema";
 import { dateValueForPocket } from "@/lib/customer-info-form/date-pocket";
+import { postalCodeDigits } from "@/lib/customer-info-form/postal-code";
 import type {
   CustomerInfoFormFieldResolved,
   CustomerInfoFormValues,
@@ -78,6 +79,11 @@ function pocketFieldValueForPut(
   if (key === "contractAmount" && values) {
     if (!visible) return hiddenFallback;
     return contractAmountForPocket(values) || hiddenFallback;
+  }
+  if (key === "postalCode") {
+    if (!visible) return hiddenFallback;
+    const digits = postalCodeDigits(raw);
+    return digits || hiddenFallback;
   }
   if (COMMA_INTEGER_KEYS.has(key)) {
     if (!visible) {
