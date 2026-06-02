@@ -207,6 +207,18 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     optionsPending: true,
   },
   {
+    key: "batteryModel1",
+    caption: "蓄電池品番①",
+    type: "text",
+    hiddenInForm: true,
+  },
+  {
+    key: "batteryModel2",
+    caption: "蓄電池品番②",
+    type: "text",
+    hiddenInForm: true,
+  },
+  {
     key: "ecoCuteNew",
     caption: "エコキュート新規設置",
     type: "select",

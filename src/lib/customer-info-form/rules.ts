@@ -55,6 +55,8 @@ const POCKET_DASH_WHEN_EMPTY_KEYS = new Set([
   "powerConModel2",
   "batteryCapacity1",
   "batteryCapacity2",
+  "batteryModel1",
+  "batteryModel2",
 ]);
 
 const DECIMAL_KW_KEYS = new Set(["panelCapacityKw"]);
@@ -224,6 +226,8 @@ export function isCustomerInfoFormFieldVisible(
       return preApplicationRequiresDocuments(preApplication);
     case "apBranch":
     case "clBranch":
+    case "batteryModel1":
+    case "batteryModel2":
       return false;
     default:
       return true;

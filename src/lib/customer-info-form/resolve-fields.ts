@@ -98,6 +98,14 @@ const FORM_KEY_CAPTION_RULES: Partial<Record<string, CaptionResolveRule>> = {
     ],
     rejectIfCaptionIncludes: ["パワコン", "蓄電池"],
   },
+  batteryModel1: {
+    captions: ["蓄電池品番①", "蓄電池品番１"],
+    rejectIfCaptionIncludes: ["②", "２", "2"],
+  },
+  batteryModel2: {
+    captions: ["蓄電池品番②", "蓄電池品番２"],
+    rejectIfCaptionIncludes: ["①", "１", "1"],
+  },
 };
 
 function captionMatchesRule(caption: string, rule: CaptionResolveRule): boolean {

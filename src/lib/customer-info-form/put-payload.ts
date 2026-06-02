@@ -14,7 +14,11 @@ import {
 import { syncContractAmountFromPayment } from "@/lib/customer-info-form/form-change";
 import { computePtTransfer } from "@/lib/customer-info-form/pt-transfer";
 import { filterCustomerInfoPutPayload } from "@/lib/customer-info-form/pocket-writable-fields";
-import { buildCustomerInfoFormPayload } from "@/lib/customer-info-form/rules";
+import {
+  buildCustomerInfoFormPayload,
+  isCustomerInfoFormFieldVisible,
+} from "@/lib/customer-info-form/rules";
+import { lookupBatteryModelNumberByCapacity } from "@/lib/product-catalog-models";
 import { resolveCustomerInfoPtTransferFields } from "@/lib/customer-info-form/resolve-fields";
 import type {
   CustomerInfoFormFieldResolved,
@@ -124,6 +128,42 @@ async function applyStaffBranchesToPayload(
   }
 }
 
+/** 蓄電池品番①②＝商品一覧の型番（選択した蓄電池容量と同一レコード・フォーム非表示） */
+async function applyBatteryModelNumbersToPayload(
+  values: CustomerInfoFormValues,
+  resolved: CustomerInfoFormFieldResolved[],
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const model1Field = resolved.find((f) => f.key === "batteryModel1");
+  const model2Field = resolved.find((f) => f.key === "batteryModel2");
+  if (!model1Field?.fieldId && !model2Field?.fieldId) return;
+
+  const manufacturer = (values.manufacturer ?? "").trim();
+
+  async function modelForCapacity(
+    capacityKey: "batteryCapacity1" | "batteryCapacity2",
+  ): Promise<string> {
+    if (!isCustomerInfoFormFieldVisible(capacityKey, values)) {
+      return BRANCH_FALLBACK;
+    }
+    const capacity = (values[capacityKey] ?? "").trim();
+    if (!capacity || capacity === "-") return BRANCH_FALLBACK;
+    if (!manufacturer) return BRANCH_FALLBACK;
+    const model = await lookupBatteryModelNumberByCapacity(
+      manufacturer,
+      capacity,
+    );
+    return model?.trim() || BRANCH_FALLBACK;
+  }
+
+  if (model1Field?.fieldId) {
+    payload[model1Field.fieldId] = await modelForCapacity("batteryCapacity1");
+  }
+  if (model2Field?.fieldId) {
+    payload[model2Field.fieldId] = await modelForCapacity("batteryCapacity2");
+  }
+}
+
 export async function formPayloadFromValues(
   values: CustomerInfoFormValues,
   resolved: CustomerInfoFormFieldResolved[],
@@ -136,6 +176,7 @@ export async function formPayloadFromValues(
     resolveCustomerInfoPtTransferFields(appFields);
   applyPtTransferToPayload(values, transferResolved, stringPayload);
   await applyStaffBranchesToPayload(values, resolved, stringPayload);
+  await applyBatteryModelNumbersToPayload(values, resolved, stringPayload);
   const { payload: filtered, dropped } = filterCustomerInfoPutPayload(
     stringPayload,
     appFields,

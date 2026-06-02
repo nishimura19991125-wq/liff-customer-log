@@ -347,6 +347,224 @@ export async function fetchBatteryCapacityOptionsForManufacturer(
   return fetchCatalogValuesForManufacturer(manufacturer, CATALOG_CONFIG_BATTERY);
 }
 
+export type BatteryCatalogEntry = {
+  manufacturer: string;
+  /** 出力または容量（蓄電池容量プルダウンと同一） */
+  capacity: string;
+  /** 型番（蓄電池品番への自動転記用） */
+  modelNumber: string;
+};
+
+type BatteryCatalogFieldIds = {
+  manufacturerName: string;
+  productType: string;
+  status: string;
+  outputOrCapacity: string;
+  modelNumber: string;
+};
+
+const BATTERY_ENTRIES_CACHE_KEY = `${PRODUCT_CATALOG_TYPE_BATTERY}:entries`;
+
+function resolveBatteryCatalogFieldIds(
+  appFields: AtPocketFieldRow[],
+): BatteryCatalogFieldIds | null {
+  const manufacturerName = resolveProductCatalogFieldId(
+    "PRODUCT_CATALOG_MANUFACTURER_NAME_FIELD_ID",
+    "メーカー名",
+    appFields,
+  );
+  const productType = resolveProductCatalogFieldId(
+    "PRODUCT_CATALOG_PRODUCT_TYPE_FIELD_ID",
+    "商品種別",
+    appFields,
+  );
+  const status = resolveProductCatalogFieldId(
+    "PRODUCT_CATALOG_STATUS_FIELD_ID",
+    "ステータス",
+    appFields,
+  );
+  const outputOrCapacity = resolveProductCatalogFieldId(
+    "PRODUCT_CATALOG_OUTPUT_OR_CAPACITY_FIELD_ID",
+    "出力または容量",
+    appFields,
+  );
+  const modelNumber = resolveProductCatalogFieldId(
+    "PRODUCT_CATALOG_MODEL_NUMBER_FIELD_ID",
+    "型番",
+    appFields,
+  );
+  if (
+    !manufacturerName ||
+    !productType ||
+    !status ||
+    !outputOrCapacity ||
+    !modelNumber
+  ) {
+    return null;
+  }
+  return {
+    manufacturerName,
+    productType,
+    status,
+    outputOrCapacity,
+    modelNumber,
+  };
+}
+
+async function resolveBatteryCatalogFieldIdsForFetch(
+  appId: string,
+): Promise<BatteryCatalogFieldIds | null> {
+  const manufacturerName =
+    process.env.PRODUCT_CATALOG_MANUFACTURER_NAME_FIELD_ID?.trim();
+  const productType = process.env.PRODUCT_CATALOG_PRODUCT_TYPE_FIELD_ID?.trim();
+  const status = process.env.PRODUCT_CATALOG_STATUS_FIELD_ID?.trim();
+  const outputOrCapacity =
+    process.env.PRODUCT_CATALOG_OUTPUT_OR_CAPACITY_FIELD_ID?.trim();
+  const modelNumber = process.env.PRODUCT_CATALOG_MODEL_NUMBER_FIELD_ID?.trim();
+  if (
+    manufacturerName &&
+    productType &&
+    status &&
+    outputOrCapacity &&
+    modelNumber
+  ) {
+    return {
+      manufacturerName,
+      productType,
+      status,
+      outputOrCapacity,
+      modelNumber,
+    };
+  }
+
+  const appFields = await fetchAppFieldsTryKeys(
+    appId,
+    pocketApiKeysForProductCatalog(),
+  );
+  if (!appFields) {
+    console.warn(
+      "[product-catalog-models:battery-entries] 商品一覧の fields API が失敗しました。",
+    );
+    return null;
+  }
+  return resolveBatteryCatalogFieldIds(appFields);
+}
+
+function collectBatteryCatalogEntries(
+  rows: Awaited<ReturnType<typeof fetchAllRecordsPages>>,
+  ids: BatteryCatalogFieldIds,
+): BatteryCatalogEntry[] {
+  const out: BatteryCatalogEntry[] = [];
+
+  for (const row of rows) {
+    const rec = row.record;
+    if (!rec || typeof rec !== "object") continue;
+    const recObj = rec as Record<string, unknown>;
+
+    const typeRaw = readRecordCell(recObj, ids.productType);
+    if (!pocketSelectIncludesLabel(typeRaw, PRODUCT_CATALOG_TYPE_BATTERY)) {
+      continue;
+    }
+    const statusRaw = readRecordCell(recObj, ids.status);
+    if (!pocketSelectIncludesLabel(statusRaw, STATUS_CURRENT)) {
+      continue;
+    }
+
+    const manufacturer = readPlainCell(recObj, ids.manufacturerName);
+    const capacity = readPlainCell(recObj, ids.outputOrCapacity);
+    const modelNumber = readPlainCell(recObj, ids.modelNumber);
+    if (!manufacturer || !capacity || !modelNumber) continue;
+
+    out.push({ manufacturer, capacity, modelNumber });
+  }
+
+  return out;
+}
+
+async function loadBatteryCatalogEntriesUncached(): Promise<BatteryCatalogEntry[]> {
+  const appId = productCatalogAppId();
+  if (!appId) return [];
+
+  const auth = productCatalogPocketAuth();
+  const ids = await resolveBatteryCatalogFieldIdsForFetch(appId);
+  if (!ids) return [];
+
+  const fieldsCsv = [
+    ids.manufacturerName,
+    ids.productType,
+    ids.status,
+    ids.outputOrCapacity,
+    ids.modelNumber,
+  ].join(",");
+
+  let rows = await fetchAllRecordsPages(appId, fieldsCsv, auth);
+  let entries = collectBatteryCatalogEntries(rows, ids);
+
+  if (entries.length <= 1 && rows.length >= 2) {
+    const fullRows = await fetchAllRecordsPages(appId, "", auth);
+    const retry = collectBatteryCatalogEntries(fullRows, ids);
+    if (retry.length > entries.length) entries = retry;
+  }
+
+  return entries;
+}
+
+async function loadBatteryCatalogEntries(): Promise<BatteryCatalogEntry[]> {
+  const now = Date.now();
+  const cached = catalogCacheByProductType.get(BATTERY_ENTRIES_CACHE_KEY);
+  if (cached && cached.expiresAt > now) {
+    return cached.rows as unknown as BatteryCatalogEntry[];
+  }
+
+  const inflight = catalogInflightByProductType.get(BATTERY_ENTRIES_CACHE_KEY);
+  if (inflight) {
+    return inflight as unknown as Promise<BatteryCatalogEntry[]>;
+  }
+
+  const promise = (async () => {
+    try {
+      const entries = await loadBatteryCatalogEntriesUncached();
+      catalogCacheByProductType.set(BATTERY_ENTRIES_CACHE_KEY, {
+        expiresAt: Date.now() + CACHE_TTL_MS,
+        rows: entries as unknown as CatalogRow[],
+      });
+      return entries;
+    } catch (e) {
+      console.error("[product-catalog-models:battery-entries]", e);
+      catalogCacheByProductType.set(BATTERY_ENTRIES_CACHE_KEY, {
+        expiresAt: Date.now() + 60_000,
+        rows: [],
+      });
+      return [];
+    } finally {
+      catalogInflightByProductType.delete(BATTERY_ENTRIES_CACHE_KEY);
+    }
+  })();
+
+  catalogInflightByProductType.set(BATTERY_ENTRIES_CACHE_KEY, promise as unknown as Promise<CatalogRow[]>);
+  return promise;
+}
+
+/** メーカー・蓄電池容量（出力または容量）に一致する商品一覧レコードの型番 */
+export async function lookupBatteryModelNumberByCapacity(
+  manufacturer: string,
+  capacityValue: string,
+): Promise<string | null> {
+  if (!productCatalogAppId()) return null;
+
+  const wantM = nfkcNormalize(manufacturer);
+  const wantC = nfkcNormalize(capacityValue);
+  if (!wantM || !wantC) return null;
+
+  const entries = await loadBatteryCatalogEntries();
+  for (const entry of entries) {
+    if (nfkcNormalize(entry.manufacturer) !== wantM) continue;
+    if (nfkcNormalize(entry.capacity) !== wantC) continue;
+    return entry.modelNumber;
+  }
+  return null;
+}
+
 export function mergeCatalogModelOptions(
   options: string[],
   currentValues: string[],
