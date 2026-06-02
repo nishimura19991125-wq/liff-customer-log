@@ -15,6 +15,13 @@ export function postalCodeDigits(formatted: string): string {
   return formatted.replace(/-/g, "");
 }
 
+/** @pocket 転記用（000-0000。7桁揃うときのみ） */
+export function postalCodeForPocket(raw: string): string | null {
+  const digits = postalCodeDigits(raw);
+  if (digits.length !== 7) return null;
+  return formatPostalCodeInput(digits);
+}
+
 export type PostalCodeLookupResult = {
   prefecture: string;
   city: string;

@@ -20,7 +20,7 @@ import {
   ROOF_MATERIAL_OPTIONS,
 } from "@/lib/customer-info-form/schema";
 import { dateValueForPocket } from "@/lib/customer-info-form/date-pocket";
-import { postalCodeDigits } from "@/lib/customer-info-form/postal-code";
+import { postalCodeForPocket } from "@/lib/customer-info-form/postal-code";
 import type {
   CustomerInfoFormFieldResolved,
   CustomerInfoFormValues,
@@ -82,8 +82,8 @@ function pocketFieldValueForPut(
   }
   if (key === "postalCode") {
     if (!visible) return hiddenFallback;
-    const digits = postalCodeDigits(raw);
-    return digits || hiddenFallback;
+    const pocket = postalCodeForPocket(raw);
+    return pocket ?? hiddenFallback;
   }
   if (COMMA_INTEGER_KEYS.has(key)) {
     if (!visible) {
