@@ -3,6 +3,7 @@ import {
   isContractAmountDerived,
   syncContractAmountFromPayment,
 } from "@/lib/customer-info-form/form-change";
+import { hasDecimalKwValue } from "@/lib/customer-info-form/decimal-kw";
 import { parseCommaIntegerDigits } from "@/lib/customer-info-form/numeric-comma";
 import { isValidPostalCodeFormat } from "@/lib/customer-info-form/postal-code";
 import { parsePtDigitsOnly } from "@/lib/customer-info-form/pt-transfer";
@@ -59,6 +60,8 @@ export function isCustomerInfoVisibleFieldValueMissing(
       return !parsePtDigitsOnly(raw);
     case "postal-code":
       return !isValidPostalCodeFormat(raw);
+    case "decimal-kw":
+      return !hasDecimalKwValue(raw);
     case "date":
       return !dateValueForPocket(raw);
     default:

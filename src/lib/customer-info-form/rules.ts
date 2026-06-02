@@ -20,6 +20,7 @@ import {
   ROOF_MATERIAL_OPTIONS,
 } from "@/lib/customer-info-form/schema";
 import { dateValueForPocket } from "@/lib/customer-info-form/date-pocket";
+import { decimalKwForPocket } from "@/lib/customer-info-form/decimal-kw";
 import { postalCodeForPocket } from "@/lib/customer-info-form/postal-code";
 import type {
   CustomerInfoFormFieldResolved,
@@ -49,11 +50,14 @@ const POCKET_ZERO_WHEN_HIDDEN_KEYS = new Set([
 const POCKET_DASH_WHEN_EMPTY_KEYS = new Set([
   "panelModel1",
   "panelModel2",
+  "panelCapacityKw",
   "powerConModel1",
   "powerConModel2",
   "batteryCapacity1",
   "batteryCapacity2",
 ]);
+
+const DECIMAL_KW_KEYS = new Set(["panelCapacityKw"]);
 
 const COMMA_INTEGER_KEYS = new Set([
   "panelCount1",
@@ -83,6 +87,11 @@ function pocketFieldValueForPut(
   if (key === "postalCode") {
     if (!visible) return hiddenFallback;
     const pocket = postalCodeForPocket(raw);
+    return pocket ?? hiddenFallback;
+  }
+  if (DECIMAL_KW_KEYS.has(key)) {
+    if (!visible) return hiddenFallback;
+    const pocket = decimalKwForPocket(raw);
     return pocket ?? hiddenFallback;
   }
   if (COMMA_INTEGER_KEYS.has(key)) {
@@ -156,6 +165,7 @@ export function isCustomerInfoFormFieldVisible(
     case "panelCombo":
     case "panelModel1":
     case "panelCount1":
+    case "panelCapacityKw":
       return !installationTypeHidesPanelSection(installationType);
     case "panelModel2":
     case "panelCount2":

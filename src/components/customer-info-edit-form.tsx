@@ -22,6 +22,7 @@ import {
   isContractAmountDerived,
   syncContractAmountFromPayment,
 } from "@/lib/customer-info-form/form-change";
+import { formatDecimalKwInput } from "@/lib/customer-info-form/decimal-kw";
 import {
   formatCommaInteger,
   parseCommaIntegerDigits,
@@ -252,6 +253,21 @@ function FieldControl({
           </option>
         ))}
       </select>
+    );
+  }
+
+  if (field.type === "decimal-kw") {
+    return (
+      <input
+        type="text"
+        inputMode="decimal"
+        className={controlClass}
+        value={value}
+        disabled={disabled}
+        placeholder="例：5.280"
+        onBlur={onBlur}
+        onChange={(e) => onChange(formatDecimalKwInput(e.target.value))}
+      />
     );
   }
 

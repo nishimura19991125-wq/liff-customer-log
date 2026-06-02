@@ -20,6 +20,7 @@ import {
   formatPtWithCommas,
   parsePtDigitsOnly,
 } from "@/lib/customer-info-form/pt-transfer";
+import { formatDecimalKwFromPocket } from "@/lib/customer-info-form/decimal-kw";
 import { formatPostalCodeInput } from "@/lib/customer-info-form/postal-code";
 import { isWritableAtPocketField } from "@/lib/customer-info-form/pocket-writable-fields";
 import { inferPanelComboFromPanelModel2 } from "@/lib/customer-info-form/panel-combo";
@@ -85,6 +86,17 @@ const FORM_KEY_CAPTION_RULES: Partial<Record<string, CaptionResolveRule>> = {
   address: {
     captions: ["町村+番地", "町村＋番地", "町村・番地", "番地"],
     rejectIfCaptionIncludes: ["補助", "郵便"],
+  },
+  panelCapacityKw: {
+    captions: [
+      "太陽光パネル容量(kw)",
+      "太陽光パネル容量(kW)",
+      "太陽光パネル容量（kw）",
+      "太陽光パネル容量",
+      "パネル容量(kw)",
+      "パネル容量",
+    ],
+    rejectIfCaptionIncludes: ["パワコン", "蓄電池"],
   },
 };
 
@@ -327,6 +339,8 @@ export function readCustomerInfoFormValuesFromRecord(
     } else if (field.type === "postal-code") {
       const digits = raw.replace(/[^\d]/g, "");
       values[field.key] = digits.length > 0 ? formatPostalCodeInput(digits) : "";
+    } else if (field.type === "decimal-kw") {
+      values[field.key] = formatDecimalKwFromPocket(raw);
     } else {
       values[field.key] = raw;
     }

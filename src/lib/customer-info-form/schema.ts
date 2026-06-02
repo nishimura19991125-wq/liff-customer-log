@@ -154,6 +154,12 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   { key: "panelCount1", caption: "パネル枚数①", type: "comma-integer" },
   { key: "panelCount2", caption: "パネル枚数②", type: "comma-integer" },
   {
+    key: "panelCapacityKw",
+    caption: "太陽光パネル容量(kw)",
+    formLabel: "太陽光パネル容量(kW)",
+    type: "decimal-kw",
+  },
+  {
     key: "powerConCount",
     caption: "パワーコンディショナー台数",
     formLabel: "パワコン設置台数",
