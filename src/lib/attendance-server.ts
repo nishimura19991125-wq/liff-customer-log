@@ -38,6 +38,7 @@ import {
 } from "@/lib/attendance-fields";
 import { enrichStaffNamesWithDepartments } from "@/lib/staff-department-lookup";
 import { pickRecordValueByFieldAliases, ymdKey } from "@/lib/calendar-kojo";
+import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
 export type { AttendancePublicStatus } from "@/lib/attendance-fields";
@@ -139,12 +140,6 @@ function pocketRowHasAttendanceData(
   return Boolean(
     readFieldText(recObj, ids.clockIn) || readFieldText(recObj, ids.clockOut),
   );
-}
-
-function recordIdOf(row: AtPocketRecordRow): string | null {
-  const id = row.recordId ?? row.id;
-  if (id === undefined || id === null) return null;
-  return String(id);
 }
 
 function attendanceRosterMaxPages(): number {
@@ -389,7 +384,7 @@ function statusFromRecord(
     return {
       clockIn: null,
       clockOut: null,
-      recordId: recordIdOf(row),
+      recordId: atPocketRecordIdFromRow(row),
       canClockIn: true,
       canClockOut: false,
     };
@@ -397,7 +392,7 @@ function statusFromRecord(
 
   const clockIn = readFieldText(recObj, ids.clockIn) || null;
   const clockOut = readFieldText(recObj, ids.clockOut) || null;
-  const recordId = recordIdOf(row);
+  const recordId = atPocketRecordIdFromRow(row);
 
   return {
     clockIn,
@@ -685,7 +680,10 @@ export async function punchAttendanceForLineUser(
     };
 
     if (existing) {
-      const recordId = recordIdOf(existing);
+      const recordId =
+        atPocketRecordIdFromRow(existing) ??
+        cached?.recordId?.trim() ??
+        null;
       if (!recordId) {
         return {
           ok: false,
@@ -704,7 +702,7 @@ export async function punchAttendanceForLineUser(
         recordId,
       );
       const rosterRows = rows.map((r) =>
-        recordIdOf(r) === recordId ? punchedRow : r,
+        atPocketRecordIdFromRow(r) === recordId ? punchedRow : r,
       );
       const status = await publishPunchStatus(punchedRow, rosterRows);
       return { ok: true, status };
@@ -712,7 +710,7 @@ export async function punchAttendanceForLineUser(
 
     const created = await createRecord(appId, patch, writeAuth);
     const newId =
-      recordIdOf(created.row) ?? created.recordIdHint ?? null;
+      atPocketRecordIdFromRow(created.row) ?? created.recordIdHint ?? null;
     const punchedRow = syntheticRowAfterPunch(
       null,
       ids,
@@ -742,7 +740,8 @@ export async function punchAttendanceForLineUser(
     };
   }
 
-  const recordId = existing ? recordIdOf(existing) : null;
+  const recordId =
+    atPocketRecordIdFromRow(existing) ?? cached?.recordId?.trim() ?? null;
   if (!recordId) {
     return {
       ok: false,
@@ -767,7 +766,7 @@ export async function punchAttendanceForLineUser(
     recordId,
   );
   const rosterRows = rows.map((r) =>
-    recordIdOf(r) === recordId ? punchedRow : r,
+    atPocketRecordIdFromRow(r) === recordId ? punchedRow : r,
   );
   const status = await publishPunchStatus(punchedRow, rosterRows);
   return { ok: true, status };
