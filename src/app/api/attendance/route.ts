@@ -12,8 +12,13 @@ export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
 
+  const url = new URL(request.url);
+  const bypassCache = url.searchParams.get("refresh") === "1";
+
   try {
-    const status = await getAttendanceStatusForLineUser(auth.lineUserId);
+    const status = await getAttendanceStatusForLineUser(auth.lineUserId, {
+      bypassCache,
+    });
     return NextResponse.json(status);
   } catch (e) {
     console.error("[api/attendance]", e);

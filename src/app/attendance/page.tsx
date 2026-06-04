@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { useLiffSwr } from "@/hooks/use-liff-swr";
+import { liffAuthedJsonFetch, LIFF_SWR_ATTENDANCE_OPTIONS, isLiffSwrSessionExpired } from "@/lib/liff-swr";
+
 import {
   LiffAccountBar,
   LiffCard,
@@ -32,6 +35,8 @@ type AttendanceStatus = {
   clockOut?: string | null;
   canClockIn?: boolean;
   canClockOut?: boolean;
+  rateLimited?: boolean;
+  stale?: boolean;
   error?: string;
 };
 
@@ -71,8 +76,6 @@ export default function AttendancePage() {
     LIFF_ID ? null : "NEXT_PUBLIC_LIFF_ID が設定されていません",
   );
   const [idToken, setIdToken] = useState<string | null>(null);
-  const [status, setStatus] = useState<AttendanceStatus | null>(null);
-  const [loading, setLoading] = useState(false);
   const [punching, setPunching] = useState<"in" | "out" | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -90,31 +93,51 @@ export default function AttendancePage() {
     !account.loading &&
     Boolean(account.boundStaffName || !account.bindingEnabled);
 
-  const loadStatus = useCallback(async () => {
+  const attendancePath = canUseAttendance ? "/api/attendance" : null;
+  const {
+    data: status,
+    error: swrError,
+    isLoading: statusLoading,
+    mutate: mutateStatus,
+  } = useLiffSwr<AttendanceStatus>(
+    attendancePath,
+    idToken,
+    LIFF_SWR_ATTENDANCE_OPTIONS,
+  );
+
+  const loading = statusLoading && !status;
+
+  const refreshStatus = useCallback(async () => {
     if (!idToken || !canUseAttendance) return;
-    setLoading(true);
     setFeedback(null);
     try {
-      const res = await fetch("/api/attendance", {
-        headers: { Authorization: `Bearer ${idToken}` },
-      });
-      const data = (await res.json()) as AttendanceStatus;
-      if (res.status === 401 && isLineSessionExpiredPayload(data)) {
-        setPhase("session-expired");
-        return;
-      }
-      if (!res.ok) {
-        setFeedback(data.error ?? "勤怠情報の取得に失敗しました");
-        setStatus(data);
-        return;
-      }
-      setStatus(data);
+      await mutateStatus(
+        () =>
+          liffAuthedJsonFetch<AttendanceStatus>(
+            "/api/attendance?refresh=1",
+            idToken,
+          ),
+        { revalidate: false },
+      );
     } catch {
       setFeedback("勤怠情報の取得に失敗しました");
-    } finally {
-      setLoading(false);
     }
-  }, [idToken, canUseAttendance]);
+  }, [idToken, canUseAttendance, mutateStatus]);
+
+  useEffect(() => {
+    if (!swrError || phase !== "ready") return;
+    if (isLiffSwrSessionExpired(swrError)) {
+      setPhase("session-expired");
+      return;
+    }
+    setFeedback(swrError.message);
+  }, [swrError, phase]);
+
+  useEffect(() => {
+    if (status?.rateLimited && status.configError) {
+      setFeedback(status.configError);
+    }
+  }, [status?.rateLimited, status?.configError]);
 
   useEffect(() => {
     if (!LIFF_ID) return;
@@ -141,10 +164,6 @@ export default function AttendancePage() {
     };
   }, []);
 
-  useEffect(() => {
-    void loadStatus();
-  }, [loadStatus]);
-
   async function handlePunch(kind: "in" | "out") {
     if (!idToken || punching) return;
     setPunching(kind);
@@ -164,10 +183,15 @@ export default function AttendancePage() {
         return;
       }
       if (!res.ok) {
-        setFeedback(data.error ?? "打刻に失敗しました");
+        setFeedback(
+          data.error ??
+            (res.status === 429
+              ? "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。"
+              : "打刻に失敗しました"),
+        );
         return;
       }
-      setStatus(data);
+      await mutateStatus(data, { revalidate: false });
       setFeedback(kind === "in" ? "出勤を打刻しました" : "退勤を打刻しました");
     } catch {
       setFeedback("打刻に失敗しました");
@@ -320,7 +344,7 @@ export default function AttendancePage() {
                 type="button"
                 className="mt-1 block w-full text-[13px] font-semibold text-emerald-700 underline underline-offset-2 disabled:opacity-50 dark:text-emerald-400"
                 disabled={loading || punching !== null}
-                onClick={() => void loadStatus()}
+                onClick={() => void refreshStatus()}
               >
                 @pocket の状態を再読み込み
               </button>

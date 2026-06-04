@@ -54,6 +54,22 @@ export type AttendanceFieldIds = {
   clockOut: string | null;
 };
 
+export type AttendancePublicStatus = {
+  configured: boolean;
+  disabled?: boolean;
+  configError?: string;
+  needsStaffBind?: boolean;
+  staffName?: string;
+  workDate?: string;
+  clockIn?: string | null;
+  clockOut?: string | null;
+  recordId?: string | null;
+  canClockIn?: boolean;
+  canClockOut?: boolean;
+  rateLimited?: boolean;
+  stale?: boolean;
+};
+
 export function resolveAttendanceFieldIds(
   appFields: AtPocketFieldRow[],
 ): AttendanceFieldIds {

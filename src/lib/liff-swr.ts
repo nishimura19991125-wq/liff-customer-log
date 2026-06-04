@@ -101,3 +101,11 @@ export const LIFF_SWR_CALENDAR_OPTIONS: SWRConfiguration = {
   dedupingInterval: 60_000,
   focusThrottleInterval: 60_000,
 };
+
+/** 勤怠（@pocket 429 抑制・サーバーキャッシュと揃える） */
+export const LIFF_SWR_ATTENDANCE_OPTIONS: SWRConfiguration = {
+  ...LIFF_SWR_DEFAULT_OPTIONS,
+  dedupingInterval: 90_000,
+  focusThrottleInterval: 90_000,
+  errorRetryCount: 0,
+};

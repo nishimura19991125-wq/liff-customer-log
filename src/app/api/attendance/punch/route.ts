@@ -38,7 +38,13 @@ export async function POST(request: Request) {
   try {
     const result = await punchAttendanceForLineUser(auth.lineUserId, kind);
     if (!result.ok) {
-      return NextResponse.json({ error: result.error }, { status: result.status });
+      return NextResponse.json(
+        {
+          error: result.error,
+          ...(result.rateLimited ? { rateLimited: true } : {}),
+        },
+        { status: result.status },
+      );
     }
     return NextResponse.json({ ok: true, ...result.status });
   } catch (e) {
