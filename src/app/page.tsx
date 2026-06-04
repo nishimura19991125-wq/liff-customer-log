@@ -85,6 +85,27 @@ function SalesDashboardGlyph() {
   );
 }
 
+function AttendanceGlyph() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M12 7v5l3 2"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function HomeHubPage() {
   const [phase, setPhase] = useState<"init" | "need-login" | "ready" | "error">(
     () => (LIFF_ID ? "init" : "error"),
@@ -287,6 +308,14 @@ export default function HomeHubPage() {
               title="営業ダッシュボード"
               description="当月の売上KPIや営業成績ランキングをリアルタイムで確認します。"
               icon={<SalesDashboardGlyph />}
+              iconTone="blue"
+              disabled={needsStaffBind}
+            />
+            <LiffMenuCard
+              href="/attendance"
+              title="勤怠管理"
+              description="出勤・退勤を打刻し、@pocket の勤怠アプリに記録します。"
+              icon={<AttendanceGlyph />}
               iconTone="blue"
               disabled={needsStaffBind}
             />

@@ -232,6 +232,21 @@ export function apiKeyForProductCatalogPocket1(): string {
   return requireAppApiKey("PRODUCT_CATALOG", 1, []);
 }
 
+/** 勤怠・読取①（当日ステータス・一覧） */
+export function apiKeyForAttendancePocket(): string {
+  return requireAppApiKey("ATTENDANCE", 0, []);
+}
+
+/** 勤怠・読取②（fields 等・429 分散） */
+export function apiKeyForAttendancePocket1(): string {
+  return requireAppApiKey("ATTENDANCE", 1, []);
+}
+
+/** 勤怠・更新③（出勤・退勤打刻） */
+export function apiKeyForAttendanceWrite(): string {
+  return requireAppApiKey("ATTENDANCE", 2, []);
+}
+
 /** ログアプリ・更新③ */
 export function apiKeyForLogPocketWrite(): string {
   return requireAppApiKey("LOG", 2, ["LOG_ATPOCKET_API_KEY"]);
