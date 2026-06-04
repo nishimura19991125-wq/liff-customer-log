@@ -2,6 +2,7 @@ import "server-only";
 
 import type { AtPocketRecordRow } from "@/lib/atpocket";
 import type {
+  AttendanceDepartmentGroup,
   AttendancePublicStatus,
   AttendanceTodayAttendee,
 } from "@/lib/attendance-fields";
@@ -9,6 +10,7 @@ import type {
 export type AttendanceRosterBundle = {
   rows: AtPocketRecordRow[];
   attendees: AttendanceTodayAttendee[];
+  byDepartment: AttendanceDepartmentGroup[];
 };
 
 type StatusCacheEntry = {
@@ -55,6 +57,10 @@ export function getCachedRosterBundle(
   return {
     rows: hit.bundle.rows,
     attendees: hit.bundle.attendees.map((a) => ({ ...a })),
+    byDepartment: hit.bundle.byDepartment.map((g) => ({
+      department: g.department,
+      attendees: g.attendees.map((a) => ({ ...a })),
+    })),
   };
 }
 
@@ -75,6 +81,10 @@ export function setCachedRosterBundle(
     bundle: {
       rows: bundle.rows,
       attendees: bundle.attendees.map((a) => ({ ...a })),
+      byDepartment: bundle.byDepartment.map((g) => ({
+        department: g.department,
+        attendees: g.attendees.map((a) => ({ ...a })),
+      })),
     },
   });
 }
@@ -105,6 +115,10 @@ export async function getTodayRosterBundleCached(
     return {
       rows: hit.bundle.rows,
       attendees: hit.bundle.attendees.map((a) => ({ ...a })),
+      byDepartment: hit.bundle.byDepartment.map((g) => ({
+        department: g.department,
+        attendees: g.attendees.map((a) => ({ ...a })),
+      })),
     };
   }
 
@@ -119,6 +133,10 @@ export async function getTodayRosterBundleCached(
         bundle: {
           rows: bundle.rows,
           attendees: bundle.attendees.map((a) => ({ ...a })),
+          byDepartment: bundle.byDepartment.map((g) => ({
+            department: g.department,
+            attendees: g.attendees.map((a) => ({ ...a })),
+          })),
         },
       });
       return bundle;

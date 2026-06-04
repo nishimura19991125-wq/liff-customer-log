@@ -59,6 +59,14 @@ export type AttendanceTodayAttendee = {
   staffName: string;
   clockIn: string;
   clockOut: string | null;
+  /** スタッフ名簿の部署（見出し「部署」等・未設定時は省略） */
+  department?: string;
+};
+
+/** 部署ごとの出勤者グループ */
+export type AttendanceDepartmentGroup = {
+  department: string;
+  attendees: AttendanceTodayAttendee[];
 };
 
 export type AttendancePublicStatus = {
@@ -75,6 +83,8 @@ export type AttendancePublicStatus = {
   canClockOut?: boolean;
   /** 本日の出勤者（出勤時刻あり・社員名で重複排除） */
   todayAttendees?: AttendanceTodayAttendee[];
+  /** 部署ごとにまとめた出勤者（表示用） */
+  todayAttendeesByDepartment?: AttendanceDepartmentGroup[];
   rateLimited?: boolean;
   stale?: boolean;
 };
