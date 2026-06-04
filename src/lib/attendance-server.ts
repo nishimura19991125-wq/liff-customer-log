@@ -6,7 +6,6 @@ import {
   apiKeyForAttendanceWrite,
   createRecord,
   fetchAppFields,
-  fetchRecordById,
   fetchRecordsList,
   isPocketApiRateLimited,
   isPocketHttpRateLimitError,
@@ -18,10 +17,13 @@ import {
   blockAttendanceFetchAfterRateLimit,
   getAttendanceStatusCached,
   getCachedAttendanceStatus,
+  getCachedTodayAttendees,
   getStaleAttendanceStatus,
+  getTodayRosterBundleCached,
   invalidateAttendanceStatusCache,
   isAttendanceFetchBlocked,
   setCachedAttendanceStatus,
+  setCachedRosterBundle,
   statusCacheKey,
 } from "@/lib/attendance-cache";
 import {
@@ -30,6 +32,7 @@ import {
   resolveAttendanceFieldIds,
   type AttendanceFieldIds,
   type AttendancePublicStatus,
+  type AttendanceTodayAttendee,
 } from "@/lib/attendance-fields";
 import { pickRecordValueByFieldAliases, ymdKey } from "@/lib/calendar-kojo";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
@@ -141,24 +144,47 @@ function recordIdOf(row: AtPocketRecordRow): string | null {
   return String(id);
 }
 
-function buildStaffListQueries(
+function attendanceRosterMaxPages(): number {
+  const raw = process.env.ATTENDANCE_ROSTER_MAX_PAGES?.trim();
+  const n = raw ? Number(raw) : 2;
+  if (!Number.isFinite(n) || n < 1) return 2;
+  return Math.min(5, Math.floor(n));
+}
+
+function clockInSortKey(raw: string): number {
+  const s = raw.trim().replace(/\//g, "-").replace("T", " ");
+  const m = /(\d{1,2}):(\d{2})/.exec(s);
+  if (m) return Number(m[1]) * 60 + Number(m[2]);
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+}
+
+function buildTodayAttendees(
+  rows: AtPocketRecordRow[],
   ids: AttendanceFieldIds,
-  staffName: string,
   today: string,
-): string[] {
-  const name = nfkcName(staffName);
-  const staffFieldId = ids.staffName?.trim();
-  const dateFieldId = ids.workDate?.trim();
-  const out: string[] = [];
-  if (staffFieldId && dateFieldId && name) {
-    out.push(
-      `${staffFieldId}="${name}" AND ${dateFieldId}="${today}"`,
-      `${staffFieldId}="${name}"`,
-    );
-  } else if (staffFieldId && name) {
-    out.push(`${staffFieldId}="${name}"`);
+): AttendanceTodayAttendee[] {
+  const byName = new Map<string, AttendanceTodayAttendee>();
+
+  for (const row of rows) {
+    const recObj = row.record ?? {};
+    if (!recordAppliesToToday(recObj, ids, today)) continue;
+
+    const name = readFieldText(recObj, ids.staffName);
+    const clockIn = readFieldText(recObj, ids.clockIn);
+    if (!name || !clockIn) continue;
+
+    const key = nfkcName(name);
+    const clockOut = readFieldText(recObj, ids.clockOut) || null;
+    const cur = byName.get(key);
+    if (!cur || clockInSortKey(clockIn) < clockInSortKey(cur.clockIn)) {
+      byName.set(key, { staffName: name, clockIn, clockOut });
+    }
   }
-  return out;
+
+  return Array.from(byName.values()).sort(
+    (a, b) => clockInSortKey(a.clockIn) - clockInSortKey(b.clockIn),
+  );
 }
 
 async function loadAttendanceFieldIds(): Promise<
@@ -217,33 +243,11 @@ async function loadAttendanceFieldIds(): Promise<
   return { ok: true, appId, ids: fieldIds };
 }
 
-async function fetchRecordsListPage(
-  appId: string,
-  csv: string,
-  query: string | null,
-  auth: { apiKey: string },
-): Promise<AtPocketRecordRow[]> {
-  const data = await fetchRecordsList(
-    appId,
-    {
-      limit: "100",
-      page: "1",
-      fields: csv,
-      ...(query?.trim() ? { query: query.trim() } : {}),
-    },
-    auth,
-    { operation: "attendance-list" },
-    { maxRetries: 0 },
-  );
-  return data.records ?? [];
-}
-
-async function fetchTodayAttendanceRows(
+/** 勤怠日で本日分を取得（出勤者一覧・個人ステータス兼用・1〜2ページ） */
+async function fetchTodayRosterRows(
   appId: string,
   ids: AttendanceFieldIds,
-  staffName: string,
   today: string,
-  cachedRecordId?: string | null,
 ): Promise<AtPocketRecordRow[]> {
   const csv = attendanceFieldsCsv(ids);
   const readAuth = { apiKey: apiKeyForAttendancePocket() };
@@ -257,57 +261,42 @@ async function fetchTodayAttendanceRows(
     throw new Error("ATTENDANCE_RATE_LIMIT");
   }
 
-  const recordId = cachedRecordId?.trim();
-  if (recordId) {
-    const auths = [readAuth, readAuth1];
-    for (const auth of auths) {
-      if (isPocketApiRateLimited(auth)) continue;
-      try {
-        const row = await fetchRecordById(appId, recordId, auth, csv);
-        if (row) return [row];
-      } catch (e) {
-        if (isPocketHttpRateLimitError(e)) {
-          markPocketApiRateLimited(auth);
-          blockAttendanceFetchAfterRateLimit();
-        }
-      }
-    }
-  }
+  const dateFieldId = ids.workDate?.trim();
+  const query = dateFieldId ? `${dateFieldId}="${today}"` : null;
+  const pageCap = attendanceRosterMaxPages();
+  const all: AtPocketRecordRow[] = [];
 
-  const queries = buildStaffListQueries(ids, staffName, today);
-  const listOpts = { maxRetries: 0 } as const;
-
-  for (let qi = 0; qi < queries.length; qi++) {
-    const query = queries[qi];
-    const auth = qi % 2 === 0 ? readAuth : readAuth1;
-    if (isPocketApiRateLimited(auth)) continue;
+  for (let page = 1; page <= pageCap; page++) {
+    const auth = page % 2 === 1 ? readAuth : readAuth1;
+    if (isPocketApiRateLimited(auth)) break;
     try {
-      const rows = await fetchRecordsListPage(appId, csv, query, auth);
-      if (rows.length > 0) return rows;
-      if (qi === 0) return rows;
+      const data = await fetchRecordsList(
+        appId,
+        {
+          limit: "100",
+          page: String(page),
+          fields: csv,
+          ...(query ? { query } : {}),
+        },
+        auth,
+        { operation: "attendance-roster" },
+        { maxRetries: 0 },
+      );
+      const recs = data.records ?? [];
+      all.push(...recs);
+      if (recs.length < 100) break;
     } catch (e) {
       if (isPocketHttpRateLimitError(e)) {
         markPocketApiRateLimited(auth);
         blockAttendanceFetchAfterRateLimit();
         throw new Error("ATTENDANCE_RATE_LIMIT");
       }
+      if (page === 1) throw e;
+      break;
     }
   }
 
-  if (!isPocketApiRateLimited(readAuth1)) {
-    try {
-      return await fetchRecordsListPage(appId, csv, null, readAuth1);
-    } catch (e) {
-      if (isPocketHttpRateLimitError(e)) {
-        markPocketApiRateLimited(readAuth1);
-        blockAttendanceFetchAfterRateLimit();
-        throw new Error("ATTENDANCE_RATE_LIMIT");
-      }
-      throw e;
-    }
-  }
-
-  return [];
+  return all;
 }
 
 function matchTodayRecord(
@@ -383,57 +372,79 @@ function buildFullStatus(
   today: string,
   ids: AttendanceFieldIds,
   row: AtPocketRecordRow | null,
+  todayAttendees: AttendanceTodayAttendee[],
 ): AttendancePublicStatus {
   return {
     configured: true,
     staffName,
     workDate: today,
+    todayAttendees,
     ...statusFromRecord(row, ids),
   };
 }
 
-async function loadTodayRow(
-  appId: string,
-  ids: AttendanceFieldIds,
+async function loadTodayAttendanceBundle(
+  loaded: { appId: string; ids: AttendanceFieldIds },
   staffName: string,
   today: string,
-  cachedRecordId?: string | null,
-): Promise<AtPocketRecordRow | null> {
-  const rows = await fetchTodayAttendanceRows(
-    appId,
-    ids,
-    staffName,
+  bypassRosterCache?: boolean,
+): Promise<{
+  row: AtPocketRecordRow | null;
+  rows: AtPocketRecordRow[];
+  todayAttendees: AttendanceTodayAttendee[];
+}> {
+  const { rows, attendees } = await getTodayRosterBundleCached(
     today,
-    cachedRecordId,
+    async () => {
+      const rosterRows = await fetchTodayRosterRows(
+        loaded.appId,
+        loaded.ids,
+        today,
+      );
+      return {
+        rows: rosterRows,
+        attendees: buildTodayAttendees(rosterRows, loaded.ids, today),
+      };
+    },
+    bypassRosterCache,
   );
-  return matchTodayRecord(rows, staffName, ids, today);
+
+  return {
+    row: matchTodayRecord(rows, staffName, loaded.ids, today),
+    rows,
+    todayAttendees: attendees,
+  };
 }
 
 async function fetchAttendanceStatusBody(
   loaded: { appId: string; ids: AttendanceFieldIds },
   staffName: string,
   today: string,
+  bypassCache?: boolean,
 ): Promise<AttendancePublicStatus> {
-  const cached = getCachedAttendanceStatus(staffName, today);
-  const cachedRecordId = cached?.recordId;
-
   try {
-    const row = await loadTodayRow(
-      loaded.appId,
-      loaded.ids,
+    const { row, todayAttendees } = await loadTodayAttendanceBundle(
+      loaded,
       staffName,
       today,
-      cachedRecordId,
+      bypassCache,
     );
-    return buildFullStatus(staffName, today, loaded.ids, row);
+    return buildFullStatus(staffName, today, loaded.ids, row, todayAttendees);
   } catch (e) {
     if (e instanceof Error && e.message === "ATTENDANCE_RATE_LIMIT") {
       const stale = getStaleAttendanceStatus(staffName, today);
-      if (stale) return stale;
+      if (stale) {
+        const roster = getCachedTodayAttendees(today);
+        return {
+          ...stale,
+          todayAttendees: roster ?? stale.todayAttendees ?? [],
+        };
+      }
       return {
         configured: true,
         staffName,
         workDate: today,
+        todayAttendees: getCachedTodayAttendees(today) ?? [],
         rateLimited: true,
         configError:
           "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。",
@@ -469,7 +480,7 @@ export async function getAttendanceStatusForLineUser(
   const today = todayYmdJst();
   const key = statusCacheKey(staffName, today);
   const loader = () =>
-    fetchAttendanceStatusBody(loaded, staffName, today);
+    fetchAttendanceStatusBody(loaded, staffName, today, options?.bypassCache);
 
   if (options?.bypassCache) {
     const status = await loader();
@@ -543,14 +554,13 @@ export async function punchAttendanceForLineUser(
   let rows: AtPocketRecordRow[] = [];
 
   try {
-    rows = await fetchTodayAttendanceRows(
-      appId,
-      ids,
+    const bundle = await loadTodayAttendanceBundle(
+      { appId, ids },
       staffName,
       today,
-      cached?.recordId,
     );
-    existing = matchTodayRecord(rows, staffName, ids, today);
+    rows = bundle.rows;
+    existing = bundle.row;
   } catch (e) {
     if (e instanceof Error && e.message === "ATTENDANCE_RATE_LIMIT") {
       if (kind === "out" && cached?.recordId && cached.clockIn && !cached.clockOut) {
@@ -606,12 +616,26 @@ export async function punchAttendanceForLineUser(
         };
       }
       await updateRecord(appId, recordId, patch, writeAuth);
-      invalidateAttendanceStatusCache(staffName, today);
+      const punchedRow = syntheticRowAfterPunch(
+        existing,
+        ids,
+        staffName,
+        today,
+        "in",
+        now,
+        recordId,
+      );
+      const rosterRows = rows.map((r) =>
+        recordIdOf(r) === recordId ? punchedRow : r,
+      );
+      const attendees = buildTodayAttendees(rosterRows, ids, today);
+      setCachedRosterBundle(today, { rows: rosterRows, attendees });
       const status = buildFullStatus(
         staffName,
         today,
         ids,
-        syntheticRowAfterPunch(existing, ids, staffName, today, "in", now, recordId),
+        punchedRow,
+        attendees,
       );
       setCachedAttendanceStatus(staffName, today, status);
       return { ok: true, status };
@@ -620,12 +644,24 @@ export async function punchAttendanceForLineUser(
     const created = await createRecord(appId, patch, writeAuth);
     const newId =
       recordIdOf(created.row) ?? created.recordIdHint ?? null;
-    invalidateAttendanceStatusCache(staffName, today);
+    const punchedRow = syntheticRowAfterPunch(
+      null,
+      ids,
+      staffName,
+      today,
+      "in",
+      now,
+      newId,
+    );
+    const rosterRows = [...rows, punchedRow];
+    const attendees = buildTodayAttendees(rosterRows, ids, today);
+    setCachedRosterBundle(today, { rows: rosterRows, attendees });
     const status = buildFullStatus(
       staffName,
       today,
       ids,
-      syntheticRowAfterPunch(null, ids, staffName, today, "in", now, newId),
+      punchedRow,
+      attendees,
     );
     setCachedAttendanceStatus(staffName, today, status);
     return { ok: true, status };
@@ -661,12 +697,26 @@ export async function punchAttendanceForLineUser(
     { [ids.clockOut!]: now },
     writeAuth,
   );
-  invalidateAttendanceStatusCache(staffName, today);
+  const punchedRow = syntheticRowAfterPunch(
+    existing,
+    ids,
+    staffName,
+    today,
+    "out",
+    now,
+    recordId,
+  );
+  const rosterRows = rows.map((r) =>
+    recordIdOf(r) === recordId ? punchedRow : r,
+  );
+  const attendees = buildTodayAttendees(rosterRows, ids, today);
+  setCachedRosterBundle(today, { rows: rosterRows, attendees });
   const status = buildFullStatus(
     staffName,
     today,
     ids,
-    syntheticRowAfterPunch(existing, ids, staffName, today, "out", now, recordId),
+    punchedRow,
+    attendees,
   );
   setCachedAttendanceStatus(staffName, today, status);
   return { ok: true, status };

@@ -1,6 +1,15 @@
 import "server-only";
 
-import type { AttendancePublicStatus } from "@/lib/attendance-fields";
+import type { AtPocketRecordRow } from "@/lib/atpocket";
+import type {
+  AttendancePublicStatus,
+  AttendanceTodayAttendee,
+} from "@/lib/attendance-fields";
+
+export type AttendanceRosterBundle = {
+  rows: AtPocketRecordRow[];
+  attendees: AttendanceTodayAttendee[];
+};
 
 type StatusCacheEntry = {
   expiresAt: number;
@@ -9,6 +18,14 @@ type StatusCacheEntry = {
 
 const statusStore = new Map<string, StatusCacheEntry>();
 const statusInflight = new Map<string, Promise<AttendancePublicStatus>>();
+
+type RosterCacheEntry = {
+  expiresAt: number;
+  bundle: AttendanceRosterBundle;
+};
+
+const rosterStore = new Map<string, RosterCacheEntry>();
+const rosterInflight = new Map<string, Promise<AttendanceRosterBundle>>();
 
 let rateLimitBlockedUntil = 0;
 
@@ -24,6 +41,94 @@ export function attendanceStatusCacheTtlMs(): number {
 
 export function statusCacheKey(staffName: string, workDate: string): string {
   return `${staffName.normalize("NFKC").trim()}\0${workDate}`;
+}
+
+export function attendanceRosterCacheKey(workDate: string): string {
+  return `roster\0${workDate}`;
+}
+
+export function getCachedRosterBundle(
+  workDate: string,
+): AttendanceRosterBundle | null {
+  const hit = rosterStore.get(attendanceRosterCacheKey(workDate));
+  if (!hit || hit.expiresAt <= Date.now()) return null;
+  return {
+    rows: hit.bundle.rows,
+    attendees: hit.bundle.attendees.map((a) => ({ ...a })),
+  };
+}
+
+export function getCachedTodayAttendees(
+  workDate: string,
+): AttendanceTodayAttendee[] | null {
+  return getCachedRosterBundle(workDate)?.attendees ?? null;
+}
+
+export function setCachedRosterBundle(
+  workDate: string,
+  bundle: AttendanceRosterBundle,
+): void {
+  const ttl = attendanceStatusCacheTtlMs();
+  if (ttl <= 0) return;
+  rosterStore.set(attendanceRosterCacheKey(workDate), {
+    expiresAt: Date.now() + ttl,
+    bundle: {
+      rows: bundle.rows,
+      attendees: bundle.attendees.map((a) => ({ ...a })),
+    },
+  });
+}
+
+export function invalidateAttendanceRosterCache(workDate?: string): void {
+  if (!workDate) {
+    rosterStore.clear();
+    rosterInflight.clear();
+    return;
+  }
+  const key = attendanceRosterCacheKey(workDate);
+  rosterStore.delete(key);
+  rosterInflight.delete(key);
+}
+
+export async function getTodayRosterBundleCached(
+  workDate: string,
+  loader: () => Promise<AttendanceRosterBundle>,
+  bypassCache?: boolean,
+): Promise<AttendanceRosterBundle> {
+  const ttl = attendanceStatusCacheTtlMs();
+  if (ttl <= 0 || bypassCache) return loader();
+
+  const key = attendanceRosterCacheKey(workDate);
+  const now = Date.now();
+  const hit = rosterStore.get(key);
+  if (hit && hit.expiresAt > now) {
+    return {
+      rows: hit.bundle.rows,
+      attendees: hit.bundle.attendees.map((a) => ({ ...a })),
+    };
+  }
+
+  const pending = rosterInflight.get(key);
+  if (pending) return pending;
+
+  const promise = (async () => {
+    try {
+      const bundle = await loader();
+      rosterStore.set(key, {
+        expiresAt: Date.now() + ttl,
+        bundle: {
+          rows: bundle.rows,
+          attendees: bundle.attendees.map((a) => ({ ...a })),
+        },
+      });
+      return bundle;
+    } finally {
+      rosterInflight.delete(key);
+    }
+  })();
+
+  rosterInflight.set(key, promise);
+  return promise;
 }
 
 export function isAttendanceFetchBlocked(): boolean {
@@ -73,11 +178,13 @@ export function invalidateAttendanceStatusCache(
   if (!staffName || !workDate) {
     statusStore.clear();
     statusInflight.clear();
+    invalidateAttendanceRosterCache();
     return;
   }
   const key = statusCacheKey(staffName, workDate);
   statusStore.delete(key);
   statusInflight.delete(key);
+  invalidateAttendanceRosterCache(workDate);
 }
 
 export async function getAttendanceStatusCached(

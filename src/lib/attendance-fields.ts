@@ -54,6 +54,13 @@ export type AttendanceFieldIds = {
   clockOut: string | null;
 };
 
+/** 本日すでに出勤打刻した人（一覧表示用） */
+export type AttendanceTodayAttendee = {
+  staffName: string;
+  clockIn: string;
+  clockOut: string | null;
+};
+
 export type AttendancePublicStatus = {
   configured: boolean;
   disabled?: boolean;
@@ -66,6 +73,8 @@ export type AttendancePublicStatus = {
   recordId?: string | null;
   canClockIn?: boolean;
   canClockOut?: boolean;
+  /** 本日の出勤者（出勤時刻あり・社員名で重複排除） */
+  todayAttendees?: AttendanceTodayAttendee[];
   rateLimited?: boolean;
   stale?: boolean;
 };
