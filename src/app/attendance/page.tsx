@@ -314,14 +314,25 @@ export default function AttendancePage() {
               </p>
             ) : null}
 
-            <div className="mt-6 flex flex-col gap-3">
+            <p className="mt-3 text-center text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
+              @pocket に本日の打刻が無い場合（削除・未登録）は、再度打刻できます。
+              <button
+                type="button"
+                className="mt-1 block w-full text-[13px] font-semibold text-emerald-700 underline underline-offset-2 disabled:opacity-50 dark:text-emerald-400"
+                disabled={loading || punching !== null}
+                onClick={() => void loadStatus()}
+              >
+                @pocket の状態を再読み込み
+              </button>
+            </p>
+
+            <div className="mt-4 flex flex-col gap-3">
               <LiffPrimaryButton
                 type="button"
                 disabled={
                   loading ||
                   punching !== null ||
-                  !status?.canClockIn ||
-                  Boolean(status?.clockOut)
+                  !status?.canClockIn
                 }
                 onClick={() => void handlePunch("in")}
               >
@@ -343,7 +354,7 @@ export default function AttendancePage() {
 
             {status?.clockIn && status?.clockOut ? (
               <p className="mt-4 text-center text-[13px] text-slate-500 dark:text-slate-400">
-                本日の打刻は完了しています
+                本日の打刻は完了しています。@pocket で削除した場合は「再読み込み」のあと再度打刻できます。
               </p>
             ) : null}
           </>

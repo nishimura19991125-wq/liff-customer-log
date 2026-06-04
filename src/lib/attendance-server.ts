@@ -118,6 +118,31 @@ function parseWorkDateYmd(raw: string): string | null {
   return `${y}-${mo}-${d}`;
 }
 
+/** 勤怠日が空のとき、出勤・退勤の日時から「本日」判定に使う */
+function recordAppliesToToday(
+  recObj: Record<string, unknown>,
+  ids: AttendanceFieldIds,
+  today: string,
+): boolean {
+  const ymd = parseWorkDateYmd(readFieldText(recObj, ids.workDate));
+  if (ymd === today) return true;
+  if (ymd && ymd !== today) return false;
+
+  const inYmd = parseWorkDateYmd(readFieldText(recObj, ids.clockIn));
+  const outYmd = parseWorkDateYmd(readFieldText(recObj, ids.clockOut));
+  return inYmd === today || outYmd === today;
+}
+
+/** @pocket 上に打刻データがあるか（削除・空欄なら false → 再登録可） */
+function pocketRowHasAttendanceData(
+  recObj: Record<string, unknown>,
+  ids: AttendanceFieldIds,
+): boolean {
+  return Boolean(
+    readFieldText(recObj, ids.clockIn) || readFieldText(recObj, ids.clockOut),
+  );
+}
+
 function recordIdOf(row: AtPocketRecordRow): string | null {
   const id = row.recordId ?? row.id;
   if (id === undefined || id === null) return null;
@@ -167,19 +192,46 @@ async function loadAttendanceFieldIds(): Promise<
 async function fetchTodayAttendanceRows(
   appId: string,
   ids: AttendanceFieldIds,
+  staffName: string,
 ): Promise<AtPocketRecordRow[]> {
   const csv = attendanceFieldsCsv(ids);
   const readAuths = [
     { apiKey: apiKeyForAttendancePocket() },
     { apiKey: apiKeyForAttendancePocket1() },
   ];
+  const staffFieldId = ids.staffName?.trim();
+  const name = nfkcName(staffName);
+
+  if (staffFieldId && name) {
+    const queries = [
+      `${staffFieldId}="${name}"`,
+      `${staffFieldId} = "${name}"`,
+      name,
+    ];
+    for (const query of queries) {
+      try {
+        const data = await fetchAllRecordsPages(
+          appId,
+          csv,
+          readAuths[0],
+          query,
+          { operation: "attendance-list-by-staff" },
+          { maxPages: Math.min(10, attendanceMaxPages()), authKeys: readAuths },
+        );
+        if (data.length > 0) return data;
+      } catch {
+        /* 次の query 形式を試す */
+      }
+    }
+  }
+
   return fetchAllRecordsPages(
     appId,
     csv,
     readAuths[0],
     null,
     { operation: "attendance-list" },
-    { maxPages: attendanceMaxPages(), authKeys: readAuths },
+    { maxPages: attendanceMaxPages(), authKeys: readAuths, maxRetries: 0 },
   );
 }
 
@@ -197,9 +249,7 @@ function matchTodayRecord(
     const name = readFieldText(recObj, ids.staffName);
     if (!name || nfkcName(name) !== target) continue;
 
-    const dateRaw = readFieldText(recObj, ids.workDate);
-    const ymd = parseWorkDateYmd(dateRaw);
-    if (ymd !== today) continue;
+    if (!recordAppliesToToday(recObj, ids, today)) continue;
 
     if (!best) {
       best = row;
@@ -216,8 +266,6 @@ function matchTodayRecord(
 function statusFromRecord(
   row: AtPocketRecordRow | null,
   ids: AttendanceFieldIds,
-  staffName: string,
-  today: string,
 ): Pick<
   AttendancePublicStatus,
   "clockIn" | "clockOut" | "recordId" | "canClockIn" | "canClockOut"
@@ -233,6 +281,16 @@ function statusFromRecord(
   }
 
   const recObj = row.record ?? {};
+  if (!pocketRowHasAttendanceData(recObj, ids)) {
+    return {
+      clockIn: null,
+      clockOut: null,
+      recordId: recordIdOf(row),
+      canClockIn: true,
+      canClockOut: false,
+    };
+  }
+
   const clockIn = readFieldText(recObj, ids.clockIn) || null;
   const clockOut = readFieldText(recObj, ids.clockOut) || null;
   const recordId = recordIdOf(row);
@@ -271,9 +329,10 @@ export async function getAttendanceStatusForLineUser(
   const rows = await fetchTodayAttendanceRows(
     loaded.appId,
     loaded.ids,
+    staffName,
   );
   const row = matchTodayRecord(rows, staffName, loaded.ids, today);
-  const partial = statusFromRecord(row, loaded.ids, staffName, today);
+  const partial = statusFromRecord(row, loaded.ids);
 
   return {
     configured: true,
@@ -309,11 +368,12 @@ export async function punchAttendanceForLineUser(
   const now = nowDateTimeJst();
   const writeAuth = { apiKey: apiKeyForAttendanceWrite() };
 
-  const rows = await fetchTodayAttendanceRows(appId, ids);
+  const rows = await fetchTodayAttendanceRows(appId, ids, staffName);
   const existing = matchTodayRecord(rows, staffName, ids, today);
   const recObj = existing?.record ?? {};
-  const clockIn = readFieldText(recObj, ids.clockIn);
-  const clockOut = readFieldText(recObj, ids.clockOut);
+  const hasDataOnPocket = pocketRowHasAttendanceData(recObj, ids);
+  const clockIn = hasDataOnPocket ? readFieldText(recObj, ids.clockIn) : "";
+  const clockOut = hasDataOnPocket ? readFieldText(recObj, ids.clockOut) : "";
 
   if (kind === "in") {
     if (clockIn) {
