@@ -247,7 +247,8 @@ export default function AttendancePage() {
     return <LiffSessionExpiredPanel footer={<LiffGhostLink href="/">トップへ</LiffGhostLink>} />;
   }
 
-  const disabledFeature = status?.disabled || status?.configured === false;
+  const showSetupRequired =
+    status?.configured === false && !status?.rateLimited;
   const workDate = status?.workDate ?? "—";
   const departmentGroups =
     status?.todayAttendeesByDepartment ??
@@ -295,7 +296,13 @@ export default function AttendancePage() {
           onBind={account.bindStaff}
         />
 
-        {disabledFeature ? (
+        {status?.rateLimited && status.configError ? (
+          <p className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-[14px] leading-relaxed text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+            {status.configError}
+          </p>
+        ) : null}
+
+        {showSetupRequired ? (
           <LiffCard>
             <div className="px-5 py-6">
               <p className="text-[14px] leading-relaxed text-amber-900 dark:text-amber-100">

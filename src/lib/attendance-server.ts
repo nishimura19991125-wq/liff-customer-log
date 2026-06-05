@@ -18,7 +18,6 @@ import {
   getAttendanceStatusCached,
   getCachedAttendanceStatus,
   getCachedRosterBundle,
-  getCachedTodayAttendees,
   getStaleAttendanceStatus,
   getTodayRosterBundleCached,
   invalidateAttendanceStatusCache,
@@ -43,8 +42,37 @@ import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
 export type { AttendancePublicStatus } from "@/lib/attendance-fields";
 
+const ATTENDANCE_RATE_LIMIT_MESSAGE =
+  "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。";
+
+/** 列定義は滅多に変わらないためメモリに保持（@pocket fields API の連打を防ぐ） */
+const ATTENDANCE_FIELDS_CACHE_MS = 3_600_000;
+let attendanceFieldsCache: {
+  appId: string;
+  ids: AttendanceFieldIds;
+  expiresAt: number;
+} | null = null;
+
 function attendanceAppId(): string | null {
   return process.env.ATTENDANCE_APP_ID?.trim() || null;
+}
+
+function cachedAttendanceFieldIds(appId: string): AttendanceFieldIds | null {
+  if (!attendanceFieldsCache || attendanceFieldsCache.appId !== appId) {
+    return null;
+  }
+  return attendanceFieldsCache.ids;
+}
+
+function rememberAttendanceFieldIds(
+  appId: string,
+  ids: AttendanceFieldIds,
+): void {
+  attendanceFieldsCache = {
+    appId,
+    ids,
+    expiresAt: Date.now() + ATTENDANCE_FIELDS_CACHE_MS,
+  };
 }
 
 function todayYmdJst(): string {
@@ -216,16 +244,29 @@ async function finalizeTodayAttendees(
   attendees: AttendanceTodayAttendee[];
   byDepartment: AttendanceDepartmentGroup[];
 }> {
-  const enriched = await enrichStaffNamesWithDepartments(attendees);
-  return {
-    attendees: enriched,
-    byDepartment: groupAttendeesByDepartment(enriched),
-  };
+  try {
+    const enriched = await enrichStaffNamesWithDepartments(attendees);
+    return {
+      attendees: enriched,
+      byDepartment: groupAttendeesByDepartment(enriched),
+    };
+  } catch {
+    return {
+      attendees,
+      byDepartment: groupAttendeesByDepartment(attendees),
+    };
+  }
 }
 
 async function loadAttendanceFieldIds(): Promise<
   | { ok: true; appId: string; ids: AttendanceFieldIds }
-  | { ok: false; status: number; error: string; configured?: boolean }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      configured?: boolean;
+      rateLimited?: boolean;
+    }
 > {
   const appId = attendanceAppId();
   if (!appId) {
@@ -237,13 +278,26 @@ async function loadAttendanceFieldIds(): Promise<
     };
   }
 
+  const memIds = cachedAttendanceFieldIds(appId);
+  if (
+    memIds &&
+    attendanceFieldsConfigured(memIds) &&
+    attendanceFieldsCache &&
+    attendanceFieldsCache.expiresAt > Date.now()
+  ) {
+    return { ok: true, appId, ids: memIds };
+  }
+
   const readAuth = { apiKey: apiKeyForAttendancePocket() };
   if (isPocketApiRateLimited(readAuth) && isAttendanceFetchBlocked()) {
+    if (memIds && attendanceFieldsConfigured(memIds)) {
+      return { ok: true, appId, ids: memIds };
+    }
     return {
       ok: false,
       status: 429,
-      error:
-        "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。",
+      error: ATTENDANCE_RATE_LIMIT_MESSAGE,
+      rateLimited: true,
     };
   }
 
@@ -254,11 +308,14 @@ async function loadAttendanceFieldIds(): Promise<
     if (isPocketHttpRateLimitError(e)) {
       markPocketApiRateLimited(readAuth);
       blockAttendanceFetchAfterRateLimit();
+      if (memIds && attendanceFieldsConfigured(memIds)) {
+        return { ok: true, appId, ids: memIds };
+      }
       return {
         ok: false,
         status: 429,
-        error:
-          "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。",
+        error: ATTENDANCE_RATE_LIMIT_MESSAGE,
+        rateLimited: true,
       };
     }
     const msg = e instanceof Error ? e.message : "勤怠アプリの列定義取得に失敗しました";
@@ -276,6 +333,7 @@ async function loadAttendanceFieldIds(): Promise<
     };
   }
 
+  rememberAttendanceFieldIds(appId, fieldIds);
   return { ok: true, appId, ids: fieldIds };
 }
 
@@ -496,12 +554,59 @@ async function fetchAttendanceStatusBody(
         todayAttendees: roster?.attendees ?? [],
         todayAttendeesByDepartment: roster?.byDepartment ?? [],
         rateLimited: true,
-        configError:
-          "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。",
+        configError: ATTENDANCE_RATE_LIMIT_MESSAGE,
       };
     }
     throw e;
   }
+}
+
+function attendanceStatusOnRateLimit(
+  staffName: string | null,
+  today: string,
+  message: string,
+): AttendancePublicStatus {
+  if (staffName) {
+    const stale = getStaleAttendanceStatus(staffName, today);
+    if (stale) {
+      const roster = getCachedRosterBundle(today);
+      return {
+        ...stale,
+        configured: true,
+        disabled: false,
+        rateLimited: true,
+        configError: message,
+        todayAttendees: roster?.attendees ?? stale.todayAttendees ?? [],
+        todayAttendeesByDepartment:
+          roster?.byDepartment ?? stale.todayAttendeesByDepartment ?? [],
+      };
+    }
+    const roster = getCachedRosterBundle(today);
+    if (roster) {
+      return {
+        configured: true,
+        disabled: false,
+        staffName,
+        workDate: today,
+        rateLimited: true,
+        configError: message,
+        todayAttendees: roster.attendees,
+        todayAttendeesByDepartment: roster.byDepartment,
+        canClockIn: false,
+        canClockOut: false,
+      };
+    }
+  }
+  return {
+    configured: true,
+    disabled: false,
+    workDate: today,
+    staffName: staffName ?? undefined,
+    rateLimited: true,
+    configError: message,
+    canClockIn: false,
+    canClockOut: false,
+  };
 }
 
 export async function getAttendanceStatusForLineUser(
@@ -510,11 +615,18 @@ export async function getAttendanceStatusForLineUser(
 ): Promise<AttendancePublicStatus> {
   const loaded = await loadAttendanceFieldIds();
   if (!loaded.ok) {
+    if (loaded.status === 429 || loaded.rateLimited) {
+      const staffName = await resolveBoundStaffNameForLineUser(lineUserId);
+      return attendanceStatusOnRateLimit(
+        staffName,
+        todayYmdJst(),
+        loaded.error,
+      );
+    }
     return {
-      configured: loaded.configured ?? false,
-      disabled: !loaded.configured,
+      configured: loaded.configured !== false,
+      disabled: loaded.configured === false,
       configError: loaded.error,
-      ...(loaded.status === 429 ? { rateLimited: true } : {}),
     };
   }
 
@@ -628,7 +740,7 @@ export async function punchAttendanceForLineUser(
           status: 429,
           rateLimited: true,
           error:
-            "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。",
+            ATTENDANCE_RATE_LIMIT_MESSAGE,
         };
       }
     } else {
