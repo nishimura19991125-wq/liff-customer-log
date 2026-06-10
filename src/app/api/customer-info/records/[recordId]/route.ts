@@ -157,6 +157,7 @@ export async function GET(request: Request, ctx: RouteCtx) {
       const fetchCsv = [
         displayCsv,
         customerInfoFormFieldsCsv(resolved),
+        customerInfoFormFieldsCsv(transferResolve.resolved),
       ]
         .filter(Boolean)
         .join(",");
