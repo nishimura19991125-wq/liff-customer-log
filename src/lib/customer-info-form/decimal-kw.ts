@@ -44,7 +44,22 @@ export function formatDecimalKwParts(parts: DecimalKwParts): string {
 
 /** 画面入力用（入力のたびに呼ぶ） */
 export function formatDecimalKwInput(raw: string): string {
-  return formatDecimalKwParts(parseDecimalKwInput(raw));
+  const parts = parseDecimalKwInput(raw);
+  const formatted = formatDecimalKwParts(parts);
+
+  const normalized = raw.normalize("NFKC").trim().replace(/,/g, "");
+  if (!normalized) return formatted;
+
+  const negative = normalized.startsWith("-");
+  const body = negative ? normalized.slice(1) : normalized;
+
+  // 「5.」のように小数部をこれから入力する段階では末尾の "." を残す
+  if (body.endsWith(".") && !formatted.endsWith(".")) {
+    const int = parts.intPart || (negative ? "-0" : "0");
+    return `${int}.`;
+  }
+
+  return formatted;
 }
 
 /** @pocket から読み取った値を表示用に整形（四捨五入なし・最大3桁） */
