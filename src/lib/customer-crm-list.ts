@@ -3,8 +3,8 @@ import "server-only";
 import {
   customerInfoAppId,
   customerInfoConfigReady,
+  customerInfoListAuths,
   customerInfoNameFieldId,
-  customerInfoPocketAuth,
   customerInfoSubtitleFieldId,
 } from "@/lib/customer-info-config";
 import {
@@ -32,7 +32,7 @@ import {
   resolveCrmCustomerStatusFieldId,
 } from "@/lib/customer-crm-status";
 import type { AtPocketFieldRow } from "@/lib/atpocket";
-import { fetchAppFields, fetchRecordsList } from "@/lib/atpocket";
+import { fetchAppFieldsTryKeys, fetchRecordsList, readAuthsForApp } from "@/lib/atpocket";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
 
 export type CustomerCrmFilter =
@@ -214,13 +214,19 @@ async function fetchCustomerCrmCandidatesFromPocket(
   const appId = customerInfoAppId();
   if (!appId) return [];
 
-  const auth = customerInfoPocketAuth();
+  const listAuths = customerInfoListAuths();
+  const readAuths = readAuthsForApp("CUSTOMER_INFO");
   const pocketCtx = {
     operation: "customer-crm:担当顧客一覧",
     appEnv: "CUSTOMER_INFO_APP_ID",
   } as const;
 
-  const appFields = await fetchAppFields(appId, auth, pocketCtx);
+  const appFields =
+    (await fetchAppFieldsTryKeys(
+      appId,
+      readAuths.map((a) => a.apiKey ?? ""),
+    )) ?? [];
+  if (appFields.length === 0) return [];
   const ctx = buildCrmFieldContext(appFields);
   if (!ctx) return [];
 
@@ -232,6 +238,8 @@ async function fetchCustomerCrmCandidatesFromPocket(
     if (page > 1 && pageDelayMs > 0) {
       await sleep(pageDelayMs);
     }
+    const pageStart =
+      listAuths.length > 0 ? (page - 1) % listAuths.length : 0;
     const data = await fetchRecordsList(
       appId,
       {
@@ -239,8 +247,12 @@ async function fetchCustomerCrmCandidatesFromPocket(
         page: String(page),
         fields: ctx.fieldsCsv,
       },
-      auth,
+      listAuths[pageStart] ?? listAuths[0],
       pocketCtx,
+      {
+        authKeys: listAuths.length >= 2 ? listAuths : undefined,
+        authStartIndex: listAuths.length >= 2 ? pageStart : undefined,
+      },
     );
     const rows = data.records ?? [];
     if (rows.length === 0) break;

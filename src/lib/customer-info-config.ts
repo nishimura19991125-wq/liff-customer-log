@@ -7,6 +7,7 @@ import {
   apiKeyForCustomerInfoPocket1,
   apiKeyForCustomerInfoWrite,
   listAuthsForAppList,
+  POCKET_LIST_SUB_KEY_MAX,
 } from "@/lib/atpocket";
 
 export function customerInfoAppId(): string | null {
@@ -38,13 +39,18 @@ export function customerInfoDashboardFieldAuth(): AtPocketFetchAuth {
   };
 }
 
+/** お客様情報・一覧読取（検索・CRM・429 サブキーフェイルオーバー） */
+export function customerInfoListAuths(): AtPocketFetchAuth[] {
+  return listAuthsForAppList("CUSTOMER_INFO");
+}
+
 /** 営業ダッシュボード・契約件数用一覧（サブキーで顧客一覧と分離） */
 export function customerInfoDashboardListAuths(): AtPocketFetchAuth[] {
-  return listAuthsForAppList("CUSTOMER_INFO", [
-    "CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_LIST_1",
-    "CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_LIST_2",
-    "CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_LIST_3",
-  ]);
+  const extras: string[] = [];
+  for (let i = POCKET_LIST_SUB_KEY_MAX; i >= 1; i--) {
+    extras.push(`CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_LIST_${i}`);
+  }
+  return listAuthsForAppList("CUSTOMER_INFO", extras);
 }
 
 export function customerInfoNameFieldId(): string | null {

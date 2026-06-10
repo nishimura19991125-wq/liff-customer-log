@@ -2,9 +2,9 @@ import "server-only";
 
 import type { AtPocketRecordRow } from "@/lib/atpocket";
 import {
-  apiKeyForStaffPocketRead,
   fetchRecordsList,
   isPocketApiRateLimited,
+  staffReadListAuths,
 } from "@/lib/atpocket";
 import { staffImportKeyFieldIdResolved } from "@/lib/staff-import-key";
 import { staffRecordMatchesLineUser } from "@/lib/staff-line-binding";
@@ -159,7 +159,7 @@ function staffRosterUseExtendedFieldsCsv(): boolean {
 async function fetchStaffRosterRowsFromPocket(
   staffAppId: string,
 ): Promise<AtPocketRecordRow[]> {
-  const auth = { apiKey: apiKeyForStaffPocketRead() };
+  const listAuths = staffReadListAuths();
   const ctx = { operation: "staff:名簿一覧", appEnv: "STAFF_APP_ID" };
   const staffNameFieldId = process.env.STAFF_NAME_FIELD_ID?.trim() ?? "";
   const extended = staffRosterUseExtendedFieldsCsv();
@@ -181,24 +181,31 @@ async function fetchStaffRosterRowsFromPocket(
     }
   }
 
+  const listOptions = {
+    ...STAFF_LIST_FETCH_OPTIONS,
+    authKeys: listAuths.length >= 2 ? listAuths : undefined,
+  };
+
   const first = await fetchRecordsList(
     staffAppId,
     { limit: "1000", page: "1", fields },
-    auth,
+    listAuths[0],
     ctx,
-    STAFF_LIST_FETCH_OPTIONS,
+    { ...listOptions, authStartIndex: 0 },
   );
   const rows: AtPocketRecordRow[] = [...(first.records ?? [])];
   if (rows.length < 1000) return rows;
 
   const extraPages = staffRosterExtraPagesAfterFull();
   for (let page = 2; page <= 1 + extraPages; page++) {
+    const pageStart =
+      listAuths.length > 0 ? (page - 1) % listAuths.length : 0;
     const data = await fetchRecordsList(
       staffAppId,
       { limit: "1000", page: String(page), fields },
-      auth,
+      listAuths[pageStart] ?? listAuths[0],
       ctx,
-      STAFF_LIST_FETCH_OPTIONS,
+      { ...listOptions, authStartIndex: pageStart },
     );
     const recs = data.records ?? [];
     rows.push(...recs);
@@ -226,8 +233,10 @@ export async function fetchStaffRosterRowsCached(): Promise<
   const staleEntry =
     rosterCache && rosterCache.key === key ? rosterCache : null;
 
-  const staffAuth = { apiKey: apiKeyForStaffPocketRead() };
-  const globallyLimited = isPocketApiRateLimited(staffAuth);
+  const staffAuths = staffReadListAuths();
+  const staffAuth = staffAuths[0];
+  const globallyLimited =
+    staffAuth?.apiKey != null && isPocketApiRateLimited(staffAuth);
 
   if (staleRows && staleRows.length > 0) {
     if (isRateLimited(now) || globallyLimited) {

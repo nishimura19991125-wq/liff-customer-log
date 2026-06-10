@@ -2,9 +2,9 @@ import "server-only";
 
 import type { AtPocketFetchAuth, AtPocketRecordRow } from "@/lib/atpocket";
 import {
-  apiKeyForCalendarReportPocket,
   fetchAllRecordsPages,
   isPocketHttpRateLimitError,
+  listAuthsForAppList,
   pocketApiRateLimitRemainingMs,
 } from "@/lib/atpocket";
 
@@ -52,7 +52,11 @@ export async function fetchCalendarReportRecordsCached(
   const csv = fieldsCsv.trim();
   if (!csv) return [];
 
-  const listAuth = { apiKey: apiKeyForCalendarReportPocket() };
+  const listAuths = listAuthsForAppList("CALENDAR_REPORT", [
+    "CALENDAR_REPORT_ATPOCKET_API_KEY",
+    "CALENDAR_REPORT_ATPOCKET_API_KEY_1",
+    "CALENDAR_REPORT_ATPOCKET_API_KEY_2",
+  ]);
   const key = cacheKey(reportAppId, csv);
   const now = Date.now();
 
@@ -68,13 +72,17 @@ export async function fetchCalendarReportRecordsCached(
       const rows = await fetchAllRecordsPages(
         reportAppId,
         csv,
-        listAuth,
+        listAuths[0],
         null,
         {
           operation: "calendar:工事報告一覧",
           appEnv: "CALENDAR_REPORT_APP_ID",
         },
-        { maxPages: reportMaxPages(), maxRetries: 2 },
+        {
+          maxPages: reportMaxPages(),
+          maxRetries: 1,
+          authKeys: listAuths,
+        },
       );
       const ttl = reportCacheTtlMs();
       reportCache = {

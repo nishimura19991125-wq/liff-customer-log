@@ -294,6 +294,18 @@ export function apiKeyForSalesDashboardApoPocket2(): string {
   );
 }
 
+/** 一覧サブキー最大数（LIST_1 … LIST_N。429 分散用に既存3 + 追加10 = 13） */
+export const POCKET_LIST_SUB_KEY_MAX = 13;
+
+function listEnvNamesForApp(prefix: string): string[] {
+  const names: string[] = [];
+  for (let i = POCKET_LIST_SUB_KEY_MAX; i >= 1; i--) {
+    names.push(`${prefix}_ATPOCKET_API_KEY_LIST_${i}`);
+  }
+  names.push(`${prefix}_ATPOCKET_API_KEY_LIST`);
+  return names;
+}
+
 function collectDistinctApiKeys(envNames: string[]): AtPocketFetchAuth[] {
   const keys: string[] = [];
   for (const envName of envNames) {
@@ -301,6 +313,39 @@ function collectDistinctApiKeys(envNames: string[]): AtPocketFetchAuth[] {
     if (k && !keys.includes(k)) keys.push(k);
   }
   return keys.map((apiKey) => ({ apiKey }));
+}
+
+/** 読取フェイルオーバー用（LIST サブキー → FIELDS → 読取②①。更新③は含めない） */
+export function readAuthsForApp(
+  prefix: string,
+  extraEnvNames: string[] = [],
+): AtPocketFetchAuth[] {
+  const auths = collectDistinctApiKeys([
+    ...extraEnvNames,
+    ...listEnvNamesForApp(prefix),
+    `${prefix}_ATPOCKET_API_KEY_FIELDS`,
+    `${prefix}_ATPOCKET_API_KEY_1`,
+    `${prefix}_ATPOCKET_API_KEY`,
+  ]);
+  if (auths.length > 0) return auths;
+  return [{ apiKey: requireAppApiKey(prefix, 0, []) }];
+}
+
+/**
+ * スタッフ名簿・読取サブキー（429 時に順次切替）。
+ * 既存 ATPOCKET_API_KEY / _1 に加え _3 … _12（10本）を設定可能。_2 は更新用のため含めない。
+ */
+export function staffReadListAuths(): AtPocketFetchAuth[] {
+  const subs: string[] = [
+    "ATPOCKET_API_KEY",
+    "ATPOCKET_API_KEY_1",
+    "STAFF_READ_ATPOCKET_API_KEY_1",
+    "STAFF_READ_ATPOCKET_API_KEY",
+  ];
+  for (let i = 3; i <= 12; i++) {
+    subs.push(`ATPOCKET_API_KEY_${i}`);
+  }
+  return collectDistinctApiKeys(subs);
 }
 
 /** fields 用サブキー（未設定時は読取①） */
@@ -317,17 +362,14 @@ export function apiKeyForAppFields(
   return requireAppApiKey(prefix, 0, []);
 }
 
-/** 一覧ページング用サブキー（未設定時は読取②③①の順で重複除外） */
+/** 一覧ページング用サブキー（LIST_1…13・429 時は次キーへフェイルオーバー） */
 export function listAuthsForAppList(
   prefix: string,
   extraEnvNames: string[] = [],
 ): AtPocketFetchAuth[] {
   const auths = collectDistinctApiKeys([
     ...extraEnvNames,
-    `${prefix}_ATPOCKET_API_KEY_LIST_3`,
-    `${prefix}_ATPOCKET_API_KEY_LIST_2`,
-    `${prefix}_ATPOCKET_API_KEY_LIST_1`,
-    `${prefix}_ATPOCKET_API_KEY_LIST`,
+    ...listEnvNamesForApp(prefix),
     `${prefix}_ATPOCKET_API_KEY_2`,
     `${prefix}_ATPOCKET_API_KEY_1`,
     `${prefix}_ATPOCKET_API_KEY`,
@@ -351,10 +393,40 @@ export type AtPocketRequestContext = {
   appEnv?: string;
 };
 
+function dynamicApiKeyEnvCandidates(): Array<[string, string | undefined]> {
+  const out: Array<[string, string | undefined]> = [];
+  const prefixes = [
+    "SALES_DASHBOARD_PT",
+    "SALES_DASHBOARD_APO",
+    "CUSTOMER_INFO",
+    "CALENDAR",
+    "CALENDAR_REPORT",
+    "ATTENDANCE",
+    "TRADING_PARTNER",
+    "PRODUCT_CATALOG",
+  ];
+  for (const p of prefixes) {
+    for (let i = POCKET_LIST_SUB_KEY_MAX; i >= 4; i--) {
+      const name = `${p}_ATPOCKET_API_KEY_LIST_${i}`;
+      out.push([name, process.env[name]?.trim()]);
+    }
+  }
+  for (let i = POCKET_LIST_SUB_KEY_MAX; i >= 4; i--) {
+    const name = `CUSTOMER_INFO_ATPOCKET_API_KEY_DASHBOARD_LIST_${i}`;
+    out.push([name, process.env[name]?.trim()]);
+  }
+  for (let i = 12; i >= 3; i--) {
+    const name = `ATPOCKET_API_KEY_${i}`;
+    out.push([name, process.env[name]?.trim()]);
+  }
+  return out;
+}
+
 function authKeyEnvLabel(auth?: AtPocketFetchAuth): string {
   const key = auth?.apiKey?.trim();
   if (!key) return "unset";
   const candidates: Array<[string, string | undefined]> = [
+    ...dynamicApiKeyEnvCandidates(),
     [
       "SALES_DASHBOARD_PT_ATPOCKET_API_KEY_LIST_3",
       process.env.SALES_DASHBOARD_PT_ATPOCKET_API_KEY_LIST_3?.trim(),
@@ -608,9 +680,71 @@ export function isPocketHttpRateLimitError(error: unknown): boolean {
 }
 
 export type PocketListFetchOptions = {
-  /** 429 時の最大再試行回数（既定 5）。スタッフ名簿などは 1 推奨 */
+  /** 429 時の最大再試行回数（既定 5）。サブキー2本以上のときは同一キー再試行せず次キーへ */
   maxRetries?: number;
+  /** 429 時に順次切り替える読取サブキー（2本以上でフェイルオーバー） */
+  authKeys?: AtPocketFetchAuth[];
+  /** authKeys のローテ開始インデックス（ページ番号連動用） */
+  authStartIndex?: number;
 };
+
+function rotateAuthsFromStart(
+  auths: AtPocketFetchAuth[],
+  startIndex: number,
+): AtPocketFetchAuth[] {
+  const filtered = auths.filter((a) => a.apiKey?.trim());
+  if (filtered.length <= 1) return filtered;
+  const s =
+    ((startIndex % filtered.length) + filtered.length) % filtered.length;
+  return [...filtered.slice(s), ...filtered.slice(0, s)];
+}
+
+function syntheticPocket429Response(retrySec: number): Response {
+  return new Response(
+    JSON.stringify({
+      errors: {
+        code: 429,
+        message: "Too Many Request",
+        details: [{ message: "Request exhausted per 100 second" }],
+      },
+    }),
+    {
+      status: 429,
+      headers: { "Retry-After": String(retrySec) },
+    },
+  );
+}
+
+/** サブキーを順に試し、429 なら次のキーへ（同一キーではリトライしない） */
+async function fetchWithMethodOverrideFailover(
+  pathWithQuery: string,
+  auths: AtPocketFetchAuth[],
+  startIndex: number,
+): Promise<Response> {
+  const ordered = rotateAuthsFromStart(auths, startIndex);
+  let last429: Response | undefined;
+
+  for (const auth of ordered) {
+    if (isPocketApiRateLimited(auth)) continue;
+
+    const res = await fetchWithMethodOverride(pathWithQuery, auth);
+    if (res.status === 429) {
+      markPocketApiRateLimited(auth);
+      await res.text();
+      last429 = res;
+      continue;
+    }
+    return res;
+  }
+
+  if (last429) return last429;
+
+  const retrySec = Math.max(
+    1,
+    Math.ceil(POCKET_RATE_LIMIT_WINDOW_MS / 1000),
+  );
+  return syntheticPocket429Response(retrySec);
+}
 
 /** 429 のとき指数バックオフで再試行（429 応答は本文を読み捨て済みであること） */
 async function fetchWithMethodOverrideWithRetry(
@@ -618,6 +752,16 @@ async function fetchWithMethodOverrideWithRetry(
   auth?: AtPocketFetchAuth,
   options?: PocketListFetchOptions,
 ): Promise<Response> {
+  const failoverKeys =
+    options?.authKeys?.filter((a) => a.apiKey?.trim()) ?? [];
+  if (failoverKeys.length >= 2) {
+    return fetchWithMethodOverrideFailover(
+      pathWithQuery,
+      failoverKeys,
+      options?.authStartIndex ?? 0,
+    );
+  }
+
   const maxAttempts = Math.max(
     1,
     Math.min(POCKET_GET_RETRY_MAX, options?.maxRetries ?? POCKET_GET_RETRY_MAX),
@@ -627,23 +771,7 @@ async function fetchWithMethodOverrideWithRetry(
       1,
       Math.ceil(pocketApiRateLimitRemainingMs(auth) / 1000),
     );
-    return new Response(
-      JSON.stringify({
-        errors: {
-          code: 429,
-          message: "Too Many Request",
-          details: [
-            {
-              message: "Request exhausted per 100 second (backoff active)",
-            },
-          ],
-        },
-      }),
-      {
-        status: 429,
-        headers: { "Retry-After": String(retrySec) },
-      },
-    );
+    return syntheticPocket429Response(retrySec);
   }
 
   let last: Response | undefined;
@@ -871,10 +999,10 @@ export async function fetchAllRecordsPages(
     options?.authKeys?.filter((a) => a.apiKey?.trim()) ?? [];
   const all: AtPocketRecordRow[] = [];
   for (let page = 1; page <= pageCap; page++) {
+    const pageStart =
+      authKeys.length > 0 ? (page - 1) % authKeys.length : 0;
     const pageAuth =
-      authKeys.length > 0
-        ? authKeys[(page - 1) % authKeys.length]
-        : auth;
+      authKeys.length > 0 ? authKeys[pageStart] : auth;
     const data = await fetchRecordsList(
       appsId,
       {
@@ -885,7 +1013,11 @@ export async function fetchAllRecordsPages(
       },
       pageAuth,
       ctx,
-      listOptions,
+      {
+        ...listOptions,
+        authKeys: authKeys.length >= 2 ? authKeys : undefined,
+        authStartIndex: authKeys.length >= 2 ? pageStart : undefined,
+      },
     );
     const recs = data.records ?? [];
     all.push(...recs);

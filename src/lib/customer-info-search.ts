@@ -2,8 +2,8 @@ import "server-only";
 
 import {
   customerInfoAppId,
+  customerInfoListAuths,
   customerInfoNameFieldId,
-  customerInfoPocketAuth1,
   customerInfoSubtitleFieldId,
 } from "@/lib/customer-info-config";
 import {
@@ -11,9 +11,8 @@ import {
   normalizeCustomerInfoSearchText,
   readCustomerInfoFieldValue,
 } from "@/lib/customer-info-record";
-import { fetchRecordsList } from "@/lib/atpocket";
+import { fetchAppFieldsTryKeys, fetchRecordsList, readAuthsForApp } from "@/lib/atpocket";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
-import { fetchAppFields } from "@/lib/atpocket";
 
 export type CustomerInfoSearchHit = {
   recordId: string;
@@ -54,12 +53,20 @@ export async function searchCustomerInfoRecordsByName(
   const q = normalizeCustomerInfoSearchText(queryRaw);
   if (!q) return [];
 
-  const auth = customerInfoPocketAuth1();
+  const listAuths = customerInfoListAuths();
+  const readAuths = readAuthsForApp("CUSTOMER_INFO");
   const pocketCtx = {
     operation: "customer-info:お客様名検索",
     appEnv: "CUSTOMER_INFO_APP_ID",
   } as const;
-  const fields = await fetchAppFields(appId, auth, pocketCtx);
+  const fields =
+    (await fetchAppFieldsTryKeys(
+      appId,
+      readAuths.map((a) => a.apiKey ?? ""),
+    )) ?? [];
+  if (fields.length === 0) {
+    throw new Error("お客様情報アプリの列定義を取得できません");
+  }
   const nameField = resolveConfiguredFieldToSchemaUniqueId(
     nameFieldEnv,
     fields,
@@ -88,6 +95,8 @@ export async function searchCustomerInfoRecordsByName(
   const hits: CustomerInfoSearchHit[] = [];
 
   for (let page = 1; page <= maxPages; page++) {
+    const pageStart =
+      listAuths.length > 0 ? (page - 1) % listAuths.length : 0;
     const data = await fetchRecordsList(
       appId,
       {
@@ -95,8 +104,12 @@ export async function searchCustomerInfoRecordsByName(
         page: String(page),
         fields: fieldsCsv,
       },
-      auth,
+      listAuths[pageStart] ?? listAuths[0],
       pocketCtx,
+      {
+        authKeys: listAuths.length >= 2 ? listAuths : undefined,
+        authStartIndex: listAuths.length >= 2 ? pageStart : undefined,
+      },
     );
     const rows = data.records ?? [];
     if (rows.length === 0) break;

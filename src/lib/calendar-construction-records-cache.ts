@@ -2,11 +2,10 @@ import "server-only";
 
 import type { AtPocketFetchAuth, AtPocketRecordRow } from "@/lib/atpocket";
 import {
-  apiKeyForCalendarPocket,
-  apiKeyForCalendarPocket1,
   fetchAllRecordsPages,
   isPocketApiRateLimited,
   isPocketHttpRateLimitError,
+  listAuthsForAppList,
 } from "@/lib/atpocket";
 
 type ConstructionCacheEntry = {
@@ -71,10 +70,7 @@ export async function fetchCalendarConstructionRecordsCached(
   }
 
   const stale = getStaleRows(key);
-  const listAuths: AtPocketFetchAuth[] = [
-    { apiKey: apiKeyForCalendarPocket1() },
-    { apiKey: apiKeyForCalendarPocket() },
-  ];
+  const listAuths = listAuthsForAppList("CALENDAR");
   if (listAuths.some((a) => isPocketApiRateLimited(a)) && stale?.length) {
     return stale;
   }
