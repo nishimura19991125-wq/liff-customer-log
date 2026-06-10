@@ -98,6 +98,9 @@ const FORM_KEY_CAPTION_RULES: Partial<Record<string, CaptionResolveRule>> = {
     ],
     rejectIfCaptionIncludes: ["パワコン", "蓄電池"],
   },
+  referralFee: {
+    captions: ["紹介手数料"],
+  },
   batteryModel1: {
     captions: ["蓄電池品番①", "蓄電池品番１"],
     rejectIfCaptionIncludes: ["②", "２", "2"],

@@ -41,15 +41,12 @@ export const INTRODUCTION_ROUTE_OPTIONS = [
   "産業用",
 ] as const;
 
-/** 紹介手数料・工務店名を表示・必須にする導入経緯 */
+/** 紹介手数料を表示・必須にする導入経緯 */
 export const INTRODUCTION_ROUTES_REQUIRING_REFERRAL_FEE = new Set<string>([
   "(DC)工務店OBリスト",
   "ソーラーパートナーズ",
   "タイナビ",
   "工務店トスアップ",
-  "トラーチ倶楽部",
-  "卸案件",
-  "お客様紹介",
 ]);
 
 /** 工務店名またはトラーチ倶楽部を表示・必須にする導入経緯 */

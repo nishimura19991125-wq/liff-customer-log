@@ -682,6 +682,7 @@ export function CustomerInfoEditForm({
         next = { ...next, panelCombo: inferPanelComboFromValues(next) };
       }
       if (
+        key === "introduction" ||
         key === "paymentMethod" ||
         key === "installationType" ||
         key === "indoorSurveyStatus" ||
