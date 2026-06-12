@@ -20,6 +20,7 @@ import {
   resolveCustomerInfoCreatorFieldId,
 } from "@/lib/customer-info-creator-field";
 import {
+  crmEffectiveDocumentMissing,
   recordIsCustomerStatusCancelled,
   resolveCrmCustomerStatusFieldId,
 } from "@/lib/customer-crm-status";
@@ -142,9 +143,15 @@ export async function fetchCustomerCrmDetail(
     return { ok: false, status: 403, error: "この案件を表示する権限がありません" };
   }
 
-  const { isDocumentMissing, documents } = evaluateCrmDocuments(
+  const isCancelled = recordIsCustomerStatusCancelled(
     recObj,
-    docFields,
+    customerStatusFieldId,
+  );
+  const { isDocumentMissing: rawDocumentMissing, documents } =
+    evaluateCrmDocuments(recObj, docFields);
+  const isDocumentMissing = crmEffectiveDocumentMissing(
+    rawDocumentMissing,
+    isCancelled,
   );
   const {
     isSubsidyTarget,
@@ -193,10 +200,7 @@ export async function fetchCustomerCrmDetail(
         recObj,
         constructionDateFieldId,
       ),
-      isCancelled: recordIsCustomerStatusCancelled(
-        recObj,
-        customerStatusFieldId,
-      ),
+      isCancelled,
       constructionDate: constructionDate || "—",
       subsidyPresence: subsidyPresence || "—",
       documents,

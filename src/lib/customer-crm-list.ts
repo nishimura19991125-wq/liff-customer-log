@@ -28,9 +28,11 @@ import {
 } from "@/lib/customer-info-creator-field";
 import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
 import {
+  crmEffectiveDocumentMissing,
   recordIsCustomerStatusCancelled,
   resolveCrmCustomerStatusFieldId,
 } from "@/lib/customer-crm-status";
+import { customerInfoCustomerStatusFieldId } from "@/lib/customer-info-config";
 import type { AtPocketFieldRow } from "@/lib/atpocket";
 import { fetchAppFieldsTryKeys, fetchRecordsList, readAuthsForApp } from "@/lib/atpocket";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
@@ -112,7 +114,7 @@ function passesCrmFilter(
 ): boolean {
   switch (filter) {
     case "missing_docs":
-      return item.isDocumentMissing;
+      return item.isDocumentMissing && !item.isCancelled;
     case "no_construction_date":
       return item.isConstructionDateUnset;
     case "subsidy":
@@ -155,6 +157,12 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
   const subsidyFieldIds = resolveCrmSubsidyFieldIds(appFields);
   const sortFieldId = resolveCrmSortDateFieldId(appFields);
   const customerStatusFieldId = resolveCrmCustomerStatusFieldId(appFields);
+  if (customerInfoCustomerStatusFieldId() && !customerStatusFieldId) {
+    console.warn(
+      "[customer-crm] CUSTOMER_INFO_CUSTOMER_STATUS_FIELD_ID がアプリ定義と一致しません",
+    );
+    return null;
+  }
 
   const apFieldId = resolveCustomerInfoFormFieldId(
     "apStaff",
@@ -278,7 +286,18 @@ async function fetchCustomerCrmCandidatesFromPocket(
         continue;
       }
 
-      const { isDocumentMissing } = evaluateCrmDocuments(recObj, ctx.docFields);
+      const isCancelled = recordIsCustomerStatusCancelled(
+        recObj,
+        ctx.customerStatusFieldId,
+      );
+      const { isDocumentMissing: rawDocumentMissing } = evaluateCrmDocuments(
+        recObj,
+        ctx.docFields,
+      );
+      const isDocumentMissing = crmEffectiveDocumentMissing(
+        rawDocumentMissing,
+        isCancelled,
+      );
       const { isSubsidyTarget, combinedSubsidyName } = buildCrmSubsidyInfo(
         recObj,
         ctx.subsidyFieldIds,
@@ -286,11 +305,6 @@ async function fetchCustomerCrmCandidatesFromPocket(
       const isConstructionDateUnset = isCrmConstructionDateUnset(
         recObj,
         ctx.constructionDateFieldId,
-      );
-
-      const isCancelled = recordIsCustomerStatusCancelled(
-        recObj,
-        ctx.customerStatusFieldId,
       );
 
       candidates.push({

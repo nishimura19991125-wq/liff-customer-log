@@ -58,6 +58,12 @@ export function customerInfoNameFieldId(): string | null {
   return id || null;
 }
 
+/** 顧客ステータス（CRM のキャンセル判定・書類未回収除外に使用。uniqueId 指定推奨） */
+export function customerInfoCustomerStatusFieldId(): string | null {
+  const id = process.env.CUSTOMER_INFO_CUSTOMER_STATUS_FIELD_ID?.trim();
+  return id || null;
+}
+
 /** 一覧・検索結果の補足表示（未設定時は工事連携キー列） */
 export function customerInfoSubtitleFieldId(): string | null {
   const id =

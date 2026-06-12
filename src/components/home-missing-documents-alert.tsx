@@ -35,7 +35,7 @@ export function HomeMissingDocumentsAlert({
 
   const swrPath =
     idToken && boundStaffName && !disabled
-      ? "/api/customers?filter=all"
+      ? "/api/customers?filter=missing_docs"
       : null;
 
   const { data } = useLiffSwr<CustomersApiBody>(swrPath, idToken, {
@@ -46,12 +46,10 @@ export function HomeMissingDocumentsAlert({
 
   const items = useMemo(
     () =>
-      (data?.customers ?? [])
-        .filter((r) => r.isDocumentMissing)
-        .map((r) => ({
-          recordId: r.recordId,
-          customerName: r.customerName,
-        })),
+      (data?.customers ?? []).map((r) => ({
+        recordId: r.recordId,
+        customerName: r.customerName,
+      })),
     [data?.customers],
   );
 
