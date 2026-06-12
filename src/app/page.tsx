@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { HomeDailyOmikujiCard } from "@/components/home-daily-omikuji-card";
 import { HomeMissingDocumentsAlert } from "@/components/home-missing-documents-alert";
 import { NewsMarquee } from "@/components/news-marquee";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -263,6 +264,10 @@ export default function HomeHubPage() {
           <p className="mt-4 text-[15px] font-semibold text-slate-800 dark:text-white">
             {account.boundStaffName} さん、おつかれさまです
           </p>
+        ) : null}
+
+        {!needsStaffBind ? (
+          <HomeDailyOmikujiCard staffName={account.boundStaffName} />
         ) : null}
 
         <HomeMissingDocumentsAlert

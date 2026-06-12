@@ -1,5 +1,6 @@
 "use client";
 
+import { parseFortuneDetailParts } from "@/lib/daily-omikuji-detail";
 import type { DailyFortuneView } from "@/lib/home-business-fortune";
 
 type DailyOmikujiModalProps = {
@@ -25,23 +26,6 @@ function parseRank(headline: string): { rank: string; body: string } {
   return { rank: match[1]!, body: match[2]!.trim() };
 }
 
-function parseDetailParts(detailLine: string): Array<{ icon: string; label: string }> {
-  return detailLine
-    .split("／")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      const colonIdx = part.indexOf("：");
-      if (colonIdx >= 0) {
-        return {
-          icon: part.slice(0, colonIdx).trim(),
-          label: part.slice(colonIdx + 1).trim(),
-        };
-      }
-      return { icon: "✨", label: part };
-    });
-}
-
 export function DailyOmikujiModal({
   fortune,
   onNext,
@@ -51,7 +35,18 @@ export function DailyOmikujiModal({
   const rankStyle =
     RANK_STYLES[rank] ??
     "bg-gradient-to-br from-amber-300 to-orange-400 text-red-900 shadow-amber-500/30";
-  const details = parseDetailParts(fortune.detailLine);
+  const details = parseFortuneDetailParts(fortune.detailLine);
+  const detailRows = [
+    details.color
+      ? { icon: "👔", label: "ラッキーカラー", value: details.color }
+      : null,
+    details.item
+      ? { icon: "🔑", label: "ラッキーアイテム", value: details.item }
+      : null,
+    details.action
+      ? { icon: "🏃", label: "ラッキーアクション", value: details.action }
+      : null,
+  ].filter(Boolean) as Array<{ icon: string; label: string; value: string }>;
 
   return (
     <div
@@ -87,17 +82,32 @@ export function DailyOmikujiModal({
               {body}
             </p>
 
-            {details.length > 0 ? (
+            {detailRows.length > 0 ? (
               <ul className="mt-5 space-y-2 rounded-xl bg-white/70 p-3 text-sm dark:bg-slate-800/60">
-                {details.map((item, i) => (
+                {detailRows.map((item) => (
                   <li
-                    key={i}
+                    key={item.label}
                     className="flex gap-2 leading-snug text-slate-700 dark:text-slate-300"
                   >
                     <span className="shrink-0" aria-hidden>
                       {item.icon}
                     </span>
-                    <span>{item.label}</span>
+                    <span>
+                      <span className="font-medium">{item.label}</span>
+                      <span className="text-slate-500 dark:text-slate-400">
+                        {" "}
+                        ·{" "}
+                      </span>
+                      <span
+                        className={
+                          item.label === "ラッキーアイテム"
+                            ? "font-semibold text-slate-800 dark:text-slate-100"
+                            : ""
+                        }
+                      >
+                        {item.value}
+                      </span>
+                    </span>
                   </li>
                 ))}
               </ul>

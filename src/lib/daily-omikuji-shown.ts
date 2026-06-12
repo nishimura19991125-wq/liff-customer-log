@@ -3,6 +3,7 @@
 import { jstDateKey } from "@/lib/missing-documents-cache";
 
 const STORAGE_KEY = "liff-daily-omikuji-shown-v1";
+export const DAILY_OMIKUJI_SHOWN_EVENT = "liff-daily-omikuji-shown";
 
 function storageValue(staffKey: string): string {
   return `${jstDateKey()}|${staffKey.normalize("NFKC").trim()}`;
@@ -19,12 +20,17 @@ export function shouldShowDailyOmikuji(staffName: string): boolean {
   }
 }
 
+export function isDailyOmikujiShownToday(staffName: string): boolean {
+  return !shouldShowDailyOmikuji(staffName);
+}
+
 export function markDailyOmikujiShown(staffName: string): void {
   if (typeof window === "undefined") return;
   const staffKey = staffName.normalize("NFKC").trim();
   if (!staffKey) return;
   try {
     localStorage.setItem(STORAGE_KEY, storageValue(staffKey));
+    window.dispatchEvent(new Event(DAILY_OMIKUJI_SHOWN_EVENT));
   } catch {
     /* ignore */
   }
