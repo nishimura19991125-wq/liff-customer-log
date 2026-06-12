@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { DailyOmikujiFlow } from "@/components/daily-omikuji-flow";
 import { LockScreen } from "@/components/lock-screen";
+import {
+  markDailyOmikujiShown,
+  shouldShowDailyOmikuji,
+} from "@/lib/daily-omikuji-shown";
+import {
+  buildDailyBusinessFortuneView,
+  type DailyFortuneView,
+} from "@/lib/home-business-fortune";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 import {
   beginPinAppBoot,
@@ -34,16 +43,33 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<GuardPhase>("init");
   const [idToken, setIdToken] = useState<string | null>(null);
   const [pinStatus, setPinStatus] = useState<PinStatus | null>(null);
+  const [omikuji, setOmikuji] = useState<{
+    fortune: DailyFortuneView;
+    staffName: string;
+  } | null>(null);
 
   const lockApp = useCallback(() => {
     invalidatePinUnlockOnAppHide();
     setPhase("locked");
   }, []);
 
-  const unlockApp = useCallback(() => {
+  const unlockApp = useCallback((staffName: string) => {
     markPinUnlockSession();
+    if (staffName && shouldShowDailyOmikuji(staffName)) {
+      setOmikuji({
+        fortune: buildDailyBusinessFortuneView(staffName),
+        staffName,
+      });
+    }
     setPhase("unlocked");
   }, []);
+
+  const dismissOmikuji = useCallback(() => {
+    if (omikuji) {
+      markDailyOmikujiShown(omikuji.staffName);
+    }
+    setOmikuji(null);
+  }, [omikuji]);
 
   useEffect(() => {
     const onPageHide = () => invalidatePinUnlockOnAppHide();
@@ -170,10 +196,22 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
         staffName={pinStatus.staffName ?? ""}
         idToken={idToken}
         needsInitialSetup={pinStatus.needsInitialSetup}
-        onUnlocked={unlockApp}
+        onUnlocked={() => unlockApp(pinStatus.staffName ?? "")}
       />
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      {omikuji && idToken ? (
+        <DailyOmikujiFlow
+          fortune={omikuji.fortune}
+          staffName={omikuji.staffName}
+          idToken={idToken}
+          onComplete={dismissOmikuji}
+        />
+      ) : null}
+    </>
+  );
 }
