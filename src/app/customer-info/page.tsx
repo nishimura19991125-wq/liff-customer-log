@@ -25,6 +25,11 @@ import {
 import { resetLiffScroll } from "@/components/liff-scroll-reset";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 import {
+  CustomerNameSplitInput,
+  isCustomerNameFieldLabel,
+  isFuriganaFieldLabel,
+} from "@/components/customer-name-split-input";
+import {
   CustomerInfoEditForm,
   type CustomerInfoFormFieldApi,
 } from "@/components/customer-info-edit-form";
@@ -35,7 +40,12 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
-import { syncCombinedNameFields } from "@/lib/customer-info-form/name-parts";
+import { applyCustomerInfoFormChange } from "@/lib/customer-info-form/form-change";
+import {
+  joinJapaneseFullName,
+  splitJapaneseFullName,
+  syncCombinedNameFields,
+} from "@/lib/customer-info-form/name-parts";
 import { applyCustomerInfoHiddenDefaultsToValues } from "@/lib/customer-info-form/rules";
 import { inferPanelComboFromValues } from "@/lib/customer-info-form/panel-combo";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
@@ -636,7 +646,9 @@ function CustomerInfoPageContent() {
                         next.delete(key);
                         return next;
                       });
-                      setEditValues((prev) => ({ ...prev, [key]: value }));
+                      setEditValues((prev) =>
+                        applyCustomerInfoFormChange(prev, key, value),
+                      );
                     }}
                   />
                 ) : (detail.editableFields?.length ?? 0) === 0 ? (
@@ -646,7 +658,52 @@ function CustomerInfoPageContent() {
                   </p>
                 ) : (
                   <div className="flex flex-col gap-3">
-                    {(detail.editableFields ?? []).map((field) => (
+                    {(detail.editableFields ?? []).map((field) => {
+                      const raw = editValues[field.fieldId] ?? "";
+                      if (
+                        isCustomerNameFieldLabel(field.label) ||
+                        isFuriganaFieldLabel(field.label)
+                      ) {
+                        const isFuri = isFuriganaFieldLabel(field.label);
+                        const { family, given } = splitJapaneseFullName(raw);
+                        return (
+                          <CustomerNameSplitInput
+                            key={field.fieldId}
+                            groupLabel={field.label}
+                            familyValue={family}
+                            givenValue={given}
+                            familyLabel={isFuri ? "セイ" : "苗字"}
+                            givenLabel={isFuri ? "メイ" : "名前"}
+                            familyPlaceholder={isFuri ? "例：ヤマダ" : "例：山田"}
+                            givenPlaceholder={isFuri ? "例：タロウ" : "例：太郎"}
+                            familyAutoComplete={
+                              isFuri ? undefined : "family-name"
+                            }
+                            givenAutoComplete={isFuri ? undefined : "given-name"}
+                            disabled={saving}
+                            required
+                            onFamilyChange={(nextFamily) =>
+                              setEditValues((prev) => ({
+                                ...prev,
+                                [field.fieldId]: joinJapaneseFullName(
+                                  nextFamily,
+                                  given,
+                                ),
+                              }))
+                            }
+                            onGivenChange={(nextGiven) =>
+                              setEditValues((prev) => ({
+                                ...prev,
+                                [field.fieldId]: joinJapaneseFullName(
+                                  family,
+                                  nextGiven,
+                                ),
+                              }))
+                            }
+                          />
+                        );
+                      }
+                      return (
                       <label key={field.fieldId} className="block">
                         <span className="mb-1 block text-[12px] font-semibold text-slate-700">
                           {field.label}
@@ -654,7 +711,7 @@ function CustomerInfoPageContent() {
                         <input
                           type="text"
                           className={INPUT_CLASS}
-                          value={editValues[field.fieldId] ?? ""}
+                          value={raw}
                           onChange={(e) =>
                             setEditValues((prev) => ({
                               ...prev,
@@ -664,7 +721,8 @@ function CustomerInfoPageContent() {
                           disabled={saving}
                         />
                       </label>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
                 <CustomerInfoSaveBar

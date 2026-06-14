@@ -14,12 +14,14 @@ import {
   LiffStaffBindPanel,
   LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
+import { CustomerNameSplitInput } from "@/components/customer-name-split-input";
 import { CalendarMonthSkeleton } from "@/components/calendar-month-skeleton";
 import { MapNavigationButton } from "@/components/map-navigation-button";
 import { NewsMarquee } from "@/components/news-marquee";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
+import { joinJapaneseFullName } from "@/lib/customer-info-form/name-parts";
 import { applyCalendarRecordPatch } from "@/lib/calendar-apply-patch";
 import type {
   CalendarApiPayload,
@@ -80,6 +82,11 @@ const HANDLER_STAFF_SELECT_CLASS =
 
 /** `type="date"` 専用（見た目は HANDLER_STAFF_SELECT_CLASS と揃え、globals.css で iOS/Android 調整） */
 const CALENDAR_DATE_INPUT_CLASS = "calendar-date-input";
+const CALENDAR_TEXT_INPUT_CLASS = HANDLER_STAFF_SELECT_CLASS;
+
+function isSplitCustomerNameComplete(family: string, given: string): boolean {
+  return Boolean(family.trim() && given.trim());
+}
 
 function ConstructionHandlerStaffSelect({
   submitting,
@@ -334,7 +341,8 @@ function EmptySlotCard({
   constructionHandlerUsesStaffDirectory?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [customerName, setCustomerName] = useState("");
+  const [customerFamilyName, setCustomerFamilyName] = useState("");
+  const [customerGivenName, setCustomerGivenName] = useState("");
   const [housingStatus, setHousingStatus] = useState<string>("");
   const [selectedHandlerStaffId, setSelectedHandlerStaffId] =
     useState("");
@@ -442,7 +450,7 @@ function EmptySlotCard({
 
   async function handleSubmit() {
     if (!rid) return;
-    const name = customerName.trim();
+    const name = joinJapaneseFullName(customerFamilyName, customerGivenName);
     const hs = housingStatus.trim();
     if (!name || !hs) return;
     if (handlerFromStaff) {
@@ -532,7 +540,8 @@ function EmptySlotCard({
           return;
         }
         if (data.constructionSaved) {
-          setCustomerName("");
+          setCustomerFamilyName("");
+          setCustomerGivenName("");
           setHousingStatus("");
           setSelectedHandlerStaffId("");
           setShigumiDate("");
@@ -562,7 +571,8 @@ function EmptySlotCard({
         });
         return;
       }
-      setCustomerName("");
+      setCustomerFamilyName("");
+      setCustomerGivenName("");
       setHousingStatus("");
       setSelectedHandlerStaffId("");
       setShigumiDate("");
@@ -680,21 +690,18 @@ function EmptySlotCard({
               ))}
             </select>
           </label>
-          <label className="mt-3 block">
-            <span className="mb-1 block text-[12px] font-bold text-slate-700">
-              お客様名{" "}
-              <span className="font-semibold text-red-600">必須</span>
-            </span>
-            <input
-              type="text"
-              autoComplete="name"
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="例：山田太郎"
+          <div className="mt-3">
+            <CustomerNameSplitInput
+              groupLabel="お客様名"
+              familyValue={customerFamilyName}
+              givenValue={customerGivenName}
+              onFamilyChange={setCustomerFamilyName}
+              onGivenChange={setCustomerGivenName}
               disabled={submitting || !canSubmit}
+              required
+              inputClassName={CALENDAR_TEXT_INPUT_CLASS}
             />
-          </label>
+          </div>
           {isNewBuildHousing ? (
             <>
               <p className="mt-4 mb-2 text-[12px] font-bold text-slate-700">
@@ -784,7 +791,7 @@ function EmptySlotCard({
             className="mt-4 w-full rounded-xl bg-slate-800 py-3 text-[14px] font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
             disabled={
               submitting ||
-              !customerName.trim() ||
+              !isSplitCustomerNameComplete(customerFamilyName, customerGivenName) ||
               !housingStatus.trim() ||
               !canSubmit ||
               handlerBlocking
@@ -826,7 +833,8 @@ function NewConstructionRecordPanel({
   onSaved: (patch?: CalendarRecordMonthPatch | null) => Promise<void>;
   onSessionExpired?: () => void;
 }) {
-  const [customerName, setCustomerName] = useState("");
+  const [customerFamilyName, setCustomerFamilyName] = useState("");
+  const [customerGivenName, setCustomerGivenName] = useState("");
   const [housingStatus, setHousingStatus] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
@@ -906,7 +914,7 @@ function NewConstructionRecordPanel({
   );
 
   async function handleSubmit() {
-    const name = customerName.trim();
+    const name = joinJapaneseFullName(customerFamilyName, customerGivenName);
     const hs = housingStatus.trim();
     if (!name || !hs) return;
     setSubmitting(true);
@@ -967,7 +975,8 @@ function NewConstructionRecordPanel({
           return;
         }
         if (data.constructionSaved) {
-          setCustomerName("");
+          setCustomerFamilyName("");
+          setCustomerGivenName("");
           setHousingStatus("");
           setShigumiDate("");
           setPanelWorkDate("");
@@ -992,7 +1001,8 @@ function NewConstructionRecordPanel({
         });
         return;
       }
-      setCustomerName("");
+      setCustomerFamilyName("");
+      setCustomerGivenName("");
       setHousingStatus("");
       setShigumiDate("");
       setPanelWorkDate("");
@@ -1060,21 +1070,18 @@ function NewConstructionRecordPanel({
               ))}
             </select>
           </label>
-          <label className="mt-3 block">
-            <span className="mb-1 block text-[12px] font-bold text-slate-700">
-              お客様名{" "}
-              <span className="font-semibold text-red-600">必須</span>
-            </span>
-            <input
-              type="text"
-              autoComplete="name"
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="例：山田太郎"
+          <div className="mt-3">
+            <CustomerNameSplitInput
+              groupLabel="お客様名"
+              familyValue={customerFamilyName}
+              givenValue={customerGivenName}
+              onFamilyChange={setCustomerFamilyName}
+              onGivenChange={setCustomerGivenName}
               disabled={submitting || !canSubmit}
+              required
+              inputClassName={CALENDAR_TEXT_INPUT_CLASS}
             />
-          </label>
+          </div>
           <label className="mt-3 block">
             <span className="mb-1 block text-[12px] font-bold text-slate-700">
               施工予定日
@@ -1199,7 +1206,7 @@ function NewConstructionRecordPanel({
             className="mt-4 w-full rounded-xl bg-slate-800 py-3 text-[14px] font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
             disabled={
               submitting ||
-              !customerName.trim() ||
+              !isSplitCustomerNameComplete(customerFamilyName, customerGivenName) ||
               !housingStatus.trim() ||
               !canSubmit
             }
