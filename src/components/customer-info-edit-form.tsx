@@ -130,6 +130,100 @@ const FIELD_INVALID_CLASS =
 
 const AP_CL_STAFF_KEYS = new Set(["apStaff", "clStaff"]);
 
+const NAME_SPLIT_GROUPS = {
+  customerFamilyName: {
+    groupLabel: "お客様名",
+    givenKey: "customerGivenName",
+    familyLabel: "苗字",
+    givenLabel: "名前",
+    familyPlaceholder: "例：山田",
+    givenPlaceholder: "例：太郎",
+    familyAutoComplete: "family-name",
+    givenAutoComplete: "given-name",
+  },
+  furiganaFamily: {
+    groupLabel: "フリガナ",
+    givenKey: "furiganaGiven",
+    familyLabel: "セイ",
+    givenLabel: "メイ",
+    familyPlaceholder: "例：ヤマダ",
+    givenPlaceholder: "例：タロウ",
+    familyAutoComplete: undefined,
+    givenAutoComplete: undefined,
+  },
+} as const;
+
+const NAME_SPLIT_GIVEN_KEYS = new Set(["customerGivenName", "furiganaGiven"]);
+
+function NameSplitFieldGroup({
+  groupLabel,
+  familyLabel,
+  givenLabel,
+  familyValue,
+  givenValue,
+  familyPlaceholder,
+  givenPlaceholder,
+  familyAutoComplete,
+  givenAutoComplete,
+  disabled,
+  familyInvalid,
+  givenInvalid,
+  onFamilyChange,
+  onGivenChange,
+}: {
+  groupLabel: string;
+  familyLabel: string;
+  givenLabel: string;
+  familyValue: string;
+  givenValue: string;
+  familyPlaceholder: string;
+  givenPlaceholder: string;
+  familyAutoComplete?: string;
+  givenAutoComplete?: string;
+  disabled: boolean;
+  familyInvalid: boolean;
+  givenInvalid: boolean;
+  onFamilyChange: (next: string) => void;
+  onGivenChange: (next: string) => void;
+}) {
+  const invalidClass = FIELD_INVALID_CLASS;
+  const familyClass = familyInvalid ? `${INPUT_CLASS} ${invalidClass}` : INPUT_CLASS;
+  const givenClass = givenInvalid ? `${INPUT_CLASS} ${invalidClass}` : INPUT_CLASS;
+
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <label className="block">
+        <span className="mb-1 block text-[11px] font-medium text-slate-600">
+          {familyLabel}
+        </span>
+        <input
+          type="text"
+          className={familyClass}
+          value={familyValue}
+          disabled={disabled}
+          autoComplete={familyAutoComplete}
+          placeholder={familyPlaceholder}
+          onChange={(e) => onFamilyChange(e.target.value)}
+        />
+      </label>
+      <label className="block">
+        <span className="mb-1 block text-[11px] font-medium text-slate-600">
+          {givenLabel}
+        </span>
+        <input
+          type="text"
+          className={givenClass}
+          value={givenValue}
+          disabled={disabled}
+          autoComplete={givenAutoComplete}
+          placeholder={givenPlaceholder}
+          onChange={(e) => onGivenChange(e.target.value)}
+        />
+      </label>
+    </div>
+  );
+}
+
 function FieldControl({
   field,
   value,
@@ -717,11 +811,21 @@ export function CustomerInfoEditForm({
         </p>
       ) : null}
       {visibleFields.map((field) => {
+        if (NAME_SPLIT_GIVEN_KEYS.has(field.key)) return null;
+
+        const nameSplitGroup =
+          field.key in NAME_SPLIT_GROUPS
+            ? NAME_SPLIT_GROUPS[field.key as keyof typeof NAME_SPLIT_GROUPS]
+            : null;
         const invalid = requiredFieldErrors?.has(field.key) ?? false;
+        const givenInvalid = nameSplitGroup
+          ? (requiredFieldErrors?.has(nameSplitGroup.givenKey) ?? false)
+          : false;
+
         return (
         <label key={field.key} className="block">
           <span className="mb-1 block text-[12px] font-semibold text-slate-700">
-            {field.label}
+            {nameSplitGroup?.groupLabel ?? field.label}
             <span className="ml-1 text-[11px] font-bold text-red-600">必須</span>
             {field.optionsPending && !AP_CL_STAFF_KEYS.has(field.key) ? (
               <span className="ml-1 font-normal text-slate-400">
@@ -729,6 +833,26 @@ export function CustomerInfoEditForm({
               </span>
             ) : null}
           </span>
+          {nameSplitGroup ? (
+            <NameSplitFieldGroup
+              groupLabel={nameSplitGroup.groupLabel}
+              familyLabel={nameSplitGroup.familyLabel}
+              givenLabel={nameSplitGroup.givenLabel}
+              familyValue={displayValues[field.key] ?? ""}
+              givenValue={displayValues[nameSplitGroup.givenKey] ?? ""}
+              familyPlaceholder={nameSplitGroup.familyPlaceholder}
+              givenPlaceholder={nameSplitGroup.givenPlaceholder}
+              familyAutoComplete={nameSplitGroup.familyAutoComplete}
+              givenAutoComplete={nameSplitGroup.givenAutoComplete}
+              disabled={saving}
+              familyInvalid={invalid}
+              givenInvalid={givenInvalid}
+              onFamilyChange={(next) => handleFieldChange(field.key, next)}
+              onGivenChange={(next) =>
+                handleFieldChange(nameSplitGroup.givenKey, next)
+              }
+            />
+          ) : (
           <FieldControl
             field={field}
             invalid={invalid}
@@ -752,7 +876,8 @@ export function CustomerInfoEditForm({
               field.key === "postalCode" ? () => void handlePostalBlur() : undefined
             }
           />
-          {invalid ? (
+          )}
+          {invalid || givenInvalid ? (
             <p className="mt-1 text-[11px] font-semibold text-red-600">
               入力してください
             </p>

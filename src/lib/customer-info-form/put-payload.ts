@@ -12,6 +12,7 @@ import {
   readCustomerInfoImportKeyFromRecord,
 } from "@/lib/customer-info-record";
 import { syncContractAmountFromPayment } from "@/lib/customer-info-form/form-change";
+import { syncCombinedNameFields } from "@/lib/customer-info-form/name-parts";
 import { computePtTransfer } from "@/lib/customer-info-form/pt-transfer";
 import { filterCustomerInfoPutPayload } from "@/lib/customer-info-form/pocket-writable-fields";
 import {
@@ -170,7 +171,7 @@ export async function formPayloadFromValues(
   appFields: AtPocketFieldRow[],
   pocketAuth: AtPocketFetchAuth,
 ): Promise<Record<string, unknown>> {
-  const synced = syncContractAmountFromPayment(values);
+  const synced = syncCombinedNameFields(syncContractAmountFromPayment(values));
   const stringPayload = buildCustomerInfoFormPayload(synced, resolved);
   const { resolved: transferResolved } =
     resolveCustomerInfoPtTransferFields(appFields);

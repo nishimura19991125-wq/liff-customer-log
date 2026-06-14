@@ -22,6 +22,7 @@ import {
 } from "@/lib/customer-info-form/pt-transfer";
 import { formatDecimalKwFromPocket } from "@/lib/customer-info-form/decimal-kw";
 import { formatPostalCodeInput } from "@/lib/customer-info-form/postal-code";
+import { expandNamePartsInValues } from "@/lib/customer-info-form/name-parts";
 import { isWritableAtPocketField } from "@/lib/customer-info-form/pocket-writable-fields";
 import { inferPanelComboFromPanelModel2 } from "@/lib/customer-info-form/panel-combo";
 import {
@@ -376,7 +377,7 @@ export function readCustomerInfoFormValuesFromRecord(
     values.prefecture = "";
   }
 
-  return values;
+  return expandNamePartsInValues(values);
 }
 
 /** type="date" 向け YYYY-MM-DD */

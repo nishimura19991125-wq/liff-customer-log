@@ -7,6 +7,9 @@ import {
   formatCommaInteger,
   parseCommaIntegerDigits,
 } from "@/lib/customer-info-form/numeric-comma";
+import {
+  syncCombinedNameFields,
+} from "@/lib/customer-info-form/name-parts";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 
 function norm(v: string | undefined): string {
@@ -57,7 +60,15 @@ export function applyCustomerInfoFormChange(
     key === "cashAmount" ||
     key === "loanAmount"
   ) {
-    return syncContractAmountFromPayment(next);
+    return syncCombinedNameFields(syncContractAmountFromPayment(next));
+  }
+  if (
+    key === "customerFamilyName" ||
+    key === "customerGivenName" ||
+    key === "furiganaFamily" ||
+    key === "furiganaGiven"
+  ) {
+    return syncCombinedNameFields(next);
   }
   return next;
 }

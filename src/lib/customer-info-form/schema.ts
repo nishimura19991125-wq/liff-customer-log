@@ -47,7 +47,21 @@ export const COSMETIC_COVER_OPTIONS = [
 
 /** お客様情報入力フォーム定義（見出しは @pocket 列名と一致させる） */
 export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
-  { key: "customerName", caption: "お客様名", type: "text" },
+  {
+    key: "customerFamilyName",
+    caption: "",
+    formLabel: "苗字",
+    type: "text",
+    liffOnly: true,
+  },
+  {
+    key: "customerGivenName",
+    caption: "",
+    formLabel: "名前",
+    type: "text",
+    liffOnly: true,
+  },
+  { key: "customerName", caption: "お客様名", type: "text", hiddenInForm: true },
   {
     key: "inputStatus",
     caption: "入力ステータス",
@@ -106,7 +120,21 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   },
   { key: "firstContractDate", caption: "初回契約日", type: "date" },
   { key: "contractDate", caption: "契約日", type: "date" },
-  { key: "furigana", caption: "フリガナ", type: "text" },
+  {
+    key: "furiganaFamily",
+    caption: "",
+    formLabel: "フリガナ（苗字）",
+    type: "text",
+    liffOnly: true,
+  },
+  {
+    key: "furiganaGiven",
+    caption: "",
+    formLabel: "フリガナ（名前）",
+    type: "text",
+    liffOnly: true,
+  },
+  { key: "furigana", caption: "フリガナ", type: "text", hiddenInForm: true },
   { key: "phone", caption: "電話番号", type: "text" },
   { key: "postalCode", caption: "郵便番号", type: "postal-code" },
   { key: "prefecture", caption: "都道府県", type: "text" },

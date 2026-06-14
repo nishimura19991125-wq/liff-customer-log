@@ -35,6 +35,7 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
+import { syncCombinedNameFields } from "@/lib/customer-info-form/name-parts";
 import { applyCustomerInfoHiddenDefaultsToValues } from "@/lib/customer-info-form/rules";
 import { inferPanelComboFromValues } from "@/lib/customer-info-form/panel-combo";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
@@ -67,6 +68,7 @@ type RecordDetail = {
   usesFormSchema?: boolean;
   display: Array<{ fieldId: string; label: string; value: string }>;
   formFields?: CustomerInfoFormFieldApi[];
+  formValues?: CustomerInfoFormValues;
   missingCaptions?: string[];
   editableFields?: EditableField[];
   editableFieldIdsConfigured?: boolean;
@@ -282,9 +284,13 @@ function CustomerInfoPageContent() {
           return;
         }
         if (data.usesFormSchema && data.formFields?.length) {
-          const initial: CustomerInfoFormValues = {};
-          for (const f of data.formFields) {
-            initial[f.key] = f.value;
+          const initial: CustomerInfoFormValues = data.formValues
+            ? { ...data.formValues }
+            : {};
+          if (!data.formValues) {
+            for (const f of data.formFields) {
+              initial[f.key] = f.value;
+            }
           }
           initial.panelCombo = inferPanelComboFromValues(initial);
           setEditValues(applyCustomerInfoHiddenDefaultsToValues(initial));
@@ -330,13 +336,14 @@ function CustomerInfoPageContent() {
     if (!token || !detail) return;
 
     if (detail.usesFormSchema && formFields.length > 0) {
+      const valuesForValidate = syncCombinedNameFields(editValues);
       const missing = findMissingRequiredCustomerInfoFields(
         formFields.map((f) => ({
           key: f.key,
           label: f.label,
           type: f.type,
         })),
-        editValues,
+        valuesForValidate,
       );
       if (missing.length > 0) {
         setRequiredFieldErrors(new Set(missing.map((f) => f.key)));
@@ -362,7 +369,7 @@ function CustomerInfoPageContent() {
           },
           body: JSON.stringify(
             detail.usesFormSchema
-              ? { formValues: editValues }
+              ? { formValues: syncCombinedNameFields(editValues) }
               : { fields: editValues },
           ),
         },

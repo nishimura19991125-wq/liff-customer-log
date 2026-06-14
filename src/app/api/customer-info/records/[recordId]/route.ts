@@ -11,6 +11,7 @@ import {
 } from "@/lib/customer-info-config";
 import { attachCustomerInfoImportKeyToPayload } from "@/lib/customer-info-form/put-payload";
 import { formPayloadFromValues } from "@/lib/customer-info-form/put-payload";
+import { syncCombinedNameFields } from "@/lib/customer-info-form/name-parts";
 import {
   findMissingRequiredCustomerInfoFields,
   formatCustomerInfoRequiredValidationError,
@@ -211,6 +212,7 @@ export async function GET(request: Request, ctx: RouteCtx) {
         usesFormSchema: true,
         display,
         formFields,
+        formValues: values,
         missingCaptions: allMissing.length > 0 ? allMissing : undefined,
       });
     }
@@ -329,23 +331,26 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         );
       }
 
-      const values = formValuesFromPutBody(
+      const parsed = formValuesFromPutBody(
         incoming as Record<string, unknown>,
         resolved,
       );
-      if (!values) {
+      if (!parsed) {
         return NextResponse.json(
           { error: "フォームの項目キーが認識できません" },
           { status: 400 },
         );
       }
+      const values = syncCombinedNameFields(parsed);
 
       const missingRequired = findMissingRequiredCustomerInfoFields(
-        resolved.map((f) => ({
-          key: f.key,
-          label: f.label,
-          type: f.type,
-        })),
+        resolved
+          .filter((f) => !f.hiddenInForm)
+          .map((f) => ({
+            key: f.key,
+            label: f.label,
+            type: f.type,
+          })),
         values,
       );
       if (missingRequired.length > 0) {
