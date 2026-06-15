@@ -42,12 +42,12 @@ export const CONSTRUCTION_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig = {
 
 export const COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig =
   {
-    title: "コミュニケーションブリッジカレンダー",
+    title: "コミュニケーションブリッジ",
     description:
       "日付をタップで下に一覧表示します。添付画像をタップして拡大表示できます。",
     calendarApiPath: "/api/communication-bridge/calendar",
     disabledFallbackMessage:
-      "コミュニケーションブリッジカレンダーは環境変数の設定後に利用できます。",
+      "コミュニケーションブリッジは環境変数の設定後に利用できます。",
     enableNewRecordPanel: false,
     enableEmptySlotFill: false,
     showNewsMarquee: false,

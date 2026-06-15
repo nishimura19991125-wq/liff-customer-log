@@ -369,7 +369,7 @@ export default function HomeHubPage() {
                   社内共通
                 </p>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  営業ダッシュボード・勤怠管理・コミュニケーションブリッジカレンダーを表示します。
+                  営業ダッシュボード・勤怠管理・コミュニケーションブリッジを表示します。
                 </p>
               </div>
               <span
@@ -404,7 +404,7 @@ export default function HomeHubPage() {
                 />
                 <LiffMenuCard
                   href="/communication-bridge"
-                  title="コミュニケーションブリッジカレンダー"
+                  title="コミュニケーションブリッジ"
                   description="工事カレンダーと同じ月表示で予定を確認し、@pocket の案件を開けます。"
                   icon={<CommunicationBridgeGlyph />}
                   iconTone="blue"

@@ -126,6 +126,6 @@ export async function verifyCommunicationBridgeCalendarApiAccess(): Promise<{
     ok: false,
     appId: resolved.appId,
     error:
-      "コミュニケーションブリッジカレンダーへの API 接続に失敗しました。COMMUNICATION_BRIDGE_CALENDAR_1（〜_7）の権限を確認してください。",
+      "コミュニケーションブリッジへの API 接続に失敗しました。COMMUNICATION_BRIDGE_CALENDAR_1（〜_7）の権限を確認してください。",
   };
 }
