@@ -1594,31 +1594,6 @@ export function LiffCalendarMonthPage({
             }
           >
             <div className="mb-4 flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-600 dark:text-slate-300">
-            <span className="inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 ring-1 ring-slate-200/80">
-              <span className="size-1.5 rounded-full bg-[#06C755]" aria-hidden />
-              <span className="font-bold text-slate-700">今日</span>
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 font-bold text-blue-900 ring-1 ring-blue-100">
-              <span className="rounded bg-blue-500 px-1 py-px text-[8px] font-extrabold text-white">
-                新
-              </span>
-              <span className="font-semibold text-blue-800/95">新築工事</span>
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 font-bold text-orange-900 ring-1 ring-orange-100">
-              <span className="rounded bg-orange-500 px-1 py-px text-[8px] font-extrabold text-white">
-                既
-              </span>
-              <span className="font-semibold text-orange-800/95">既築工事</span>
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-slate-400/80 bg-slate-100/90 px-2 py-0.5 text-[10px] font-bold text-slate-700 ring-1 ring-slate-200/60">
-              点線枠
-              <span className="font-semibold text-slate-600">
-                工事空枠がある日
-              </span>
-            </span>
-          </div>
-
           {config.enableNewRecordPanel ? (
             <NewConstructionRecordPanel
               idToken={idToken}
