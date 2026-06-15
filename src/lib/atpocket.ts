@@ -41,6 +41,15 @@ function baseUrl(): string {
   return `https://${normalized}`;
 }
 
+/** @pocket Web のアプリ一覧（レコード一覧）URL */
+export function buildAtPocketAppRecordsPortalUrl(appsId: string): string | null {
+  const id = appsId.trim();
+  const domain = process.env.ATPOCKET_DOMAIN?.trim();
+  if (!id || !domain) return null;
+  const normalized = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  return `https://${normalized}/apps/${encodeURIComponent(id)}/records`;
+}
+
 function authHeaderName(): string {
   return (
     process.env.ATPOCKET_AUTH_HEADER?.trim() || "X-At-Pocket-API-Key"
@@ -245,6 +254,71 @@ export function apiKeyForAttendancePocket1(): string {
 /** 勤怠・更新③（出勤・退勤打刻） */
 export function apiKeyForAttendanceWrite(): string {
   return requireAppApiKey("ATTENDANCE", 2, []);
+}
+
+/** コミュニケーションブリッジカレンダー・読取①（fields） */
+export function apiKeyForCommunicationBridgeCalendarPocket(): string {
+  const key = firstEnvApiKey(
+    "COMMUNICATION_BRIDGE_CALENDAR_1",
+    "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY",
+  );
+  if (key) return key;
+  return requireAppApiKey("COMMUNICATION_BRIDGE_CALENDAR", 0, []);
+}
+
+/** コミュニケーションブリッジカレンダー・読取② */
+export function apiKeyForCommunicationBridgeCalendarPocket1(): string {
+  return (
+    firstEnvApiKey(
+      "COMMUNICATION_BRIDGE_CALENDAR_2",
+      "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY_1",
+    ) ?? apiKeyForCommunicationBridgeCalendarPocket()
+  );
+}
+
+/** コミュニケーションブリッジカレンダー・更新③ */
+export function apiKeyForCommunicationBridgeCalendarWrite(): string {
+  const key = firstEnvApiKey(
+    "COMMUNICATION_BRIDGE_CALENDAR_3",
+    "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY_2",
+  );
+  if (key) return key;
+  return requireAppApiKey("COMMUNICATION_BRIDGE_CALENDAR", 2, []);
+}
+
+/** コミュニケーションブリッジカレンダー・読取フェイルオーバー（_1…_7） */
+export function readAuthsForCommunicationBridgeCalendar(): AtPocketFetchAuth[] {
+  const envNames: string[] = [];
+  for (let i = 7; i >= 1; i--) {
+    envNames.push(`COMMUNICATION_BRIDGE_CALENDAR_${i}`);
+  }
+  envNames.push(
+    "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY_FIELDS",
+    "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY_1",
+    "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY",
+  );
+  const auths = collectDistinctApiKeys(envNames);
+  if (auths.length > 0) return auths;
+  return [{ apiKey: apiKeyForCommunicationBridgeCalendarPocket() }];
+}
+
+/** コミュニケーションブリッジカレンダー・一覧フェイルオーバー（_4…_7 → _3…_1） */
+export function listAuthsForCommunicationBridgeCalendar(): AtPocketFetchAuth[] {
+  const envNames: string[] = [];
+  for (let i = 7; i >= 4; i--) {
+    envNames.push(`COMMUNICATION_BRIDGE_CALENDAR_${i}`);
+  }
+  envNames.push(
+    "COMMUNICATION_BRIDGE_CALENDAR_3",
+    "COMMUNICATION_BRIDGE_CALENDAR_2",
+    "COMMUNICATION_BRIDGE_CALENDAR_1",
+    "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY_2",
+    "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY_1",
+    "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY",
+  );
+  const auths = collectDistinctApiKeys(envNames);
+  if (auths.length > 0) return auths;
+  return [{ apiKey: apiKeyForCommunicationBridgeCalendarPocket1() }];
 }
 
 /** ログアプリ・更新③ */
@@ -603,6 +677,10 @@ function apiKeyForCreateRecord(appsId: string): string {
   const customerInfoAppId = process.env.CUSTOMER_INFO_APP_ID?.trim();
   if (customerInfoAppId && appsId === customerInfoAppId) {
     return apiKeyForCustomerInfoWrite();
+  }
+  const bridgeCalAppId = process.env.COMMUNICATION_BRIDGE_CALENDAR_APP_ID?.trim();
+  if (bridgeCalAppId && appsId === bridgeCalAppId) {
+    return apiKeyForCommunicationBridgeCalendarWrite();
   }
   throw new Error(
     `@pocket レコード登録用の API キーが未設定です（appsId=${appsId}）。該当アプリ用の *_ATPOCKET_API_KEY を設定してください`,

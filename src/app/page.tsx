@@ -121,6 +121,20 @@ function InternalCommonGlyph() {
   );
 }
 
+function CommunicationBridgeGlyph() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M8 10h8M8 14h5M7 18l-3 2V6a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2H9l-2 2z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function HomeHubPage() {
   const [phase, setPhase] = useState<"init" | "need-login" | "ready" | "error">(
     () => (LIFF_ID ? "init" : "error"),
@@ -355,7 +369,7 @@ export default function HomeHubPage() {
                   社内共通
                 </p>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  営業ダッシュボード・勤怠管理を表示します。
+                  営業ダッシュボード・勤怠管理・コミュニケーションブリッジカレンダーを表示します。
                 </p>
               </div>
               <span
@@ -385,6 +399,14 @@ export default function HomeHubPage() {
                   title="勤怠管理"
                   description="出勤・退勤を打刻し、@pocket の勤怠アプリに記録します。"
                   icon={<AttendanceGlyph />}
+                  iconTone="blue"
+                  disabled={needsStaffBind}
+                />
+                <LiffMenuCard
+                  href="/communication-bridge"
+                  title="コミュニケーションブリッジカレンダー"
+                  description="@pocket のコミュニケーションブリッジカレンダーを開きます。"
+                  icon={<CommunicationBridgeGlyph />}
                   iconTone="blue"
                   disabled={needsStaffBind}
                 />
