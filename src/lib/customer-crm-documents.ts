@@ -113,7 +113,7 @@ export function resolveCrmConstructionDateFieldId(
   if (env) {
     return resolveConfiguredFieldToSchemaUniqueId(env, appFields);
   }
-  for (const cap of ["工事日", "施工予定日", "着工日", "工事日程"]) {
+  for (const cap of ["施工予定日", "工事日", "着工日", "工事日程"]) {
     const id = pickFieldUniqueIdByExactCaption(appFields, cap);
     if (id) return id;
   }

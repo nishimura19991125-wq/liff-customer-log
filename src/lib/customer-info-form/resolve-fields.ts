@@ -111,15 +111,8 @@ const FORM_KEY_CAPTION_RULES: Partial<Record<string, CaptionResolveRule>> = {
     rejectIfCaptionIncludes: ["①", "１", "1"],
   },
   constructionDate: {
-    captions: ["工事日"],
-    rejectIfCaptionIncludes: [
-      "施工予定",
-      "予定日",
-      "パネル",
-      "電気",
-      "仕込",
-      "室内",
-    ],
+    captions: ["施工予定日", "工事日"],
+    rejectIfCaptionIncludes: ["パネル", "電気", "仕込", "室内"],
   },
 };
 
