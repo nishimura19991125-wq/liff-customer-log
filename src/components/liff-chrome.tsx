@@ -407,7 +407,7 @@ export function LiffMenuCard({
 }: {
   href: string;
   title: string;
-  description: string;
+  description?: string;
   icon: ReactNode;
   /** true のとき遷移不可（スタッフ未紐付けなど） */
   disabled?: boolean;
@@ -434,9 +434,11 @@ export function LiffMenuCard({
           <p className="text-[1.05rem] font-bold leading-snug text-slate-800 dark:text-slate-100">
             {title}
           </p>
-          <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
-            {description}
-          </p>
+          {description ? (
+            <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
+              {description}
+            </p>
+          ) : null}
         </div>
         <span
           className="self-center text-xl font-light text-slate-300 dark:text-slate-500"
@@ -459,9 +461,11 @@ export function LiffMenuCard({
         <p className="text-[1.05rem] font-bold leading-snug text-slate-800 dark:text-slate-100">
           {title}
         </p>
-        <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
-          {description}
-        </p>
+        {description ? (
+          <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
+            {description}
+          </p>
+        ) : null}
       </div>
       <span
         className="self-center text-xl font-light text-slate-300 group-active:text-slate-400 dark:text-slate-500 dark:group-active:text-slate-400"
