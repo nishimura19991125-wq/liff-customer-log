@@ -15,11 +15,14 @@ const POLL_MS = 3000;
 
 function PinDots({ length }: { length: number }) {
   return (
-    <div className="mb-6 flex justify-center gap-3" aria-hidden>
+    <div
+      className="mb-6 flex justify-center gap-3 md:mb-4 md:gap-2.5"
+      aria-hidden
+    >
       {Array.from({ length: 4 }).map((_, i) => (
         <span
           key={i}
-          className={`size-4 rounded-full border-2 transition-all duration-300 ${
+          className={`size-4 rounded-full border-2 transition-all duration-300 md:size-3 ${
             i < length
               ? "border-sky-400 bg-sky-400 dark:border-sky-500 dark:bg-sky-500"
               : "border-slate-300 bg-transparent dark:border-slate-600"
@@ -31,13 +34,12 @@ function PinDots({ length }: { length: number }) {
 }
 
 const NUMPAD_BTN_CLASS =
-  "flex size-[4.25rem] shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-3xl font-bold text-slate-800 shadow-md transition-all duration-300 active:bg-slate-100 disabled:pointer-events-none disabled:opacity-40 sm:size-20 sm:text-4xl dark:border-none dark:bg-slate-800/60 dark:text-slate-100 dark:active:bg-slate-700";
+  "flex size-[4.25rem] shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-3xl font-bold text-slate-800 shadow-md transition-all duration-300 active:bg-slate-100 disabled:pointer-events-none disabled:opacity-40 md:size-14 md:text-2xl lg:size-[3.25rem] lg:text-[1.65rem] dark:border-none dark:bg-slate-800/60 dark:text-slate-100 dark:active:bg-slate-700";
 
 function BackspaceIcon() {
   return (
     <svg
-      width="28"
-      height="28"
+      className="size-7 md:size-5"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -77,7 +79,12 @@ function NumPadButton({
 }
 
 function NumPadSpacer() {
-  return <div className="size-[4.25rem] shrink-0 sm:size-20" aria-hidden />;
+  return (
+    <div
+      className="size-[4.25rem] shrink-0 md:size-14 lg:size-[3.25rem]"
+      aria-hidden
+    />
+  );
 }
 
 function NumPad({
@@ -94,7 +101,7 @@ function NumPad({
   const row3 = ["7", "8", "9"];
 
   const renderRow = (digits: string[]) => (
-    <div className="flex justify-center gap-5 sm:gap-6">
+    <div className="flex justify-center gap-5 md:gap-3">
       {digits.map((d) => (
         <NumPadButton
           key={d}
@@ -108,11 +115,11 @@ function NumPad({
   );
 
   return (
-    <div className="flex flex-col items-center gap-5 sm:gap-6">
+    <div className="flex flex-col items-center gap-5 md:gap-3">
       {renderRow(row1)}
       {renderRow(row2)}
       {renderRow(row3)}
-      <div className="flex justify-center gap-5 sm:gap-6">
+      <div className="flex justify-center gap-5 md:gap-3">
         <NumPadSpacer />
         <NumPadButton
           label="0"
@@ -373,33 +380,35 @@ export function LockScreen({
       : null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex min-h-dvh flex-col items-center justify-center bg-slate-50 px-4 py-[max(1rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] text-slate-800 transition-all duration-300 dark:bg-slate-900 dark:text-white">
-      <div className="flex w-full max-w-md flex-col items-center justify-center text-center">
-        <p className="mb-1 text-sm font-medium text-slate-500 dark:text-slate-400">
+    <div className="fixed inset-0 z-[100] flex min-h-dvh flex-col items-center justify-center bg-slate-50 px-4 py-[max(1rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] text-slate-800 transition-all duration-300 md:py-8 dark:bg-slate-900 dark:text-white">
+      <div className="flex w-full max-w-md flex-col items-center justify-center text-center md:max-w-xs">
+        <p className="mb-1 text-sm font-medium text-slate-500 md:text-xs dark:text-slate-400">
           情報確認くん
         </p>
-        <h1 className="mb-2 text-xl font-bold tracking-tight text-slate-800 dark:text-white">
+        <h1 className="mb-2 text-xl font-bold tracking-tight text-slate-800 md:text-lg dark:text-white">
           {screenTitle}
         </h1>
         {staffName ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">{staffName}</p>
+          <p className="text-sm text-slate-500 md:text-xs dark:text-slate-400">
+            {staffName}
+          </p>
         ) : null}
         {screenSubtitle ? (
-          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-2 text-sm text-slate-500 md:mt-1 md:text-xs dark:text-slate-400">
             {screenSubtitle}
           </p>
         ) : null}
-        <div className="mb-8" />
+        <div className="mb-8 md:mb-5" />
 
         {mode === "waiting" && resetCode ? (
-          <div className="mb-8 rounded-2xl border-2 border-amber-400/60 bg-white px-4 py-6 transition-all duration-300 dark:border-amber-500/50 dark:bg-slate-800">
-            <p className="text-sm text-slate-600 dark:text-slate-300">
+          <div className="mb-8 rounded-2xl border-2 border-amber-400/60 bg-white px-4 py-6 transition-all duration-300 md:mb-5 md:px-3 md:py-4 dark:border-amber-500/50 dark:bg-slate-800">
+            <p className="text-sm text-slate-600 md:text-xs dark:text-slate-300">
               再設定用コード
             </p>
-            <p className="mt-2 font-mono text-5xl font-black tracking-[0.35em] text-amber-600 dark:text-amber-300">
+            <p className="mt-2 font-mono text-5xl font-black tracking-[0.35em] text-amber-600 md:text-4xl md:tracking-[0.3em] dark:text-amber-300">
               {resetCode}
             </p>
-            <p className="mt-4 text-left text-[14px] leading-relaxed text-slate-600 dark:text-slate-300">
+            <p className="mt-4 text-left text-[14px] leading-relaxed text-slate-600 md:mt-3 md:text-[13px] dark:text-slate-300">
               事務所へ連絡して、この4桁のコードを伝えて承認してもらってください。承認されると自動で次の画面に進みます。
             </p>
             <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
@@ -410,11 +419,11 @@ export function LockScreen({
           <>
             <PinDots length={activeLen} />
             {error ? (
-              <p className="mb-4 text-sm font-semibold text-rose-600 dark:text-rose-400">
+              <p className="mb-4 text-sm font-semibold text-rose-600 md:mb-3 md:text-xs dark:text-rose-400">
                 {error}
               </p>
             ) : (
-              <div className="mb-4 h-5" />
+              <div className="mb-4 h-5 md:mb-3 md:h-4" />
             )}
             <NumPad
               onDigit={pushDigit}
@@ -429,7 +438,7 @@ export function LockScreen({
             type="button"
             disabled={busy}
             onClick={() => void startReset()}
-            className="mt-8 text-[14px] font-semibold text-sky-600 underline-offset-2 transition-colors duration-300 hover:underline disabled:opacity-50 dark:text-sky-400"
+            className="mt-8 text-[14px] font-semibold text-sky-600 underline-offset-2 transition-colors duration-300 hover:underline disabled:opacity-50 md:mt-5 md:text-[13px] dark:text-sky-400"
           >
             暗証番号を忘れた方はこちら
           </button>
