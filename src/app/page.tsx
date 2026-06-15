@@ -405,7 +405,7 @@ export default function HomeHubPage() {
                 <LiffMenuCard
                   href="/communication-bridge"
                   title="コミュニケーションブリッジカレンダー"
-                  description="@pocket のコミュニケーションブリッジカレンダーを開きます。"
+                  description="工事カレンダーと同じ月表示で予定を確認し、@pocket の案件を開けます。"
                   icon={<CommunicationBridgeGlyph />}
                   iconTone="blue"
                   disabled={needsStaffBind}

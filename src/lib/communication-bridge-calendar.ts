@@ -16,6 +16,47 @@ export function communicationBridgeCalendarAppIdFromEnv(): string {
   return process.env.COMMUNICATION_BRIDGE_CALENDAR_APP_ID?.trim() ?? "";
 }
 
+/** GET /api/communication-bridge/calendar のキャッシュキー */
+export function buildCommunicationBridgeCalendarPayloadCacheKey(
+  year: number,
+  month: number,
+  appId: string,
+): string {
+  const extraRaw =
+    process.env.COMMUNICATION_BRIDGE_CALENDAR_EXTRA_HOLIDAYS?.trim() ??
+    process.env.CALENDAR_EXTRA_HOLIDAYS?.trim();
+  const extraHolidayKeys = extraRaw
+    ? extraRaw.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  const includeSandwich =
+    process.env.COMMUNICATION_BRIDGE_CALENDAR_INCLUDE_SANDWICH_NATIONAL_HOLIDAY?.trim() ===
+      "true" ||
+    process.env.CALENDAR_INCLUDE_SANDWICH_NATIONAL_HOLIDAY?.trim() === "true";
+  const recordsQueryFilterEnabled =
+    process.env.COMMUNICATION_BRIDGE_CALENDAR_RECORDS_QUERY_FILTER?.trim() !==
+      "false" && process.env.CALENDAR_RECORDS_QUERY_FILTER?.trim() !== "false";
+
+  return JSON.stringify({
+    v: 1,
+    appId,
+    extra: extraHolidayKeys.slice().sort().join(","),
+    sandwich: includeSandwich,
+    recordsQueryFilter: recordsQueryFilterEnabled,
+    year,
+    month,
+  });
+}
+
+export function communicationBridgeCalendarCacheTtlMs(): number {
+  const raw =
+    process.env.COMMUNICATION_BRIDGE_CALENDAR_RESPONSE_CACHE_SECONDS?.trim() ??
+    process.env.CALENDAR_RESPONSE_CACHE_SECONDS?.trim();
+  const sec = raw ? Number(raw) : 120;
+  if (!Number.isFinite(sec)) return 120_000;
+  const clamped = Math.min(600, Math.max(30, sec));
+  return clamped * 1000;
+}
+
 function communicationBridgeCalendarApiKeys(): string[] {
   return readAuthsForCommunicationBridgeCalendar()
     .map((auth) => auth.apiKey?.trim())
