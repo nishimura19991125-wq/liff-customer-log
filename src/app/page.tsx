@@ -308,6 +308,23 @@ export default function HomeHubPage() {
               icon={<CustomerListGlyph />}
               disabled={needsStaffBind}
             />
+            {continueShortcuts.length > 0 ? (
+              <div className="flex flex-col gap-2" role="list">
+                {continueShortcuts.map((row) => (
+                  <LiffContinueShortcutLink
+                    key={row.recordId}
+                    href={`/customer-info?recordId=${encodeURIComponent(row.recordId)}`}
+                    customerName={row.customerName}
+                    subtitle={row.subtitle}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div className="flex flex-col gap-2">
+            <h2 className="px-1 text-[13px] font-bold tracking-wide text-slate-600 dark:text-slate-400">
+              社内共通
+            </h2>
             <LiffMenuCard
               href="/sales-dashboard"
               title="営業ダッシュボード"
@@ -324,18 +341,6 @@ export default function HomeHubPage() {
               iconTone="blue"
               disabled={needsStaffBind}
             />
-            {continueShortcuts.length > 0 ? (
-              <div className="flex flex-col gap-2" role="list">
-                {continueShortcuts.map((row) => (
-                  <LiffContinueShortcutLink
-                    key={row.recordId}
-                    href={`/customer-info?recordId=${encodeURIComponent(row.recordId)}`}
-                    customerName={row.customerName}
-                    subtitle={row.subtitle}
-                  />
-                ))}
-              </div>
-            ) : null}
           </div>
         </div>
       </main>
