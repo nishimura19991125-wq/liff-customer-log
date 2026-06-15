@@ -351,12 +351,14 @@ function AuthenticatedAttachmentImage({
   idToken,
   alt,
   className,
+  variant = "inline",
   onOpen,
 }: {
   src: string;
   idToken: string | null;
   alt: string;
   className?: string;
+  variant?: "inline" | "lightbox";
   onOpen?: () => void;
 }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -391,6 +393,11 @@ function AuthenticatedAttachmentImage({
     };
   }, [idToken, src]);
 
+  const imgClassName =
+    variant === "lightbox"
+      ? "mx-auto block max-h-[90vh] max-w-[min(95vw,960px)] h-auto w-auto object-contain"
+      : "block h-auto w-full max-w-full object-contain";
+
   if (failed) {
     return (
       <p className="py-6 text-center text-[13px] text-slate-500">
@@ -401,22 +408,30 @@ function AuthenticatedAttachmentImage({
   if (!blobUrl) {
     return (
       <div
-        className={`animate-pulse bg-slate-200/90 ${className ?? ""}`}
+        className={`min-h-32 w-full animate-pulse bg-slate-200/90 ${className ?? ""}`}
         aria-hidden
       />
     );
   }
 
-  return (
-    <button
-      type="button"
-      className={`block w-full overflow-hidden ${className ?? ""}`}
-      onClick={onOpen}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element -- LIFF 認証付き blob URL */}
-      <img src={blobUrl} alt={alt} className="h-full w-full object-contain" />
-    </button>
+  const image = (
+    /* eslint-disable-next-line @next/next/no-img-element -- LIFF 認証付き blob URL */
+    <img src={blobUrl} alt={alt} className={imgClassName} />
   );
+
+  if (onOpen) {
+    return (
+      <button
+        type="button"
+        className={`block w-full ${className ?? ""}`}
+        onClick={onOpen}
+      >
+        {image}
+      </button>
+    );
+  }
+
+  return <div className={className}>{image}</div>;
 }
 
 function AttachmentLightbox({
@@ -446,14 +461,14 @@ function AttachmentLightbox({
         閉じる
       </button>
       <div
-        className="max-h-[88vh] max-w-full overflow-hidden rounded-xl bg-black/40"
+        className="flex max-h-[92vh] max-w-[95vw] items-center justify-center"
         onClick={(e) => e.stopPropagation()}
       >
         <AuthenticatedAttachmentImage
           src={src}
           idToken={idToken}
           alt={alt}
-          className="max-h-[88vh] max-w-[min(100vw-2rem,720px)]"
+          variant="lightbox"
         />
       </div>
     </div>
@@ -509,7 +524,7 @@ function CalendarEmptySlotReadOnly({
                     src={imageUrl}
                     idToken={idToken}
                     alt={attachment.name || "添付画像"}
-                    className="max-h-[min(70vh,640px)] rounded-xl bg-slate-50"
+                    className="rounded-xl bg-slate-50"
                     onOpen={() => {
                       setLightboxSrc(imageUrl);
                       setLightboxAlt(attachment.name || "添付画像");
