@@ -399,7 +399,7 @@ function AuthenticatedAttachmentImage({
     variant === "lightbox"
       ? "mx-auto block max-h-[90vh] max-w-[min(95vw,960px)] h-auto w-auto object-contain"
       : fitToViewport
-        ? "mx-auto block h-auto w-auto max-w-full object-contain max-h-[min(62dvh,720px)] md:max-h-[calc(100dvh-11rem)]"
+        ? "mx-auto block object-contain max-h-[min(70dvh,900px)] w-auto max-w-full h-auto md:max-h-[calc(100dvh-4.5rem)] md:h-[calc(100dvh-4.5rem)] md:w-auto lg:max-h-[calc(100dvh-3rem)] lg:h-[calc(100dvh-3rem)]"
         : "block h-auto w-full max-w-full object-contain";
 
   if (failed) {
@@ -427,7 +427,7 @@ function AuthenticatedAttachmentImage({
     return (
       <button
         type="button"
-        className={`block w-full ${className ?? ""}`}
+        className={`flex w-full justify-center ${className ?? ""}`}
         onClick={onOpen}
       >
         {image}
@@ -435,7 +435,7 @@ function AuthenticatedAttachmentImage({
     );
   }
 
-  return <div className={className}>{image}</div>;
+  return <div className={`flex justify-center ${className ?? ""}`}>{image}</div>;
 }
 
 function AttachmentLightbox({
@@ -516,7 +516,9 @@ function CalendarEmptySlotReadOnly({
     return (
       <>
         <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm ring-1 ring-slate-200/80">
-          <ul className="flex flex-col gap-3 p-3">
+          <ul
+            className={`flex flex-col gap-3 p-3 ${fitAttachmentToViewport ? "md:gap-1 md:p-1" : ""}`}
+          >
             {attachments.map((attachment) => {
               const imageUrl = buildAttachmentImageUrl(
                 attachmentApiPath!,
@@ -529,15 +531,17 @@ function CalendarEmptySlotReadOnly({
                   <AuthenticatedAttachmentImage
                     src={imageUrl}
                     idToken={idToken}
-                    alt={attachment.name || "添付画像"}
-                    className="rounded-xl bg-slate-50"
+                    alt={attachment.name || "コミュニケーションブリッジ画像"}
+                    className="rounded-lg bg-slate-50"
                     fitToViewport={fitAttachmentToViewport}
                     onOpen={() => {
                       setLightboxSrc(imageUrl);
-                      setLightboxAlt(attachment.name || "添付画像");
+                      setLightboxAlt(
+                        attachment.name || "コミュニケーションブリッジ画像",
+                      );
                     }}
                   />
-                  {attachment.name ? (
+                  {attachment.name && !fitAttachmentToViewport ? (
                     <p className="mt-2 px-1 text-[12px] font-semibold text-slate-600">
                       {attachment.name}
                     </p>
@@ -1778,7 +1782,7 @@ export function LiffCalendarMonthPage({
     <LiffScreen>
       <div
         className={`liff-page-main mx-auto w-full flex-1 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2 ${
-          config.desktopSideBySideLayout ? "max-w-xl md:max-w-6xl" : "max-w-xl"
+          config.desktopSideBySideLayout ? "max-w-xl md:max-w-6xl lg:max-w-7xl" : "max-w-xl"
         }`}
       >
         <div className="mb-4 flex flex-col gap-4">
@@ -1856,7 +1860,7 @@ export function LiffCalendarMonthPage({
             <div
               className={
                 config.desktopSideBySideLayout
-                  ? "md:grid md:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] md:items-start md:gap-6"
+                  ? "md:grid md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] md:items-start md:gap-4 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] lg:gap-8"
                   : undefined
               }
             >
@@ -2031,18 +2035,24 @@ export function LiffCalendarMonthPage({
 
         {selectedDayKey && !showCalendarSkeleton ? (
           <section
-            className={`mt-5 ${config.desktopSideBySideLayout ? "md:mt-0 md:sticky md:top-4 md:min-w-0" : ""}`}
+            className={`mt-5 ${config.desktopSideBySideLayout ? "md:mt-0 md:sticky md:top-2 md:min-w-0" : ""}`}
             aria-labelledby="day-detail-heading"
           >
             <h2
               id="day-detail-heading"
-              className="mb-3 px-1 text-[15px] font-bold text-slate-800 dark:text-white"
+              className={`mb-3 px-1 text-[15px] font-bold text-slate-800 dark:text-white ${config.desktopSideBySideLayout ? "md:mb-2 md:text-[14px]" : ""}`}
             >
               {formatDayHeading(selectedDayKey)}
               {config.dayDetailHeadingSuffix ?? "の予定"}
             </h2>
             <LiffCard>
-              <div className="px-4 py-4 sm:px-5">
+              <div
+                className={
+                  config.desktopSideBySideLayout
+                    ? "px-4 py-4 sm:px-5 md:px-2 md:py-2"
+                    : "px-4 py-4 sm:px-5"
+                }
+              >
                 {(() => {
                   const visibleItems =
                     config.showDayCellBadges === false &&
