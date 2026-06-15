@@ -107,6 +107,20 @@ function AttendanceGlyph() {
   );
 }
 
+function InternalCommonGlyph() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1M9 13h1M9 17h1M14 9h1M14 13h1M14 17h1"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function HomeHubPage() {
   const [phase, setPhase] = useState<"init" | "need-login" | "ready" | "error">(
     () => (LIFF_ID ? "init" : "error"),
@@ -118,6 +132,7 @@ export default function HomeHubPage() {
   const [continueShortcuts, setContinueShortcuts] = useState<
     ContinueShortcut[]
   >([]);
+  const [internalMenuOpen, setInternalMenuOpen] = useState(false);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -322,25 +337,59 @@ export default function HomeHubPage() {
             ) : null}
           </div>
           <div className="flex flex-col gap-2">
-            <h2 className="px-1 text-[13px] font-bold tracking-wide text-slate-600 dark:text-slate-400">
-              社内共通
-            </h2>
-            <LiffMenuCard
-              href="/sales-dashboard"
-              title="営業ダッシュボード"
-              description="当月の売上KPIや営業成績ランキングをリアルタイムで確認します。"
-              icon={<SalesDashboardGlyph />}
-              iconTone="blue"
+            <button
+              type="button"
+              onClick={() => setInternalMenuOpen((open) => !open)}
               disabled={needsStaffBind}
-            />
-            <LiffMenuCard
-              href="/attendance"
-              title="勤怠管理"
-              description="出勤・退勤を打刻し、@pocket の勤怠アプリに記録します。"
-              icon={<AttendanceGlyph />}
-              iconTone="blue"
-              disabled={needsStaffBind}
-            />
+              aria-expanded={internalMenuOpen}
+              aria-controls="internal-common-menu"
+              className={`cyber-card group flex w-full items-stretch gap-4 p-5 text-left text-slate-800 transition-all duration-300 active:scale-[0.99] dark:text-slate-100 dark:hover:shadow-[0_0_14px_rgba(16,185,129,0.12)] ${
+                needsStaffBind ? "cursor-not-allowed opacity-45" : ""
+              }`}
+            >
+              <span className="flex size-[3.25rem] shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100/70 text-blue-500 text-[1.65rem] leading-none dark:from-blue-950/80 dark:to-blue-900/50 dark:text-blue-400">
+                <InternalCommonGlyph />
+              </span>
+              <div className="min-w-0 flex-1 py-0.5">
+                <p className="text-[1.05rem] font-bold leading-snug text-slate-800 dark:text-slate-100">
+                  社内共通
+                </p>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
+                  営業ダッシュボード・勤怠管理を表示します。
+                </p>
+              </div>
+              <span
+                className={`self-center text-xl font-light text-slate-400 transition-transform duration-200 dark:text-slate-500 ${
+                  internalMenuOpen ? "rotate-90" : ""
+                }`}
+                aria-hidden
+              >
+                ›
+              </span>
+            </button>
+            {internalMenuOpen ? (
+              <div
+                id="internal-common-menu"
+                className="flex flex-col gap-2 pl-2"
+              >
+                <LiffMenuCard
+                  href="/sales-dashboard"
+                  title="営業ダッシュボード"
+                  description="当月の売上KPIや営業成績ランキングをリアルタイムで確認します。"
+                  icon={<SalesDashboardGlyph />}
+                  iconTone="blue"
+                  disabled={needsStaffBind}
+                />
+                <LiffMenuCard
+                  href="/attendance"
+                  title="勤怠管理"
+                  description="出勤・退勤を打刻し、@pocket の勤怠アプリに記録します。"
+                  icon={<AttendanceGlyph />}
+                  iconTone="blue"
+                  disabled={needsStaffBind}
+                />
+              </div>
+            ) : null}
           </div>
         </div>
       </main>
