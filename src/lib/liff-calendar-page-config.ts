@@ -21,6 +21,10 @@ export type LiffCalendarPageConfig = {
   dayDetailHeadingSuffix?: string;
   /** 日付詳細が空のときのメッセージ */
   dayDetailEmptyMessage?: string;
+  /** PC 幅でカレンダーと日付詳細を横並びにする */
+  desktopSideBySideLayout?: boolean;
+  /** 添付画像を画面内に収めて全体表示する */
+  fitAttachmentToViewport?: boolean;
 };
 
 export const CONSTRUCTION_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig = {
@@ -54,4 +58,6 @@ export const COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig =
     showDayCellBadges: false,
     dayDetailHeadingSuffix: "のコミュニケーションブリッジ",
     dayDetailEmptyMessage: "この日のコミュニケーションブリッジはありません",
+    desktopSideBySideLayout: true,
+    fitAttachmentToViewport: true,
   };

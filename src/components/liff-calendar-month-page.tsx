@@ -352,6 +352,7 @@ function AuthenticatedAttachmentImage({
   alt,
   className,
   variant = "inline",
+  fitToViewport = false,
   onOpen,
 }: {
   src: string;
@@ -359,6 +360,7 @@ function AuthenticatedAttachmentImage({
   alt: string;
   className?: string;
   variant?: "inline" | "lightbox";
+  fitToViewport?: boolean;
   onOpen?: () => void;
 }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -396,7 +398,9 @@ function AuthenticatedAttachmentImage({
   const imgClassName =
     variant === "lightbox"
       ? "mx-auto block max-h-[90vh] max-w-[min(95vw,960px)] h-auto w-auto object-contain"
-      : "block h-auto w-full max-w-full object-contain";
+      : fitToViewport
+        ? "mx-auto block h-auto w-auto max-w-full object-contain max-h-[min(62dvh,720px)] md:max-h-[calc(100dvh-11rem)]"
+        : "block h-auto w-full max-w-full object-contain";
 
   if (failed) {
     return (
@@ -481,6 +485,7 @@ function CalendarEmptySlotReadOnly({
   attachmentApiPath,
   showAttachmentPreviews,
   showEmptySlotNotation = true,
+  fitAttachmentToViewport = false,
   onOpenPocket,
 }: {
   item: CalendarMonthApiItem;
@@ -488,6 +493,7 @@ function CalendarEmptySlotReadOnly({
   attachmentApiPath?: string;
   showAttachmentPreviews?: boolean;
   showEmptySlotNotation?: boolean;
+  fitAttachmentToViewport?: boolean;
   onOpenPocket: (url: string) => void;
 }) {
   const attachments = item.attachments ?? [];
@@ -525,6 +531,7 @@ function CalendarEmptySlotReadOnly({
                     idToken={idToken}
                     alt={attachment.name || "添付画像"}
                     className="rounded-xl bg-slate-50"
+                    fitToViewport={fitAttachmentToViewport}
                     onOpen={() => {
                       setLightboxSrc(imageUrl);
                       setLightboxAlt(attachment.name || "添付画像");
@@ -1769,7 +1776,11 @@ export function LiffCalendarMonthPage({
 
   return (
     <LiffScreen>
-      <div className="liff-page-main mx-auto w-full max-w-xl flex-1 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2">
+      <div
+        className={`liff-page-main mx-auto w-full flex-1 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2 ${
+          config.desktopSideBySideLayout ? "max-w-xl md:max-w-6xl" : "max-w-xl"
+        }`}
+      >
         <div className="mb-4 flex flex-col gap-4">
           <div>
             <Link
@@ -1842,6 +1853,14 @@ export function LiffCalendarMonthPage({
                 : undefined
             }
           >
+            <div
+              className={
+                config.desktopSideBySideLayout
+                  ? "md:grid md:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] md:items-start md:gap-6"
+                  : undefined
+              }
+            >
+            <div className="min-w-0">
             <div className="mb-4 flex flex-col gap-4">
           {config.enableNewRecordPanel ? (
             <NewConstructionRecordPanel
@@ -2008,9 +2027,13 @@ export function LiffCalendarMonthPage({
             )}
           </div>
         </LiffCard>
+            </div>
 
         {selectedDayKey && !showCalendarSkeleton ? (
-          <section className="mt-5" aria-labelledby="day-detail-heading">
+          <section
+            className={`mt-5 ${config.desktopSideBySideLayout ? "md:mt-0 md:sticky md:top-4 md:min-w-0" : ""}`}
+            aria-labelledby="day-detail-heading"
+          >
             <h2
               id="day-detail-heading"
               className="mb-3 px-1 text-[15px] font-bold text-slate-800 dark:text-white"
@@ -2189,6 +2212,9 @@ export function LiffCalendarMonthPage({
                                         showEmptySlotNotation={
                                           config.showEmptySlotNotation
                                         }
+                                        fitAttachmentToViewport={
+                                          config.fitAttachmentToViewport
+                                        }
                                         onOpenPocket={openExternal}
                                       />
                                     )}
@@ -2207,6 +2233,7 @@ export function LiffCalendarMonthPage({
             </LiffCard>
           </section>
         ) : null}
+            </div>
           </div>
         </div>
       </div>
