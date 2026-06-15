@@ -17,6 +17,8 @@ export type CustomerInfoFormFieldForValidate = {
   key: string;
   label: string;
   type: CustomerInfoFieldType;
+  /** false のとき未入力でも必須チェック対象外 */
+  required?: boolean;
 };
 
 function checkboxSelections(raw: string): string[] {
@@ -38,6 +40,7 @@ export function isCustomerInfoVisibleFieldValueMissing(
 ): boolean {
   const synced = syncContractAmountFromPayment(values);
   if (!isCustomerInfoFormFieldVisible(field.key, synced)) return false;
+  if (field.required === false) return false;
 
   if (
     field.key === "contractAmount" &&

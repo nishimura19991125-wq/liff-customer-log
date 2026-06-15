@@ -32,6 +32,8 @@ export type CustomerInfoFormFieldDef = {
   optionsPending?: boolean;
   /** 非表示時に @pocket へ送る値（既定 "-"） */
   hiddenValue?: string;
+  /** false のとき未入力でも保存可（省略時は必須） */
+  required?: boolean;
 };
 
 export type CustomerInfoFormFieldResolved = CustomerInfoFormFieldDef & {

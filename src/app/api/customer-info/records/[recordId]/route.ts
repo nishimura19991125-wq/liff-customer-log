@@ -194,6 +194,7 @@ export async function GET(request: Request, ctx: RouteCtx) {
           options: f.options ? [...f.options] : undefined,
           optionsPending: f.optionsPending,
           liffOnly: f.liffOnly === true,
+          required: f.required,
           value: values[f.key] ?? "",
         }));
       const formFields = await enrichCustomerInfoFormFieldsWithManufacturers(
@@ -350,6 +351,7 @@ export async function PUT(request: Request, ctx: RouteCtx) {
             key: f.key,
             label: f.label,
             type: f.type,
+            required: f.required,
           })),
         values,
       );

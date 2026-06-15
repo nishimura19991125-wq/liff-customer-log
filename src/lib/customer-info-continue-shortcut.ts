@@ -212,6 +212,7 @@ export async function findCustomerInfoPendingRecords(
       key: f.key,
       label: f.label,
       type: f.type,
+      required: f.required,
     }));
 
   const statusValues = continueStatusValues();

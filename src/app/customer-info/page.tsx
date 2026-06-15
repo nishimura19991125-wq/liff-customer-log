@@ -352,6 +352,7 @@ function CustomerInfoPageContent() {
           key: f.key,
           label: f.label,
           type: f.type,
+          required: f.required,
         })),
         valuesForValidate,
       );

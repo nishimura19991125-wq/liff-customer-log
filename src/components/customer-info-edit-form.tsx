@@ -109,6 +109,7 @@ export type CustomerInfoFormFieldApi = {
   options?: string[];
   optionsPending?: boolean;
   liffOnly?: boolean;
+  required?: boolean;
   value: string;
 };
 
@@ -826,7 +827,11 @@ export function CustomerInfoEditForm({
         <label key={field.key} className="block">
           <span className="mb-1 block text-[12px] font-semibold text-slate-700">
             {nameSplitGroup?.groupLabel ?? field.label}
-            <span className="ml-1 text-[11px] font-bold text-red-600">必須</span>
+            {field.required !== false ? (
+              <span className="ml-1 text-[11px] font-bold text-red-600">
+                必須
+              </span>
+            ) : null}
             {field.optionsPending && !AP_CL_STAFF_KEYS.has(field.key) ? (
               <span className="ml-1 font-normal text-slate-400">
                 （一覧は後日連携）

@@ -110,6 +110,17 @@ const FORM_KEY_CAPTION_RULES: Partial<Record<string, CaptionResolveRule>> = {
     captions: ["蓄電池品番②", "蓄電池品番２"],
     rejectIfCaptionIncludes: ["①", "１", "1"],
   },
+  constructionDate: {
+    captions: ["工事日"],
+    rejectIfCaptionIncludes: [
+      "施工予定",
+      "予定日",
+      "パネル",
+      "電気",
+      "仕込",
+      "室内",
+    ],
+  },
 };
 
 function captionMatchesRule(caption: string, rule: CaptionResolveRule): boolean {
@@ -167,6 +178,14 @@ export function resolveCustomerInfoFormFieldId(
     const nameEnv = customerInfoNameFieldId();
     if (nameEnv) {
       const id = resolveConfiguredFieldToSchemaUniqueId(nameEnv, appFields);
+      if (id && usedIds.has(id)) return null;
+      return id;
+    }
+  }
+  if (key === "constructionDate") {
+    const env = process.env.CUSTOMER_INFO_CONSTRUCTION_DATE_FIELD_ID?.trim();
+    if (env) {
+      const id = resolveConfiguredFieldToSchemaUniqueId(env, appFields);
       if (id && usedIds.has(id)) return null;
       return id;
     }
