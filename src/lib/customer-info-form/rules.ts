@@ -35,6 +35,7 @@ const POCKET_ZERO_WHEN_EMPTY_KEYS = new Set([
   "panelCount2",
   "extraPartsAmount",
   "referralFee",
+  "panelCapacityKw",
 ]);
 
 /** 非表示時に @pocket へ 0 を送るフィールド（"-" は半角数字エラーになる） */
@@ -44,13 +45,13 @@ const POCKET_ZERO_WHEN_HIDDEN_KEYS = new Set([
   "cashAmount",
   "loanAmount",
   "referralFee",
+  "panelCapacityKw",
 ]);
 
 /** 未入力・非表示時に @pocket へ "-" を送るフィールド */
 const POCKET_DASH_WHEN_EMPTY_KEYS = new Set([
   "panelModel1",
   "panelModel2",
-  "panelCapacityKw",
   "powerConModel1",
   "powerConModel2",
   "batteryCapacity1",
@@ -92,9 +93,19 @@ function pocketFieldValueForPut(
     return pocket ?? hiddenFallback;
   }
   if (DECIMAL_KW_KEYS.has(key)) {
-    if (!visible) return hiddenFallback;
+    if (!visible) {
+      if (
+        POCKET_ZERO_WHEN_HIDDEN_KEYS.has(key) ||
+        POCKET_ZERO_WHEN_EMPTY_KEYS.has(key)
+      ) {
+        return "0";
+      }
+      return hiddenFallback;
+    }
     const pocket = decimalKwForPocket(raw);
-    return pocket ?? hiddenFallback;
+    if (pocket !== null) return pocket;
+    if (POCKET_ZERO_WHEN_EMPTY_KEYS.has(key)) return "0";
+    return hiddenFallback;
   }
   if (COMMA_INTEGER_KEYS.has(key)) {
     if (!visible) {
