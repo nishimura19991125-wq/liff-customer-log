@@ -1,5 +1,11 @@
 /** クライアントでも import 可能なカレンダー API の型（server-only にしない） */
 
+export type CalendarAttachmentMeta = {
+  index: number;
+  name: string;
+  mimeType: string;
+};
+
 export type CalendarMonthApiItem = {
   line1: string;
   line2: string;
@@ -17,6 +23,8 @@ export type CalendarMonthApiItem = {
   pinpointAddress: string;
   /** 通常住所（見出し「住所」または都道府県+市区郡+町村+番地） */
   normalAddress: string;
+  /** 添付画像（コミュニケーションブリッジカレンダー等） */
+  attachments?: CalendarAttachmentMeta[];
 };
 
 /** 1件の工事レコードを表示月カレンダーに即時反映するための差分 */

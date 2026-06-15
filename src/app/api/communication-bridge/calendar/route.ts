@@ -8,12 +8,13 @@ import {
   resolveConstructionFieldIds,
 } from "@/lib/calendar-kojo";
 import { resolveConstructionMapAddressFieldIds } from "@/lib/map-address-fields";
-import { fetchCommunicationBridgeCalendarRecordsCached } from "@/lib/communication-bridge-calendar-records-cache";
+import { resolveCommunicationBridgeAttachmentFieldId } from "@/lib/communication-bridge-calendar-fields";
 import {
   buildCommunicationBridgeCalendarPayloadCacheKey,
   communicationBridgeCalendarCacheTtlMs,
   resolveCommunicationBridgeCalendarAppId,
 } from "@/lib/communication-bridge-calendar";
+import { fetchCommunicationBridgeCalendarRecordsCached } from "@/lib/communication-bridge-calendar-records-cache";
 import {
   getAnyStaleCalendarPayload,
   getOrComputeCalendarPayload,
@@ -126,7 +127,13 @@ export async function GET(request: Request) {
         const fids = resolveConstructionFieldIds(constructionFields);
         const mapAddressIds =
           resolveConstructionMapAddressFieldIds(constructionFields);
-        const csv = collectConstructionFieldsCsv(fids, mapAddressIds);
+        const attachmentFieldId =
+          resolveCommunicationBridgeAttachmentFieldId(constructionFields);
+        const csv = collectConstructionFieldsCsv(
+          fids,
+          mapAddressIds,
+          [attachmentFieldId],
+        );
 
         const pocketQuery = recordsQueryFilterEnabled
           ? buildConstructionRecordsMonthOverlapQuery(fids, year, month)
@@ -146,7 +153,11 @@ export async function GET(request: Request) {
           null,
           constructionFields,
           null,
-          { extraHolidayKeys, includeSandwichNationalHoliday: includeSandwich },
+          {
+            extraHolidayKeys,
+            includeSandwichNationalHoliday: includeSandwich,
+            attachmentFieldId,
+          },
         );
       },
     );

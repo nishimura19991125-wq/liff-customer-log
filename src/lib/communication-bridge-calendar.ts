@@ -37,8 +37,11 @@ export function buildCommunicationBridgeCalendarPayloadCacheKey(
       "false" && process.env.CALENDAR_RECORDS_QUERY_FILTER?.trim() !== "false";
 
   return JSON.stringify({
-    v: 1,
+    v: 2,
     appId,
+    attachmentField:
+      process.env.COMMUNICATION_BRIDGE_CALENDAR_ATTACHMENT_FIELD_ID?.trim() ??
+      "",
     extra: extraHolidayKeys.slice().sort().join(","),
     sandwich: includeSandwich,
     recordsQueryFilter: recordsQueryFilterEnabled,

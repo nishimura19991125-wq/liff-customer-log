@@ -5,9 +5,14 @@ import "server-only";
 
 import type {
   CalendarApiPayload,
+  CalendarAttachmentMeta,
   CalendarMonthApiItem,
   CalendarRecordMonthPatch,
 } from "@/lib/calendar-api-types";
+import {
+  isDisplayableImageFile,
+  parseAtPocketFileField,
+} from "@/lib/at-pocket-file-field";
 import type { AtPocketFieldRow, AtPocketRecordRow } from "@/lib/atpocket";
 import {
   readMapAddressesFromRecord,
@@ -59,6 +64,7 @@ type CalendarEventInternal = {
   chipSpecLine2: string;
   pinpointAddress: string;
   normalAddress: string;
+  attachments: CalendarAttachmentMeta[];
 };
 
 type CalendarMonthRow = {
@@ -77,6 +83,7 @@ type CalendarMonthRow = {
   inputStatusIsShinki: boolean;
   pinpointAddress: string;
   normalAddress: string;
+  attachments: CalendarAttachmentMeta[];
 };
 
 const HOUSING_STATUS_EXACT = [
@@ -86,6 +93,26 @@ const HOUSING_STATUS_EXACT = [
   "産業用案件",
 ] as const;
 const HOUSING_STATUS_OTHER = "__HS_OTHER__";
+
+function extractImageAttachmentMeta(
+  recObj: Record<string, unknown>,
+  attachmentFieldId: string | null | undefined,
+): CalendarAttachmentMeta[] {
+  const fieldId = attachmentFieldId?.trim();
+  if (!fieldId) return [];
+  const files = parseAtPocketFileField(recObj[fieldId]);
+  const out: CalendarAttachmentMeta[] = [];
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    if (!isDisplayableImageFile(file)) continue;
+    out.push({
+      index,
+      name: file.name,
+      mimeType: file.mimeType,
+    });
+  }
+  return out;
+}
 
 const NFKC = (s: string) => s.normalize("NFKC");
 
@@ -356,6 +383,7 @@ export function resolveReportFieldIds(
 export function collectConstructionFieldsCsv(
   fids: ConstructionFieldIds,
   mapAddressIds?: MapAddressFieldIds,
+  extraFieldIds?: Array<string | null | undefined>,
 ): string {
   const set = new Set<string>();
   for (const v of Object.values(fids)) {
@@ -373,6 +401,10 @@ export function collectConstructionFieldsCsv(
       const t = id?.trim();
       if (t) set.add(t);
     }
+  }
+  for (const id of extraFieldIds ?? []) {
+    const t = id?.trim();
+    if (t) set.add(t);
   }
   return Array.from(set).join(",");
 }
@@ -619,6 +651,7 @@ function recordToEvent(
   rec: AtPocketRecordRow,
   fids: ConstructionFieldIds,
   mapAddressIds: MapAddressFieldIds,
+  attachmentFieldId?: string | null,
 ): CalendarEventInternal | null {
   const recObj =
     rec && rec.record && typeof rec.record === "object"
@@ -720,6 +753,7 @@ function recordToEvent(
     recObj,
     mapAddressIds,
   );
+  const attachments = extractImageAttachmentMeta(recObj, attachmentFieldId);
 
   return {
     start,
@@ -739,6 +773,7 @@ function recordToEvent(
     chipSpecLine2,
     pinpointAddress,
     normalAddress,
+    attachments,
   };
 }
 
@@ -865,6 +900,10 @@ function bracketKubunFromSegmentLabel(segmentLabel: string): string {
 }
 
 function displayNameLine1OnChip(row: CalendarMonthRow): string {
+  if (row.attachments?.length) {
+    const name = row.attachments[0]?.name?.trim();
+    return name || "添付画像";
+  }
   if (!row || row.category === "empty") {
     return "（空枠）";
   }
@@ -957,6 +996,7 @@ function eventsForDisplayMonth(
           inputStatusIsShinki: ev.inputStatusIsShinki === true,
           pinpointAddress: ev.pinpointAddress ?? "",
           normalAddress: ev.normalAddress ?? "",
+          attachments: ev.attachments ?? [],
         });
       }
     } else {
@@ -996,6 +1036,7 @@ function eventsForDisplayMonth(
             inputStatusIsShinki: ev.inputStatusIsShinki === true,
             pinpointAddress: ev.pinpointAddress ?? "",
             normalAddress: ev.normalAddress ?? "",
+            attachments: ev.attachments ?? [],
           });
         }
       }
@@ -1021,6 +1062,7 @@ function eventsForDisplayMonth(
           inputStatusIsShinki: ev.inputStatusIsShinki === true,
           pinpointAddress: ev.pinpointAddress ?? "",
           normalAddress: ev.normalAddress ?? "",
+          attachments: ev.attachments ?? [],
         });
       }
     }
@@ -1173,12 +1215,14 @@ function rowToApiItem(row: CalendarMonthRow): CalendarMonthApiItem {
     accessEditUrl: row.accessEditUrl || "",
     pinpointAddress: row.pinpointAddress ?? "",
     normalAddress: row.normalAddress ?? "",
+    attachments: row.attachments?.length ? row.attachments : undefined,
   };
 }
 
 export type BuildCalendarPayloadOptions = {
   extraHolidayKeys?: string[];
   includeSandwichNationalHoliday?: boolean;
+  attachmentFieldId?: string | null;
 };
 
 export function buildCalendarPayload(
@@ -1195,10 +1239,11 @@ export function buildCalendarPayload(
   const mapAddressIds = resolveConstructionMapAddressFieldIds(
     constructionFields,
   );
+  const attachmentFieldId = opts?.attachmentFieldId?.trim() || null;
 
   const events: CalendarEventInternal[] = [];
   for (const rec of constructionRecords) {
-    const ev = recordToEvent(rec, fids, mapAddressIds);
+    const ev = recordToEvent(rec, fids, mapAddressIds, attachmentFieldId);
     if (ev) events.push(ev);
   }
 

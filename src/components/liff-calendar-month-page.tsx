@@ -25,6 +25,7 @@ import { joinJapaneseFullName } from "@/lib/customer-info-form/name-parts";
 import { applyCalendarRecordPatch } from "@/lib/calendar-apply-patch";
 import type {
   CalendarApiPayload,
+  CalendarAttachmentMeta,
   CalendarMonthApiItem,
   CalendarRecordMonthPatch,
 } from "@/lib/calendar-api-types";
@@ -301,33 +302,242 @@ function weekHeaderClass(i: number): string {
   return "text-slate-600 bg-white/95 dark:text-white dark:bg-slate-800/90";
 }
 
-function countDayBadges(items: CalendarMonthApiItem[]): {
+function countDayBadges(
+  items: CalendarMonthApiItem[],
+  showAttachmentPreviews?: boolean,
+): {
   newBuild: number;
   existing: number;
   emptySlots: number;
+  attachmentItems: number;
 } {
   let newBuild = 0;
   let existing = 0;
   let emptySlots = 0;
+  let attachmentItems = 0;
   for (const x of items) {
     if (x.category === "empty") {
+      if (showAttachmentPreviews && x.attachments?.length) {
+        attachmentItems += 1;
+        continue;
+      }
       emptySlots += 1;
       continue;
     }
     if (x.housingShort === "新築") newBuild += 1;
     else if (x.housingShort === "既築") existing += 1;
   }
-  return { newBuild, existing, emptySlots };
+  return { newBuild, existing, emptySlots, attachmentItems };
+}
+
+function buildAttachmentImageUrl(
+  attachmentApiPath: string,
+  recordId: string | null,
+  attachment: CalendarAttachmentMeta,
+): string | null {
+  const rid = recordId?.trim();
+  if (!rid) return null;
+  const base = attachmentApiPath.trim();
+  if (!base) return null;
+  const qs = new URLSearchParams({
+    recordId: rid,
+    index: String(attachment.index),
+  });
+  return `${base}?${qs.toString()}`;
+}
+
+function AuthenticatedAttachmentImage({
+  src,
+  idToken,
+  alt,
+  className,
+  onOpen,
+}: {
+  src: string;
+  idToken: string | null;
+  alt: string;
+  className?: string;
+  onOpen?: () => void;
+}) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!idToken || !src) {
+      setBlobUrl(null);
+      setFailed(false);
+      return;
+    }
+    let revoked: string | null = null;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(src, {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        const blob = await res.blob();
+        if (cancelled) return;
+        revoked = URL.createObjectURL(blob);
+        setBlobUrl(revoked);
+        setFailed(false);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (revoked) URL.revokeObjectURL(revoked);
+    };
+  }, [idToken, src]);
+
+  if (failed) {
+    return (
+      <p className="py-6 text-center text-[13px] text-slate-500">
+        画像を読み込めませんでした
+      </p>
+    );
+  }
+  if (!blobUrl) {
+    return (
+      <div
+        className={`animate-pulse bg-slate-200/90 ${className ?? ""}`}
+        aria-hidden
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={`block w-full overflow-hidden ${className ?? ""}`}
+      onClick={onOpen}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element -- LIFF 認証付き blob URL */}
+      <img src={blobUrl} alt={alt} className="h-full w-full object-contain" />
+    </button>
+  );
+}
+
+function AttachmentLightbox({
+  src,
+  idToken,
+  alt,
+  onClose,
+}: {
+  src: string;
+  idToken: string | null;
+  alt: string;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="添付画像の拡大表示"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        className="absolute right-4 top-4 rounded-full bg-white/15 px-3 py-1.5 text-[13px] font-bold text-white"
+        onClick={onClose}
+      >
+        閉じる
+      </button>
+      <div
+        className="max-h-[88vh] max-w-full overflow-hidden rounded-xl bg-black/40"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <AuthenticatedAttachmentImage
+          src={src}
+          idToken={idToken}
+          alt={alt}
+          className="max-h-[88vh] max-w-[min(100vw-2rem,720px)]"
+        />
+      </div>
+    </div>
+  );
 }
 
 function CalendarEmptySlotReadOnly({
   item,
+  idToken,
+  attachmentApiPath,
+  showAttachmentPreviews,
   onOpenPocket,
 }: {
   item: CalendarMonthApiItem;
+  idToken: string | null;
+  attachmentApiPath?: string;
+  showAttachmentPreviews?: boolean;
   onOpenPocket: (url: string) => void;
 }) {
+  const attachments = item.attachments ?? [];
+  const hasAttachmentImages =
+    Boolean(showAttachmentPreviews) &&
+    attachments.length > 0 &&
+    Boolean(attachmentApiPath?.trim());
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [lightboxAlt, setLightboxAlt] = useState("");
+
   const url = item.accessEditUrl?.trim() ?? "";
+
+  if (hasAttachmentImages) {
+    return (
+      <>
+        <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm ring-1 ring-slate-200/80">
+          <ul className="flex flex-col gap-3 p-3">
+            {attachments.map((attachment) => {
+              const imageUrl = buildAttachmentImageUrl(
+                attachmentApiPath!,
+                item.recordId,
+                attachment,
+              );
+              if (!imageUrl) return null;
+              return (
+                <li key={`${item.recordId ?? "x"}-${attachment.index}`}>
+                  <AuthenticatedAttachmentImage
+                    src={imageUrl}
+                    idToken={idToken}
+                    alt={attachment.name || "添付画像"}
+                    className="max-h-72 rounded-xl bg-slate-50"
+                    onOpen={() => {
+                      setLightboxSrc(imageUrl);
+                      setLightboxAlt(attachment.name || "添付画像");
+                    }}
+                  />
+                  {attachment.name ? (
+                    <p className="mt-2 px-1 text-[12px] font-semibold text-slate-600">
+                      {attachment.name}
+                    </p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+          {url ? (
+            <button
+              type="button"
+              className="w-full border-t border-slate-100 px-4 py-3 text-left text-[11px] font-semibold text-[#06C755] transition active:bg-slate-50"
+              onClick={() => onOpenPocket(url)}
+            >
+              @pocket で開く →
+            </button>
+          ) : null}
+        </div>
+        {lightboxSrc ? (
+          <AttachmentLightbox
+            src={lightboxSrc}
+            idToken={idToken}
+            alt={lightboxAlt}
+            onClose={() => setLightboxSrc(null)}
+          />
+        ) : null}
+      </>
+    );
+  }
+
   return (
     <div className="overflow-hidden rounded-2xl border border-dashed border-slate-400/70 bg-slate-50 shadow-sm ring-1 ring-slate-200/80">
       <button
@@ -1670,9 +1880,13 @@ export function LiffCalendarMonthPage({
                   newBuild: newBuildCount,
                   existing: existingCount,
                   emptySlots: emptyCount,
-                } = countDayBadges(dayItems);
+                  attachmentItems: attachmentCount,
+                } = countDayBadges(dayItems, config.showAttachmentPreviews);
 
-                const hasEmptySlots = cell.inMonth && emptyCount > 0;
+                const hasEmptySlots =
+                  Boolean(config.showEmptySlotGridStyle) &&
+                  cell.inMonth &&
+                  emptyCount > 0;
                 const accentCls = hasEmptySlots
                   ? accent === "hol"
                     ? "bg-red-50/88 text-red-900 dark:bg-red-950/65 dark:text-red-100"
@@ -1732,6 +1946,14 @@ export function LiffCalendarMonthPage({
                           title={`工事空枠${emptyCount}件`}
                         >
                           空枠{emptyCount}
+                        </span>
+                      ) : null}
+                      {attachmentCount > 0 ? (
+                        <span
+                          className="inline-flex max-w-full items-center justify-center rounded bg-emerald-600 px-1.5 py-[2px] text-[7px] font-extrabold tabular-nums leading-none text-white sm:text-[8px]"
+                          title={`添付画像 ${attachmentCount}件`}
+                        >
+                          画像{attachmentCount}
                         </span>
                       ) : null}
                     </div>
@@ -1860,7 +2082,7 @@ export function LiffCalendarMonthPage({
                                     className="size-1.5 shrink-0 rounded-sm border border-dashed border-slate-500 bg-white"
                                     aria-hidden
                                   />
-                                  工事空枠
+                                  {config.emptySlotSectionLabel ?? "工事空枠"}
                                 </span>
                               </h3>
                               <ul className="flex flex-col gap-3">
@@ -1887,6 +2109,13 @@ export function LiffCalendarMonthPage({
                                     ) : (
                                       <CalendarEmptySlotReadOnly
                                         item={item}
+                                        idToken={idToken}
+                                        attachmentApiPath={
+                                          config.attachmentApiPath
+                                        }
+                                        showAttachmentPreviews={
+                                          config.showAttachmentPreviews
+                                        }
                                         onOpenPocket={openExternal}
                                       />
                                     )}
