@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { buildAtPocketAppRecordsPortalUrl } from "@/lib/atpocket";
 import {
   COMMUNICATION_BRIDGE_CALENDAR_APP_NAME,
-  communicationBridgeCalendarAppIdFromEnv,
   verifyCommunicationBridgeCalendarApiAccess,
 } from "@/lib/communication-bridge-calendar";
 import {
@@ -17,34 +16,23 @@ export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
 
-  const appId = communicationBridgeCalendarAppIdFromEnv();
-  if (!appId) {
+  const apiAccess = await verifyCommunicationBridgeCalendarApiAccess();
+  if (!apiAccess.ok || !apiAccess.appId) {
     return NextResponse.json({
       configured: false,
       disabled: true,
       appName: COMMUNICATION_BRIDGE_CALENDAR_APP_NAME,
-      error: "COMMUNICATION_BRIDGE_CALENDAR_APP_ID が未設定です",
+      error: apiAccess.error ?? "設定を確認してください",
     });
   }
 
-  const portalUrl = buildAtPocketAppRecordsPortalUrl(appId);
+  const portalUrl = buildAtPocketAppRecordsPortalUrl(apiAccess.appId);
   if (!portalUrl) {
     return NextResponse.json({
       configured: false,
       disabled: true,
       appName: COMMUNICATION_BRIDGE_CALENDAR_APP_NAME,
       error: "ATPOCKET_DOMAIN が未設定です",
-    });
-  }
-
-  const apiAccess = await verifyCommunicationBridgeCalendarApiAccess();
-  if (!apiAccess.ok) {
-    return NextResponse.json({
-      configured: false,
-      disabled: true,
-      appName: COMMUNICATION_BRIDGE_CALENDAR_APP_NAME,
-      portalUrl,
-      error: apiAccess.error,
     });
   }
 

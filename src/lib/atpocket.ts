@@ -1030,6 +1030,69 @@ export async function fetchAppFieldsTryKeys(
   return null;
 }
 
+type AtPocketFormRow = {
+  id?: number | string;
+  name?: string;
+};
+
+/** アプリ名で appsId を検索 GET /api/apps/forms */
+export async function fetchAppIdByName(
+  appName: string,
+  auth?: AtPocketFetchAuth,
+): Promise<string | null> {
+  const name = appName.trim();
+  if (!name) return null;
+  const params = new URLSearchParams({
+    name,
+    page: "1",
+    limit: "1000",
+  });
+  const res = await fetchWithMethodOverrideWithRetry(
+    `/api/apps/forms?${params.toString()}`,
+    auth,
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(
+      formatPocketHttpError("list forms", res.status, text, name, auth, {
+        operation: "list forms by name",
+      }),
+    );
+  }
+  if (!text) return null;
+  const json = JSON.parse(text) as { forms?: AtPocketFormRow[] };
+  const forms = json.forms ?? [];
+  const hit = forms.find((f) => f.name === name) ?? forms[0];
+  if (hit?.id == null || String(hit.id).trim() === "") return null;
+  return String(hit.id).trim();
+}
+
+/** 複数 API キーを順に試し、アプリ名から appsId を返す */
+export async function fetchAppIdByNameTryKeys(
+  appName: string,
+  apiKeysInOrder: string[],
+): Promise<string | null> {
+  const dedup = new Set<string>();
+  const keys = apiKeysInOrder
+    .map((k) => k?.trim())
+    .filter((k): k is string => Boolean(k))
+    .filter((k) => {
+      if (dedup.has(k)) return false;
+      dedup.add(k);
+      return true;
+    });
+
+  for (const apiKey of keys) {
+    try {
+      const id = await fetchAppIdByName(appName, { apiKey });
+      if (id) return id;
+    } catch {
+      /* 次のキー */
+    }
+  }
+  return null;
+}
+
 /** 複数 API キーを順に試し、フィールド一覧が取れたら uniqueId の集合を返す。すべて失敗なら null */
 export async function fetchAppFieldUniqueIdsSetTryKeys(
   appsId: string,

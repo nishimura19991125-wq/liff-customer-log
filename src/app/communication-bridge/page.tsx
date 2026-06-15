@@ -142,7 +142,7 @@ export default function CommunicationBridgePage() {
   const configured = Boolean(data?.configured && portalUrl);
   const disabledMessage =
     data?.error ??
-    "COMMUNICATION_BRIDGE_CALENDAR_APP_ID と COMMUNICATION_BRIDGE_CALENDAR_1 の設定を確認してください。";
+    "Netlify の環境変数（COMMUNICATION_BRIDGE_CALENDAR_1 など）を確認してください。";
 
   return (
     <LiffScreen>
