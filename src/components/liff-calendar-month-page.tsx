@@ -465,12 +465,14 @@ function CalendarEmptySlotReadOnly({
   idToken,
   attachmentApiPath,
   showAttachmentPreviews,
+  showEmptySlotNotation = true,
   onOpenPocket,
 }: {
   item: CalendarMonthApiItem;
   idToken: string | null;
   attachmentApiPath?: string;
   showAttachmentPreviews?: boolean;
+  showEmptySlotNotation?: boolean;
   onOpenPocket: (url: string) => void;
 }) {
   const attachments = item.attachments ?? [];
@@ -482,6 +484,12 @@ function CalendarEmptySlotReadOnly({
   const [lightboxAlt, setLightboxAlt] = useState("");
 
   const url = item.accessEditUrl?.trim() ?? "";
+  const hideEmptyTitle =
+    !showEmptySlotNotation &&
+    (!item.line1 ||
+      item.line1 === "（空枠）" ||
+      item.line1 === "（未入力）" ||
+      item.line1 === "添付画像");
 
   if (hasAttachmentImages) {
     return (
@@ -501,7 +509,7 @@ function CalendarEmptySlotReadOnly({
                     src={imageUrl}
                     idToken={idToken}
                     alt={attachment.name || "添付画像"}
-                    className="max-h-72 rounded-xl bg-slate-50"
+                    className="max-h-[min(70vh,640px)] rounded-xl bg-slate-50"
                     onOpen={() => {
                       setLightboxSrc(imageUrl);
                       setLightboxAlt(attachment.name || "添付画像");
@@ -539,26 +547,42 @@ function CalendarEmptySlotReadOnly({
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-dashed border-slate-400/70 bg-slate-50 shadow-sm ring-1 ring-slate-200/80">
+    <div
+      className={`overflow-hidden rounded-2xl shadow-sm ring-1 ring-slate-200/80 ${
+        showEmptySlotNotation
+          ? "border border-dashed border-slate-400/70 bg-slate-50"
+          : "border border-slate-200/90 bg-white"
+      }`}
+    >
       <button
         type="button"
         className="w-full px-4 py-4 text-left transition active:scale-[0.99] active:bg-slate-100 disabled:opacity-60"
         disabled={!url}
         onClick={() => url && onOpenPocket(url)}
       >
-        <div className="mb-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-slate-400/70 bg-slate-200/85 px-2.5 py-1 text-[10px] font-extrabold tracking-wide text-slate-700">
-            工事空枠
-          </span>
-        </div>
-        <p className="text-[16px] font-bold leading-snug text-slate-800">
-          {item.line1 || "（未入力）"}
-        </p>
+        {showEmptySlotNotation ? (
+          <div className="mb-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-slate-400/70 bg-slate-200/85 px-2.5 py-1 text-[10px] font-extrabold tracking-wide text-slate-700">
+              工事空枠
+            </span>
+          </div>
+        ) : null}
+        {!hideEmptyTitle ? (
+          <p className="text-[16px] font-bold leading-snug text-slate-800">
+            {item.line1 || "（未入力）"}
+          </p>
+        ) : null}
         {item.line2 ? (
-          <p className="mt-2 text-[14px] font-semibold text-slate-600">{item.line2}</p>
+          <p
+            className={`${hideEmptyTitle ? "" : "mt-2 "}text-[14px] font-semibold text-slate-600`}
+          >
+            {item.line2}
+          </p>
         ) : null}
         {url ? (
-          <p className="mt-3 text-[11px] font-semibold text-[#06C755]">
+          <p
+            className={`${hideEmptyTitle && !item.line2 ? "" : "mt-3 "}text-[11px] font-semibold text-[#06C755]`}
+          >
             タップして @pocket で開く →
           </p>
         ) : null}
@@ -1924,6 +1948,8 @@ export function LiffCalendarMonthPage({
                       </span>
                     </div>
                     <div className="mt-auto flex min-h-[18px] flex-wrap items-center justify-center gap-0.5 pb-0.5 sm:min-h-[22px] sm:gap-1">
+                      {config.showDayCellBadges !== false ? (
+                        <>
                       {newBuildCount > 0 ? (
                         <span
                           className="inline-flex max-w-[48%] shrink-0 items-center justify-center rounded bg-blue-500 px-1 py-[1px] text-[7px] font-bold tabular-nums leading-none text-white sm:max-w-none sm:text-[10px]"
@@ -1940,7 +1966,7 @@ export function LiffCalendarMonthPage({
                           既{existingCount}
                         </span>
                       ) : null}
-                      {emptyCount > 0 ? (
+                      {emptyCount > 0 && config.showEmptySlotNotation !== false ? (
                         <span
                           className="inline-flex max-w-full items-center justify-center rounded-full border border-dashed border-slate-500/55 bg-slate-200/95 px-1.5 py-[2px] text-[7px] font-extrabold tabular-nums leading-none text-slate-700 ring-1 ring-white/60 sm:text-[8px]"
                           title={`工事空枠${emptyCount}件`}
@@ -1955,6 +1981,8 @@ export function LiffCalendarMonthPage({
                         >
                           画像{attachmentCount}
                         </span>
+                      ) : null}
+                        </>
                       ) : null}
                     </div>
                   </div>
@@ -1972,23 +2000,46 @@ export function LiffCalendarMonthPage({
               id="day-detail-heading"
               className="mb-3 px-1 text-[15px] font-bold text-slate-800 dark:text-white"
             >
-              {formatDayHeading(selectedDayKey)}の予定
+              {formatDayHeading(selectedDayKey)}
+              {config.dayDetailHeadingSuffix ?? "の予定"}
             </h2>
             <LiffCard>
               <div className="px-4 py-4 sm:px-5">
-                {selectedItems.length === 0 ? (
-                  <p className="py-6 text-center text-[14px] text-slate-500">
-                    この日の予定はありません
-                  </p>
-                ) : (
+                {(() => {
+                  const visibleItems =
+                    config.showDayCellBadges === false &&
+                    config.showAttachmentPreviews
+                      ? selectedItems.filter(
+                          (i) =>
+                            i.category === "list" ||
+                            (i.attachments?.length ?? 0) > 0,
+                        )
+                      : selectedItems;
+                  if (visibleItems.length === 0) {
+                    return (
+                      <p className="py-6 text-center text-[14px] text-slate-500">
+                        {config.dayDetailEmptyMessage ??
+                          "この日の予定はありません"}
+                      </p>
+                    );
+                  }
+                  return (
                   <div className="flex flex-col gap-6">
                     {(() => {
-                      const caseItems = selectedItems.filter(
+                      const bridgeCompact = config.showDayCellBadges === false;
+                      const caseItems = visibleItems.filter(
                         (i) => i.category === "list",
                       );
-                      const emptyItems = selectedItems.filter(
-                        (i) => i.category === "empty",
-                      );
+                      const emptyItems = visibleItems.filter((i) => {
+                        if (i.category !== "empty") return false;
+                        if (
+                          config.showEmptySlotNotation === false &&
+                          config.showAttachmentPreviews
+                        ) {
+                          return (i.attachments?.length ?? 0) > 0;
+                        }
+                        return true;
+                      });
 
                       const renderCaseCard = (
                         item: CalendarMonthApiItem,
@@ -2057,15 +2108,17 @@ export function LiffCalendarMonthPage({
                         <>
                           {caseItems.length > 0 ? (
                             <div>
-                              <h3 className="mb-2 px-0.5">
-                                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-extrabold tracking-wide text-emerald-900 ring-1 ring-emerald-200/90">
-                                  <span
-                                    className="size-1.5 shrink-0 rounded-full bg-emerald-600"
-                                    aria-hidden
-                                  />
-                                  案件（お客様名のある工事）
-                                </span>
-                              </h3>
+                              {!bridgeCompact ? (
+                                <h3 className="mb-2 px-0.5">
+                                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-extrabold tracking-wide text-emerald-900 ring-1 ring-emerald-200/90">
+                                    <span
+                                      className="size-1.5 shrink-0 rounded-full bg-emerald-600"
+                                      aria-hidden
+                                    />
+                                    案件（お客様名のある工事）
+                                  </span>
+                                </h3>
+                              ) : null}
                               <ul className="flex flex-col gap-3">
                                 {caseItems.map((item, i) =>
                                   renderCaseCard(item, i),
@@ -2076,15 +2129,17 @@ export function LiffCalendarMonthPage({
 
                           {emptyItems.length > 0 ? (
                             <div>
-                              <h3 className="mb-2 px-0.5">
-                                <span className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-slate-400/70 bg-slate-200/85 px-2.5 py-1 text-[10px] font-extrabold tracking-wide text-slate-700 ring-1 ring-white/70">
-                                  <span
-                                    className="size-1.5 shrink-0 rounded-sm border border-dashed border-slate-500 bg-white"
-                                    aria-hidden
-                                  />
-                                  {config.emptySlotSectionLabel ?? "工事空枠"}
-                                </span>
-                              </h3>
+                              {config.showEmptySlotNotation !== false ? (
+                                <h3 className="mb-2 px-0.5">
+                                  <span className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-slate-400/70 bg-slate-200/85 px-2.5 py-1 text-[10px] font-extrabold tracking-wide text-slate-700 ring-1 ring-white/70">
+                                    <span
+                                      className="size-1.5 shrink-0 rounded-sm border border-dashed border-slate-500 bg-white"
+                                      aria-hidden
+                                    />
+                                    {config.emptySlotSectionLabel ?? "工事空枠"}
+                                  </span>
+                                </h3>
+                              ) : null}
                               <ul className="flex flex-col gap-3">
                                 {emptyItems.map((item, i) => (
                                   <li
@@ -2116,6 +2171,9 @@ export function LiffCalendarMonthPage({
                                         showAttachmentPreviews={
                                           config.showAttachmentPreviews
                                         }
+                                        showEmptySlotNotation={
+                                          config.showEmptySlotNotation
+                                        }
                                         onOpenPocket={openExternal}
                                       />
                                     )}
@@ -2128,7 +2186,8 @@ export function LiffCalendarMonthPage({
                       );
                     })()}
                   </div>
-                )}
+                  );
+                })()}
               </div>
             </LiffCard>
           </section>

@@ -41,6 +41,14 @@ function baseUrl(): string {
   return `https://${normalized}`;
 }
 
+/** 相対パスを @pocket サイトの絶対 URL に変換 */
+export function atPocketAbsoluteUrl(pathOrUrl: string): string {
+  const t = pathOrUrl.trim();
+  if (!t) return "";
+  if (/^https?:\/\//i.test(t)) return t;
+  return `${baseUrl()}${t.startsWith("/") ? t : `/${t}`}`;
+}
+
 /** @pocket Web のアプリ一覧（レコード一覧）URL */
 export function buildAtPocketAppRecordsPortalUrl(appsId: string): string | null {
   const id = appsId.trim();

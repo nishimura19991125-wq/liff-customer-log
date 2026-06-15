@@ -10,6 +10,7 @@ import type {
   CalendarRecordMonthPatch,
 } from "@/lib/calendar-api-types";
 import {
+  atPocketFileHasPayload,
   isDisplayableImageFile,
   parseAtPocketFileField,
 } from "@/lib/at-pocket-file-field";
@@ -97,6 +98,7 @@ const HOUSING_STATUS_OTHER = "__HS_OTHER__";
 function extractImageAttachmentMeta(
   recObj: Record<string, unknown>,
   attachmentFieldId: string | null | undefined,
+  includeAllFiles = false,
 ): CalendarAttachmentMeta[] {
   const fieldId = attachmentFieldId?.trim();
   if (!fieldId) return [];
@@ -104,7 +106,8 @@ function extractImageAttachmentMeta(
   const out: CalendarAttachmentMeta[] = [];
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index];
-    if (!isDisplayableImageFile(file)) continue;
+    if (!atPocketFileHasPayload(file)) continue;
+    if (!includeAllFiles && !isDisplayableImageFile(file)) continue;
     out.push({
       index,
       name: file.name,
@@ -652,6 +655,7 @@ function recordToEvent(
   fids: ConstructionFieldIds,
   mapAddressIds: MapAddressFieldIds,
   attachmentFieldId?: string | null,
+  attachmentIncludeAllFiles = false,
 ): CalendarEventInternal | null {
   const recObj =
     rec && rec.record && typeof rec.record === "object"
@@ -753,7 +757,11 @@ function recordToEvent(
     recObj,
     mapAddressIds,
   );
-  const attachments = extractImageAttachmentMeta(recObj, attachmentFieldId);
+  const attachments = extractImageAttachmentMeta(
+    recObj,
+    attachmentFieldId,
+    attachmentIncludeAllFiles,
+  );
 
   return {
     start,
@@ -1223,6 +1231,8 @@ export type BuildCalendarPayloadOptions = {
   extraHolidayKeys?: string[];
   includeSandwichNationalHoliday?: boolean;
   attachmentFieldId?: string | null;
+  /** 画像以外の添付もメタデータに含める（ブリッジカレンダー向け） */
+  attachmentIncludeAllFiles?: boolean;
 };
 
 export function buildCalendarPayload(
@@ -1240,10 +1250,17 @@ export function buildCalendarPayload(
     constructionFields,
   );
   const attachmentFieldId = opts?.attachmentFieldId?.trim() || null;
+  const attachmentIncludeAllFiles = opts?.attachmentIncludeAllFiles === true;
 
   const events: CalendarEventInternal[] = [];
   for (const rec of constructionRecords) {
-    const ev = recordToEvent(rec, fids, mapAddressIds, attachmentFieldId);
+    const ev = recordToEvent(
+      rec,
+      fids,
+      mapAddressIds,
+      attachmentFieldId,
+      attachmentIncludeAllFiles,
+    );
     if (ev) events.push(ev);
   }
 

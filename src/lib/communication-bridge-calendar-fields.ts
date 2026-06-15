@@ -32,6 +32,14 @@ function pickAttachmentFieldByCaption(fields: AtPocketFieldRow[]): string | null
   return null;
 }
 
+const FILE_FIELD_TYPES = new Set([
+  "File",
+  "Attachment",
+  "Attachments",
+  "Image",
+  "Images",
+]);
+
 /** コミュニケーションブリッジカレンダーの添付画像列 uniqueId */
 export function resolveCommunicationBridgeAttachmentFieldId(
   fields: AtPocketFieldRow[],
@@ -43,7 +51,7 @@ export function resolveCommunicationBridgeAttachmentFieldId(
   }
 
   for (const f of fields) {
-    if ((f.fieldType ?? "").trim() === "File") {
+    if (FILE_FIELD_TYPES.has((f.fieldType ?? "").trim())) {
       const id = f.uniqueId?.trim();
       if (id) return id;
     }

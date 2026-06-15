@@ -13,6 +13,14 @@ export type LiffCalendarPageConfig = {
   emptySlotSectionLabel?: string;
   /** 月マスに空枠用の点線枠を付ける */
   showEmptySlotGridStyle?: boolean;
+  /** 「工事空枠」「空枠」などの表記を表示する（工事カレンダー向け） */
+  showEmptySlotNotation?: boolean;
+  /** 月マス内のバッジ（新・既・空枠・画像など）を表示する */
+  showDayCellBadges?: boolean;
+  /** 日付詳細見出しの末尾（例: のコミュニケーションブリッジ） */
+  dayDetailHeadingSuffix?: string;
+  /** 日付詳細が空のときのメッセージ */
+  dayDetailEmptyMessage?: string;
 };
 
 export const CONSTRUCTION_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig = {
@@ -41,6 +49,9 @@ export const COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig =
     showNewsMarquee: false,
     showAttachmentPreviews: true,
     attachmentApiPath: "/api/communication-bridge/attachment",
-    emptySlotSectionLabel: "スケジュール",
     showEmptySlotGridStyle: false,
+    showEmptySlotNotation: false,
+    showDayCellBadges: false,
+    dayDetailHeadingSuffix: "のコミュニケーションブリッジ",
+    dayDetailEmptyMessage: "この日のコミュニケーションブリッジはありません",
   };

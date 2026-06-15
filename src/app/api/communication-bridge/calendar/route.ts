@@ -9,6 +9,8 @@ import {
 } from "@/lib/calendar-kojo";
 import { resolveConstructionMapAddressFieldIds } from "@/lib/map-address-fields";
 import { resolveCommunicationBridgeAttachmentFieldId } from "@/lib/communication-bridge-calendar-fields";
+import { cacheCommunicationBridgeAttachmentFiles } from "@/lib/communication-bridge-attachment-cache";
+import { parseAtPocketFileField } from "@/lib/at-pocket-file-field";
 import {
   buildCommunicationBridgeCalendarPayloadCacheKey,
   communicationBridgeCalendarCacheTtlMs,
@@ -146,6 +148,26 @@ export async function GET(request: Request) {
             pocketQuery,
           );
 
+        if (attachmentFieldId) {
+          for (const rec of constructionRecords) {
+            const rid =
+              rec.recordId != null
+                ? String(rec.recordId)
+                : rec.id != null
+                  ? String(rec.id)
+                  : "";
+            const recObj =
+              rec.record && typeof rec.record === "object"
+                ? (rec.record as Record<string, unknown>)
+                : null;
+            if (!rid || !recObj) continue;
+            const files = parseAtPocketFileField(recObj[attachmentFieldId]);
+            if (files.length > 0) {
+              cacheCommunicationBridgeAttachmentFiles(calAppId, rid, files);
+            }
+          }
+        }
+
         return buildCalendarPayload(
           year,
           month,
@@ -157,6 +179,7 @@ export async function GET(request: Request) {
             extraHolidayKeys,
             includeSandwichNationalHoliday: includeSandwich,
             attachmentFieldId,
+            attachmentIncludeAllFiles: true,
           },
         );
       },
