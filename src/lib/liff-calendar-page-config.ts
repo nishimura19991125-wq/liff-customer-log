@@ -25,6 +25,8 @@ export type LiffCalendarPageConfig = {
   desktopSideBySideLayout?: boolean;
   /** 添付画像を画面内に収めて全体表示する */
   fitAttachmentToViewport?: boolean;
+  /** 選択中の日付をカレンダー上で強調表示する */
+  emphasizeSelectedDay?: boolean;
 };
 
 export const CONSTRUCTION_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig = {
@@ -60,4 +62,5 @@ export const COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig =
     dayDetailEmptyMessage: "この日のコミュニケーションブリッジはありません",
     desktopSideBySideLayout: true,
     fitAttachmentToViewport: true,
+    emphasizeSelectedDay: true,
   };

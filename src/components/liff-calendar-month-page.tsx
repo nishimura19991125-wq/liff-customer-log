@@ -1938,6 +1938,7 @@ export function LiffCalendarMonthPage({
                 const isToday = cell.dayKey === todayKey && cell.inMonth;
                 const isSelected =
                   Boolean(cell.dayKey && selectedDayKey === cell.dayKey);
+                const emphasizeSelectedDay = config.emphasizeSelectedDay === true;
                 const {
                   newBuild: newBuildCount,
                   existing: existingCount,
@@ -1949,7 +1950,10 @@ export function LiffCalendarMonthPage({
                   Boolean(config.showEmptySlotGridStyle) &&
                   cell.inMonth &&
                   emptyCount > 0;
-                const accentCls = hasEmptySlots
+                const accentCls =
+                  isSelected && emphasizeSelectedDay && cell.inMonth
+                    ? "bg-sky-100/98 text-sky-950 dark:bg-sky-950/75 dark:text-sky-50"
+                    : hasEmptySlots
                   ? accent === "hol"
                     ? "bg-red-50/88 text-red-900 dark:bg-red-950/65 dark:text-red-100"
                     : accent === "sun"
@@ -1963,12 +1967,27 @@ export function LiffCalendarMonthPage({
                   ? "border-2 border-dashed border-slate-400/70 shadow-inner shadow-slate-200/30"
                   : "shadow-sm ring-1 ring-slate-200/70";
 
+                const selectedCellCls = isSelected
+                  ? emphasizeSelectedDay
+                    ? "z-[1] border-2 border-sky-500 shadow-[0_0_0_2px_rgba(14,165,233,0.25)] dark:border-sky-400 dark:shadow-[0_0_0_2px_rgba(56,189,248,0.2)]"
+                    : "z-[1] ring-2 ring-[#06C755] ring-offset-1 ring-offset-white dark:ring-offset-slate-900"
+                  : "";
+
+                const dayNumCls = isSelected && emphasizeSelectedDay
+                  ? isToday
+                    ? "bg-[#06C755] text-white shadow-md ring-2 ring-white dark:ring-slate-900"
+                    : "bg-sky-500 text-white shadow-md ring-2 ring-sky-200 dark:ring-sky-700"
+                  : isToday
+                    ? "bg-[#06C755] text-white shadow-sm shadow-emerald-700/25"
+                    : "bg-white/75 text-current ring-1 ring-black/[0.06] dark:bg-slate-900/50 dark:ring-white/10";
+
                 return (
                   <div
                     key={`${idx}-${cell.dayKey ?? "x"}`}
                     role="button"
                     tabIndex={cell.inMonth ? 0 : -1}
-                    className={`flex min-h-[3.25rem] min-w-0 flex-col rounded-lg p-0.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#06C755] sm:min-h-[4.25rem] sm:rounded-xl sm:p-1 ${accentCls} ${cellFrameCls} ${cell.inMonth ? "cursor-pointer active:brightness-[0.97]" : "cursor-default opacity-[0.42]"} ${isSelected ? "z-[1] ring-2 ring-[#06C755] ring-offset-1 ring-offset-white dark:ring-offset-slate-900" : ""}`}
+                    aria-pressed={isSelected}
+                    className={`flex min-h-[3.25rem] min-w-0 flex-col rounded-lg p-0.5 transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#06C755] sm:min-h-[4.25rem] sm:rounded-xl sm:p-1 ${accentCls} ${cellFrameCls} ${cell.inMonth ? "cursor-pointer active:brightness-[0.97]" : "cursor-default opacity-[0.42]"} ${selectedCellCls}`}
                     onClick={() => selectDay(cell)}
                     onKeyDown={(e) => {
                       if (!cell.inMonth) return;
@@ -1980,7 +1999,7 @@ export function LiffCalendarMonthPage({
                   >
                     <div className="flex justify-center sm:justify-end">
                       <span
-                        className={`flex size-6 items-center justify-center rounded-full text-[11px] font-bold tabular-nums leading-none sm:size-7 sm:text-[12px] ${isToday ? "bg-[#06C755] text-white shadow-sm shadow-emerald-700/25" : "bg-white/75 text-current ring-1 ring-black/[0.06] dark:bg-slate-900/50 dark:ring-white/10"}`}
+                        className={`flex size-6 items-center justify-center rounded-full text-[11px] font-bold tabular-nums leading-none sm:size-7 sm:text-[12px] ${dayNumCls} ${isSelected && emphasizeSelectedDay ? "scale-110" : ""}`}
                       >
                         {cell.dayNum}
                       </span>
@@ -2040,9 +2059,15 @@ export function LiffCalendarMonthPage({
           >
             <h2
               id="day-detail-heading"
-              className={`mb-3 px-1 text-[15px] font-bold text-slate-800 dark:text-white ${config.desktopSideBySideLayout ? "md:mb-2 md:text-[14px]" : ""}`}
+              className={`mb-3 px-1 text-[15px] font-bold text-slate-800 dark:text-white ${config.desktopSideBySideLayout ? "md:mb-2 md:text-[14px]" : ""} ${config.emphasizeSelectedDay ? "flex flex-wrap items-center gap-2" : ""}`}
             >
-              {formatDayHeading(selectedDayKey)}
+              {config.emphasizeSelectedDay ? (
+                <span className="inline-flex items-center rounded-full bg-sky-500 px-3 py-1 text-[13px] font-bold text-white shadow-sm dark:bg-sky-600">
+                  {formatDayHeading(selectedDayKey)}
+                </span>
+              ) : (
+                formatDayHeading(selectedDayKey)
+              )}
               {config.dayDetailHeadingSuffix ?? "の予定"}
             </h2>
             <LiffCard>
