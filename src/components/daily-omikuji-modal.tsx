@@ -1,12 +1,13 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import { parseFortuneDetailParts } from "@/lib/daily-omikuji-detail";
 import type { DailyFortuneView } from "@/lib/home-business-fortune";
 
 type DailyOmikujiModalProps = {
   fortune: DailyFortuneView;
-  onNext: () => void;
-  onSkip: () => void;
+  footer: ReactNode;
 };
 
 const RANK_STYLES: Record<string, string> = {
@@ -26,11 +27,7 @@ function parseRank(headline: string): { rank: string; body: string } {
   return { rank: match[1]!, body: match[2]!.trim() };
 }
 
-export function DailyOmikujiModal({
-  fortune,
-  onNext,
-  onSkip,
-}: DailyOmikujiModalProps) {
+export function DailyOmikujiModal({ fortune, footer }: DailyOmikujiModalProps) {
   const { rank, body } = parseRank(fortune.headline);
   const rankStyle =
     RANK_STYLES[rank] ??
@@ -114,21 +111,8 @@ export function DailyOmikujiModal({
             ) : null}
           </div>
 
-          <div className="space-y-2 border-t border-amber-200/80 px-4 py-4 dark:border-amber-800/40">
-            <button
-              type="button"
-              onClick={onNext}
-              className="w-full rounded-xl bg-amber-600 py-3 text-sm font-bold text-white shadow-md transition-colors active:bg-amber-700 dark:bg-amber-700 dark:active:bg-amber-800"
-            >
-              勤怠登録へ
-            </button>
-            <button
-              type="button"
-              onClick={onSkip}
-              className="w-full rounded-xl py-2.5 text-sm font-medium text-amber-900/70 transition-colors active:text-amber-950 dark:text-amber-300/80 dark:active:text-amber-200"
-            >
-              スキップ
-            </button>
+          <div className="border-t border-amber-200/80 px-4 py-4 dark:border-amber-800/40">
+            {footer}
           </div>
         </div>
       </div>
