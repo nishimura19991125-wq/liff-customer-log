@@ -3,8 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { DailyOmikujiModal } from "@/components/daily-omikuji-modal";
+import { MeetingSetCreatedInputAlert } from "@/components/meeting-set-created-input-alert";
 import type { DailyFortuneView } from "@/lib/home-business-fortune";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
+import {
+  fetchYesterdaySetCreatedMeetings,
+  yesterdayDateLabelJst,
+} from "@/lib/meeting-schedule-yesterday-client";
+import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
 
 type AttendancePreview = {
   configured: boolean;
@@ -39,6 +45,9 @@ export function DailyOmikujiFlow({
   const [preview, setPreview] = useState<AttendancePreview | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [setCreatedAlertItems, setSetCreatedAlertItems] = useState<
+    MeetingScheduleItem[] | null
+  >(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,6 +100,11 @@ export function DailyOmikujiFlow({
       }
       if (!res.ok) {
         if (res.status === 409 && data.clockIn) {
+          const pending = await fetchYesterdaySetCreatedMeetings(idToken);
+          if (pending.length > 0) {
+            setSetCreatedAlertItems(pending);
+            return;
+          }
           setFeedback(`本日は出勤済みです（${formatDisplayTime(data.clockIn)}）`);
           window.setTimeout(onComplete, 900);
           return;
@@ -101,6 +115,11 @@ export function DailyOmikujiFlow({
               ? "データ取得の利用上限に達しました。しばらく待ってから再度お試しください。"
               : "出勤登録に失敗しました"),
         );
+        return;
+      }
+      const pending = await fetchYesterdaySetCreatedMeetings(idToken);
+      if (pending.length > 0) {
+        setSetCreatedAlertItems(pending);
         return;
       }
       setFeedback(`出勤を登録しました（${formatDisplayTime(data.clockIn)}）`);
@@ -203,6 +222,16 @@ export function DailyOmikujiFlow({
       </div>
     );
   })();
+
+  if (setCreatedAlertItems && setCreatedAlertItems.length > 0) {
+    return (
+      <MeetingSetCreatedInputAlert
+        items={setCreatedAlertItems}
+        dateLabel={yesterdayDateLabelJst()}
+        onClose={onComplete}
+      />
+    );
+  }
 
   return <DailyOmikujiModal fortune={fortune} footer={footer} />;
 }

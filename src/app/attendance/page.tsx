@@ -17,10 +17,16 @@ import {
   LiffStaffBindPanel,
   LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
+import { MeetingSetCreatedInputAlert } from "@/components/meeting-set-created-input-alert";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
+import {
+  fetchYesterdaySetCreatedMeetings,
+  yesterdayDateLabelJst,
+} from "@/lib/meeting-schedule-yesterday-client";
+import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -93,6 +99,9 @@ export default function AttendancePage() {
   const [idToken, setIdToken] = useState<string | null>(null);
   const [punching, setPunching] = useState<"in" | "out" | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [setCreatedAlertItems, setSetCreatedAlertItems] = useState<
+    MeetingScheduleItem[] | null
+  >(null);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -207,6 +216,13 @@ export default function AttendancePage() {
         return;
       }
       await mutateStatus(data, { revalidate: false });
+      if (kind === "in") {
+        const pending = await fetchYesterdaySetCreatedMeetings(idToken);
+        if (pending.length > 0) {
+          setSetCreatedAlertItems(pending);
+          return;
+        }
+      }
       setFeedback(kind === "in" ? "出勤を打刻しました" : "退勤を打刻しました");
     } catch {
       setFeedback("打刻に失敗しました");
@@ -484,6 +500,14 @@ export default function AttendancePage() {
           </>
         )}
       </main>
+      {setCreatedAlertItems && setCreatedAlertItems.length > 0 ? (
+        <MeetingSetCreatedInputAlert
+          items={setCreatedAlertItems}
+          dateLabel={yesterdayDateLabelJst()}
+          onClose={() => setSetCreatedAlertItems(null)}
+          zIndexClass="z-[100]"
+        />
+      ) : null}
     </LiffScreen>
   );
 }
