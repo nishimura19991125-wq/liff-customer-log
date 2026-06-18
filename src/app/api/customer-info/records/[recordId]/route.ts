@@ -17,7 +17,6 @@ import {
   formatCustomerInfoRequiredValidationError,
 } from "@/lib/customer-info-form/validate";
 import {
-  customerInfoFormFieldsCsv,
   formValuesFromPutBody,
   readCustomerInfoFormValuesFromRecord,
   resolveCustomerInfoFormFieldId,
@@ -155,23 +154,7 @@ export async function GET(request: Request, ctx: RouteCtx) {
         );
       }
 
-      const fetchCsv = [
-        displayCsv,
-        customerInfoFormFieldsCsv(resolved),
-        customerInfoFormFieldsCsv(transferResolve.resolved),
-      ]
-        .filter(Boolean)
-        .join(",");
-
-      let row = await fetchRecordById(
-        cfg.appId,
-        recordId,
-        pocketAuth,
-        fetchCsv,
-      );
-      if (!row?.record) {
-        row = await fetchRecordById(cfg.appId, recordId, pocketAuth);
-      }
+      const row = await fetchRecordById(cfg.appId, recordId, pocketAuth);
       if (!row?.record || typeof row.record !== "object") {
         return NextResponse.json(
           { error: "レコードが見つかりません" },

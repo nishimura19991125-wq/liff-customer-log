@@ -46,7 +46,6 @@ import {
   splitJapaneseFullName,
   syncCombinedNameFields,
 } from "@/lib/customer-info-form/name-parts";
-import { applyCustomerInfoHiddenDefaultsToValues } from "@/lib/customer-info-form/rules";
 import { inferPanelComboFromValues } from "@/lib/customer-info-form/panel-combo";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 import {
@@ -303,7 +302,7 @@ function CustomerInfoPageContent() {
             }
           }
           initial.panelCombo = inferPanelComboFromValues(initial);
-          setEditValues(applyCustomerInfoHiddenDefaultsToValues(initial));
+          setEditValues(initial);
           setFormFields(data.formFields);
           setMissingCaptions(data.missingCaptions);
           setRequiredFieldErrors(new Set());

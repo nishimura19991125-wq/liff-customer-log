@@ -251,9 +251,30 @@ function hiddenPayloadValue(
   return def.hiddenValue ?? HIDDEN_DASH;
 }
 
+function checkboxSelections(raw: string): string[] {
+  return raw
+    .split(/[,、]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * 非表示項目を PUT するとき、フォームに実データが残っている場合は @pocket を上書きしない。
+ * （設置種別未読込などで一時的に非表示になった書類回収状況等を "-" で消さない）
+ */
+function shouldPreserveHiddenFieldOnPut(
+  raw: string,
+  hiddenFallback: string,
+  hiddenPut: string,
+): boolean {
+  if (isEmptyPocketInput(raw)) return false;
+  if (raw === hiddenFallback || raw === hiddenPut) return false;
+  return true;
+}
+
 /**
  * 表示状態に応じて @pocket PUT 用 payload（schema uniqueId → 値）を組み立てる。
- * 非表示項目は "-"（または hiddenValue）を送る。
+ * 非表示項目は "-"（または hiddenValue）を送る。ただし意図的にクリアした場合のみ。
  */
 export function buildCustomerInfoFormPayload(
   values: CustomerInfoFormValues,
@@ -263,26 +284,45 @@ export function buildCustomerInfoFormPayload(
   for (const field of resolved) {
     if (field.liffOnly || field.hiddenInForm) continue;
     const visible = isCustomerInfoFormFieldVisible(field.key, values);
+    const raw = norm(values[field.key]);
     if (field.type === "checkbox-group") {
-      payload[field.fieldId] = visible
-        ? checkboxGroupValueToPocketArray(
-            norm(values[field.key]),
-            field.options,
-          )
-        : [];
+      if (visible) {
+        payload[field.fieldId] = checkboxGroupValueToPocketArray(
+          raw,
+          field.options,
+        );
+      } else if (checkboxSelections(raw).length === 0) {
+        payload[field.fieldId] = [];
+      }
       continue;
     }
     if (field.type === "date") {
       if (!visible) continue;
-      const pocketDate = dateValueForPocket(norm(values[field.key]));
+      const pocketDate = dateValueForPocket(raw);
       if (pocketDate) payload[field.fieldId] = pocketDate;
       continue;
     }
     const hiddenFallback = hiddenPayloadValue(field);
+    if (!visible) {
+      const hiddenPut = pocketFieldValueForPut(
+        field.key,
+        raw,
+        false,
+        hiddenFallback,
+        values,
+      );
+      if (
+        shouldPreserveHiddenFieldOnPut(raw, hiddenFallback, hiddenPut)
+      ) {
+        continue;
+      }
+      payload[field.fieldId] = hiddenPut;
+      continue;
+    }
     payload[field.fieldId] = pocketFieldValueForPut(
       field.key,
-      norm(values[field.key]),
-      visible,
+      raw,
+      true,
       hiddenFallback,
       values,
     );
