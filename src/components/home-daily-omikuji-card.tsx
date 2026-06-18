@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { parseFortuneDetailParts } from "@/lib/daily-omikuji-detail";
+import { FortuneDetailPartsList } from "@/components/fortune-detail-parts-list";
 import {
   DAILY_OMIKUJI_SHOWN_EVENT,
   isDailyOmikujiShownToday,
@@ -60,7 +60,6 @@ export function HomeDailyOmikujiCard({ staffName }: Props) {
     [staffName],
   );
   const { rank, body } = parseRank(fortune.headline);
-  const details = parseFortuneDetailParts(fortune.detailLine);
   const rankStyle =
     RANK_STYLES[rank] ?? "bg-amber-400 text-red-900";
 
@@ -84,34 +83,10 @@ export function HomeDailyOmikujiCard({ staffName }: Props) {
           <p className="mt-1 text-[14px] font-semibold leading-snug text-slate-800 dark:text-slate-100">
             {body}
           </p>
-          <dl className="mt-2 space-y-1 text-[12px] leading-relaxed text-slate-600 dark:text-slate-400">
-            {details.color ? (
-              <div className="flex gap-1.5">
-                <dt className="shrink-0 font-medium text-slate-500 dark:text-slate-500">
-                  ラッキーカラー
-                </dt>
-                <dd>{details.color}</dd>
-              </div>
-            ) : null}
-            {details.item ? (
-              <div className="flex gap-1.5">
-                <dt className="shrink-0 font-semibold text-amber-800 dark:text-amber-300">
-                  ラッキーアイテム
-                </dt>
-                <dd className="font-medium text-slate-700 dark:text-slate-300">
-                  {details.item}
-                </dd>
-              </div>
-            ) : null}
-            {details.action ? (
-              <div className="flex gap-1.5">
-                <dt className="shrink-0 font-medium text-slate-500 dark:text-slate-500">
-                  ラッキーアクション
-                </dt>
-                <dd>{details.action}</dd>
-              </div>
-            ) : null}
-          </dl>
+          <FortuneDetailPartsList
+            detailLine={fortune.detailLine}
+            variant="card"
+          />
         </div>
       </div>
     </section>

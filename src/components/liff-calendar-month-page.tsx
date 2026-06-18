@@ -17,7 +17,6 @@ import {
 import { CustomerNameSplitInput } from "@/components/customer-name-split-input";
 import { CalendarMonthSkeleton } from "@/components/calendar-month-skeleton";
 import { MapNavigationButton } from "@/components/map-navigation-button";
-import { NewsMarquee } from "@/components/news-marquee";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
@@ -1813,13 +1812,6 @@ export function LiffCalendarMonthPage({
             </p>
           </div>
         </div>
-
-        {config.showNewsMarquee ? (
-          <NewsMarquee
-            staffName={account.boundStaffName}
-            className="-mx-4 mb-4 sm:-mx-0"
-          />
-        ) : null}
 
         {data?.rateLimited && data.rosterMessage ? (
           <p

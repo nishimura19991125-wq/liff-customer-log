@@ -5,7 +5,6 @@ export type LiffCalendarPageConfig = {
   disabledFallbackMessage: string;
   enableNewRecordPanel: boolean;
   enableEmptySlotFill: boolean;
-  showNewsMarquee: boolean;
   /** 添付画像を空枠の代わりに表示 */
   showAttachmentPreviews?: boolean;
   attachmentApiPath?: string;
@@ -38,7 +37,6 @@ export const CONSTRUCTION_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig = {
     "工事カレンダーは環境変数 CALENDAR_APP_ID 設定後に利用できます。",
   enableNewRecordPanel: true,
   enableEmptySlotFill: true,
-  showNewsMarquee: true,
   showEmptySlotGridStyle: true,
 };
 
@@ -52,7 +50,6 @@ export const COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig =
       "コミュニケーションブリッジは環境変数の設定後に利用できます。",
     enableNewRecordPanel: false,
     enableEmptySlotFill: false,
-    showNewsMarquee: false,
     showAttachmentPreviews: true,
     attachmentApiPath: "/api/communication-bridge/attachment",
     showEmptySlotGridStyle: false,

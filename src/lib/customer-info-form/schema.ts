@@ -1,6 +1,5 @@
 import {
   COLLECTION_STATUS_TWO_OPTIONS,
-  COLLECTION_STATUS_WITH_NONE_OPTIONS,
   COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS,
   DOCUMENT_RADIO_HIDDEN_VALUE,
   FIT_TYPE_OPTIONS,
@@ -312,7 +311,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     key: "groupCreditLifeInsurance",
     caption: "団体信用生命保険",
     type: "radio",
-    options: [...COLLECTION_STATUS_WITH_NONE_OPTIONS],
+    options: [...COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS],
     hiddenValue: "不要",
   },
   {

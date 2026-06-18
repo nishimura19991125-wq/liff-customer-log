@@ -7,14 +7,49 @@ export type FortuneDetailParts = {
 };
 
 function readPartValue(part: string): { key: string; value: string } {
-  const colonIdx = part.indexOf("：");
-  if (colonIdx >= 0) {
+  const match = part.match(/^(.+?)[：:](.+)$/);
+  if (match) {
     return {
-      key: part.slice(0, colonIdx).trim(),
-      value: part.slice(colonIdx + 1).trim(),
+      key: match[1]!.trim(),
+      value: match[2]!.trim(),
     };
   }
   return { key: "", value: part.trim() };
+}
+
+function assignFortunePart(
+  result: FortuneDetailParts,
+  key: string,
+  value: string,
+  rawPart: string,
+): void {
+  const label = `${key}${rawPart}`;
+  if (label.includes("カラー") || rawPart.startsWith("👔")) {
+    if (!result.color) {
+      result.color =
+        key && value
+          ? value
+          : rawPart.replace(/^👔(?:カラー)?[：:]?/u, "").trim();
+    }
+    return;
+  }
+  if (label.includes("アイテム") || rawPart.startsWith("🔑")) {
+    if (!result.item) {
+      result.item =
+        key && value
+          ? value
+          : rawPart.replace(/^🔑(?:アイテム)?[：:]?/u, "").trim();
+    }
+    return;
+  }
+  if (label.includes("アクション") || rawPart.startsWith("🏃")) {
+    if (!result.action) {
+      result.action =
+        key && value
+          ? value
+          : rawPart.replace(/^🏃(?:アクション)?[：:]?/u, "").trim();
+    }
+  }
 }
 
 export function parseFortuneDetailParts(detailLine: string): FortuneDetailParts {
@@ -28,16 +63,35 @@ export function parseFortuneDetailParts(detailLine: string): FortuneDetailParts 
     const trimmed = part.trim();
     if (!trimmed) continue;
     const { key, value } = readPartValue(trimmed);
-    if (!value) continue;
-
-    if (key.includes("カラー")) {
-      result.color = value;
-    } else if (key.includes("アイテム")) {
-      result.item = value;
-    } else if (key.includes("アクション")) {
-      result.action = value;
-    }
+    if (!value && !key) continue;
+    assignFortunePart(result, key, value, trimmed);
   }
 
   return result;
+}
+
+export function fortuneDetailRows(
+  parts: FortuneDetailParts,
+): Array<{ icon: string; label: string; value: string; emphasize?: boolean }> {
+  const rows: Array<{
+    icon: string;
+    label: string;
+    value: string;
+    emphasize?: boolean;
+  }> = [];
+  if (parts.color) {
+    rows.push({ icon: "👔", label: "ラッキーカラー", value: parts.color });
+  }
+  if (parts.item) {
+    rows.push({
+      icon: "🔑",
+      label: "ラッキーアイテム",
+      value: parts.item,
+      emphasize: true,
+    });
+  }
+  if (parts.action) {
+    rows.push({ icon: "🏃", label: "ラッキーアクション", value: parts.action });
+  }
+  return rows;
 }

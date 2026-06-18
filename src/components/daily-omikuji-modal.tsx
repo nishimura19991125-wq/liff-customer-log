@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-import { parseFortuneDetailParts } from "@/lib/daily-omikuji-detail";
+import { FortuneDetailPartsList } from "@/components/fortune-detail-parts-list";
 import type { DailyFortuneView } from "@/lib/home-business-fortune";
 
 type DailyOmikujiModalProps = {
@@ -32,18 +32,6 @@ export function DailyOmikujiModal({ fortune, footer }: DailyOmikujiModalProps) {
   const rankStyle =
     RANK_STYLES[rank] ??
     "bg-gradient-to-br from-amber-300 to-orange-400 text-red-900 shadow-amber-500/30";
-  const details = parseFortuneDetailParts(fortune.detailLine);
-  const detailRows = [
-    details.color
-      ? { icon: "👔", label: "ラッキーカラー", value: details.color }
-      : null,
-    details.item
-      ? { icon: "🔑", label: "ラッキーアイテム", value: details.item }
-      : null,
-    details.action
-      ? { icon: "🏃", label: "ラッキーアクション", value: details.action }
-      : null,
-  ].filter(Boolean) as Array<{ icon: string; label: string; value: string }>;
 
   return (
     <div
@@ -79,36 +67,7 @@ export function DailyOmikujiModal({ fortune, footer }: DailyOmikujiModalProps) {
               {body}
             </p>
 
-            {detailRows.length > 0 ? (
-              <ul className="mt-5 space-y-2 rounded-xl bg-white/70 p-3 text-sm dark:bg-slate-800/60">
-                {detailRows.map((item) => (
-                  <li
-                    key={item.label}
-                    className="flex gap-2 leading-snug text-slate-700 dark:text-slate-300"
-                  >
-                    <span className="shrink-0" aria-hidden>
-                      {item.icon}
-                    </span>
-                    <span>
-                      <span className="font-medium">{item.label}</span>
-                      <span className="text-slate-500 dark:text-slate-400">
-                        {" "}
-                        ·{" "}
-                      </span>
-                      <span
-                        className={
-                          item.label === "ラッキーアイテム"
-                            ? "font-semibold text-slate-800 dark:text-slate-100"
-                            : ""
-                        }
-                      >
-                        {item.value}
-                      </span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+            <FortuneDetailPartsList detailLine={fortune.detailLine} />
           </div>
 
           <div className="border-t border-amber-200/80 px-4 py-4 dark:border-amber-800/40">
