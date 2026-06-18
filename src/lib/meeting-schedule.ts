@@ -17,6 +17,12 @@ import {
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { jstDateKey } from "@/lib/missing-documents-cache";
 import {
+  collectMapAddressFieldsCsv,
+  readMapAddressesFromRecord,
+  resolveApoMapAddressFieldIds,
+  type MapAddressFieldIds,
+} from "@/lib/map-address-fields";
+import {
   meetingScheduleAllowedStatuses,
   meetingScheduleCloseTypeOptions,
   meetingScheduleEditableStatuses,
@@ -265,10 +271,35 @@ function normalizeEditableStatus(statusRaw: string): string | null {
   return partial ?? null;
 }
 
+function meetingScheduleWantedFieldCsv(
+  fieldMap: MeetingScheduleFieldMap,
+  mapAddressIds: MapAddressFieldIds,
+): string {
+  const ids = new Set<string>();
+  for (const id of [
+    fieldMap.clPerson,
+    fieldMap.scheduledDate,
+    fieldMap.salesperson,
+    fieldMap.customerName,
+    fieldMap.city,
+    fieldMap.meetingTime,
+    fieldMap.estimateStatus,
+    fieldMap.apoType,
+    fieldMap.meetingPlace,
+    fieldMap.meetingDate,
+    fieldMap.closeType,
+    ...collectMapAddressFieldsCsv(mapAddressIds),
+  ]) {
+    if (id?.trim()) ids.add(id.trim());
+  }
+  return [...ids].join(",");
+}
+
 function buildMeetingItemFromRecord(
   recObj: Record<string, unknown>,
   fieldMap: MeetingScheduleFieldMap,
   recordId: string,
+  mapAddressIds: MapAddressFieldIds,
 ): MeetingScheduleItem | null {
   const estimateStatus = fieldMap.estimateStatus
     ? coerceCustomerInfoDisplayString(
@@ -328,6 +359,11 @@ function buildMeetingItemFromRecord(
 
   if (!customerName.trim()) return null;
 
+  const { pinpointAddress, normalAddress } = readMapAddressesFromRecord(
+    recObj,
+    mapAddressIds,
+  );
+
   return {
     recordId,
     customerName: customerName.trim(),
@@ -344,6 +380,8 @@ function buildMeetingItemFromRecord(
     sortMinutes: timeMatch ? parseTimeToMinutes(timeMatch[1]!) : 24 * 60,
     scheduledYmd: schedule.ymd,
     scheduledDateLabel: scheduleDateLabel(schedule.ymd),
+    pinpointAddress,
+    normalAddress,
   };
 }
 
@@ -352,6 +390,7 @@ function buildMeetingItem(
   fieldMap: MeetingScheduleFieldMap,
   targetYmd: string,
   recordId: string,
+  mapAddressIds: MapAddressFieldIds,
 ): MeetingScheduleItem | null {
   const estimateStatus = fieldMap.estimateStatus
     ? coerceCustomerInfoDisplayString(
@@ -364,7 +403,12 @@ function buildMeetingItem(
     return null;
   }
 
-  return buildMeetingItemFromRecord(recObj, fieldMap, recordId);
+  return buildMeetingItemFromRecord(
+    recObj,
+    fieldMap,
+    recordId,
+    mapAddressIds,
+  );
 }
 
 function formatMeetingScheduleStatusUpdateError(msg: string): string {
@@ -727,22 +771,9 @@ export async function buildMeetingScheduleForStaff(
           "商談進捗情報の必須フィールド（CL担当者・商談日）を特定できません。MEETING_SCHEDULE_*_FIELD_ID を設定してください。",
       };
     }
+    const mapAddressIds = resolveApoMapAddressFieldIds(apoFields);
 
-    const wanted = [
-      fieldMap.clPerson,
-      fieldMap.scheduledDate,
-      fieldMap.salesperson,
-      fieldMap.customerName,
-      fieldMap.city,
-      fieldMap.meetingTime,
-      fieldMap.estimateStatus,
-      fieldMap.apoType,
-      fieldMap.meetingPlace,
-      fieldMap.meetingDate,
-      fieldMap.closeType,
-    ]
-      .filter(Boolean)
-      .join(",");
+    const wanted = meetingScheduleWantedFieldCsv(fieldMap, mapAddressIds);
 
     const records = await fetchSalesDashboardRecordPages(
       apoAppId,
@@ -762,7 +793,13 @@ export async function buildMeetingScheduleForStaff(
       if (!recordId) continue;
       const recObj = rec as Record<string, unknown>;
       if (!recordMatchesStaff(recObj, fieldMap, boundStaffName)) continue;
-      const item = buildMeetingItem(recObj, fieldMap, targetYmd, recordId);
+      const item = buildMeetingItem(
+        recObj,
+        fieldMap,
+        targetYmd,
+        recordId,
+        mapAddressIds,
+      );
       if (item) items.push(item);
     }
 
@@ -829,22 +866,9 @@ export async function buildMeetingScheduleListForStaff(
           "商談進捗情報の必須フィールド（CL担当者・商談日）を特定できません。MEETING_SCHEDULE_*_FIELD_ID を設定してください。",
       };
     }
+    const mapAddressIds = resolveApoMapAddressFieldIds(apoFields);
 
-    const wanted = [
-      fieldMap.clPerson,
-      fieldMap.scheduledDate,
-      fieldMap.salesperson,
-      fieldMap.customerName,
-      fieldMap.city,
-      fieldMap.meetingTime,
-      fieldMap.estimateStatus,
-      fieldMap.apoType,
-      fieldMap.meetingPlace,
-      fieldMap.meetingDate,
-      fieldMap.closeType,
-    ]
-      .filter(Boolean)
-      .join(",");
+    const wanted = meetingScheduleWantedFieldCsv(fieldMap, mapAddressIds);
 
     const records = await fetchSalesDashboardRecordPages(
       apoAppId,
@@ -864,7 +888,12 @@ export async function buildMeetingScheduleListForStaff(
       if (!recordId) continue;
       const recObj = rec as Record<string, unknown>;
       if (!recordMatchesStaff(recObj, fieldMap, boundStaffName)) continue;
-      const item = buildMeetingItemFromRecord(recObj, fieldMap, recordId);
+      const item = buildMeetingItemFromRecord(
+        recObj,
+        fieldMap,
+        recordId,
+        mapAddressIds,
+      );
       if (item) items.push(item);
     }
 

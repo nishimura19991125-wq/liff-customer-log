@@ -100,6 +100,19 @@ export function resolveCustomerInfoMapAddressFieldIds(
 export function resolveConstructionMapAddressFieldIds(
   appFields: AtPocketFieldRow[],
 ): MapAddressFieldIds {
+  return resolveMapAddressFieldIdsByCaption(appFields);
+}
+
+/** アポ取得情報連携（商談進捗など）：ピンポイント住所・住所列 */
+export function resolveApoMapAddressFieldIds(
+  appFields: AtPocketFieldRow[],
+): MapAddressFieldIds {
+  return resolveMapAddressFieldIdsByCaption(appFields);
+}
+
+function resolveMapAddressFieldIdsByCaption(
+  appFields: AtPocketFieldRow[],
+): MapAddressFieldIds {
   return {
     pinpointFieldId: fieldIdOrNull(
       pocketFieldUniqueIdByCaption(appFields, "ピンポイント住所"),
@@ -117,6 +130,18 @@ export function resolveConstructionMapAddressFieldIds(
       resolveFieldIdByCaptions(appFields, ["番地", "町村+番地", "町村＋番地"]),
     ),
   };
+}
+
+export function collectMapAddressFieldsCsv(
+  ids: MapAddressFieldIds,
+): string[] {
+  return [
+    ids.pinpointFieldId,
+    ids.normalAddressFieldId,
+    ids.prefectureFieldId,
+    ids.cityFieldId,
+    ids.streetFieldId,
+  ].filter((id): id is string => Boolean(id?.trim()));
 }
 
 export function readMapAddressesFromRecord(

@@ -18,6 +18,9 @@ export type MeetingScheduleItem = {
   scheduledYmd: string;
   /** 表示用日付ラベル（未設定時は「日付未定」） */
   scheduledDateLabel: string;
+  /** Google マップ連携用 */
+  pinpointAddress: string;
+  normalAddress: string;
 };
 
 export type MeetingSchedulePayload = {

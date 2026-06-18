@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { LiffCard } from "@/components/liff-chrome";
+import { MapNavigationButton } from "@/components/map-navigation-button";
 import { isMeetingScheduleSetCreatedStatus } from "@/lib/meeting-schedule-shared";
 import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
 import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
 import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
+import { buildMapNavigation } from "@/lib/map-navigation";
 
 type Props = {
   item: MeetingScheduleItem;
@@ -128,6 +130,10 @@ export function MeetingScheduleItemCard({
   };
 
   const displayTime = item.scheduledTime || item.meetingTime;
+  const mapNav = buildMapNavigation({
+    pinpointAddress: item.pinpointAddress,
+    normalAddress: item.normalAddress,
+  });
 
   return (
     <LiffCard>
@@ -311,6 +317,14 @@ export function MeetingScheduleItemCard({
           ) : null}
         </div>
       </div>
+      {mapNav ? (
+        <div className="border-t border-slate-100 px-4 pb-4 pt-3 dark:border-slate-800">
+          <MapNavigationButton
+            pinpointAddress={item.pinpointAddress}
+            normalAddress={item.normalAddress}
+          />
+        </div>
+      ) : null}
     </LiffCard>
   );
 }
