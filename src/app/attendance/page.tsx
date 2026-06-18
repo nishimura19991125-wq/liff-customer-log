@@ -501,7 +501,6 @@ export default function AttendancePage() {
         <MeetingSetCreatedInputAlert
           items={setCreatedAlertItems}
           onClose={() => setSetCreatedAlertItems(null)}
-          zIndexClass="z-[100]"
         />
       ) : null}
     </LiffScreen>
