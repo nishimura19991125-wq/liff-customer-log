@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { MeetingSetCreatedInputAlert } from "@/components/meeting-set-created-input-alert";
 import {
@@ -27,6 +27,7 @@ type Props = {
 
 export function MeetingSetCreatedAlertGate({ idToken, active }: Props) {
   const pathname = usePathname();
+  const prevPathnameRef = useRef<string | null>(null);
   const [items, setItems] = useState<MeetingScheduleAlertItem[] | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
@@ -69,12 +70,16 @@ export function MeetingSetCreatedAlertGate({ idToken, active }: Props) {
 
   useEffect(() => {
     if (pathname === "/meeting-schedule") {
+      prevPathnameRef.current = pathname;
       setDismissed(true);
       setItems(null);
       return;
     }
-    const forceOnMenu = pathname === "/";
-    void check({ force: forceOnMenu });
+    const navigatedToMenu =
+      pathname === "/" &&
+      (prevPathnameRef.current === null || prevPathnameRef.current !== "/");
+    prevPathnameRef.current = pathname;
+    void check({ force: navigatedToMenu });
   }, [check, pathname]);
 
   useEffect(() => {
