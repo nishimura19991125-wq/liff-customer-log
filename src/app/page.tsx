@@ -120,6 +120,24 @@ function InternalCommonGlyph() {
   );
 }
 
+function MeetingScheduleGlyph() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M8 2v3M16 2v3M3.5 9.09h17M21 8.5V17c0 3-1.5 5-5 5H8c-3.5 0-5-2-5-5V8.5c0-3 1.5-5 5-5h8c3.5 0 5 2 5 5Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8 13h2v2H8v-2Zm3 0h2v2h-2v-2Zm3 0h2v2h-2v-2Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 function CommunicationBridgeGlyph() {
   return (
     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -393,6 +411,14 @@ export default function HomeHubPage() {
                   title="勤怠管理"
                   description="出勤・退勤を打刻し、@pocket の勤怠アプリに記録します。"
                   icon={<AttendanceGlyph />}
+                  iconTone="blue"
+                  disabled={needsStaffBind}
+                />
+                <LiffMenuCard
+                  href="/meeting-schedule"
+                  title="商談進捗"
+                  description="商談予定・返待ち・再商談などの進捗を一覧表示します。"
+                  icon={<MeetingScheduleGlyph />}
                   iconTone="blue"
                   disabled={needsStaffBind}
                 />
