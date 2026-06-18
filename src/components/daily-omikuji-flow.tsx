@@ -6,10 +6,7 @@ import { DailyOmikujiModal } from "@/components/daily-omikuji-modal";
 import { MeetingSetCreatedInputAlert } from "@/components/meeting-set-created-input-alert";
 import type { DailyFortuneView } from "@/lib/home-business-fortune";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
-import {
-  fetchYesterdaySetCreatedMeetings,
-  yesterdayDateLabelJst,
-} from "@/lib/meeting-schedule-yesterday-client";
+import { fetchPastSetCreatedMeetings } from "@/lib/meeting-schedule-pending-set-created-client";
 import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
 
 type AttendancePreview = {
@@ -100,7 +97,7 @@ export function DailyOmikujiFlow({
       }
       if (!res.ok) {
         if (res.status === 409 && data.clockIn) {
-          const pending = await fetchYesterdaySetCreatedMeetings(idToken);
+          const pending = await fetchPastSetCreatedMeetings(idToken);
           if (pending.length > 0) {
             setSetCreatedAlertItems(pending);
             return;
@@ -117,7 +114,7 @@ export function DailyOmikujiFlow({
         );
         return;
       }
-      const pending = await fetchYesterdaySetCreatedMeetings(idToken);
+      const pending = await fetchPastSetCreatedMeetings(idToken);
       if (pending.length > 0) {
         setSetCreatedAlertItems(pending);
         return;
@@ -227,7 +224,6 @@ export function DailyOmikujiFlow({
     return (
       <MeetingSetCreatedInputAlert
         items={setCreatedAlertItems}
-        dateLabel={yesterdayDateLabelJst()}
         onClose={onComplete}
       />
     );

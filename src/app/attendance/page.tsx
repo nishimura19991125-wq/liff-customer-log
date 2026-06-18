@@ -22,10 +22,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
-import {
-  fetchYesterdaySetCreatedMeetings,
-  yesterdayDateLabelJst,
-} from "@/lib/meeting-schedule-yesterday-client";
+import { fetchPastSetCreatedMeetings } from "@/lib/meeting-schedule-pending-set-created-client";
 import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
@@ -217,7 +214,7 @@ export default function AttendancePage() {
       }
       await mutateStatus(data, { revalidate: false });
       if (kind === "in") {
-        const pending = await fetchYesterdaySetCreatedMeetings(idToken);
+        const pending = await fetchPastSetCreatedMeetings(idToken);
         if (pending.length > 0) {
           setSetCreatedAlertItems(pending);
           return;
@@ -503,7 +500,6 @@ export default function AttendancePage() {
       {setCreatedAlertItems && setCreatedAlertItems.length > 0 ? (
         <MeetingSetCreatedInputAlert
           items={setCreatedAlertItems}
-          dateLabel={yesterdayDateLabelJst()}
           onClose={() => setSetCreatedAlertItems(null)}
           zIndexClass="z-[100]"
         />

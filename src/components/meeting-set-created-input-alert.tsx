@@ -6,14 +6,12 @@ import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
 
 type Props = {
   items: MeetingScheduleItem[];
-  dateLabel: string;
   onClose: () => void;
   zIndexClass?: string;
 };
 
 export function MeetingSetCreatedInputAlert({
   items,
-  dateLabel,
   onClose,
   zIndexClass = "z-[120]",
 }: Props) {
@@ -33,13 +31,13 @@ export function MeetingSetCreatedInputAlert({
             入力してください
           </p>
           <p className="mt-1 text-[13px] text-sky-800/80 dark:text-sky-200/80">
-            {dateLabel}の商談（商談セット作成済み）
+            本日より前 · {items.length}件（商談セット作成済み）
           </p>
         </div>
 
         <div className="px-4 py-4">
           <p className="text-[14px] leading-relaxed text-slate-700 dark:text-slate-200">
-            前日の商談で「商談セット作成済み」になっている案件があります。初回商談実施日・片クロor両クロ・商談場所を商談進捗情報から入力してください。
+            本日より前の商談で「商談セット作成済み」の案件があります。初回商談実施日・片クロor両クロ・商談場所を商談進捗情報から入力してください。
           </p>
           <ul className="mt-3 max-h-48 space-y-2 overflow-y-auto">
             {items.map((item) => (
@@ -51,7 +49,11 @@ export function MeetingSetCreatedInputAlert({
                   {item.customerName}
                 </p>
                 <p className="mt-0.5 text-[12px] text-slate-600 dark:text-slate-400">
-                  {[item.scheduledTime || item.meetingTime, item.city]
+                  {[
+                    item.scheduledDateLabel,
+                    item.scheduledTime || item.meetingTime,
+                    item.city,
+                  ]
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
