@@ -1,6 +1,6 @@
 import "server-only";
 
-import { fetchRecordById } from "@/lib/atpocket";
+import { apiKeyForStaffPocketReadApClList, fetchRecordById } from "@/lib/atpocket";
 import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
 import { fetchStaffRosterRowsCached } from "@/lib/staff-roster-cache";
 import {
@@ -126,10 +126,11 @@ export async function resolveConstructionHandlerNameForActiveStaff(
   if (!cfg) return { ok: false, reason: "not_configured" };
 
   const csv = uniqueFieldsCsv(cfg.nameFieldId, cfg.availabilityFieldId);
+  const staffAuth = { apiKey: apiKeyForStaffPocketReadApClList() };
   const row = await fetchRecordById(
     cfg.staffAppId,
     staffRecordId,
-    undefined,
+    staffAuth,
     csv,
   );
   if (!row?.record || typeof row.record !== "object") {
