@@ -80,7 +80,7 @@ export function meetingScheduleMeetingPlaceOptions(): string[] {
       .filter(Boolean);
     if (parsed.length) return parsed;
   }
-  return ["宅内テーブル商談", "オンライン商談"];
+  return ["宅内テーブル商談", "宅内玄関商談", "宅外商談", "オンライン商談"];
 }
 
 export function resolveMeetingScheduleFieldMap(
