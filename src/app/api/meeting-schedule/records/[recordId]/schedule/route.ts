@@ -69,6 +69,7 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
       ok: true,
       scheduledYmd: result.scheduledYmd,
       scheduledTime: result.scheduledTime,
+      estimateStatus: result.estimateStatus,
     });
   } catch (e) {
     console.error("[api/meeting-schedule/schedule]", e);

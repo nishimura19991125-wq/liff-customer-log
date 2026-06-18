@@ -21,7 +21,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
-import { requestMeetingSetCreatedAlertCheck } from "@/lib/meeting-schedule-pending-set-created-client";
+import { requestMeetingScheduleAlertCheckAfterPunch } from "@/lib/meeting-schedule-pending-set-created-client";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -209,7 +209,7 @@ export default function AttendancePage() {
       }
       await mutateStatus(data, { revalidate: false });
       if (kind === "in") {
-        requestMeetingSetCreatedAlertCheck();
+        requestMeetingScheduleAlertCheckAfterPunch();
       }
       setFeedback(kind === "in" ? "出勤を打刻しました" : "退勤を打刻しました");
     } catch {

@@ -1,5 +1,6 @@
 export const MEETING_SCHEDULE_SET_CREATED_STATUS = "商談セット作成済み";
 export const MEETING_SCHEDULE_HENMACHI_STATUS = "返待ち";
+export const MEETING_SCHEDULE_ESTIMATE_REQUESTED_STATUS = "見積依頼済み";
 
 export function isMeetingScheduleSetCreatedStatus(statusRaw: string): boolean {
   return statusRaw

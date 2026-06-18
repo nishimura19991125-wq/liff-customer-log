@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { DailyOmikujiModal } from "@/components/daily-omikuji-modal";
 import type { DailyFortuneView } from "@/lib/home-business-fortune";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
-import { requestMeetingSetCreatedAlertCheck } from "@/lib/meeting-schedule-pending-set-created-client";
+import { requestMeetingScheduleAlertCheckAfterPunch } from "@/lib/meeting-schedule-pending-set-created-client";
 
 type AttendancePreview = {
   configured: boolean;
@@ -57,9 +57,6 @@ export function DailyOmikujiFlow({
           return;
         }
         setPreview(data);
-        if (data.clockIn) {
-          requestMeetingSetCreatedAlertCheck();
-        }
       } catch {
         if (!cancelled) setError("勤怠情報の取得に失敗しました");
       } finally {
@@ -95,7 +92,7 @@ export function DailyOmikujiFlow({
       }
       if (!res.ok) {
         if (res.status === 409 && data.clockIn) {
-          requestMeetingSetCreatedAlertCheck();
+          requestMeetingScheduleAlertCheckAfterPunch();
           setFeedback(`本日は出勤済みです（${formatDisplayTime(data.clockIn)}）`);
           window.setTimeout(onComplete, 900);
           return;
@@ -108,7 +105,7 @@ export function DailyOmikujiFlow({
         );
         return;
       }
-      requestMeetingSetCreatedAlertCheck();
+      requestMeetingScheduleAlertCheckAfterPunch();
       setFeedback(`出勤を登録しました（${formatDisplayTime(data.clockIn)}）`);
       window.setTimeout(onComplete, 900);
     } catch {

@@ -37,6 +37,10 @@ import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule
 import { validateMeetingScheduleScheduledUpdate } from "@/lib/meeting-schedule-scheduled-update";
 import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
 import { validateMeetingScheduleStatusUpdate } from "@/lib/meeting-schedule-status-update";
+import {
+  isMeetingScheduleSetCreatedStatus,
+  MEETING_SCHEDULE_ESTIMATE_REQUESTED_STATUS,
+} from "@/lib/meeting-schedule-shared";
 import { salesDashboardApoAppId } from "@/lib/sales-dashboard-fields";
 import {
   fetchSalesDashboardRecordPages,
@@ -275,6 +279,31 @@ function resolveResponseDateYmd(
 function responseDateLabel(ymd: string): string {
   if (!ymd) return "未設定";
   return formatMeetingDateLabel(ymd);
+}
+
+function resolveRecordScheduledParts(
+  recObj: Record<string, unknown>,
+  fieldMap: MeetingScheduleFieldMap,
+): { ymd: string; time: string } {
+  const schedule = resolveRecordScheduleYmd(recObj, fieldMap);
+  const timeFromField = fieldMap.meetingTime
+    ? coerceCustomerInfoDisplayString(
+        readCustomerInfoFieldValue(recObj, fieldMap.meetingTime),
+      )
+    : "";
+  const meetingTimeRaw = (timeFromField || schedule.time || "").trim();
+  const timeMatch = /(\d{1,2}:\d{2})/.exec(meetingTimeRaw);
+  return {
+    ymd: schedule.ymd,
+    time: timeMatch?.[1]?.slice(0, 5) ?? "",
+  };
+}
+
+function hasMeetingScheduleDateChanged(
+  existingYmd: string,
+  nextYmd: string,
+): boolean {
+  return existingYmd !== nextYmd;
 }
 
 function normalizeEditableStatus(statusRaw: string): string | null {
@@ -632,7 +661,12 @@ export async function updateMeetingScheduleScheduledForStaff(
   recordIdRaw: string,
   updateInput: MeetingScheduleScheduledUpdateInput,
 ): Promise<
-  | { ok: true; scheduledYmd: string; scheduledTime: string }
+  | {
+      ok: true;
+      scheduledYmd: string;
+      scheduledTime: string;
+      estimateStatus?: string;
+    }
   | { ok: false; status: number; error: string }
 > {
   const recordId = recordIdRaw.trim();
@@ -694,6 +728,7 @@ export async function updateMeetingScheduleScheduledForStaff(
       fieldMap.salesperson,
       fieldMap.scheduledDate,
       fieldMap.meetingTime,
+      fieldMap.estimateStatus,
       importKeyFieldId,
       ...importKeySources,
     ]
@@ -734,6 +769,18 @@ export async function updateMeetingScheduleScheduledForStaff(
       recObj,
       fieldMap.scheduledDate,
     );
+    const existingSchedule = resolveRecordScheduledParts(recObj, fieldMap);
+    const scheduleDateChanged = hasMeetingScheduleDateChanged(
+      existingSchedule.ymd,
+      scheduledYmd,
+    );
+    const currentEstimateStatus = fieldMap.estimateStatus
+      ? coerceCustomerInfoDisplayString(
+          readCustomerInfoFieldValue(recObj, fieldMap.estimateStatus),
+        ).trim()
+      : "";
+    let nextEstimateStatus: string | undefined;
+
     const payload: Record<string, unknown> = {
       [importKeyFieldId]: importKeyValue,
       [fieldMap.scheduledDate]: scheduledDateTimeValueForPocket(
@@ -747,9 +794,33 @@ export async function updateMeetingScheduleScheduledForStaff(
       payload[fieldMap.meetingTime] = scheduledTime;
     }
 
+    if (
+      scheduleDateChanged &&
+      isMeetingScheduleSetCreatedStatus(currentEstimateStatus) &&
+      fieldMap.estimateStatus
+    ) {
+      const resetStatus = normalizeEditableStatus(
+        MEETING_SCHEDULE_ESTIMATE_REQUESTED_STATUS,
+      );
+      if (!resetStatus) {
+        return {
+          ok: false,
+          status: 503,
+          error: "見積依頼済みステータスを特定できません",
+        };
+      }
+      payload[fieldMap.estimateStatus] = resetStatus;
+      nextEstimateStatus = resetStatus;
+    }
+
     await updateRecord(apoAppId, recordId, payload, writeAuth);
 
-    return { ok: true, scheduledYmd, scheduledTime };
+    return {
+      ok: true,
+      scheduledYmd,
+      scheduledTime,
+      ...(nextEstimateStatus ? { estimateStatus: nextEstimateStatus } : {}),
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[meeting-schedule:schedule]", e);

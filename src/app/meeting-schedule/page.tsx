@@ -24,10 +24,6 @@ import {
 } from "@/lib/liff-swr";
 import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
 import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
-import {
-  filterPendingMeetingAlerts,
-  requestMeetingSetCreatedAlertCheck,
-} from "@/lib/meeting-schedule-pending-set-created-client";
 import type {
   MeetingScheduleItem,
   MeetingSchedulePayload,
@@ -137,13 +133,6 @@ export default function MeetingSchedulePage() {
     }
   }, [swrError]);
 
-  useEffect(() => {
-    if (!data?.items?.length || viewMode !== "list") return;
-    if (filterPendingMeetingAlerts(data.items).length > 0) {
-      requestMeetingSetCreatedAlertCheck();
-    }
-  }, [data?.items, viewMode]);
-
   const isToday = viewDate === todayYmdJst();
   const itemCount = data?.items?.length ?? 0;
   const groupedItems = useMemo(
@@ -212,13 +201,20 @@ export default function MeetingSchedulePage() {
             body: JSON.stringify(update),
           },
         );
-        const body = (await res.json()) as { error?: string };
+        const body = (await res.json()) as {
+          error?: string;
+          estimateStatus?: string;
+        };
         if (!res.ok) {
           throw new Error(
             body.error ?? "商談・資料送付予定日時の更新に失敗しました",
           );
         }
-        setFeedback("商談・資料送付予定日時を更新しました");
+        setFeedback(
+          body.estimateStatus
+            ? "商談・資料送付予定日時を更新し、見積ステータスを見積依頼済みに変更しました"
+            : "商談・資料送付予定日時を更新しました",
+        );
         await mutate();
       } catch (e) {
         const msg =

@@ -1,11 +1,15 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { MeetingSetCreatedInputAlert } from "@/components/meeting-set-created-input-alert";
 import {
   MEETING_SET_CREATED_ALERT_CHECK_EVENT,
+  clearMeetingScheduleAlertSnooze,
   fetchPendingMeetingAlerts,
+  isMeetingScheduleAlertSnoozed,
+  type MeetingScheduleAlertCheckDetail,
 } from "@/lib/meeting-schedule-pending-set-created-client";
 import type { MeetingScheduleAlertItem } from "@/lib/meeting-schedule-types";
 
@@ -22,13 +26,15 @@ type Props = {
 };
 
 export function MeetingSetCreatedAlertGate({ idToken, active }: Props) {
+  const pathname = usePathname();
   const [items, setItems] = useState<MeetingScheduleAlertItem[] | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
   const check = useCallback(
-    async (force = false) => {
+    async ({ force = false }: { force?: boolean } = {}) => {
       if (!active) return;
-      if (dismissed && !force) return;
+      if (pathname === "/meeting-schedule") return;
+      if (!force && (dismissed || isMeetingScheduleAlertSnoozed())) return;
       try {
         const res = await fetch("/api/attendance", {
           headers: { Authorization: `Bearer ${idToken}` },
@@ -45,24 +51,38 @@ export function MeetingSetCreatedAlertGate({ idToken, active }: Props) {
         }
         const pending = await fetchPendingMeetingAlerts(idToken);
         if (pending.length > 0) {
-          setDismissed(false);
+          if (force) {
+            clearMeetingScheduleAlertSnooze();
+            setDismissed(false);
+          }
           setItems(pending);
+          return;
         }
+        clearMeetingScheduleAlertSnooze();
+        setItems(null);
       } catch {
         // ignore
       }
     },
-    [active, dismissed, idToken],
+    [active, dismissed, idToken, pathname],
   );
 
   useEffect(() => {
-    void check();
-  }, [check]);
+    if (pathname === "/meeting-schedule") {
+      setDismissed(true);
+      setItems(null);
+      return;
+    }
+    const forceOnMenu = pathname === "/";
+    void check({ force: forceOnMenu });
+  }, [check, pathname]);
 
   useEffect(() => {
     if (!active) return;
-    const onCheck = () => {
-      void check(true);
+    const onCheck = (event: Event) => {
+      const detail = (event as CustomEvent<MeetingScheduleAlertCheckDetail>)
+        .detail;
+      void check({ force: detail?.force === true });
     };
     window.addEventListener(MEETING_SET_CREATED_ALERT_CHECK_EVENT, onCheck);
     return () => {
@@ -70,6 +90,7 @@ export function MeetingSetCreatedAlertGate({ idToken, active }: Props) {
     };
   }, [active, check]);
 
+  if (pathname === "/meeting-schedule") return null;
   if (!items?.length || dismissed) return null;
 
   return (

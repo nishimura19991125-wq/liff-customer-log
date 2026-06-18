@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { snoozeMeetingScheduleAlertForSession } from "@/lib/meeting-schedule-pending-set-created-client";
 import type { MeetingScheduleAlertItem } from "@/lib/meeting-schedule-types";
 
 type Props = {
@@ -128,7 +129,10 @@ export function MeetingSetCreatedInputAlert({
       <div className="shrink-0 flex flex-col gap-2 border-t border-sky-200 bg-sky-50 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-sky-800 dark:bg-slate-900">
         <Link
           href="/meeting-schedule"
-          onClick={onClose}
+          onClick={() => {
+            snoozeMeetingScheduleAlertForSession();
+            onClose();
+          }}
           className="w-full rounded-xl bg-sky-600 py-3.5 text-center text-[16px] font-bold text-white shadow-md transition-colors active:bg-sky-700 dark:bg-sky-500 dark:active:bg-sky-600"
         >
           商談進捗情報で入力

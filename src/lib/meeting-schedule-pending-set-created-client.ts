@@ -96,7 +96,48 @@ export async function fetchPastSetCreatedMeetings(
 export const MEETING_SET_CREATED_ALERT_CHECK_EVENT =
   "meeting-set-created-alert-check";
 
-export function requestMeetingSetCreatedAlertCheck(): void {
+export type MeetingScheduleAlertCheckDetail = {
+  /** dismissed / snooze を無視して表示する */
+  force?: boolean;
+};
+
+function alertSnoozeStorageKey(): string {
+  return `meeting-schedule-alert-snoozed:${todayYmdJst()}`;
+}
+
+export function snoozeMeetingScheduleAlertForSession(): void {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new Event(MEETING_SET_CREATED_ALERT_CHECK_EVENT));
+  sessionStorage.setItem(alertSnoozeStorageKey(), "1");
+}
+
+export function isMeetingScheduleAlertSnoozed(): boolean {
+  if (typeof window === "undefined") return false;
+  return sessionStorage.getItem(alertSnoozeStorageKey()) === "1";
+}
+
+export function clearMeetingScheduleAlertSnooze(): void {
+  if (typeof window === "undefined") return;
+  sessionStorage.removeItem(alertSnoozeStorageKey());
+}
+
+export function requestMeetingSetCreatedAlertCheck(
+  detail: MeetingScheduleAlertCheckDetail = {},
+): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<MeetingScheduleAlertCheckDetail>(
+      MEETING_SET_CREATED_ALERT_CHECK_EVENT,
+      { detail },
+    ),
+  );
+}
+
+/** 出勤打刻後など、強制的にアラートを再チェックする */
+export function requestMeetingScheduleAlertCheckAfterPunch(): void {
+  requestMeetingSetCreatedAlertCheck({ force: true });
+}
+
+/** メニュー（ホーム）表示時にアラートを再チェックする */
+export function requestMeetingScheduleAlertCheckOnMenu(): void {
+  requestMeetingSetCreatedAlertCheck({ force: true });
 }
