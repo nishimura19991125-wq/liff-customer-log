@@ -20,7 +20,10 @@ import {
   ROOF_MATERIAL_OPTIONS,
 } from "@/lib/customer-info-form/schema";
 import { dateValueForPocket } from "@/lib/customer-info-form/date-pocket";
-import { decimalKwForPocket } from "@/lib/customer-info-form/decimal-kw";
+import {
+  decimalKwForPocket,
+  hasDecimalKwValue,
+} from "@/lib/customer-info-form/decimal-kw";
 import { postalCodeForPocket } from "@/lib/customer-info-form/postal-code";
 import type {
   CustomerInfoFormFieldResolved,
@@ -269,6 +272,12 @@ function shouldPreserveHiddenFieldOnPut(
   hiddenFallback: string,
   hiddenPut: string,
 ): boolean {
+  // 設置種別で一時非表示でも @pocket の容量を 0 で上書きしない（再編集で復元できるようにする）
+  if (fieldKey === "panelCapacityKw") {
+    const t = raw.trim();
+    if (isEmptyPocketInput(t) || t === "0") return false;
+    return hasDecimalKwValue(t);
+  }
   if (
     POCKET_DASH_WHEN_EMPTY_KEYS.has(fieldKey) ||
     POCKET_ZERO_WHEN_EMPTY_KEYS.has(fieldKey) ||
@@ -360,7 +369,10 @@ export function applyCustomerInfoHiddenDefaultsToValues(
   const next = { ...values };
   for (const def of CUSTOMER_INFO_FORM_FIELDS) {
     if (!isCustomerInfoFormFieldVisible(def.key, next)) {
-      if (POCKET_ZERO_WHEN_HIDDEN_KEYS.has(def.key)) {
+      if (
+        POCKET_ZERO_WHEN_HIDDEN_KEYS.has(def.key) &&
+        def.key !== "panelCapacityKw"
+      ) {
         next[def.key] = "0";
       } else if (def.type === "date") {
         next[def.key] = "";

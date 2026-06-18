@@ -65,7 +65,8 @@ export function formatDecimalKwInput(raw: string): string {
 /** @pocket から読み取った値を表示用に整形（四捨五入なし・最大3桁） */
 export function formatDecimalKwFromPocket(raw: string): string {
   const t = raw.trim();
-  if (!t || t === "-") return "";
+  // 非表示時に自動投入されたプレースホルダ 0 は空欄として扱う（再編集時の見た目）
+  if (!t || t === "-" || t === "0") return "";
   return formatDecimalKwParts(parseDecimalKwInput(t));
 }
 
