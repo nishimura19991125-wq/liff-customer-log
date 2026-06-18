@@ -6,3 +6,17 @@ export function isMeetingScheduleSetCreatedStatus(statusRaw: string): boolean {
     .trim()
     .includes(MEETING_SCHEDULE_SET_CREATED_STATUS);
 }
+
+export function needsMeetingScheduleSetCreatedInput(item: {
+  estimateStatus: string;
+  firstMeetingDateYmd: string;
+  closeType: string;
+  meetingPlace: string;
+}): boolean {
+  if (!isMeetingScheduleSetCreatedStatus(item.estimateStatus)) return false;
+  return (
+    !item.firstMeetingDateYmd.trim() ||
+    !item.closeType.trim() ||
+    !item.meetingPlace.trim()
+  );
+}

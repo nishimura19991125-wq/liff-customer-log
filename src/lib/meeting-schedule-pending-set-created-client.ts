@@ -1,4 +1,6 @@
-import { isMeetingScheduleSetCreatedStatus } from "@/lib/meeting-schedule-shared";
+import {
+  needsMeetingScheduleSetCreatedInput,
+} from "@/lib/meeting-schedule-shared";
 import type {
   MeetingScheduleItem,
   MeetingSchedulePayload,
@@ -19,7 +21,9 @@ function isScheduledBeforeToday(
   return ymd < todayYmd;
 }
 
-function sortPastSetCreatedItems(items: MeetingScheduleItem[]): MeetingScheduleItem[] {
+function sortPastSetCreatedItems(
+  items: MeetingScheduleItem[],
+): MeetingScheduleItem[] {
   return [...items].sort((a, b) => {
     const dateA = a.scheduledYmd || "0000-00-00";
     const dateB = b.scheduledYmd || "0000-00-00";
@@ -31,11 +35,23 @@ function sortPastSetCreatedItems(items: MeetingScheduleItem[]): MeetingScheduleI
   });
 }
 
-/** 本日より前の商談で見積ステータスが商談セット作成済みの案件（前日以前すべて） */
+export function filterPendingSetCreatedMeetings(
+  items: MeetingScheduleItem[],
+  todayYmd = todayYmdJst(),
+): MeetingScheduleItem[] {
+  return sortPastSetCreatedItems(
+    items.filter(
+      (item) =>
+        needsMeetingScheduleSetCreatedInput(item) &&
+        isScheduledBeforeToday(item.scheduledYmd, todayYmd),
+    ),
+  );
+}
+
+/** 本日より前の商談で商談セット作成済みかつ未入力の案件 */
 export async function fetchPastSetCreatedMeetings(
   idToken: string,
 ): Promise<MeetingScheduleItem[]> {
-  const todayYmd = todayYmdJst();
   try {
     const res = await fetch("/api/meeting-schedule?scope=list", {
       headers: { Authorization: `Bearer ${idToken}` },
@@ -45,14 +61,17 @@ export async function fetchPastSetCreatedMeetings(
       disabled?: boolean;
       needsStaffBind?: boolean;
     };
-    if (!data.configured || data.error) return [];
-    const items = (data.items ?? []).filter(
-      (item) =>
-        isMeetingScheduleSetCreatedStatus(item.estimateStatus) &&
-        isScheduledBeforeToday(item.scheduledYmd, todayYmd),
-    );
-    return sortPastSetCreatedItems(items);
+    if (!data.configured || data.error || data.needsStaffBind) return [];
+    return filterPendingSetCreatedMeetings(data.items ?? []);
   } catch {
     return [];
   }
+}
+
+export const MEETING_SET_CREATED_ALERT_CHECK_EVENT =
+  "meeting-set-created-alert-check";
+
+export function requestMeetingSetCreatedAlertCheck(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(MEETING_SET_CREATED_ALERT_CHECK_EVENT));
 }

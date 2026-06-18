@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { DailyOmikujiFlow } from "@/components/daily-omikuji-flow";
 import { LockScreen } from "@/components/lock-screen";
+import { MeetingSetCreatedAlertGate } from "@/components/meeting-set-created-alert-gate";
 import {
   markDailyOmikujiShown,
   shouldShowDailyOmikuji,
@@ -204,6 +205,9 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
   return (
     <>
       {children}
+      {idToken && phase === "unlocked" ? (
+        <MeetingSetCreatedAlertGate idToken={idToken} active />
+      ) : null}
       {omikuji && idToken ? (
         <DailyOmikujiFlow
           fortune={omikuji.fortune}

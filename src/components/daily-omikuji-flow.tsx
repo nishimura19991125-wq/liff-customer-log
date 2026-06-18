@@ -3,11 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { DailyOmikujiModal } from "@/components/daily-omikuji-modal";
-import { MeetingSetCreatedInputAlert } from "@/components/meeting-set-created-input-alert";
 import type { DailyFortuneView } from "@/lib/home-business-fortune";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
-import { fetchPastSetCreatedMeetings } from "@/lib/meeting-schedule-pending-set-created-client";
-import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
+import { requestMeetingSetCreatedAlertCheck } from "@/lib/meeting-schedule-pending-set-created-client";
 
 type AttendancePreview = {
   configured: boolean;
@@ -42,9 +40,6 @@ export function DailyOmikujiFlow({
   const [preview, setPreview] = useState<AttendancePreview | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [setCreatedAlertItems, setSetCreatedAlertItems] = useState<
-    MeetingScheduleItem[] | null
-  >(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,6 +57,9 @@ export function DailyOmikujiFlow({
           return;
         }
         setPreview(data);
+        if (data.clockIn) {
+          requestMeetingSetCreatedAlertCheck();
+        }
       } catch {
         if (!cancelled) setError("勤怠情報の取得に失敗しました");
       } finally {
@@ -97,11 +95,7 @@ export function DailyOmikujiFlow({
       }
       if (!res.ok) {
         if (res.status === 409 && data.clockIn) {
-          const pending = await fetchPastSetCreatedMeetings(idToken);
-          if (pending.length > 0) {
-            setSetCreatedAlertItems(pending);
-            return;
-          }
+          requestMeetingSetCreatedAlertCheck();
           setFeedback(`本日は出勤済みです（${formatDisplayTime(data.clockIn)}）`);
           window.setTimeout(onComplete, 900);
           return;
@@ -114,11 +108,7 @@ export function DailyOmikujiFlow({
         );
         return;
       }
-      const pending = await fetchPastSetCreatedMeetings(idToken);
-      if (pending.length > 0) {
-        setSetCreatedAlertItems(pending);
-        return;
-      }
+      requestMeetingSetCreatedAlertCheck();
       setFeedback(`出勤を登録しました（${formatDisplayTime(data.clockIn)}）`);
       window.setTimeout(onComplete, 900);
     } catch {
@@ -219,15 +209,6 @@ export function DailyOmikujiFlow({
       </div>
     );
   })();
-
-  if (setCreatedAlertItems && setCreatedAlertItems.length > 0) {
-    return (
-      <MeetingSetCreatedInputAlert
-        items={setCreatedAlertItems}
-        onClose={onComplete}
-      />
-    );
-  }
 
   return <DailyOmikujiModal fortune={fortune} footer={footer} />;
 }
