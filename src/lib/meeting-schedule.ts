@@ -261,6 +261,22 @@ function resolveFirstMeetingDateYmd(
   return parsed?.ymd ?? "";
 }
 
+function resolveResponseDateYmd(
+  recObj: Record<string, unknown>,
+  fieldMap: MeetingScheduleFieldMap,
+): string {
+  if (!fieldMap.responseDate) return "";
+  const parsed = parseScheduledParts(
+    readCustomerInfoFieldValue(recObj, fieldMap.responseDate),
+  );
+  return parsed?.ymd ?? "";
+}
+
+function responseDateLabel(ymd: string): string {
+  if (!ymd) return "未設定";
+  return formatMeetingDateLabel(ymd);
+}
+
 function normalizeEditableStatus(statusRaw: string): string | null {
   const status = normalizeStatus(statusRaw);
   if (!status) return null;
@@ -288,6 +304,7 @@ function meetingScheduleWantedFieldCsv(
     fieldMap.meetingPlace,
     fieldMap.meetingDate,
     fieldMap.closeType,
+    fieldMap.responseDate,
     ...collectMapAddressFieldsCsv(mapAddressIds),
   ]) {
     if (id?.trim()) ids.add(id.trim());
@@ -348,6 +365,7 @@ function buildMeetingItemFromRecord(
       )
     : "";
   const firstMeetingDateYmd = resolveFirstMeetingDateYmd(recObj, fieldMap);
+  const responseDateYmd = resolveResponseDateYmd(recObj, fieldMap);
   const apPerson = fieldMap.salesperson
     ? normApClStaffName(
         readCustomerInfoFieldValue(recObj, fieldMap.salesperson),
@@ -382,6 +400,8 @@ function buildMeetingItemFromRecord(
     scheduledDateLabel: scheduleDateLabel(schedule.ymd),
     pinpointAddress,
     normalAddress,
+    responseDateYmd,
+    responseDateLabel: responseDateLabel(responseDateYmd),
   };
 }
 
@@ -433,7 +453,7 @@ export async function updateMeetingScheduleStatusForStaff(
   if (!validated.ok) {
     return { ok: false, status: 400, error: validated.error };
   }
-  const { status: nextStatus, meetingDate, closeType, meetingPlace } =
+  const { status: nextStatus, meetingDate, closeType, meetingPlace, responseDate } =
     validated.normalized;
   if (!recordId) {
     return { ok: false, status: 400, error: "recordId が必要です" };
@@ -494,6 +514,7 @@ export async function updateMeetingScheduleStatusForStaff(
       fieldMap.meetingDate,
       fieldMap.closeType,
       fieldMap.meetingPlace,
+      fieldMap.responseDate,
       importKeyFieldId,
       ...importKeySources,
     ]
@@ -562,6 +583,16 @@ export async function updateMeetingScheduleStatusForStaff(
         ok: false,
         status: 503,
         error: "商談場所列を特定できません",
+      };
+    }
+
+    if (responseDate && fieldMap.responseDate) {
+      payload[fieldMap.responseDate] = responseDate;
+    } else if (responseDate && !fieldMap.responseDate) {
+      return {
+        ok: false,
+        status: 503,
+        error: "返待ち回答日列を特定できません",
       };
     }
 

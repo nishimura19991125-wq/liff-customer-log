@@ -1,16 +1,40 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
-import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
+import type { MeetingScheduleAlertItem } from "@/lib/meeting-schedule-types";
 
 type Props = {
-  items: MeetingScheduleItem[];
+  items: MeetingScheduleAlertItem[];
   onClose: () => void;
   zIndexClass?: string;
 };
+
+function alertKindLabel(kind: MeetingScheduleAlertItem["alertKind"]): string {
+  return kind === "set-created" ? "商談セット作成済み" : "返待ち";
+}
+
+function alertItemDetail(item: MeetingScheduleAlertItem): string {
+  if (item.alertKind === "henmachi") {
+    return [
+      item.responseDateLabel,
+      item.scheduledDateLabel,
+      item.scheduledTime || item.meetingTime,
+      item.city,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  return [
+    item.scheduledDateLabel,
+    item.scheduledTime || item.meetingTime,
+    item.city,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 export function MeetingSetCreatedInputAlert({
   items,
@@ -18,6 +42,23 @@ export function MeetingSetCreatedInputAlert({
   zIndexClass = "z-[130]",
 }: Props) {
   const [mounted, setMounted] = useState(false);
+
+  const summary = useMemo(() => {
+    const setCreatedCount = items.filter(
+      (item) => item.alertKind === "set-created",
+    ).length;
+    const henmachiCount = items.filter(
+      (item) => item.alertKind === "henmachi",
+    ).length;
+    const parts: string[] = [];
+    if (setCreatedCount > 0) {
+      parts.push(`商談セット作成済み ${setCreatedCount}件`);
+    }
+    if (henmachiCount > 0) {
+      parts.push(`返待ち ${henmachiCount}件`);
+    }
+    return parts.join(" · ");
+  }, [items]);
 
   useEffect(() => {
     setMounted(true);
@@ -45,13 +86,13 @@ export function MeetingSetCreatedInputAlert({
           入力してください
         </p>
         <p className="mt-1 text-[14px] text-sky-800/80 dark:text-sky-200/80">
-          本日より前 · {items.length}件（商談セット作成済み）
+          {summary}
         </p>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
         <p className="text-[15px] leading-relaxed text-slate-700 dark:text-slate-200">
-          本日より前の商談で「商談セット作成済み」の案件があります。初回商談実施日・片クロor両クロ・商談場所を商談進捗情報から入力してください。
+          対応が必要な商談進捗があります。商談進捗情報から入力・更新してください。
         </p>
         <ul className="mt-4 space-y-2">
           {items.map((item) => (
@@ -59,18 +100,26 @@ export function MeetingSetCreatedInputAlert({
               key={item.recordId}
               className="rounded-xl border border-sky-100 bg-white px-3 py-3 shadow-sm dark:border-sky-900 dark:bg-slate-800"
             >
-              <p className="text-[15px] font-semibold text-slate-900 dark:text-white">
-                {item.customerName}
-              </p>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[15px] font-semibold text-slate-900 dark:text-white">
+                  {item.customerName}
+                </p>
+                <span className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800 dark:bg-sky-950/60 dark:text-sky-200">
+                  {alertKindLabel(item.alertKind)}
+                </span>
+              </div>
               <p className="mt-0.5 text-[13px] text-slate-600 dark:text-slate-400">
-                {[
-                  item.scheduledDateLabel,
-                  item.scheduledTime || item.meetingTime,
-                  item.city,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
+                {alertItemDetail(item)}
               </p>
+              {item.alertKind === "set-created" ? (
+                <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
+                  初回商談実施日・片クロor両クロ・商談場所を入力してください
+                </p>
+              ) : (
+                <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
+                  返待ち回答日が未設定、または期限を過ぎています
+                </p>
+              )}
             </li>
           ))}
         </ul>

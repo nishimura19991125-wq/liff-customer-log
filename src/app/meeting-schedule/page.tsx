@@ -25,7 +25,7 @@ import {
 import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
 import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
 import {
-  filterPendingSetCreatedMeetings,
+  filterPendingMeetingAlerts,
   requestMeetingSetCreatedAlertCheck,
 } from "@/lib/meeting-schedule-pending-set-created-client";
 import type {
@@ -139,7 +139,7 @@ export default function MeetingSchedulePage() {
 
   useEffect(() => {
     if (!data?.items?.length || viewMode !== "list") return;
-    if (filterPendingSetCreatedMeetings(data.items).length > 0) {
+    if (filterPendingMeetingAlerts(data.items).length > 0) {
       requestMeetingSetCreatedAlertCheck();
     }
   }, [data?.items, viewMode]);

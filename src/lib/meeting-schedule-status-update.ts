@@ -1,10 +1,14 @@
-import { isMeetingScheduleSetCreatedStatus } from "@/lib/meeting-schedule-shared";
+import {
+  isMeetingScheduleHenmachiStatus,
+  isMeetingScheduleSetCreatedStatus,
+} from "@/lib/meeting-schedule-shared";
 
 export type MeetingScheduleStatusUpdateInput = {
   status: string;
   meetingDate?: string | null;
   closeType?: string | null;
   meetingPlace?: string | null;
+  responseDate?: string | null;
 };
 
 function normalizeYmd(raw: string | null | undefined): string {
@@ -25,34 +29,48 @@ export function validateMeetingScheduleStatusUpdate(
     return { ok: false, error: "status が必要です" };
   }
 
-  if (!isMeetingScheduleSetCreatedStatus(status)) {
+  if (isMeetingScheduleSetCreatedStatus(status)) {
+    const meetingDate = normalizeYmd(input.meetingDate);
+    const closeType = (input.closeType ?? "").trim();
+    const meetingPlace = (input.meetingPlace ?? "").trim();
+
+    if (!meetingDate) {
+      return { ok: false, error: "初回商談実施日を入力してください" };
+    }
+    if (!closeType) {
+      return { ok: false, error: "片クロor両クロを選択してください" };
+    }
+    if (!meetingPlace) {
+      return { ok: false, error: "商談場所を選択してください" };
+    }
+
     return {
       ok: true,
-      normalized: { status },
+      normalized: {
+        status,
+        meetingDate,
+        closeType,
+        meetingPlace,
+      },
     };
   }
 
-  const meetingDate = normalizeYmd(input.meetingDate);
-  const closeType = (input.closeType ?? "").trim();
-  const meetingPlace = (input.meetingPlace ?? "").trim();
-
-  if (!meetingDate) {
-    return { ok: false, error: "初回商談実施日を入力してください" };
-  }
-  if (!closeType) {
-    return { ok: false, error: "片クロor両クロを選択してください" };
-  }
-  if (!meetingPlace) {
-    return { ok: false, error: "商談場所を選択してください" };
+  if (isMeetingScheduleHenmachiStatus(status)) {
+    const responseDate = normalizeYmd(input.responseDate);
+    if (!responseDate) {
+      return { ok: false, error: "返待ち回答日を入力してください" };
+    }
+    return {
+      ok: true,
+      normalized: {
+        status,
+        responseDate,
+      },
+    };
   }
 
   return {
     ok: true,
-    normalized: {
-      status,
-      meetingDate,
-      closeType,
-      meetingPlace,
-    },
+    normalized: { status },
   };
 }

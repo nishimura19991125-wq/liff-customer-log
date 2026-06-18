@@ -21,6 +21,16 @@ export type MeetingScheduleItem = {
   /** Google マップ連携用 */
   pinpointAddress: string;
   normalAddress: string;
+  /** 返待ち回答日（YYYY-MM-DD） */
+  responseDateYmd: string;
+  /** 表示用返待ち回答日ラベル（未設定時は「未設定」） */
+  responseDateLabel: string;
+};
+
+export type MeetingScheduleAlertKind = "set-created" | "henmachi";
+
+export type MeetingScheduleAlertItem = MeetingScheduleItem & {
+  alertKind: MeetingScheduleAlertKind;
 };
 
 export type MeetingSchedulePayload = {

@@ -4,7 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 
 import { LiffCard } from "@/components/liff-chrome";
 import { MapNavigationButton } from "@/components/map-navigation-button";
-import { isMeetingScheduleSetCreatedStatus } from "@/lib/meeting-schedule-shared";
+import {
+  isMeetingScheduleHenmachiStatus,
+  isMeetingScheduleSetCreatedStatus,
+} from "@/lib/meeting-schedule-shared";
 import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
 import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
 import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
@@ -56,6 +59,7 @@ export function MeetingScheduleItemCard({
   const [meetingDate, setMeetingDate] = useState(item.firstMeetingDateYmd);
   const [closeType, setCloseType] = useState(item.closeType);
   const [meetingPlace, setMeetingPlace] = useState(item.meetingPlace);
+  const [responseDate, setResponseDate] = useState(item.responseDateYmd);
 
   useEffect(() => {
     setDraftStatus(item.estimateStatus);
@@ -64,6 +68,7 @@ export function MeetingScheduleItemCard({
     setMeetingDate(item.firstMeetingDateYmd);
     setCloseType(item.closeType);
     setMeetingPlace(item.meetingPlace);
+    setResponseDate(item.responseDateYmd);
   }, [
     item.estimateStatus,
     item.scheduledYmd,
@@ -71,6 +76,7 @@ export function MeetingScheduleItemCard({
     item.firstMeetingDateYmd,
     item.closeType,
     item.meetingPlace,
+    item.responseDateYmd,
     item.recordId,
   ]);
 
@@ -92,7 +98,9 @@ export function MeetingScheduleItemCard({
   const canEditSchedule =
     scheduleEditable && Boolean(onScheduleChange);
   const needsSetCreatedFields = isMeetingScheduleSetCreatedStatus(draftStatus);
+  const needsHenmachiFields = isMeetingScheduleHenmachiStatus(draftStatus);
   const showSetCreatedForm = canEditStatus && needsSetCreatedFields;
+  const showHenmachiForm = canEditStatus && needsHenmachiFields;
   const statusDirty = draftStatus !== item.estimateStatus;
   const scheduleDirty =
     scheduledYmd !== item.scheduledYmd ||
@@ -101,14 +109,23 @@ export function MeetingScheduleItemCard({
     meetingDate !== item.firstMeetingDateYmd ||
     closeType !== item.closeType ||
     meetingPlace !== item.meetingPlace;
+  const henmachiDirty = responseDate !== item.responseDateYmd;
   const canSaveSetCreated =
     showSetCreatedForm && (statusDirty || setCreatedDirty) && !statusUpdating;
+  const canSaveHenmachi =
+    showHenmachiForm &&
+    responseDate.trim() &&
+    (statusDirty || henmachiDirty) &&
+    !statusUpdating;
   const canSaveSchedule =
     canEditSchedule && scheduleDirty && scheduledYmd.trim() && !statusUpdating;
 
   const handleStatusSelect = (nextStatus: string) => {
     setDraftStatus(nextStatus);
-    if (!isMeetingScheduleSetCreatedStatus(nextStatus)) {
+    if (
+      !isMeetingScheduleSetCreatedStatus(nextStatus) &&
+      !isMeetingScheduleHenmachiStatus(nextStatus)
+    ) {
       onStatusChange?.(item.recordId, { status: nextStatus });
     }
   };
@@ -119,6 +136,13 @@ export function MeetingScheduleItemCard({
       meetingDate,
       closeType,
       meetingPlace,
+    });
+  };
+
+  const handleSaveHenmachi = () => {
+    onStatusChange?.(item.recordId, {
+      status: draftStatus,
+      responseDate,
     });
   };
 
@@ -295,6 +319,34 @@ export function MeetingScheduleItemCard({
             </div>
           ) : null}
 
+          {showHenmachiForm ? (
+            <div className="mt-3 space-y-3 rounded-xl border border-violet-100 bg-violet-50/60 p-3 dark:border-violet-900/50 dark:bg-violet-950/20">
+              <p className="text-[12px] font-semibold text-violet-800 dark:text-violet-200">
+                返待ちの入力項目
+              </p>
+              <label className="block">
+                <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                  返待ち回答日
+                </span>
+                <input
+                  type="date"
+                  className={`${inputClass} calendar-date-input`}
+                  value={responseDate}
+                  disabled={statusUpdating}
+                  onChange={(e) => setResponseDate(e.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                disabled={!canSaveHenmachi}
+                onClick={handleSaveHenmachi}
+                className="w-full rounded-xl bg-violet-600 px-4 py-2.5 text-[14px] font-semibold text-white disabled:opacity-50 dark:bg-violet-500"
+              >
+                {statusUpdating ? "保存中…" : "保存"}
+              </button>
+            </div>
+          ) : null}
+
           {!canEditStatus && item.meetingPlace ? (
             <p className="mt-2 text-[13px] text-slate-600 dark:text-slate-400">
               商談場所: {item.meetingPlace}
@@ -308,6 +360,11 @@ export function MeetingScheduleItemCard({
           {!canEditStatus && item.firstMeetingDateYmd ? (
             <p className="mt-1 text-[13px] text-slate-600 dark:text-slate-400">
               初回商談実施日: {item.firstMeetingDateYmd}
+            </p>
+          ) : null}
+          {!canEditStatus && item.responseDateYmd ? (
+            <p className="mt-1 text-[13px] text-slate-600 dark:text-slate-400">
+              返待ち回答日: {item.responseDateLabel}
             </p>
           ) : null}
           {item.apPerson && item.apPerson !== staffName ? (

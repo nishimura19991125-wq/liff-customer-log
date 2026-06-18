@@ -5,9 +5,9 @@ import { useCallback, useEffect, useState } from "react";
 import { MeetingSetCreatedInputAlert } from "@/components/meeting-set-created-input-alert";
 import {
   MEETING_SET_CREATED_ALERT_CHECK_EVENT,
-  fetchPastSetCreatedMeetings,
+  fetchPendingMeetingAlerts,
 } from "@/lib/meeting-schedule-pending-set-created-client";
-import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
+import type { MeetingScheduleAlertItem } from "@/lib/meeting-schedule-types";
 
 type AttendancePreview = {
   configured?: boolean;
@@ -22,7 +22,7 @@ type Props = {
 };
 
 export function MeetingSetCreatedAlertGate({ idToken, active }: Props) {
-  const [items, setItems] = useState<MeetingScheduleItem[] | null>(null);
+  const [items, setItems] = useState<MeetingScheduleAlertItem[] | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
   const check = useCallback(
@@ -43,7 +43,7 @@ export function MeetingSetCreatedAlertGate({ idToken, active }: Props) {
         ) {
           return;
         }
-        const pending = await fetchPastSetCreatedMeetings(idToken);
+        const pending = await fetchPendingMeetingAlerts(idToken);
         if (pending.length > 0) {
           setDismissed(false);
           setItems(pending);

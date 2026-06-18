@@ -57,6 +57,8 @@ export type MeetingScheduleFieldMap = {
   /** 初回商談実施日など（返待ち・再商談の日付判定用） */
   meetingDate: string | null;
   closeType: string | null;
+  /** 返待ち回答日 */
+  responseDate: string | null;
 };
 
 export function meetingScheduleCloseTypeOptions(): string[] {
@@ -161,6 +163,12 @@ export function resolveMeetingScheduleFieldMap(
     ["片クロor両クロ", "片クロ", "両クロ"],
     ["片クロor両クロ"],
   );
+  const responseDate = pickByEnvOrKeywords(
+    "MEETING_SCHEDULE_RESPONSE_DATE_FIELD_ID",
+    fields,
+    ["返待ち回答日", "回答日"],
+    ["返待ち回答日"],
+  );
 
   return {
     clPerson,
@@ -174,6 +182,7 @@ export function resolveMeetingScheduleFieldMap(
     meetingPlace,
     meetingDate,
     closeType,
+    responseDate,
   };
 }
 
