@@ -12,6 +12,7 @@ import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
 import {
   coerceCustomerInfoDisplayString,
   readCustomerInfoFieldValue,
+  readCustomerInfoImportKeyFromRecord,
 } from "@/lib/customer-info-record";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { jstDateKey } from "@/lib/missing-documents-cache";
@@ -19,7 +20,9 @@ import {
   meetingScheduleAllowedStatuses,
   meetingScheduleEditableStatuses,
   meetingScheduleExcludedStatuses,
+  meetingScheduleImportKeySourceFieldIds,
   resolveMeetingScheduleFieldMap,
+  resolveMeetingScheduleImportKeyFieldId,
   type MeetingScheduleFieldMap,
 } from "@/lib/meeting-schedule-fields";
 import { salesDashboardApoAppId } from "@/lib/sales-dashboard-fields";
@@ -329,6 +332,15 @@ function buildMeetingItem(
   return buildMeetingItemFromRecord(recObj, fieldMap, recordId);
 }
 
+function formatMeetingScheduleStatusUpdateError(msg: string): string {
+  if (msg.includes("アポ通番") && msg.includes("取込設定")) {
+    return (
+      "@pocket: 取込キー「アポ通番(仮)」を認識できませんでした。アポ取得情報連携の取込設定に「アポ通番(仮)」がキー項目として含まれているか、MEETING_SCHEDULE_IMPORT_KEY_FIELD_ID が管理画面の列識別名と一致しているか確認してください。"
+    );
+  }
+  return msg;
+}
+
 export async function updateMeetingScheduleStatusForStaff(
   boundStaffName: string,
   recordIdRaw: string,
@@ -379,15 +391,31 @@ export async function updateMeetingScheduleStatusForStaff(
       };
     }
 
+    const importKeyFieldId = resolveMeetingScheduleImportKeyFieldId(apoFields);
+    if (!importKeyFieldId) {
+      return {
+        ok: false,
+        status: 503,
+        error:
+          "取込キー列（アポ通番(仮)）を特定できません。MEETING_SCHEDULE_IMPORT_KEY_FIELD_ID を設定してください。",
+      };
+    }
+
+    const importKeySources = meetingScheduleImportKeySourceFieldIds();
     const wanted = [
       fieldMap.clPerson,
       fieldMap.salesperson,
       fieldMap.estimateStatus,
+      importKeyFieldId,
+      ...importKeySources,
     ]
       .filter(Boolean)
       .join(",");
 
-    const recRow = await fetchRecordById(apoAppId, recordId, readAuth, wanted);
+    let recRow = await fetchRecordById(apoAppId, recordId, readAuth, wanted);
+    if (!recRow?.record) {
+      recRow = await fetchRecordById(apoAppId, recordId, readAuth);
+    }
     if (!recRow?.record || typeof recRow.record !== "object") {
       return { ok: false, status: 404, error: "レコードが見つかりません" };
     }
@@ -400,12 +428,26 @@ export async function updateMeetingScheduleStatusForStaff(
       };
     }
 
-    await updateRecord(
-      apoAppId,
-      recordId,
-      { [fieldMap.estimateStatus]: nextStatus },
-      writeAuth,
+    const importKeyValue = readCustomerInfoImportKeyFromRecord(
+      recObj,
+      importKeyFieldId,
+      importKeySources,
     );
+    if (!importKeyValue) {
+      return {
+        ok: false,
+        status: 400,
+        error:
+          "この案件のアポ通番(仮)（取込キー）を取得できませんでした。@pocket に値が入っているか、MEETING_SCHEDULE_IMPORT_KEY_FIELD_ID を確認してください。",
+      };
+    }
+
+    const payload: Record<string, unknown> = {
+      [importKeyFieldId]: importKeyValue,
+      [fieldMap.estimateStatus]: nextStatus,
+    };
+
+    await updateRecord(apoAppId, recordId, payload, writeAuth);
 
     return { ok: true, estimateStatus: nextStatus };
   } catch (e) {
@@ -414,7 +456,9 @@ export async function updateMeetingScheduleStatusForStaff(
     return {
       ok: false,
       status: 502,
-      error: msg || "見積ステータスの更新に失敗しました",
+      error: formatMeetingScheduleStatusUpdateError(
+        msg || "見積ステータスの更新に失敗しました",
+      ),
     };
   }
 }

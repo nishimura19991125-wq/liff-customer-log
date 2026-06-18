@@ -215,3 +215,28 @@ export function meetingScheduleEditableStatuses(): string[] {
   }
   return out;
 }
+
+export function meetingScheduleImportKeySourceFieldIds(): string[] {
+  const raw = process.env.MEETING_SCHEDULE_IMPORT_KEY_SOURCE_FIELD_IDS?.trim();
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => nfkc(s))
+    .filter(Boolean);
+}
+
+/** アポ取得情報連携の取込キー（アポ通番(仮) 等）。PUT 更新時に必須 */
+export function resolveMeetingScheduleImportKeyFieldId(
+  fields: AtPocketFieldRow[],
+): string | null {
+  const env = process.env.MEETING_SCHEDULE_IMPORT_KEY_FIELD_ID?.trim();
+  if (env) {
+    const id = resolveConfiguredFieldToSchemaUniqueId(env, fields);
+    if (id) return id;
+  }
+  for (const cap of ["アポ通番(仮)", "アポ通番（仮）", "アポ通番"]) {
+    const id = pocketFieldUniqueIdByCaption(fields, cap);
+    if (id) return id;
+  }
+  return pickByKeywords(fields, ["アポ通番(仮)", "アポ通番（仮）", "アポ通番"]);
+}
