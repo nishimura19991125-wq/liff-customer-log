@@ -22,6 +22,7 @@ import {
   LIFF_SWR_DEFAULT_OPTIONS,
   isLiffSwrSessionExpired,
 } from "@/lib/liff-swr";
+import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
 import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
 import type {
   MeetingScheduleItem,
@@ -175,6 +176,44 @@ export default function MeetingSchedulePage() {
       } catch (e) {
         const msg =
           e instanceof Error ? e.message : "見積ステータスの更新に失敗しました";
+        setFeedback(msg);
+      } finally {
+        setUpdatingRecordId(null);
+      }
+    },
+    [idToken, mutate],
+  );
+
+  const handleScheduleChange = useCallback(
+    async (recordId: string, update: MeetingScheduleScheduledUpdateInput) => {
+      if (!idToken || !update.scheduledYmd.trim()) return;
+      setUpdatingRecordId(recordId);
+      setFeedback(null);
+      try {
+        const res = await fetch(
+          `/api/meeting-schedule/records/${encodeURIComponent(recordId)}/schedule`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(update),
+          },
+        );
+        const body = (await res.json()) as { error?: string };
+        if (!res.ok) {
+          throw new Error(
+            body.error ?? "商談・資料送付予定日時の更新に失敗しました",
+          );
+        }
+        setFeedback("商談・資料送付予定日時を更新しました");
+        await mutate();
+      } catch (e) {
+        const msg =
+          e instanceof Error
+            ? e.message
+            : "商談・資料送付予定日時の更新に失敗しました";
         setFeedback(msg);
       } finally {
         setUpdatingRecordId(null);
@@ -376,10 +415,12 @@ export default function MeetingSchedulePage() {
                             staffName={data.staffName}
                             statusOptions={data.statusOptions}
                             statusEditable={data.statusEditable}
+                            scheduleEditable={data.scheduleEditable}
                             closeTypeOptions={data.closeTypeOptions}
                             meetingPlaceOptions={data.meetingPlaceOptions}
                             statusUpdating={updatingRecordId === item.recordId}
                             onStatusChange={handleStatusChange}
+                            onScheduleChange={handleScheduleChange}
                           />
                         </li>
                       ))}
@@ -396,10 +437,12 @@ export default function MeetingSchedulePage() {
                       staffName={data.staffName}
                       statusOptions={data.statusOptions}
                       statusEditable={data.statusEditable}
+                      scheduleEditable={data.scheduleEditable}
                       closeTypeOptions={data.closeTypeOptions}
                       meetingPlaceOptions={data.meetingPlaceOptions}
                       statusUpdating={updatingRecordId === item.recordId}
                       onStatusChange={handleStatusChange}
+                      onScheduleChange={handleScheduleChange}
                     />
                   </li>
                 ))}

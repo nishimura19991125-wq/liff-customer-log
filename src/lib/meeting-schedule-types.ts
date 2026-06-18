@@ -3,6 +3,8 @@ export type MeetingScheduleItem = {
   customerName: string;
   city: string;
   meetingTime: string;
+  /** 商談予定時刻（HH:mm。未設定時は空） */
+  scheduledTime: string;
   apoTypeLabel: string;
   estimateStatus: string;
   meetingPlace: string;
@@ -29,6 +31,8 @@ export type MeetingSchedulePayload = {
   /** ステータス変更 UI 用 */
   statusOptions?: string[];
   statusEditable?: boolean;
+  /** 商談・資料送付予定日時の変更 UI 用 */
+  scheduleEditable?: boolean;
   closeTypeOptions?: string[];
   meetingPlaceOptions?: string[];
   error?: string;
