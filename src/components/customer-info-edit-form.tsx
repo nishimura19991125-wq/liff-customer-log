@@ -770,9 +770,6 @@ export function CustomerInfoEditForm({
       if (key === "powerConCount" && value !== "2") {
         next = { ...next, powerConModel2: "" };
       }
-      if (key === "batteryMulti" && value !== "有") {
-        next = { ...next, batteryCapacity2: "" };
-      }
       if (key === "panelModel2") {
         next = { ...next, panelCombo: inferPanelComboFromValues(next) };
       }
@@ -781,7 +778,8 @@ export function CustomerInfoEditForm({
         key === "paymentMethod" ||
         key === "installationType" ||
         key === "indoorSurveyStatus" ||
-        key === "preApplication"
+        key === "preApplication" ||
+        key === "batteryMulti"
       ) {
         next = applyCustomerInfoHiddenDefaultsToValues(next);
       }

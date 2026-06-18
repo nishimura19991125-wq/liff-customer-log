@@ -260,7 +260,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     key: "breakerAmps",
     caption: "分電盤アンペア数",
     type: "select",
-    options: ["50A", "60A", "75A", "100A", "新築の為未定"],
+    options: ["50A", "60A", "75A", "100A", "新築の為、未定"],
   },
   {
     key: "roofMaterial",

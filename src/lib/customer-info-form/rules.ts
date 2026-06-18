@@ -127,7 +127,8 @@ function pocketFieldValueForPut(
     return raw.trim();
   }
   if (POCKET_DASH_WHEN_EMPTY_KEYS.has(key)) {
-    if (!visible || isEmptyPocketInput(raw)) return hiddenFallback;
+    if (!visible) return hiddenFallback;
+    if (isEmptyPocketInput(raw)) return hiddenFallback;
     return raw.trim();
   }
   if (!visible) return hiddenFallback;
@@ -263,10 +264,18 @@ function checkboxSelections(raw: string): string[] {
  * （設置種別未読込などで一時的に非表示になった書類回収状況等を "-" で消さない）
  */
 function shouldPreserveHiddenFieldOnPut(
+  fieldKey: string,
   raw: string,
   hiddenFallback: string,
   hiddenPut: string,
 ): boolean {
+  if (
+    POCKET_DASH_WHEN_EMPTY_KEYS.has(fieldKey) ||
+    POCKET_ZERO_WHEN_EMPTY_KEYS.has(fieldKey) ||
+    POCKET_ZERO_WHEN_HIDDEN_KEYS.has(fieldKey)
+  ) {
+    return false;
+  }
   if (isEmptyPocketInput(raw)) return false;
   if (raw === hiddenFallback || raw === hiddenPut) return false;
   return true;
@@ -312,7 +321,12 @@ export function buildCustomerInfoFormPayload(
         values,
       );
       if (
-        shouldPreserveHiddenFieldOnPut(raw, hiddenFallback, hiddenPut)
+        shouldPreserveHiddenFieldOnPut(
+          field.key,
+          raw,
+          hiddenFallback,
+          hiddenPut,
+        )
       ) {
         continue;
       }
