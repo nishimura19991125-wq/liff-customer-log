@@ -56,7 +56,32 @@ export type MeetingScheduleFieldMap = {
   meetingPlace: string | null;
   /** 初回商談実施日など（返待ち・再商談の日付判定用） */
   meetingDate: string | null;
+  closeType: string | null;
 };
+
+export function meetingScheduleCloseTypeOptions(): string[] {
+  const raw = process.env.MEETING_SCHEDULE_CLOSE_TYPE_OPTIONS?.trim();
+  if (raw) {
+    const parsed = raw
+      .split(",")
+      .map((s) => nfkc(s))
+      .filter(Boolean);
+    if (parsed.length) return parsed;
+  }
+  return ["片クロ", "両クロ"];
+}
+
+export function meetingScheduleMeetingPlaceOptions(): string[] {
+  const raw = process.env.MEETING_SCHEDULE_MEETING_PLACE_OPTIONS?.trim();
+  if (raw) {
+    const parsed = raw
+      .split(",")
+      .map((s) => nfkc(s))
+      .filter(Boolean);
+    if (parsed.length) return parsed;
+  }
+  return ["宅内テーブル商談", "オンライン商談"];
+}
 
 export function resolveMeetingScheduleFieldMap(
   fields: AtPocketFieldRow[],
@@ -139,6 +164,12 @@ export function resolveMeetingScheduleFieldMap(
     ],
     ["初回商談実施日"],
   );
+  const closeType = pickByEnvOrKeywords(
+    "MEETING_SCHEDULE_CLOSE_TYPE_FIELD_ID",
+    fields,
+    ["片クロor両クロ", "片クロ", "両クロ"],
+    ["片クロor両クロ"],
+  );
 
   return {
     clPerson,
@@ -151,6 +182,7 @@ export function resolveMeetingScheduleFieldMap(
     apoType,
     meetingPlace,
     meetingDate,
+    closeType,
   };
 }
 

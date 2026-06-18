@@ -22,6 +22,7 @@ import {
   LIFF_SWR_DEFAULT_OPTIONS,
   isLiffSwrSessionExpired,
 } from "@/lib/liff-swr";
+import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
 import type {
   MeetingScheduleItem,
   MeetingSchedulePayload,
@@ -149,8 +150,8 @@ export default function MeetingSchedulePage() {
   }, [mutate]);
 
   const handleStatusChange = useCallback(
-    async (recordId: string, nextStatus: string) => {
-      if (!idToken || !nextStatus.trim()) return;
+    async (recordId: string, update: MeetingScheduleStatusUpdateInput) => {
+      if (!idToken || !update.status.trim()) return;
       setUpdatingRecordId(recordId);
       setFeedback(null);
       try {
@@ -162,14 +163,14 @@ export default function MeetingSchedulePage() {
               Authorization: `Bearer ${idToken}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ status: nextStatus }),
+            body: JSON.stringify(update),
           },
         );
         const body = (await res.json()) as { error?: string };
         if (!res.ok) {
           throw new Error(body.error ?? "見積ステータスの更新に失敗しました");
         }
-        setFeedback("見積ステータスを更新しました");
+        setFeedback("商談進捗情報を更新しました");
         await mutate();
       } catch (e) {
         const msg =
@@ -375,6 +376,8 @@ export default function MeetingSchedulePage() {
                             staffName={data.staffName}
                             statusOptions={data.statusOptions}
                             statusEditable={data.statusEditable}
+                            closeTypeOptions={data.closeTypeOptions}
+                            meetingPlaceOptions={data.meetingPlaceOptions}
                             statusUpdating={updatingRecordId === item.recordId}
                             onStatusChange={handleStatusChange}
                           />
@@ -393,6 +396,8 @@ export default function MeetingSchedulePage() {
                       staffName={data.staffName}
                       statusOptions={data.statusOptions}
                       statusEditable={data.statusEditable}
+                      closeTypeOptions={data.closeTypeOptions}
+                      meetingPlaceOptions={data.meetingPlaceOptions}
                       statusUpdating={updatingRecordId === item.recordId}
                       onStatusChange={handleStatusChange}
                     />

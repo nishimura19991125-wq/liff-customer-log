@@ -18,13 +18,17 @@ import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { jstDateKey } from "@/lib/missing-documents-cache";
 import {
   meetingScheduleAllowedStatuses,
+  meetingScheduleCloseTypeOptions,
   meetingScheduleEditableStatuses,
   meetingScheduleExcludedStatuses,
   meetingScheduleImportKeySourceFieldIds,
+  meetingScheduleMeetingPlaceOptions,
   resolveMeetingScheduleFieldMap,
   resolveMeetingScheduleImportKeyFieldId,
   type MeetingScheduleFieldMap,
 } from "@/lib/meeting-schedule-fields";
+import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
+import { validateMeetingScheduleStatusUpdate } from "@/lib/meeting-schedule-status-update";
 import { salesDashboardApoAppId } from "@/lib/sales-dashboard-fields";
 import {
   fetchSalesDashboardRecordPages,
@@ -222,12 +226,25 @@ function sortMeetingItems(items: MeetingScheduleItem[]): void {
 
 function meetingScheduleMetaExtras(): Pick<
   MeetingSchedulePayload,
-  "statusOptions" | "statusEditable"
+  "statusOptions" | "statusEditable" | "closeTypeOptions" | "meetingPlaceOptions"
 > {
   return {
     statusOptions: meetingScheduleEditableStatuses(),
     statusEditable: salesDashboardApoWriteConfigured(),
+    closeTypeOptions: meetingScheduleCloseTypeOptions(),
+    meetingPlaceOptions: meetingScheduleMeetingPlaceOptions(),
   };
+}
+
+function resolveFirstMeetingDateYmd(
+  recObj: Record<string, unknown>,
+  fieldMap: MeetingScheduleFieldMap,
+): string {
+  if (!fieldMap.meetingDate) return "";
+  const parsed = parseScheduledParts(
+    readCustomerInfoFieldValue(recObj, fieldMap.meetingDate),
+  );
+  return parsed?.ymd ?? "";
 }
 
 function normalizeEditableStatus(statusRaw: string): string | null {
@@ -285,6 +302,12 @@ function buildMeetingItemFromRecord(
         readCustomerInfoFieldValue(recObj, fieldMap.meetingPlace),
       )
     : "";
+  const closeType = fieldMap.closeType
+    ? coerceCustomerInfoDisplayString(
+        readCustomerInfoFieldValue(recObj, fieldMap.closeType),
+      )
+    : "";
+  const firstMeetingDateYmd = resolveFirstMeetingDateYmd(recObj, fieldMap);
   const apPerson = fieldMap.salesperson
     ? normApClStaffName(
         readCustomerInfoFieldValue(recObj, fieldMap.salesperson),
@@ -304,6 +327,8 @@ function buildMeetingItemFromRecord(
     apoTypeLabel: apoTypeDisplayLabel(apoType),
     estimateStatus: estimateStatusStr,
     meetingPlace: meetingPlace.trim(),
+    firstMeetingDateYmd,
+    closeType: closeType.trim(),
     apPerson,
     clPerson,
     sortMinutes: timeMatch ? parseTimeToMinutes(timeMatch[1]!) : 24 * 60,
@@ -344,17 +369,23 @@ function formatMeetingScheduleStatusUpdateError(msg: string): string {
 export async function updateMeetingScheduleStatusForStaff(
   boundStaffName: string,
   recordIdRaw: string,
-  nextStatusRaw: string,
+  updateInput: MeetingScheduleStatusUpdateInput,
 ): Promise<
   | { ok: true; estimateStatus: string }
   | { ok: false; status: number; error: string }
 > {
   const recordId = recordIdRaw.trim();
-  const nextStatus = normalizeEditableStatus(nextStatusRaw);
+  const validated = validateMeetingScheduleStatusUpdate(updateInput);
+  if (!validated.ok) {
+    return { ok: false, status: 400, error: validated.error };
+  }
+  const { status: nextStatus, meetingDate, closeType, meetingPlace } =
+    validated.normalized;
   if (!recordId) {
     return { ok: false, status: 400, error: "recordId が必要です" };
   }
-  if (!nextStatus) {
+  const normalizedStatus = normalizeEditableStatus(nextStatus);
+  if (!normalizedStatus) {
     return { ok: false, status: 400, error: "変更できないステータスです" };
   }
   if (!salesDashboardApoWriteConfigured()) {
@@ -406,6 +437,9 @@ export async function updateMeetingScheduleStatusForStaff(
       fieldMap.clPerson,
       fieldMap.salesperson,
       fieldMap.estimateStatus,
+      fieldMap.meetingDate,
+      fieldMap.closeType,
+      fieldMap.meetingPlace,
       importKeyFieldId,
       ...importKeySources,
     ]
@@ -444,12 +478,42 @@ export async function updateMeetingScheduleStatusForStaff(
 
     const payload: Record<string, unknown> = {
       [importKeyFieldId]: importKeyValue,
-      [fieldMap.estimateStatus]: nextStatus,
+      [fieldMap.estimateStatus]: normalizedStatus,
     };
+
+    if (meetingDate && fieldMap.meetingDate) {
+      payload[fieldMap.meetingDate] = meetingDate;
+    } else if (meetingDate && !fieldMap.meetingDate) {
+      return {
+        ok: false,
+        status: 503,
+        error: "初回商談実施日列を特定できません",
+      };
+    }
+
+    if (closeType && fieldMap.closeType) {
+      payload[fieldMap.closeType] = closeType;
+    } else if (closeType && !fieldMap.closeType) {
+      return {
+        ok: false,
+        status: 503,
+        error: "片クロor両クロ列を特定できません",
+      };
+    }
+
+    if (meetingPlace && fieldMap.meetingPlace) {
+      payload[fieldMap.meetingPlace] = meetingPlace;
+    } else if (meetingPlace && !fieldMap.meetingPlace) {
+      return {
+        ok: false,
+        status: 503,
+        error: "商談場所列を特定できません",
+      };
+    }
 
     await updateRecord(apoAppId, recordId, payload, writeAuth);
 
-    return { ok: true, estimateStatus: nextStatus };
+    return { ok: true, estimateStatus: normalizedStatus };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[meeting-schedule:status]", e);
@@ -514,6 +578,7 @@ export async function buildMeetingScheduleForStaff(
       fieldMap.apoType,
       fieldMap.meetingPlace,
       fieldMap.meetingDate,
+      fieldMap.closeType,
     ]
       .filter(Boolean)
       .join(",");
@@ -615,6 +680,7 @@ export async function buildMeetingScheduleListForStaff(
       fieldMap.apoType,
       fieldMap.meetingPlace,
       fieldMap.meetingDate,
+      fieldMap.closeType,
     ]
       .filter(Boolean)
       .join(",");

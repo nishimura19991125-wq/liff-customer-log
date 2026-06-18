@@ -27,9 +27,19 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
 
   const { recordId } = await ctx.params;
 
-  let body: { status?: string };
+  let body: {
+    status?: string;
+    meetingDate?: string;
+    closeType?: string;
+    meetingPlace?: string;
+  };
   try {
-    body = (await request.json()) as { status?: string };
+    body = (await request.json()) as {
+      status?: string;
+      meetingDate?: string;
+      closeType?: string;
+      meetingPlace?: string;
+    };
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -50,7 +60,12 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
     const result = await updateMeetingScheduleStatusForStaff(
       boundStaffName,
       recordId,
-      status,
+      {
+        status,
+        meetingDate: body.meetingDate,
+        closeType: body.closeType,
+        meetingPlace: body.meetingPlace,
+      },
     );
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });

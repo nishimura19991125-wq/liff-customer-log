@@ -6,6 +6,9 @@ export type MeetingScheduleItem = {
   apoTypeLabel: string;
   estimateStatus: string;
   meetingPlace: string;
+  /** 初回商談実施日（YYYY-MM-DD） */
+  firstMeetingDateYmd: string;
+  closeType: string;
   apPerson: string;
   clPerson: string;
   sortMinutes: number;
@@ -26,5 +29,7 @@ export type MeetingSchedulePayload = {
   /** ステータス変更 UI 用 */
   statusOptions?: string[];
   statusEditable?: boolean;
+  closeTypeOptions?: string[];
+  meetingPlaceOptions?: string[];
   error?: string;
 };
