@@ -13,6 +13,7 @@ import {
   LiffStaffBindPanel,
   LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
+import { MeetingScheduleItemCard } from "@/components/meeting-schedule-item-card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
@@ -21,9 +22,14 @@ import {
   LIFF_SWR_DEFAULT_OPTIONS,
   isLiffSwrSessionExpired,
 } from "@/lib/liff-swr";
-import type { MeetingSchedulePayload } from "@/lib/meeting-schedule-types";
+import type {
+  MeetingScheduleItem,
+  MeetingSchedulePayload,
+} from "@/lib/meeting-schedule-types";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
+
+type ViewMode = "list" | "day";
 
 function shiftYmd(ymd: string, deltaDays: number): string {
   const d = new Date(`${ymd}T12:00:00+09:00`);
@@ -37,6 +43,26 @@ function todayYmdJst(): string {
   );
 }
 
+function groupItemsByDate(items: MeetingScheduleItem[]) {
+  const map = new Map<string, MeetingScheduleItem[]>();
+  for (const item of items) {
+    const key = item.scheduledYmd || "__undated__";
+    const bucket = map.get(key);
+    if (bucket) bucket.push(item);
+    else map.set(key, [item]);
+  }
+
+  return [...map.entries()]
+    .map(([key, groupItems]) => ({
+      ymd: key === "__undated__" ? "" : key,
+      label: groupItems[0]?.scheduledDateLabel ?? "日付未定",
+      items: groupItems,
+    }))
+    .sort((a, b) =>
+      (a.ymd || "9999-12-31").localeCompare(b.ymd || "9999-12-31"),
+    );
+}
+
 export default function MeetingSchedulePage() {
   const [phase, setPhase] = useState<
     "init" | "need-login" | "ready" | "error" | "session-expired"
@@ -45,6 +71,7 @@ export default function MeetingSchedulePage() {
     LIFF_ID ? null : "NEXT_PUBLIC_LIFF_ID が設定されていません",
   );
   const [idToken, setIdToken] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [viewDate, setViewDate] = useState(() => todayYmdJst());
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
@@ -62,7 +89,9 @@ export default function MeetingSchedulePage() {
     Boolean(account.boundStaffName || !account.bindingEnabled);
 
   const apiPath = canFetch
-    ? `/api/meeting-schedule?date=${encodeURIComponent(viewDate)}`
+    ? viewMode === "list"
+      ? "/api/meeting-schedule?scope=list"
+      : `/api/meeting-schedule?date=${encodeURIComponent(viewDate)}`
     : null;
 
   const { data, error: swrError, isLoading, mutate } = useLiffSwr<
@@ -102,11 +131,16 @@ export default function MeetingSchedulePage() {
 
   const isToday = viewDate === todayYmdJst();
   const itemCount = data?.items?.length ?? 0;
+  const groupedItems = useMemo(
+    () => (data?.items ? groupItemsByDate(data.items) : []),
+    [data?.items],
+  );
 
   const subtitle = useMemo(() => {
+    if (viewMode === "list") return `全 ${itemCount} 件`;
     if (!data?.dateLabel) return undefined;
     return `${data.dateLabel} · ${itemCount}件`;
-  }, [data?.dateLabel, itemCount]);
+  }, [viewMode, data?.dateLabel, itemCount]);
 
   const reload = useCallback(() => {
     void mutate();
@@ -168,7 +202,7 @@ export default function MeetingSchedulePage() {
 
       <main className="liff-page-main mx-auto w-full max-w-lg flex-1 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <LiffPageHeader
-          title="商談進捗"
+          title="商談進捗情報"
           subtitle={subtitle}
           action={
             <button
@@ -193,45 +227,72 @@ export default function MeetingSchedulePage() {
           />
         ) : (
           <>
-            <div className="mb-4 flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900">
               <button
                 type="button"
-                onClick={() => setViewDate((d) => shiftYmd(d, -1))}
-                className="flex size-10 items-center justify-center rounded-xl text-lg text-slate-700 active:bg-slate-100 dark:text-slate-200 dark:active:bg-slate-800"
-                aria-label="前の日"
+                onClick={() => setViewMode("list")}
+                className={`rounded-xl px-3 py-2.5 text-[14px] font-semibold transition-colors ${
+                  viewMode === "list"
+                    ? "bg-sky-600 text-white shadow-sm dark:bg-sky-500"
+                    : "text-slate-600 active:bg-slate-100 dark:text-slate-300 dark:active:bg-slate-800"
+                }`}
               >
-                ‹
+                一覧
               </button>
-              <div className="min-w-0 flex-1 text-center">
-                <p className="text-[15px] font-bold text-slate-800 dark:text-white">
-                  {data?.dateLabel ?? viewDate}
-                </p>
-                {!isToday ? (
-                  <button
-                    type="button"
-                    onClick={() => setViewDate(todayYmdJst())}
-                    className="mt-0.5 text-[12px] font-medium text-sky-600 dark:text-sky-400"
-                  >
-                    今日に戻る
-                  </button>
-                ) : (
-                  <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">
-                    本日の進捗
-                  </p>
-                )}
-              </div>
               <button
                 type="button"
-                onClick={() => setViewDate((d) => shiftYmd(d, 1))}
-                className="flex size-10 items-center justify-center rounded-xl text-lg text-slate-700 active:bg-slate-100 dark:text-slate-200 dark:active:bg-slate-800"
-                aria-label="次の日"
+                onClick={() => setViewMode("day")}
+                className={`rounded-xl px-3 py-2.5 text-[14px] font-semibold transition-colors ${
+                  viewMode === "day"
+                    ? "bg-sky-600 text-white shadow-sm dark:bg-sky-500"
+                    : "text-slate-600 active:bg-slate-100 dark:text-slate-300 dark:active:bg-slate-800"
+                }`}
               >
-                ›
+                日別
               </button>
             </div>
 
+            {viewMode === "day" ? (
+              <div className="mb-4 flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                <button
+                  type="button"
+                  onClick={() => setViewDate((d) => shiftYmd(d, -1))}
+                  className="flex size-10 items-center justify-center rounded-xl text-lg text-slate-700 active:bg-slate-100 dark:text-slate-200 dark:active:bg-slate-800"
+                  aria-label="前の日"
+                >
+                  ‹
+                </button>
+                <div className="min-w-0 flex-1 text-center">
+                  <p className="text-[15px] font-bold text-slate-800 dark:text-white">
+                    {data?.dateLabel ?? viewDate}
+                  </p>
+                  {!isToday ? (
+                    <button
+                      type="button"
+                      onClick={() => setViewDate(todayYmdJst())}
+                      className="mt-0.5 text-[12px] font-medium text-sky-600 dark:text-sky-400"
+                    >
+                      今日に戻る
+                    </button>
+                  ) : (
+                    <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">
+                      選択した日の商談進捗情報
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewDate((d) => shiftYmd(d, 1))}
+                  className="flex size-10 items-center justify-center rounded-xl text-lg text-slate-700 active:bg-slate-100 dark:text-slate-200 dark:active:bg-slate-800"
+                  aria-label="次の日"
+                >
+                  ›
+                </button>
+              </div>
+            ) : null}
+
             {isLoading && !data ? (
-              <LiffLoadingBlock message="商談進捗を読み込み中…" />
+              <LiffLoadingBlock message="商談進捗情報を読み込み中…" />
             ) : data?.error ? (
               <LiffCard>
                 <p className="px-4 py-6 text-center text-[14px] text-red-700 dark:text-red-300">
@@ -241,65 +302,50 @@ export default function MeetingSchedulePage() {
             ) : !data?.configured ? (
               <LiffCard>
                 <p className="px-4 py-6 text-center text-[14px] text-slate-600 dark:text-slate-300">
-                  商談進捗機能は環境変数設定後に利用できます。
+                  商談進捗情報は環境変数設定後に利用できます。
                 </p>
               </LiffCard>
             ) : itemCount === 0 ? (
               <LiffCard>
                 <p className="px-4 py-8 text-center text-[14px] text-slate-600 dark:text-slate-300">
-                  {isToday
-                    ? "本日の商談進捗はありません"
-                    : "この日の商談進捗はありません"}
+                  {viewMode === "list"
+                    ? "商談進捗情報はありません"
+                    : isToday
+                      ? "本日の商談進捗情報はありません"
+                      : "この日の商談進捗情報はありません"}
                 </p>
               </LiffCard>
+            ) : viewMode === "list" ? (
+              <div className="flex flex-col gap-5">
+                {groupedItems.map((group) => (
+                  <section key={group.ymd || group.label}>
+                    <h2 className="mb-2 px-1 text-[13px] font-bold text-slate-500 dark:text-slate-400">
+                      {group.label}
+                      <span className="ml-2 font-medium text-slate-400 dark:text-slate-500">
+                        {group.items.length}件
+                      </span>
+                    </h2>
+                    <ul className="flex flex-col gap-3">
+                      {group.items.map((item, i) => (
+                        <li key={`${group.ymd}-${item.customerName}-${item.meetingTime}-${i}`}>
+                          <MeetingScheduleItemCard
+                            item={item}
+                            staffName={data.staffName}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+              </div>
             ) : (
               <ul className="flex flex-col gap-3">
                 {data.items.map((item, i) => (
                   <li key={`${item.customerName}-${item.meetingTime}-${i}`}>
-                    <LiffCard>
-                      <div className="flex items-start gap-3 px-4 py-4">
-                        <div className="flex w-14 shrink-0 flex-col items-center justify-center rounded-xl bg-sky-50 py-2 dark:bg-sky-950/40">
-                          <span className="text-[11px] font-medium text-sky-700 dark:text-sky-300">
-                            開始
-                          </span>
-                          <span className="text-[18px] font-black tabular-nums leading-none text-sky-900 dark:text-sky-100">
-                            {item.meetingTime}
-                          </span>
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[16px] font-bold leading-snug text-slate-900 dark:text-white">
-                            {item.customerName}
-                          </p>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {item.city ? (
-                              <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[12px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                                {item.city}
-                              </span>
-                            ) : null}
-                            {item.apoTypeLabel ? (
-                              <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[12px] font-medium text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
-                                {item.apoTypeLabel}
-                              </span>
-                            ) : null}
-                            {item.estimateStatus ? (
-                              <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[12px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                {item.estimateStatus}
-                              </span>
-                            ) : null}
-                          </div>
-                          {item.meetingPlace ? (
-                            <p className="mt-2 text-[13px] text-slate-600 dark:text-slate-400">
-                              商談場所: {item.meetingPlace}
-                            </p>
-                          ) : null}
-                          {item.apPerson && item.apPerson !== data.staffName ? (
-                            <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-500">
-                              AP: {item.apPerson}
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
-                    </LiffCard>
+                    <MeetingScheduleItemCard
+                      item={item}
+                      staffName={data.staffName}
+                    />
                   </li>
                 ))}
               </ul>

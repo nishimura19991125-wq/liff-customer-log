@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
-import { buildMeetingScheduleForStaff } from "@/lib/meeting-schedule";
+import {
+  buildMeetingScheduleForStaff,
+  buildMeetingScheduleListForStaff,
+} from "@/lib/meeting-schedule";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -10,7 +13,7 @@ import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
 export const dynamic = "force-dynamic";
 
-/** 担当者別・日付別の商談進捗一覧 */
+/** 担当者別・日付別の商談進捗情報一覧 */
 export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
@@ -25,6 +28,7 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const date = url.searchParams.get("date");
+  const scope = url.searchParams.get("scope");
 
   try {
     const boundStaffName = await resolveBoundStaffNameForLineUser(
@@ -34,12 +38,15 @@ export async function GET(request: Request) {
       return NextResponse.json({ needsStaffBind: true });
     }
 
-    const payload = await buildMeetingScheduleForStaff(boundStaffName, date);
+    const payload =
+      scope === "list"
+        ? await buildMeetingScheduleListForStaff(boundStaffName)
+        : await buildMeetingScheduleForStaff(boundStaffName, date);
     return NextResponse.json(payload);
   } catch (e) {
     console.error("[api/meeting-schedule]", e);
     const msg =
-      e instanceof Error ? e.message : "商談進捗の取得に失敗しました";
+      e instanceof Error ? e.message : "商談進捗情報の取得に失敗しました";
     return NextResponse.json({ error: msg }, { status: 502 });
   }
 }

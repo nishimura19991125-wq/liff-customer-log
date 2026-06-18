@@ -175,10 +175,45 @@ function recordDateMatchesTarget(
   return false;
 }
 
-function buildMeetingItem(
+function resolveRecordScheduleYmd(
   recObj: Record<string, unknown>,
   fieldMap: MeetingScheduleFieldMap,
-  targetYmd: string,
+): { ymd: string; time: string } {
+  const scheduled = parseScheduledParts(
+    readCustomerInfoFieldValue(recObj, fieldMap.scheduledDate),
+  );
+  if (scheduled?.ymd) return scheduled;
+
+  if (fieldMap.meetingDate) {
+    const meetingDate = parseScheduledParts(
+      readCustomerInfoFieldValue(recObj, fieldMap.meetingDate),
+    );
+    if (meetingDate?.ymd) return meetingDate;
+  }
+
+  return { ymd: "", time: "" };
+}
+
+function scheduleDateLabel(ymd: string): string {
+  if (!ymd) return "日付未定";
+  return formatMeetingDateLabel(ymd);
+}
+
+function sortMeetingItems(items: MeetingScheduleItem[]): void {
+  items.sort((a, b) => {
+    const dateA = a.scheduledYmd || "9999-12-31";
+    const dateB = b.scheduledYmd || "9999-12-31";
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
+    return (
+      a.sortMinutes - b.sortMinutes ||
+      a.customerName.localeCompare(b.customerName, "ja")
+    );
+  });
+}
+
+function buildMeetingItemFromRecord(
+  recObj: Record<string, unknown>,
+  fieldMap: MeetingScheduleFieldMap,
 ): MeetingScheduleItem | null {
   const estimateStatus = fieldMap.estimateStatus
     ? coerceCustomerInfoDisplayString(
@@ -191,22 +226,13 @@ function buildMeetingItem(
     return null;
   }
 
-  if (!recordDateMatchesTarget(recObj, fieldMap, targetYmd, estimateStatusStr)) {
-    return null;
-  }
-
-  const scheduledRaw = readCustomerInfoFieldValue(
-    recObj,
-    fieldMap.scheduledDate,
-  );
-  const scheduled = parseScheduledParts(scheduledRaw);
-
+  const schedule = resolveRecordScheduleYmd(recObj, fieldMap);
   const timeFromField = fieldMap.meetingTime
     ? coerceCustomerInfoDisplayString(
         readCustomerInfoFieldValue(recObj, fieldMap.meetingTime),
       )
     : "";
-  const meetingTime = (timeFromField || scheduled?.time || "").trim();
+  const meetingTime = (timeFromField || schedule.time || "").trim();
   const timeMatch = /(\d{1,2}:\d{2})/.exec(meetingTime);
 
   const customerName = fieldMap.customerName
@@ -245,12 +271,33 @@ function buildMeetingItem(
     city: formatCityLabel(cityRaw),
     meetingTime: timeMatch?.[1] ?? (meetingTime || "—"),
     apoTypeLabel: apoTypeDisplayLabel(apoType),
-    estimateStatus: estimateStatus.trim(),
+    estimateStatus: estimateStatusStr,
     meetingPlace: meetingPlace.trim(),
     apPerson,
     clPerson,
     sortMinutes: timeMatch ? parseTimeToMinutes(timeMatch[1]!) : 24 * 60,
+    scheduledYmd: schedule.ymd,
+    scheduledDateLabel: scheduleDateLabel(schedule.ymd),
   };
+}
+
+function buildMeetingItem(
+  recObj: Record<string, unknown>,
+  fieldMap: MeetingScheduleFieldMap,
+  targetYmd: string,
+): MeetingScheduleItem | null {
+  const estimateStatus = fieldMap.estimateStatus
+    ? coerceCustomerInfoDisplayString(
+        readCustomerInfoFieldValue(recObj, fieldMap.estimateStatus),
+      )
+    : "";
+  const estimateStatusStr = estimateStatus.trim();
+
+  if (!recordDateMatchesTarget(recObj, fieldMap, targetYmd, estimateStatusStr)) {
+    return null;
+  }
+
+  return buildMeetingItemFromRecord(recObj, fieldMap);
 }
 
 export async function buildMeetingScheduleForStaff(
@@ -263,6 +310,7 @@ export async function buildMeetingScheduleForStaff(
   if (!apoAppId) {
     return {
       configured: false,
+      scope: "day",
       date: targetYmd,
       dateLabel: formatMeetingDateLabel(targetYmd),
       staffName: boundStaffName,
@@ -282,12 +330,13 @@ export async function buildMeetingScheduleForStaff(
     if (!fieldMap) {
       return {
         configured: false,
+        scope: "day",
         date: targetYmd,
         dateLabel: formatMeetingDateLabel(targetYmd),
         staffName: boundStaffName,
         items: [],
         error:
-          "商談進捗の必須フィールド（CL担当者・商談日）を特定できません。MEETING_SCHEDULE_*_FIELD_ID を設定してください。",
+          "商談進捗情報の必須フィールド（CL担当者・商談日）を特定できません。MEETING_SCHEDULE_*_FIELD_ID を設定してください。",
       };
     }
 
@@ -334,6 +383,7 @@ export async function buildMeetingScheduleForStaff(
 
     return {
       configured: true,
+      scope: "day",
       date: targetYmd,
       dateLabel: formatMeetingDateLabel(targetYmd),
       staffName: boundStaffName,
@@ -344,11 +394,102 @@ export async function buildMeetingScheduleForStaff(
     console.error("[meeting-schedule]", e);
     return {
       configured: true,
+      scope: "day",
       date: targetYmd,
       dateLabel: formatMeetingDateLabel(targetYmd),
       staffName: boundStaffName,
       items: [],
-      error: msg || "商談進捗の取得に失敗しました",
+      error: msg || "商談進捗情報の取得に失敗しました",
+    };
+  }
+}
+
+export async function buildMeetingScheduleListForStaff(
+  boundStaffName: string,
+): Promise<MeetingSchedulePayload> {
+  const apoAppId = salesDashboardApoAppId();
+
+  if (!apoAppId) {
+    return {
+      configured: false,
+      scope: "list",
+      staffName: boundStaffName,
+      items: [],
+      error: "SALES_DASHBOARD_APO_APP_ID が未設定です",
+    };
+  }
+
+  try {
+    const fieldAuth = { apiKey: apiKeyForSalesDashboardApoPocket() };
+    const listAuths = salesDashboardApoListAuths();
+    const apoFields = await fetchAppFields(apoAppId, fieldAuth, {
+      operation: "meeting-schedule:fields",
+      appEnv: "SALES_DASHBOARD_APO_APP_ID",
+    });
+    const fieldMap = resolveMeetingScheduleFieldMap(apoFields);
+    if (!fieldMap) {
+      return {
+        configured: false,
+        scope: "list",
+        staffName: boundStaffName,
+        items: [],
+        error:
+          "商談進捗情報の必須フィールド（CL担当者・商談日）を特定できません。MEETING_SCHEDULE_*_FIELD_ID を設定してください。",
+      };
+    }
+
+    const wanted = [
+      fieldMap.clPerson,
+      fieldMap.scheduledDate,
+      fieldMap.salesperson,
+      fieldMap.customerName,
+      fieldMap.city,
+      fieldMap.meetingTime,
+      fieldMap.estimateStatus,
+      fieldMap.apoType,
+      fieldMap.meetingPlace,
+      fieldMap.meetingDate,
+    ]
+      .filter(Boolean)
+      .join(",");
+
+    const records = await fetchSalesDashboardRecordPages(
+      apoAppId,
+      wanted,
+      listAuths,
+      {
+        operation: "meeting-schedule:records-list",
+        appEnv: "SALES_DASHBOARD_APO_APP_ID",
+      },
+    );
+    const items: MeetingScheduleItem[] = [];
+
+    for (const row of records) {
+      const rec = row.record;
+      if (!rec || typeof rec !== "object") continue;
+      const recObj = rec as Record<string, unknown>;
+      if (!recordMatchesStaff(recObj, fieldMap, boundStaffName)) continue;
+      const item = buildMeetingItemFromRecord(recObj, fieldMap);
+      if (item) items.push(item);
+    }
+
+    sortMeetingItems(items);
+
+    return {
+      configured: true,
+      scope: "list",
+      staffName: boundStaffName,
+      items,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[meeting-schedule:list]", e);
+    return {
+      configured: true,
+      scope: "list",
+      staffName: boundStaffName,
+      items: [],
+      error: msg || "商談進捗情報の取得に失敗しました",
     };
   }
 }
