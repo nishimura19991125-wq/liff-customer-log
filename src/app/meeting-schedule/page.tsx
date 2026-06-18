@@ -22,7 +22,6 @@ import {
   LIFF_SWR_DEFAULT_OPTIONS,
   isLiffSwrSessionExpired,
 } from "@/lib/liff-swr";
-import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
 import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
 import type {
   MeetingScheduleItem,
@@ -31,7 +30,7 @@ import type {
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
-type ViewMode = "list" | "day" | "closed";
+type ViewMode = "list" | "day";
 
 function shiftYmd(ymd: string, deltaDays: number): string {
   const d = new Date(`${ymd}T12:00:00+09:00`);
@@ -95,9 +94,7 @@ export default function MeetingSchedulePage() {
   const apiPath = canFetch
     ? viewMode === "list"
       ? "/api/meeting-schedule?scope=list"
-      : viewMode === "closed"
-        ? "/api/meeting-schedule?scope=closed"
-        : `/api/meeting-schedule?date=${encodeURIComponent(viewDate)}`
+      : `/api/meeting-schedule?date=${encodeURIComponent(viewDate)}`
     : null;
 
   const { data, error: swrError, isLoading, mutate } = useLiffSwr<
@@ -144,7 +141,6 @@ export default function MeetingSchedulePage() {
 
   const subtitle = useMemo(() => {
     if (viewMode === "list") return `全 ${itemCount} 件`;
-    if (viewMode === "closed") return `閉じる ${itemCount} 件`;
     if (!data?.dateLabel) return undefined;
     return `${data.dateLabel} · ${itemCount}件`;
   }, [viewMode, data?.dateLabel, itemCount]);
@@ -179,40 +175,6 @@ export default function MeetingSchedulePage() {
       } catch (e) {
         const msg =
           e instanceof Error ? e.message : "見積ステータスの更新に失敗しました";
-        setFeedback(msg);
-      } finally {
-        setUpdatingRecordId(null);
-      }
-    },
-    [idToken, mutate],
-  );
-
-  const handleScheduleChange = useCallback(
-    async (recordId: string, update: MeetingScheduleScheduledUpdateInput) => {
-      if (!idToken || !update.scheduledYmd.trim()) return;
-      setUpdatingRecordId(recordId);
-      setFeedback(null);
-      try {
-        const res = await fetch(
-          `/api/meeting-schedule/records/${encodeURIComponent(recordId)}/schedule`,
-          {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${idToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(update),
-          },
-        );
-        const body = (await res.json()) as { error?: string };
-        if (!res.ok) {
-          throw new Error(body.error ?? "商談予定日時の更新に失敗しました");
-        }
-        setFeedback("商談予定日時を更新しました");
-        await mutate();
-      } catch (e) {
-        const msg =
-          e instanceof Error ? e.message : "商談予定日時の更新に失敗しました";
         setFeedback(msg);
       } finally {
         setUpdatingRecordId(null);
@@ -308,11 +270,11 @@ export default function MeetingSchedulePage() {
           />
         ) : (
           <>
-            <div className="mb-4 grid grid-cols-3 gap-2 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900">
               <button
                 type="button"
                 onClick={() => setViewMode("list")}
-                className={`rounded-xl px-2 py-2.5 text-[13px] font-semibold transition-colors sm:px-3 sm:text-[14px] ${
+                className={`rounded-xl px-3 py-2.5 text-[14px] font-semibold transition-colors ${
                   viewMode === "list"
                     ? "bg-sky-600 text-white shadow-sm dark:bg-sky-500"
                     : "text-slate-600 active:bg-slate-100 dark:text-slate-300 dark:active:bg-slate-800"
@@ -323,24 +285,13 @@ export default function MeetingSchedulePage() {
               <button
                 type="button"
                 onClick={() => setViewMode("day")}
-                className={`rounded-xl px-2 py-2.5 text-[13px] font-semibold transition-colors sm:px-3 sm:text-[14px] ${
+                className={`rounded-xl px-3 py-2.5 text-[14px] font-semibold transition-colors ${
                   viewMode === "day"
                     ? "bg-sky-600 text-white shadow-sm dark:bg-sky-500"
                     : "text-slate-600 active:bg-slate-100 dark:text-slate-300 dark:active:bg-slate-800"
                 }`}
               >
                 日別
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("closed")}
-                className={`rounded-xl px-2 py-2.5 text-[13px] font-semibold transition-colors sm:px-3 sm:text-[14px] ${
-                  viewMode === "closed"
-                    ? "bg-sky-600 text-white shadow-sm dark:bg-sky-500"
-                    : "text-slate-600 active:bg-slate-100 dark:text-slate-300 dark:active:bg-slate-800"
-                }`}
-              >
-                閉じる
               </button>
             </div>
 
@@ -402,14 +353,12 @@ export default function MeetingSchedulePage() {
                 <p className="px-4 py-8 text-center text-[14px] text-slate-600 dark:text-slate-300">
                   {viewMode === "list"
                     ? "商談進捗情報はありません"
-                    : viewMode === "closed"
-                      ? "閉じる案件はありません"
-                      : isToday
-                        ? "本日の商談進捗情報はありません"
-                        : "この日の商談進捗情報はありません"}
+                    : isToday
+                      ? "本日の商談進捗情報はありません"
+                      : "この日の商談進捗情報はありません"}
                 </p>
               </LiffCard>
-            ) : viewMode === "list" || viewMode === "closed" ? (
+            ) : viewMode === "list" ? (
               <div className="flex flex-col gap-5">
                 {groupedItems.map((group) => (
                   <section key={group.ymd || group.label}>
@@ -427,12 +376,10 @@ export default function MeetingSchedulePage() {
                             staffName={data.staffName}
                             statusOptions={data.statusOptions}
                             statusEditable={data.statusEditable}
-                            scheduleEditable={data.scheduleEditable}
                             closeTypeOptions={data.closeTypeOptions}
                             meetingPlaceOptions={data.meetingPlaceOptions}
                             statusUpdating={updatingRecordId === item.recordId}
                             onStatusChange={handleStatusChange}
-                            onScheduleChange={handleScheduleChange}
                           />
                         </li>
                       ))}
@@ -449,12 +396,10 @@ export default function MeetingSchedulePage() {
                       staffName={data.staffName}
                       statusOptions={data.statusOptions}
                       statusEditable={data.statusEditable}
-                      scheduleEditable={data.scheduleEditable}
                       closeTypeOptions={data.closeTypeOptions}
                       meetingPlaceOptions={data.meetingPlaceOptions}
                       statusUpdating={updatingRecordId === item.recordId}
                       onStatusChange={handleStatusChange}
-                      onScheduleChange={handleScheduleChange}
                     />
                   </li>
                 ))}

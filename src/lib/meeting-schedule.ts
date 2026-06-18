@@ -23,13 +23,10 @@ import {
   meetingScheduleExcludedStatuses,
   meetingScheduleImportKeySourceFieldIds,
   meetingScheduleMeetingPlaceOptions,
-  isMeetingScheduleClosedStatus,
   resolveMeetingScheduleFieldMap,
   resolveMeetingScheduleImportKeyFieldId,
   type MeetingScheduleFieldMap,
 } from "@/lib/meeting-schedule-fields";
-import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
-import { validateMeetingScheduleScheduledUpdate } from "@/lib/meeting-schedule-scheduled-update";
 import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
 import { validateMeetingScheduleStatusUpdate } from "@/lib/meeting-schedule-status-update";
 import { salesDashboardApoAppId } from "@/lib/sales-dashboard-fields";
@@ -229,17 +226,11 @@ function sortMeetingItems(items: MeetingScheduleItem[]): void {
 
 function meetingScheduleMetaExtras(): Pick<
   MeetingSchedulePayload,
-  | "statusOptions"
-  | "statusEditable"
-  | "scheduleEditable"
-  | "closeTypeOptions"
-  | "meetingPlaceOptions"
+  "statusOptions" | "statusEditable" | "closeTypeOptions" | "meetingPlaceOptions"
 > {
-  const editable = salesDashboardApoWriteConfigured();
   return {
     statusOptions: meetingScheduleEditableStatuses(),
-    statusEditable: editable,
-    scheduleEditable: editable,
+    statusEditable: salesDashboardApoWriteConfigured(),
     closeTypeOptions: meetingScheduleCloseTypeOptions(),
     meetingPlaceOptions: meetingScheduleMeetingPlaceOptions(),
   };
@@ -270,7 +261,6 @@ function buildMeetingItemFromRecord(
   recObj: Record<string, unknown>,
   fieldMap: MeetingScheduleFieldMap,
   recordId: string,
-  listFilter: "all" | "closed" | "active" = "active",
 ): MeetingScheduleItem | null {
   const estimateStatus = fieldMap.estimateStatus
     ? coerceCustomerInfoDisplayString(
@@ -279,14 +269,8 @@ function buildMeetingItemFromRecord(
     : "";
   const estimateStatusStr = estimateStatus.trim();
 
-  if (listFilter === "closed") {
-    if (!estimateStatusStr || !isMeetingScheduleClosedStatus(estimateStatusStr)) {
-      return null;
-    }
-  } else if (listFilter === "active") {
-    if (estimateStatusStr && !matchesMeetingScheduleStatus(estimateStatusStr)) {
-      return null;
-    }
+  if (estimateStatusStr && !matchesMeetingScheduleStatus(estimateStatusStr)) {
+    return null;
   }
 
   const schedule = resolveRecordScheduleYmd(recObj, fieldMap);
@@ -295,9 +279,8 @@ function buildMeetingItemFromRecord(
         readCustomerInfoFieldValue(recObj, fieldMap.meetingTime),
       )
     : "";
-  const meetingTimeRaw = (timeFromField || schedule.time || "").trim();
-  const timeMatch = /(\d{1,2}:\d{2})/.exec(meetingTimeRaw);
-  const scheduledTime = timeMatch?.[1]?.slice(0, 5) ?? "";
+  const meetingTime = (timeFromField || schedule.time || "").trim();
+  const timeMatch = /(\d{1,2}:\d{2})/.exec(meetingTime);
 
   const customerName = fieldMap.customerName
     ? coerceCustomerInfoDisplayString(
@@ -340,8 +323,7 @@ function buildMeetingItemFromRecord(
     recordId,
     customerName: customerName.trim(),
     city: formatCityLabel(cityRaw),
-    meetingTime: scheduledTime || "—",
-    scheduledTime,
+    meetingTime: timeMatch?.[1] ?? (meetingTime || "—"),
     apoTypeLabel: apoTypeDisplayLabel(apoType),
     estimateStatus: estimateStatusStr,
     meetingPlace: meetingPlace.trim(),
@@ -545,157 +527,6 @@ export async function updateMeetingScheduleStatusForStaff(
   }
 }
 
-function scheduledDateTimeValueForPocket(
-  ymd: string,
-  time: string,
-  existingRaw: unknown,
-): string {
-  const existing = coerceCustomerInfoDisplayString(existingRaw);
-  const [y, mo, d] = ymd.split("-");
-  const hm = time || "00:00";
-  if (existing.includes("/")) {
-    const slashDate = `${y}/${mo}/${d}`;
-    return time ? `${slashDate} ${hm}` : slashDate;
-  }
-  return time ? `${ymd} ${hm}:00` : ymd;
-}
-
-export async function updateMeetingScheduleScheduledForStaff(
-  boundStaffName: string,
-  recordIdRaw: string,
-  updateInput: MeetingScheduleScheduledUpdateInput,
-): Promise<
-  | { ok: true; scheduledYmd: string; scheduledTime: string }
-  | { ok: false; status: number; error: string }
-> {
-  const recordId = recordIdRaw.trim();
-  const validated = validateMeetingScheduleScheduledUpdate(updateInput);
-  if (!validated.ok) {
-    return { ok: false, status: 400, error: validated.error };
-  }
-  const { scheduledYmd, scheduledTime } = validated.normalized;
-  if (!recordId) {
-    return { ok: false, status: 400, error: "recordId が必要です" };
-  }
-  if (!salesDashboardApoWriteConfigured()) {
-    return {
-      ok: false,
-      status: 503,
-      error:
-        "商談予定日時の更新用 API キー（SALES_DASHBOARD_APO_ATPOCKET_API_KEY_2）が未設定です",
-    };
-  }
-
-  const apoAppId = salesDashboardApoAppId();
-  if (!apoAppId) {
-    return {
-      ok: false,
-      status: 503,
-      error: "SALES_DASHBOARD_APO_APP_ID が未設定です",
-    };
-  }
-
-  try {
-    const readAuth = { apiKey: apiKeyForSalesDashboardApoPocket() };
-    const writeAuth = { apiKey: apiKeyForSalesDashboardApoWrite() };
-    const apoFields = await fetchAppFields(apoAppId, readAuth, {
-      operation: "meeting-schedule:schedule-fields",
-      appEnv: "SALES_DASHBOARD_APO_APP_ID",
-    });
-    const fieldMap = resolveMeetingScheduleFieldMap(apoFields);
-    if (!fieldMap?.scheduledDate) {
-      return {
-        ok: false,
-        status: 503,
-        error: "商談予定日時列を特定できません",
-      };
-    }
-
-    const importKeyFieldId = resolveMeetingScheduleImportKeyFieldId(apoFields);
-    if (!importKeyFieldId) {
-      return {
-        ok: false,
-        status: 503,
-        error:
-          "取込キー列（アポ通番(仮)）を特定できません。MEETING_SCHEDULE_IMPORT_KEY_FIELD_ID を設定してください。",
-      };
-    }
-
-    const importKeySources = meetingScheduleImportKeySourceFieldIds();
-    const wanted = [
-      fieldMap.clPerson,
-      fieldMap.salesperson,
-      fieldMap.scheduledDate,
-      fieldMap.meetingTime,
-      importKeyFieldId,
-      ...importKeySources,
-    ]
-      .filter(Boolean)
-      .join(",");
-
-    let recRow = await fetchRecordById(apoAppId, recordId, readAuth, wanted);
-    if (!recRow?.record) {
-      recRow = await fetchRecordById(apoAppId, recordId, readAuth);
-    }
-    if (!recRow?.record || typeof recRow.record !== "object") {
-      return { ok: false, status: 404, error: "レコードが見つかりません" };
-    }
-    const recObj = recRow.record as Record<string, unknown>;
-    if (!recordMatchesStaff(recObj, fieldMap, boundStaffName)) {
-      return {
-        ok: false,
-        status: 403,
-        error: "この案件を更新する権限がありません",
-      };
-    }
-
-    const importKeyValue = readCustomerInfoImportKeyFromRecord(
-      recObj,
-      importKeyFieldId,
-      importKeySources,
-    );
-    if (!importKeyValue) {
-      return {
-        ok: false,
-        status: 400,
-        error:
-          "この案件のアポ通番(仮)（取込キー）を取得できませんでした。@pocket に値が入っているか、MEETING_SCHEDULE_IMPORT_KEY_FIELD_ID を確認してください。",
-      };
-    }
-
-    const existingScheduledRaw = readCustomerInfoFieldValue(
-      recObj,
-      fieldMap.scheduledDate,
-    );
-    const payload: Record<string, unknown> = {
-      [importKeyFieldId]: importKeyValue,
-      [fieldMap.scheduledDate]: scheduledDateTimeValueForPocket(
-        scheduledYmd,
-        scheduledTime,
-        existingScheduledRaw,
-      ),
-    };
-
-    if (scheduledTime && fieldMap.meetingTime) {
-      payload[fieldMap.meetingTime] = scheduledTime;
-    }
-
-    await updateRecord(apoAppId, recordId, payload, writeAuth);
-
-    return { ok: true, scheduledYmd, scheduledTime };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error("[meeting-schedule:schedule]", e);
-    return {
-      ok: false,
-      status: 502,
-      error: formatMeetingScheduleStatusUpdateError(
-        msg || "商談予定日時の更新に失敗しました",
-      ),
-    };
-  }
-}
-
 export async function buildMeetingScheduleForStaff(
   boundStaffName: string,
   dateParam?: string | null,
@@ -807,30 +638,12 @@ export async function buildMeetingScheduleForStaff(
 export async function buildMeetingScheduleListForStaff(
   boundStaffName: string,
 ): Promise<MeetingSchedulePayload> {
-  return buildMeetingScheduleFilteredListForStaff(boundStaffName, "all", "list");
-}
-
-export async function buildMeetingScheduleClosedListForStaff(
-  boundStaffName: string,
-): Promise<MeetingSchedulePayload> {
-  return buildMeetingScheduleFilteredListForStaff(
-    boundStaffName,
-    "closed",
-    "closed",
-  );
-}
-
-async function buildMeetingScheduleFilteredListForStaff(
-  boundStaffName: string,
-  listFilter: "all" | "closed",
-  scope: "list" | "closed",
-): Promise<MeetingSchedulePayload> {
   const apoAppId = salesDashboardApoAppId();
 
   if (!apoAppId) {
     return {
       configured: false,
-      scope,
+      scope: "list",
       staffName: boundStaffName,
       items: [],
       error: "SALES_DASHBOARD_APO_APP_ID が未設定です",
@@ -848,7 +661,7 @@ async function buildMeetingScheduleFilteredListForStaff(
     if (!fieldMap) {
       return {
         configured: false,
-        scope,
+        scope: "list",
         staffName: boundStaffName,
         items: [],
         error:
@@ -877,10 +690,7 @@ async function buildMeetingScheduleFilteredListForStaff(
       wanted,
       listAuths,
       {
-        operation:
-          scope === "closed"
-            ? "meeting-schedule:records-closed"
-            : "meeting-schedule:records-list",
+        operation: "meeting-schedule:records-list",
         appEnv: "SALES_DASHBOARD_APO_APP_ID",
       },
     );
@@ -893,12 +703,7 @@ async function buildMeetingScheduleFilteredListForStaff(
       if (!recordId) continue;
       const recObj = rec as Record<string, unknown>;
       if (!recordMatchesStaff(recObj, fieldMap, boundStaffName)) continue;
-      const item = buildMeetingItemFromRecord(
-        recObj,
-        fieldMap,
-        recordId,
-        listFilter,
-      );
+      const item = buildMeetingItemFromRecord(recObj, fieldMap, recordId);
       if (item) items.push(item);
     }
 
@@ -906,17 +711,17 @@ async function buildMeetingScheduleFilteredListForStaff(
 
     return {
       configured: true,
-      scope,
+      scope: "list",
       staffName: boundStaffName,
       items,
       ...meetingScheduleMetaExtras(),
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`[meeting-schedule:${scope}]`, e);
+    console.error("[meeting-schedule:list]", e);
     return {
       configured: true,
-      scope,
+      scope: "list",
       staffName: boundStaffName,
       items: [],
       error: msg || "商談進捗情報の取得に失敗しました",

@@ -95,8 +95,8 @@ export function resolveMeetingScheduleFieldMap(
   const scheduledDate = pickByEnvOrKeywords(
     "MEETING_SCHEDULE_DATE_FIELD_ID",
     fields,
-    ["商談・資料送付予定日時", "商談資料送付予定日時", "商談予定日時"],
-    ["商談・資料送付予定日時", "商談予定日時"],
+    ["商談・資料送付予定日時", "商談資料送付予定日時"],
+    ["商談・資料送付予定日時"],
   );
   if (!clPerson || !scheduledDate) return null;
 
@@ -219,45 +219,6 @@ export function meetingScheduleExcludedStatuses(): string[] {
     if (parsed.length) return parsed;
   }
   return ["再商談否", "再商談成約", "返待ち否", "返待ち成約"];
-}
-
-/** 商談進捗「閉じる」タブの対象ステータス（成約・否・キャンなど） */
-export function meetingScheduleClosedStatuses(): string[] {
-  const raw = process.env.MEETING_SCHEDULE_CLOSED_STATUSES?.trim();
-  if (raw) {
-    const parsed = raw
-      .split(",")
-      .map((s) => nfkc(s))
-      .filter(Boolean);
-    if (parsed.length) return parsed;
-  }
-  return [
-    "即決成約",
-    "再商談成約",
-    "返待ち成約",
-    "再商談否",
-    "返待ち否",
-    "否",
-    "アポキャン",
-  ];
-}
-
-export function isMeetingScheduleClosedStatus(statusRaw: string): boolean {
-  const status = nfkc(statusRaw)
-    .replace(/\(/g, "（")
-    .replace(/\)/g, "）");
-  if (!status) return false;
-  for (const closed of meetingScheduleClosedStatuses()) {
-    const c = nfkc(closed)
-      .replace(/\(/g, "（")
-      .replace(/\)/g, "）");
-    if (c === "否") {
-      if (status === "否") return true;
-      continue;
-    }
-    if (status === c || status.includes(c)) return true;
-  }
-  return false;
 }
 
 /** LIFF から変更可能な見積ステータス（省略時は表示対象 + 成約/否系など） */
