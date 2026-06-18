@@ -1,4 +1,5 @@
 export type MeetingScheduleItem = {
+  recordId: string;
   customerName: string;
   city: string;
   meetingTime: string;
@@ -22,5 +23,8 @@ export type MeetingSchedulePayload = {
   /** scope=day のときのみ */
   date?: string;
   dateLabel?: string;
+  /** ステータス変更 UI 用 */
+  statusOptions?: string[];
+  statusEditable?: boolean;
   error?: string;
 };

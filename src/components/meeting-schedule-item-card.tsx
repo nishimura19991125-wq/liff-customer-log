@@ -1,12 +1,43 @@
+"use client";
+
+import { useMemo } from "react";
+
 import { LiffCard } from "@/components/liff-chrome";
 import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
 
 type Props = {
   item: MeetingScheduleItem;
   staffName: string;
+  statusOptions?: string[];
+  statusEditable?: boolean;
+  statusUpdating?: boolean;
+  onStatusChange?: (recordId: string, nextStatus: string) => void;
 };
 
-export function MeetingScheduleItemCard({ item, staffName }: Props) {
+function mergeStatusOptions(
+  options: string[],
+  current: string,
+): string[] {
+  const trimmed = current.trim();
+  if (!trimmed || options.includes(trimmed)) return options;
+  return [...options, trimmed];
+}
+
+export function MeetingScheduleItemCard({
+  item,
+  staffName,
+  statusOptions = [],
+  statusEditable = false,
+  statusUpdating = false,
+  onStatusChange,
+}: Props) {
+  const selectOptions = useMemo(
+    () => mergeStatusOptions(statusOptions, item.estimateStatus),
+    [statusOptions, item.estimateStatus],
+  );
+  const canEditStatus =
+    statusEditable && selectOptions.length > 0 && Boolean(onStatusChange);
+
   return (
     <LiffCard>
       <div className="flex items-start gap-3 px-4 py-4">
@@ -33,12 +64,34 @@ export function MeetingScheduleItemCard({ item, staffName }: Props) {
                 {item.apoTypeLabel}
               </span>
             ) : null}
-            {item.estimateStatus ? (
+            {!canEditStatus && item.estimateStatus ? (
               <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[12px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                 {item.estimateStatus}
               </span>
             ) : null}
           </div>
+          {canEditStatus ? (
+            <label className="mt-3 block">
+              <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                見積ステータス
+              </span>
+              <select
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[14px] text-slate-900 shadow-sm disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                value={item.estimateStatus}
+                disabled={statusUpdating}
+                onChange={(e) => onStatusChange?.(item.recordId, e.target.value)}
+              >
+                {!item.estimateStatus ? (
+                  <option value="">選択してください</option>
+                ) : null}
+                {selectOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           {item.meetingPlace ? (
             <p className="mt-2 text-[13px] text-slate-600 dark:text-slate-400">
               商談場所: {item.meetingPlace}

@@ -376,6 +376,15 @@ export function apiKeyForSalesDashboardApoPocket2(): string {
   );
 }
 
+/** アポ取得情報・更新③（見積ステータス更新など） */
+export function apiKeyForSalesDashboardApoWrite(): string {
+  return requireAppApiKey("SALES_DASHBOARD_APO", 2, []);
+}
+
+export function salesDashboardApoWriteConfigured(): boolean {
+  return Boolean(process.env.SALES_DASHBOARD_APO_ATPOCKET_API_KEY_2?.trim());
+}
+
 /** 一覧サブキー最大数（LIST_1 … LIST_N。429 分散用に既存3 + 追加10 = 13） */
 export const POCKET_LIST_SUB_KEY_MAX = 13;
 

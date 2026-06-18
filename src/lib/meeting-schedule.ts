@@ -2,8 +2,13 @@ import "server-only";
 
 import {
   apiKeyForSalesDashboardApoPocket,
+  apiKeyForSalesDashboardApoWrite,
   fetchAppFields,
+  fetchRecordById,
+  salesDashboardApoWriteConfigured,
+  updateRecord,
 } from "@/lib/atpocket";
+import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
 import {
   coerceCustomerInfoDisplayString,
   readCustomerInfoFieldValue,
@@ -12,6 +17,7 @@ import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { jstDateKey } from "@/lib/missing-documents-cache";
 import {
   meetingScheduleAllowedStatuses,
+  meetingScheduleEditableStatuses,
   meetingScheduleExcludedStatuses,
   resolveMeetingScheduleFieldMap,
   type MeetingScheduleFieldMap,
@@ -211,9 +217,30 @@ function sortMeetingItems(items: MeetingScheduleItem[]): void {
   });
 }
 
+function meetingScheduleMetaExtras(): Pick<
+  MeetingSchedulePayload,
+  "statusOptions" | "statusEditable"
+> {
+  return {
+    statusOptions: meetingScheduleEditableStatuses(),
+    statusEditable: salesDashboardApoWriteConfigured(),
+  };
+}
+
+function normalizeEditableStatus(statusRaw: string): string | null {
+  const status = normalizeStatus(statusRaw);
+  if (!status) return null;
+  const options = meetingScheduleEditableStatuses();
+  const exact = options.find((o) => normalizeStatus(o) === status);
+  if (exact) return exact;
+  const partial = options.find((o) => status.includes(normalizeStatus(o)));
+  return partial ?? null;
+}
+
 function buildMeetingItemFromRecord(
   recObj: Record<string, unknown>,
   fieldMap: MeetingScheduleFieldMap,
+  recordId: string,
 ): MeetingScheduleItem | null {
   const estimateStatus = fieldMap.estimateStatus
     ? coerceCustomerInfoDisplayString(
@@ -267,6 +294,7 @@ function buildMeetingItemFromRecord(
   if (!customerName.trim()) return null;
 
   return {
+    recordId,
     customerName: customerName.trim(),
     city: formatCityLabel(cityRaw),
     meetingTime: timeMatch?.[1] ?? (meetingTime || "—"),
@@ -285,6 +313,7 @@ function buildMeetingItem(
   recObj: Record<string, unknown>,
   fieldMap: MeetingScheduleFieldMap,
   targetYmd: string,
+  recordId: string,
 ): MeetingScheduleItem | null {
   const estimateStatus = fieldMap.estimateStatus
     ? coerceCustomerInfoDisplayString(
@@ -297,7 +326,97 @@ function buildMeetingItem(
     return null;
   }
 
-  return buildMeetingItemFromRecord(recObj, fieldMap);
+  return buildMeetingItemFromRecord(recObj, fieldMap, recordId);
+}
+
+export async function updateMeetingScheduleStatusForStaff(
+  boundStaffName: string,
+  recordIdRaw: string,
+  nextStatusRaw: string,
+): Promise<
+  | { ok: true; estimateStatus: string }
+  | { ok: false; status: number; error: string }
+> {
+  const recordId = recordIdRaw.trim();
+  const nextStatus = normalizeEditableStatus(nextStatusRaw);
+  if (!recordId) {
+    return { ok: false, status: 400, error: "recordId が必要です" };
+  }
+  if (!nextStatus) {
+    return { ok: false, status: 400, error: "変更できないステータスです" };
+  }
+  if (!salesDashboardApoWriteConfigured()) {
+    return {
+      ok: false,
+      status: 503,
+      error:
+        "見積ステータスの更新用 API キー（SALES_DASHBOARD_APO_ATPOCKET_API_KEY_2）が未設定です",
+    };
+  }
+
+  const apoAppId = salesDashboardApoAppId();
+  if (!apoAppId) {
+    return {
+      ok: false,
+      status: 503,
+      error: "SALES_DASHBOARD_APO_APP_ID が未設定です",
+    };
+  }
+
+  try {
+    const readAuth = { apiKey: apiKeyForSalesDashboardApoPocket() };
+    const writeAuth = { apiKey: apiKeyForSalesDashboardApoWrite() };
+    const apoFields = await fetchAppFields(apoAppId, readAuth, {
+      operation: "meeting-schedule:status-fields",
+      appEnv: "SALES_DASHBOARD_APO_APP_ID",
+    });
+    const fieldMap = resolveMeetingScheduleFieldMap(apoFields);
+    if (!fieldMap?.estimateStatus) {
+      return {
+        ok: false,
+        status: 503,
+        error: "見積ステータス列を特定できません",
+      };
+    }
+
+    const wanted = [
+      fieldMap.clPerson,
+      fieldMap.salesperson,
+      fieldMap.estimateStatus,
+    ]
+      .filter(Boolean)
+      .join(",");
+
+    const recRow = await fetchRecordById(apoAppId, recordId, readAuth, wanted);
+    if (!recRow?.record || typeof recRow.record !== "object") {
+      return { ok: false, status: 404, error: "レコードが見つかりません" };
+    }
+    const recObj = recRow.record as Record<string, unknown>;
+    if (!recordMatchesStaff(recObj, fieldMap, boundStaffName)) {
+      return {
+        ok: false,
+        status: 403,
+        error: "この案件を更新する権限がありません",
+      };
+    }
+
+    await updateRecord(
+      apoAppId,
+      recordId,
+      { [fieldMap.estimateStatus]: nextStatus },
+      writeAuth,
+    );
+
+    return { ok: true, estimateStatus: nextStatus };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[meeting-schedule:status]", e);
+    return {
+      ok: false,
+      status: 502,
+      error: msg || "見積ステータスの更新に失敗しました",
+    };
+  }
 }
 
 export async function buildMeetingScheduleForStaff(
@@ -369,9 +488,11 @@ export async function buildMeetingScheduleForStaff(
     for (const row of records) {
       const rec = row.record;
       if (!rec || typeof rec !== "object") continue;
+      const recordId = atPocketRecordIdFromRow(row);
+      if (!recordId) continue;
       const recObj = rec as Record<string, unknown>;
       if (!recordMatchesStaff(recObj, fieldMap, boundStaffName)) continue;
-      const item = buildMeetingItem(recObj, fieldMap, targetYmd);
+      const item = buildMeetingItem(recObj, fieldMap, targetYmd, recordId);
       if (item) items.push(item);
     }
 
@@ -388,6 +509,7 @@ export async function buildMeetingScheduleForStaff(
       dateLabel: formatMeetingDateLabel(targetYmd),
       staffName: boundStaffName,
       items,
+      ...meetingScheduleMetaExtras(),
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -467,9 +589,11 @@ export async function buildMeetingScheduleListForStaff(
     for (const row of records) {
       const rec = row.record;
       if (!rec || typeof rec !== "object") continue;
+      const recordId = atPocketRecordIdFromRow(row);
+      if (!recordId) continue;
       const recObj = rec as Record<string, unknown>;
       if (!recordMatchesStaff(recObj, fieldMap, boundStaffName)) continue;
-      const item = buildMeetingItemFromRecord(recObj, fieldMap);
+      const item = buildMeetingItemFromRecord(recObj, fieldMap, recordId);
       if (item) items.push(item);
     }
 
@@ -480,6 +604,7 @@ export async function buildMeetingScheduleListForStaff(
       scope: "list",
       staffName: boundStaffName,
       items,
+      ...meetingScheduleMetaExtras(),
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

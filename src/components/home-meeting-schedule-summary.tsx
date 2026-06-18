@@ -78,7 +78,7 @@ export function HomeMeetingScheduleSummary({
             <ul className="mt-3 flex flex-col gap-2">
               {preview.map((item, i) => (
                 <li
-                  key={`${item.scheduledYmd}-${item.customerName}-${item.meetingTime}-${i}`}
+                  key={`${item.recordId}-${item.customerName}-${item.meetingTime}-${i}`}
                   className="flex items-start gap-3 rounded-xl bg-sky-50/80 px-3 py-2.5 dark:bg-sky-950/25"
                 >
                   <div className="w-16 shrink-0 pt-0.5 text-center">

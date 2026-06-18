@@ -188,3 +188,30 @@ export function meetingScheduleExcludedStatuses(): string[] {
   }
   return ["再商談否", "再商談成約", "返待ち否", "返待ち成約"];
 }
+
+/** LIFF から変更可能な見積ステータス（省略時は表示対象 + 成約/否系など） */
+export function meetingScheduleEditableStatuses(): string[] {
+  const raw = process.env.MEETING_SCHEDULE_EDITABLE_STATUSES?.trim();
+  if (raw) {
+    const parsed = raw
+      .split(",")
+      .map((s) => nfkc(s))
+      .filter(Boolean);
+    if (parsed.length) return parsed;
+  }
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const status of [
+    ...meetingScheduleAllowedStatuses(),
+    ...meetingScheduleExcludedStatuses(),
+    "即決成約",
+    "アポキャン",
+    "否",
+  ]) {
+    if (seen.has(status)) continue;
+    seen.add(status);
+    out.push(status);
+  }
+  return out;
+}

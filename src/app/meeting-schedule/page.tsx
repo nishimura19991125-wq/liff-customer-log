@@ -73,6 +73,8 @@ export default function MeetingSchedulePage() {
   const [idToken, setIdToken] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [viewDate, setViewDate] = useState(() => todayYmdJst());
+  const [updatingRecordId, setUpdatingRecordId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -146,6 +148,40 @@ export default function MeetingSchedulePage() {
     void mutate();
   }, [mutate]);
 
+  const handleStatusChange = useCallback(
+    async (recordId: string, nextStatus: string) => {
+      if (!idToken || !nextStatus.trim()) return;
+      setUpdatingRecordId(recordId);
+      setFeedback(null);
+      try {
+        const res = await fetch(
+          `/api/meeting-schedule/records/${encodeURIComponent(recordId)}/status`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ status: nextStatus }),
+          },
+        );
+        const body = (await res.json()) as { error?: string };
+        if (!res.ok) {
+          throw new Error(body.error ?? "見積ステータスの更新に失敗しました");
+        }
+        setFeedback("見積ステータスを更新しました");
+        await mutate();
+      } catch (e) {
+        const msg =
+          e instanceof Error ? e.message : "見積ステータスの更新に失敗しました";
+        setFeedback(msg);
+      } finally {
+        setUpdatingRecordId(null);
+      }
+    },
+    [idToken, mutate],
+  );
+
   if (phase === "session-expired") {
     return (
       <LiffScreen>
@@ -216,6 +252,12 @@ export default function MeetingSchedulePage() {
         />
 
         <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
+
+        {feedback ? (
+          <p className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+            {feedback}
+          </p>
+        ) : null}
 
         {needsStaffBind ? (
           <LiffStaffBindPanel
@@ -327,10 +369,14 @@ export default function MeetingSchedulePage() {
                     </h2>
                     <ul className="flex flex-col gap-3">
                       {group.items.map((item, i) => (
-                        <li key={`${group.ymd}-${item.customerName}-${item.meetingTime}-${i}`}>
+                        <li key={`${group.ymd}-${item.recordId}-${i}`}>
                           <MeetingScheduleItemCard
                             item={item}
                             staffName={data.staffName}
+                            statusOptions={data.statusOptions}
+                            statusEditable={data.statusEditable}
+                            statusUpdating={updatingRecordId === item.recordId}
+                            onStatusChange={handleStatusChange}
                           />
                         </li>
                       ))}
@@ -341,10 +387,14 @@ export default function MeetingSchedulePage() {
             ) : (
               <ul className="flex flex-col gap-3">
                 {data.items.map((item, i) => (
-                  <li key={`${item.customerName}-${item.meetingTime}-${i}`}>
+                  <li key={`${item.recordId}-${i}`}>
                     <MeetingScheduleItemCard
                       item={item}
                       staffName={data.staffName}
+                      statusOptions={data.statusOptions}
+                      statusEditable={data.statusEditable}
+                      statusUpdating={updatingRecordId === item.recordId}
+                      onStatusChange={handleStatusChange}
                     />
                   </li>
                 ))}
