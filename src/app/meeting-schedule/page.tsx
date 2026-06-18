@@ -24,6 +24,10 @@ import {
 } from "@/lib/liff-swr";
 import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
 import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
+import {
+  filterPendingSetCreatedMeetings,
+  requestMeetingSetCreatedAlertCheck,
+} from "@/lib/meeting-schedule-pending-set-created-client";
 import type {
   MeetingScheduleItem,
   MeetingSchedulePayload,
@@ -132,6 +136,13 @@ export default function MeetingSchedulePage() {
       setPhase("session-expired");
     }
   }, [swrError]);
+
+  useEffect(() => {
+    if (!data?.items?.length || viewMode !== "list") return;
+    if (filterPendingSetCreatedMeetings(data.items).length > 0) {
+      requestMeetingSetCreatedAlertCheck();
+    }
+  }, [data?.items, viewMode]);
 
   const isToday = viewDate === todayYmdJst();
   const itemCount = data?.items?.length ?? 0;

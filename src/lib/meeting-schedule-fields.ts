@@ -152,16 +152,7 @@ export function resolveMeetingScheduleFieldMap(
   const meetingDate = pickByEnvOrKeywords(
     "MEETING_SCHEDULE_MEETING_DATE_FIELD_ID",
     fields,
-    [
-      "初回商談実施日",
-      "日付",
-      "登録日",
-      "作成日",
-      "実績日",
-      "アポ日",
-      "取得日",
-      "アポ取得日",
-    ],
+    ["初回商談実施日"],
     ["初回商談実施日"],
   );
   const closeType = pickByEnvOrKeywords(

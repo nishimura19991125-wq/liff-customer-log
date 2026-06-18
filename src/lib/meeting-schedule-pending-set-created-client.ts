@@ -1,6 +1,4 @@
-import {
-  needsMeetingScheduleSetCreatedInput,
-} from "@/lib/meeting-schedule-shared";
+import { isMeetingScheduleSetCreatedStatus } from "@/lib/meeting-schedule-shared";
 import type {
   MeetingScheduleItem,
   MeetingSchedulePayload,
@@ -42,13 +40,13 @@ export function filterPendingSetCreatedMeetings(
   return sortPastSetCreatedItems(
     items.filter(
       (item) =>
-        needsMeetingScheduleSetCreatedInput(item) &&
+        isMeetingScheduleSetCreatedStatus(item.estimateStatus) &&
         isScheduledBeforeToday(item.scheduledYmd, todayYmd),
     ),
   );
 }
 
-/** 本日より前の商談で商談セット作成済みかつ未入力の案件 */
+/** 本日より前の商談で見積ステータスが商談セット作成済みの案件 */
 export async function fetchPastSetCreatedMeetings(
   idToken: string,
 ): Promise<MeetingScheduleItem[]> {

@@ -205,7 +205,7 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
   return (
     <>
       {children}
-      {idToken && phase === "unlocked" ? (
+      {idToken && (phase === "unlocked" || phase === "skip") ? (
         <MeetingSetCreatedAlertGate idToken={idToken} active />
       ) : null}
       {omikuji && idToken ? (
