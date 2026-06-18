@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { LiffCard } from "@/components/liff-chrome";
 import { isMeetingScheduleSetCreatedStatus } from "@/lib/meeting-schedule-shared";
+import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
 import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
 import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
 
@@ -12,12 +13,17 @@ type Props = {
   staffName: string;
   statusOptions?: string[];
   statusEditable?: boolean;
+  scheduleEditable?: boolean;
   closeTypeOptions?: string[];
   meetingPlaceOptions?: string[];
   statusUpdating?: boolean;
   onStatusChange?: (
     recordId: string,
     update: MeetingScheduleStatusUpdateInput,
+  ) => void;
+  onScheduleChange?: (
+    recordId: string,
+    update: MeetingScheduleScheduledUpdateInput,
   ) => void;
 };
 
@@ -35,23 +41,31 @@ export function MeetingScheduleItemCard({
   staffName,
   statusOptions = [],
   statusEditable = false,
+  scheduleEditable = false,
   closeTypeOptions = [],
   meetingPlaceOptions = [],
   statusUpdating = false,
   onStatusChange,
+  onScheduleChange,
 }: Props) {
   const [draftStatus, setDraftStatus] = useState(item.estimateStatus);
+  const [scheduledYmd, setScheduledYmd] = useState(item.scheduledYmd);
+  const [scheduledTime, setScheduledTime] = useState(item.scheduledTime);
   const [meetingDate, setMeetingDate] = useState(item.firstMeetingDateYmd);
   const [closeType, setCloseType] = useState(item.closeType);
   const [meetingPlace, setMeetingPlace] = useState(item.meetingPlace);
 
   useEffect(() => {
     setDraftStatus(item.estimateStatus);
+    setScheduledYmd(item.scheduledYmd);
+    setScheduledTime(item.scheduledTime);
     setMeetingDate(item.firstMeetingDateYmd);
     setCloseType(item.closeType);
     setMeetingPlace(item.meetingPlace);
   }, [
     item.estimateStatus,
+    item.scheduledYmd,
+    item.scheduledTime,
     item.firstMeetingDateYmd,
     item.closeType,
     item.meetingPlace,
@@ -73,15 +87,22 @@ export function MeetingScheduleItemCard({
 
   const canEditStatus =
     statusEditable && selectOptions.length > 0 && Boolean(onStatusChange);
+  const canEditSchedule =
+    scheduleEditable && Boolean(onScheduleChange);
   const needsSetCreatedFields = isMeetingScheduleSetCreatedStatus(draftStatus);
   const showSetCreatedForm = canEditStatus && needsSetCreatedFields;
   const statusDirty = draftStatus !== item.estimateStatus;
+  const scheduleDirty =
+    scheduledYmd !== item.scheduledYmd ||
+    scheduledTime !== item.scheduledTime;
   const setCreatedDirty =
     meetingDate !== item.firstMeetingDateYmd ||
     closeType !== item.closeType ||
     meetingPlace !== item.meetingPlace;
   const canSaveSetCreated =
     showSetCreatedForm && (statusDirty || setCreatedDirty) && !statusUpdating;
+  const canSaveSchedule =
+    canEditSchedule && scheduleDirty && scheduledYmd.trim() && !statusUpdating;
 
   const handleStatusSelect = (nextStatus: string) => {
     setDraftStatus(nextStatus);
@@ -99,6 +120,15 @@ export function MeetingScheduleItemCard({
     });
   };
 
+  const handleSaveSchedule = () => {
+    onScheduleChange?.(item.recordId, {
+      scheduledYmd,
+      scheduledTime,
+    });
+  };
+
+  const displayTime = item.scheduledTime || item.meetingTime;
+
   return (
     <LiffCard>
       <div className="flex items-start gap-3 px-4 py-4">
@@ -107,7 +137,7 @@ export function MeetingScheduleItemCard({
             開始
           </span>
           <span className="text-[18px] font-black tabular-nums leading-none text-sky-900 dark:text-sky-100">
-            {item.meetingTime}
+            {displayTime}
           </span>
         </div>
         <div className="min-w-0 flex-1">
@@ -153,6 +183,46 @@ export function MeetingScheduleItemCard({
                 ))}
               </select>
             </label>
+          ) : null}
+
+          {canEditSchedule ? (
+            <div className="mt-3 space-y-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/20">
+              <p className="text-[12px] font-semibold text-emerald-800 dark:text-emerald-200">
+                商談予定日時
+              </p>
+              <label className="block">
+                <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                  日付
+                </span>
+                <input
+                  type="date"
+                  className={`${inputClass} calendar-date-input`}
+                  value={scheduledYmd}
+                  disabled={statusUpdating}
+                  onChange={(e) => setScheduledYmd(e.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                  時刻
+                </span>
+                <input
+                  type="time"
+                  className={inputClass}
+                  value={scheduledTime}
+                  disabled={statusUpdating}
+                  onChange={(e) => setScheduledTime(e.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                disabled={!canSaveSchedule}
+                onClick={handleSaveSchedule}
+                className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-[14px] font-semibold text-white disabled:opacity-50 dark:bg-emerald-500"
+              >
+                {statusUpdating ? "保存中…" : "日時を保存"}
+              </button>
+            </div>
           ) : null}
 
           {showSetCreatedForm ? (

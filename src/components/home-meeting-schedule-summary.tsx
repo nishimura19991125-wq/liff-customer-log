@@ -13,8 +13,6 @@ type Props = {
   disabled?: boolean;
 };
 
-const HOME_PREVIEW_LIMIT = 5;
-
 export function HomeMeetingScheduleSummary({
   idToken,
   boundStaffName,
@@ -46,8 +44,6 @@ export function HomeMeetingScheduleSummary({
   if (!data?.configured || data.error) return null;
 
   const items = data.items ?? [];
-  const preview = items.slice(0, HOME_PREVIEW_LIMIT);
-  const restCount = items.length - preview.length;
 
   return (
     <section className="mb-4" aria-label="商談進捗情報一覧">
@@ -66,7 +62,7 @@ export function HomeMeetingScheduleSummary({
               href="/meeting-schedule"
               className="shrink-0 rounded-lg px-2 py-1 text-[13px] font-semibold text-sky-700 active:bg-sky-50 dark:text-sky-300 dark:active:bg-sky-950/40"
             >
-              一覧 ›
+              詳細 ›
             </Link>
           </div>
 
@@ -75,8 +71,8 @@ export function HomeMeetingScheduleSummary({
               商談進捗情報はありません
             </p>
           ) : (
-            <ul className="mt-3 flex flex-col gap-2">
-              {preview.map((item, i) => (
+            <ul className="mt-3 flex max-h-[min(60vh,28rem)] flex-col gap-2 overflow-y-auto">
+              {items.map((item, i) => (
                 <li
                   key={`${item.recordId}-${item.customerName}-${item.meetingTime}-${i}`}
                   className="flex items-start gap-3 rounded-xl bg-sky-50/80 px-3 py-2.5 dark:bg-sky-950/25"
@@ -86,7 +82,7 @@ export function HomeMeetingScheduleSummary({
                       {item.scheduledDateLabel}
                     </p>
                     <p className="mt-0.5 text-[13px] font-bold tabular-nums text-sky-900 dark:text-sky-100">
-                      {item.meetingTime}
+                      {item.scheduledTime || item.meetingTime}
                     </p>
                   </div>
                   <div className="min-w-0 flex-1">
@@ -110,15 +106,6 @@ export function HomeMeetingScheduleSummary({
               ))}
             </ul>
           )}
-
-          {restCount > 0 ? (
-            <Link
-              href="/meeting-schedule"
-              className="mt-3 block text-center text-[13px] font-semibold text-sky-700 underline underline-offset-2 dark:text-sky-300"
-            >
-              他 {restCount} 件を見る
-            </Link>
-          ) : null}
         </div>
       </LiffCard>
     </section>

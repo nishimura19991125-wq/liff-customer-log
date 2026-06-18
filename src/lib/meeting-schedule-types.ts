@@ -3,6 +3,8 @@ export type MeetingScheduleItem = {
   customerName: string;
   city: string;
   meetingTime: string;
+  /** 商談予定時刻（HH:mm。未設定時は空） */
+  scheduledTime: string;
   apoTypeLabel: string;
   estimateStatus: string;
   meetingPlace: string;
@@ -20,7 +22,7 @@ export type MeetingScheduleItem = {
 
 export type MeetingSchedulePayload = {
   configured: boolean;
-  scope: "day" | "list";
+  scope: "day" | "list" | "closed";
   staffName: string;
   items: MeetingScheduleItem[];
   /** scope=day のときのみ */
@@ -29,6 +31,8 @@ export type MeetingSchedulePayload = {
   /** ステータス変更 UI 用 */
   statusOptions?: string[];
   statusEditable?: boolean;
+  /** 商談予定日時の変更 UI 用（更新 API キー設定時 true） */
+  scheduleEditable?: boolean;
   closeTypeOptions?: string[];
   meetingPlaceOptions?: string[];
   error?: string;

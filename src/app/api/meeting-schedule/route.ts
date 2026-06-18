@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import {
+  buildMeetingScheduleClosedListForStaff,
   buildMeetingScheduleForStaff,
   buildMeetingScheduleListForStaff,
 } from "@/lib/meeting-schedule";
@@ -41,7 +42,9 @@ export async function GET(request: Request) {
     const payload =
       scope === "list"
         ? await buildMeetingScheduleListForStaff(boundStaffName)
-        : await buildMeetingScheduleForStaff(boundStaffName, date);
+        : scope === "closed"
+          ? await buildMeetingScheduleClosedListForStaff(boundStaffName)
+          : await buildMeetingScheduleForStaff(boundStaffName, date);
     return NextResponse.json(payload);
   } catch (e) {
     console.error("[api/meeting-schedule]", e);
