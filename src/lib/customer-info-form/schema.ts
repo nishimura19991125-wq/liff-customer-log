@@ -320,7 +320,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     type: "select",
     options: [...FIT_TYPE_OPTIONS],
   },
-  { key: "contractPowerCompany", caption: "契約電力会社", type: "text", required: false },
+  { key: "contractPowerCompany", caption: "契約電力会社名", type: "text", required: false },
   { key: "contractPowerPlan", caption: "契約電力プラン", type: "text", required: false },
   {
     key: "subsidy",

@@ -129,7 +129,7 @@ const FORM_KEY_CAPTION_RULES: Partial<Record<string, CaptionResolveRule>> = {
     rejectIfCaptionIncludes: ["パネル", "電気", "仕込", "室内", "初回"],
   },
   contractPowerCompany: {
-    captions: ["契約電力会社", "契約中電力会社"],
+    captions: ["契約電力会社名", "契約電力会社", "契約中電力会社名", "契約中電力会社"],
     rejectIfCaptionIncludes: ["記入用紙", "用紙", "プラン"],
   },
   contractPowerPlan: {
