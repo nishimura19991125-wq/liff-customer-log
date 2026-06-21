@@ -5,6 +5,7 @@ import {
 } from "@/lib/customer-info-form/form-change";
 import { hasDecimalKwValue } from "@/lib/customer-info-form/decimal-kw";
 import { parseCommaIntegerDigits } from "@/lib/customer-info-form/numeric-comma";
+import { isValidPhoneNumberFormat } from "@/lib/customer-info-form/phone-number";
 import { isValidPostalCodeFormat } from "@/lib/customer-info-form/postal-code";
 import { parsePtDigitsOnly } from "@/lib/customer-info-form/pt-transfer";
 import { isCustomerInfoFormFieldVisible } from "@/lib/customer-info-form/rules";
@@ -63,6 +64,8 @@ export function isCustomerInfoVisibleFieldValueMissing(
       return !parsePtDigitsOnly(raw);
     case "postal-code":
       return !isValidPostalCodeFormat(raw);
+    case "phone":
+      return !isValidPhoneNumberFormat(raw);
     case "decimal-kw":
       return !hasDecimalKwValue(raw);
     case "date":

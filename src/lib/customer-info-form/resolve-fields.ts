@@ -21,6 +21,7 @@ import {
   parsePtDigitsOnly,
 } from "@/lib/customer-info-form/pt-transfer";
 import { formatDecimalKwFromPocket } from "@/lib/customer-info-form/decimal-kw";
+import { formatPhoneFromPocket } from "@/lib/customer-info-form/phone-number";
 import { formatPostalCodeInput } from "@/lib/customer-info-form/postal-code";
 import { expandNamePartsInValues } from "@/lib/customer-info-form/name-parts";
 import { isWritableAtPocketField } from "@/lib/customer-info-form/pocket-writable-fields";
@@ -402,6 +403,8 @@ export function readCustomerInfoFormValuesFromRecord(
     } else if (field.type === "postal-code") {
       const digits = raw.replace(/[^\d]/g, "");
       values[field.key] = digits.length > 0 ? formatPostalCodeInput(digits) : "";
+    } else if (field.type === "phone") {
+      values[field.key] = formatPhoneFromPocket(raw);
     } else if (field.type === "decimal-kw") {
       values[field.key] = formatDecimalKwFromPocket(raw);
     } else {

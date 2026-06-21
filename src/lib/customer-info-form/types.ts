@@ -13,6 +13,8 @@ export type CustomerInfoFieldType =
   | "comma-integer"
   /** 000-0000 形式の郵便番号 */
   | "postal-code"
+  /** 電話番号（ハイフン区切り・090-1234-5678 等） */
+  | "phone"
   /** 小数点以下最大3桁・四捨五入なし（太陽光パネル容量 kW 等） */
   | "decimal-kw";
 

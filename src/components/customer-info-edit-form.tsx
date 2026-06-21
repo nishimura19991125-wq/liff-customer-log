@@ -28,6 +28,9 @@ import {
   parseCommaIntegerDigits,
 } from "@/lib/customer-info-form/numeric-comma";
 import {
+  formatPhoneNumberInput,
+} from "@/lib/customer-info-form/phone-number";
+import {
   formatPostalCodeInput,
   isValidPostalCodeFormat,
   lookupPostalCodeAddress,
@@ -397,6 +400,23 @@ function FieldControl({
         maxLength={8}
         onBlur={onBlur}
         onChange={(e) => onChange(formatPostalCodeInput(e.target.value))}
+      />
+    );
+  }
+
+  if (field.type === "phone") {
+    return (
+      <input
+        type="tel"
+        inputMode="tel"
+        autoComplete="tel"
+        className={controlClass}
+        value={value}
+        disabled={disabled}
+        placeholder="090-1234-5678"
+        maxLength={13}
+        onBlur={onBlur}
+        onChange={(e) => onChange(formatPhoneNumberInput(e.target.value))}
       />
     );
   }

@@ -134,7 +134,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     liffOnly: true,
   },
   { key: "furigana", caption: "フリガナ", type: "text", hiddenInForm: true },
-  { key: "phone", caption: "電話番号", type: "text" },
+  { key: "phone", caption: "電話番号", type: "phone" },
   { key: "postalCode", caption: "郵便番号", type: "postal-code" },
   { key: "prefecture", caption: "都道府県", type: "text" },
   { key: "city", caption: "市区郡", type: "text" },

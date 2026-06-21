@@ -24,6 +24,7 @@ import {
   decimalKwForPocket,
   hasDecimalKwValue,
 } from "@/lib/customer-info-form/decimal-kw";
+import { phoneNumberForPocket } from "@/lib/customer-info-form/phone-number";
 import { postalCodeForPocket } from "@/lib/customer-info-form/postal-code";
 import type {
   CustomerInfoFormFieldResolved,
@@ -93,6 +94,11 @@ function pocketFieldValueForPut(
   if (key === "postalCode") {
     if (!visible) return hiddenFallback;
     const pocket = postalCodeForPocket(raw);
+    return pocket ?? hiddenFallback;
+  }
+  if (key === "phone") {
+    if (!visible) return hiddenFallback;
+    const pocket = phoneNumberForPocket(raw);
     return pocket ?? hiddenFallback;
   }
   if (DECIMAL_KW_KEYS.has(key)) {
