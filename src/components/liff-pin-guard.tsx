@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { DailyOmikujiFlow } from "@/components/daily-omikuji-flow";
+import { AttendanceClockOutReminderGate } from "@/components/attendance-clock-out-reminder-gate";
 import { LockScreen } from "@/components/lock-screen";
 import { MeetingSetCreatedAlertGate } from "@/components/meeting-set-created-alert-gate";
 import {
@@ -43,11 +44,25 @@ type GuardPhase =
 export function LiffPinGuard({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<GuardPhase>("init");
   const [idToken, setIdToken] = useState<string | null>(null);
+  const [boundStaffName, setBoundStaffName] = useState<string | null>(null);
   const [pinStatus, setPinStatus] = useState<PinStatus | null>(null);
   const [omikuji, setOmikuji] = useState<{
     fortune: DailyFortuneView;
     staffName: string;
   } | null>(null);
+  const [clockOutReminderVisible, setClockOutReminderVisible] = useState(false);
+
+  const openDailyOmikujiIfNeeded = useCallback((staffName: string) => {
+    const staffKey = staffName.normalize("NFKC").trim();
+    if (!staffKey || !shouldShowDailyOmikuji(staffKey)) return;
+    setOmikuji((current) => {
+      if (current) return current;
+      return {
+        fortune: buildDailyBusinessFortuneView(staffKey),
+        staffName: staffKey,
+      };
+    });
+  }, []);
 
   const lockApp = useCallback(() => {
     invalidatePinUnlockOnAppHide();
@@ -56,14 +71,10 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
 
   const unlockApp = useCallback((staffName: string) => {
     markPinUnlockSession();
-    if (staffName && shouldShowDailyOmikuji(staffName)) {
-      setOmikuji({
-        fortune: buildDailyBusinessFortuneView(staffName),
-        staffName,
-      });
-    }
+    setBoundStaffName(staffName.normalize("NFKC").trim() || null);
+    openDailyOmikujiIfNeeded(staffName);
     setPhase("unlocked");
-  }, []);
+  }, [openDailyOmikujiIfNeeded]);
 
   const dismissOmikuji = useCallback(() => {
     if (omikuji) {
@@ -112,6 +123,8 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
           await fetchStaffApiWithSessionCache(result.token);
         if (cancelled) return;
 
+        const staffName = staffData.boundStaff?.name?.normalize("NFKC").trim() ?? "";
+
         if (
           (!staffRes.ok && !staffData.boundStaff?.id) ||
           !staffData.bindingEnabled ||
@@ -120,6 +133,8 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
           setPhase("skip");
           return;
         }
+
+        setBoundStaffName(staffName || null);
 
         const pinRes = await fetch("/api/staff/pin/status", {
           headers: { Authorization: `Bearer ${result.token}` },
@@ -131,6 +146,9 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
 
         if (!pinRes.ok || !pinData.enabled) {
+          setBoundStaffName(
+            (pinData.staffName ?? staffName).normalize("NFKC").trim() || null,
+          );
           setPhase("skip");
           return;
         }
@@ -159,6 +177,24 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (phase !== "unlocked" && phase !== "skip") return;
+    if (!boundStaffName) return;
+    openDailyOmikujiIfNeeded(boundStaffName);
+  }, [phase, boundStaffName, openDailyOmikujiIfNeeded]);
+
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      invalidatePinUnlockOnAppHide();
+      if (boundStaffName) {
+        openDailyOmikujiIfNeeded(boundStaffName);
+      }
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, [boundStaffName, openDailyOmikujiIfNeeded]);
 
   useEffect(() => {
     if (phase !== "unlocked") return;
@@ -206,7 +242,19 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
     <>
       {children}
       {idToken && (phase === "unlocked" || phase === "skip") ? (
-        <MeetingSetCreatedAlertGate idToken={idToken} active />
+        <MeetingSetCreatedAlertGate
+          idToken={idToken}
+          active
+          suppressed={Boolean(omikuji) || clockOutReminderVisible}
+        />
+      ) : null}
+      {idToken && (phase === "unlocked" || phase === "skip") ? (
+        <AttendanceClockOutReminderGate
+          idToken={idToken}
+          active
+          suppressed={Boolean(omikuji)}
+          onVisibleChange={setClockOutReminderVisible}
+        />
       ) : null}
       {omikuji && idToken ? (
         <DailyOmikujiFlow

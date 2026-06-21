@@ -35,7 +35,7 @@ export function DailyOmikujiModal({ fortune, footer }: DailyOmikujiModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[140] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="daily-omikuji-title"

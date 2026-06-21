@@ -23,9 +23,15 @@ type AttendancePreview = {
 type Props = {
   idToken: string;
   active: boolean;
+  /** おみくじ・出勤フロー表示中は商談アラートを出さない */
+  suppressed?: boolean;
 };
 
-export function MeetingSetCreatedAlertGate({ idToken, active }: Props) {
+export function MeetingSetCreatedAlertGate({
+  idToken,
+  active,
+  suppressed = false,
+}: Props) {
   const pathname = usePathname();
   const prevPathnameRef = useRef<string | null>(null);
   const [items, setItems] = useState<MeetingScheduleAlertItem[] | null>(null);
@@ -33,7 +39,7 @@ export function MeetingSetCreatedAlertGate({ idToken, active }: Props) {
 
   const check = useCallback(
     async ({ force = false }: { force?: boolean } = {}) => {
-      if (!active) return;
+      if (!active || suppressed) return;
       if (pathname === "/meeting-schedule") return;
       if (!force && (dismissed || isMeetingScheduleAlertSnoozed())) return;
       try {
@@ -65,10 +71,11 @@ export function MeetingSetCreatedAlertGate({ idToken, active }: Props) {
         // ignore
       }
     },
-    [active, dismissed, idToken, pathname],
+    [active, dismissed, idToken, pathname, suppressed],
   );
 
   useEffect(() => {
+    if (suppressed) return;
     if (pathname === "/meeting-schedule") {
       prevPathnameRef.current = pathname;
       setDismissed(true);
@@ -80,10 +87,10 @@ export function MeetingSetCreatedAlertGate({ idToken, active }: Props) {
       (prevPathnameRef.current === null || prevPathnameRef.current !== "/");
     prevPathnameRef.current = pathname;
     void check({ force: navigatedToMenu });
-  }, [check, pathname]);
+  }, [check, pathname, suppressed]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active || suppressed) return;
     const onCheck = (event: Event) => {
       const detail = (event as CustomEvent<MeetingScheduleAlertCheckDetail>)
         .detail;
@@ -93,9 +100,9 @@ export function MeetingSetCreatedAlertGate({ idToken, active }: Props) {
     return () => {
       window.removeEventListener(MEETING_SET_CREATED_ALERT_CHECK_EVENT, onCheck);
     };
-  }, [active, check]);
+  }, [active, check, suppressed]);
 
-  if (pathname === "/meeting-schedule") return null;
+  if (suppressed || pathname === "/meeting-schedule") return null;
   if (!items?.length || dismissed) return null;
 
   return (
