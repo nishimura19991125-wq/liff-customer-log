@@ -304,6 +304,11 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     "施工予定日",
     customerFields,
   );
+  const customerFirstConstructionDateFieldId = resolveCustomerInfoFormFieldId(
+    "firstConstructionDate",
+    "初回施工予定日",
+    customerFields,
+  );
 
   const fieldsCsv = [
     constructionKeyField,
@@ -413,14 +418,22 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       }
     }
 
-    if (constructionFids.startDate && customerConstructionDateFieldId) {
+    if (
+      constructionFids.startDate &&
+      (customerConstructionDateFieldId || customerFirstConstructionDateFieldId)
+    ) {
       const dateRaw = coercePocketPlainString(
         pickRecordValueByFieldAliases(recObj, constructionFids.startDate),
       );
       const normalized = normalizeDateForInput(dateRaw);
       const pocketDate = dateValueForPocket(normalized || dateRaw);
       if (pocketDate) {
-        customerRecord[customerConstructionDateFieldId] = pocketDate;
+        if (customerConstructionDateFieldId) {
+          customerRecord[customerConstructionDateFieldId] = pocketDate;
+        }
+        if (customerFirstConstructionDateFieldId) {
+          customerRecord[customerFirstConstructionDateFieldId] = pocketDate;
+        }
       }
     }
   }

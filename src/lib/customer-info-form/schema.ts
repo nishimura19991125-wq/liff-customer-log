@@ -355,6 +355,12 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     required: false,
   },
   {
+    key: "firstConstructionDate",
+    caption: "初回施工予定日",
+    type: "date",
+    required: false,
+  },
+  {
     key: "constructionDate",
     caption: "施工予定日",
     type: "date",

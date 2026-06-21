@@ -120,9 +120,12 @@ const FORM_KEY_CAPTION_RULES: Partial<Record<string, CaptionResolveRule>> = {
       "工務店名",
     ],
   },
+  firstConstructionDate: {
+    captions: ["初回施工予定日"],
+  },
   constructionDate: {
     captions: ["施工予定日", "工事日"],
-    rejectIfCaptionIncludes: ["パネル", "電気", "仕込", "室内"],
+    rejectIfCaptionIncludes: ["パネル", "電気", "仕込", "室内", "初回"],
   },
 };
 
@@ -187,6 +190,15 @@ export function resolveCustomerInfoFormFieldId(
   }
   if (key === "constructionDate") {
     const env = process.env.CUSTOMER_INFO_CONSTRUCTION_DATE_FIELD_ID?.trim();
+    if (env) {
+      const id = resolveConfiguredFieldToSchemaUniqueId(env, appFields);
+      if (id && usedIds.has(id)) return null;
+      return id;
+    }
+  }
+  if (key === "firstConstructionDate") {
+    const env =
+      process.env.CUSTOMER_INFO_FIRST_CONSTRUCTION_DATE_FIELD_ID?.trim();
     if (env) {
       const id = resolveConfiguredFieldToSchemaUniqueId(env, appFields);
       if (id && usedIds.has(id)) return null;
