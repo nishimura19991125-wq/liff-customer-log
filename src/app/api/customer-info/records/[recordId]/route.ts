@@ -11,7 +11,10 @@ import {
 } from "@/lib/customer-info-config";
 import { attachCustomerInfoImportKeyToPayload } from "@/lib/customer-info-form/put-payload";
 import { formPayloadFromValues } from "@/lib/customer-info-form/put-payload";
-import { syncCombinedNameFields } from "@/lib/customer-info-form/name-parts";
+import {
+  expandNamePartsInValues,
+  syncCombinedNameFields,
+} from "@/lib/customer-info-form/name-parts";
 import {
   findMissingRequiredCustomerInfoFields,
   formatCustomerInfoRequiredValidationError,
@@ -325,7 +328,7 @@ export async function PUT(request: Request, ctx: RouteCtx) {
           { status: 400 },
         );
       }
-      const values = syncCombinedNameFields(parsed);
+      const values = syncCombinedNameFields(expandNamePartsInValues(parsed));
 
       const missingRequired = findMissingRequiredCustomerInfoFields(
         resolved

@@ -12,7 +12,10 @@ import {
   readCustomerInfoImportKeyFromRecord,
 } from "@/lib/customer-info-record";
 import { syncContractAmountFromPayment } from "@/lib/customer-info-form/form-change";
-import { syncCombinedNameFields } from "@/lib/customer-info-form/name-parts";
+import {
+  expandNamePartsInValues,
+  syncCombinedNameFields,
+} from "@/lib/customer-info-form/name-parts";
 import { computePtTransfer } from "@/lib/customer-info-form/pt-transfer";
 import { filterCustomerInfoPutPayload } from "@/lib/customer-info-form/pocket-writable-fields";
 import {
@@ -129,6 +132,23 @@ async function applyStaffBranchesToPayload(
   }
 }
 
+/** お客様名・フリガナ（フォームは苗字/名前分割・@pocket は単一列） */
+function applyCombinedNameFieldsToPayload(
+  values: CustomerInfoFormValues,
+  resolved: CustomerInfoFormFieldResolved[],
+  payload: Record<string, unknown>,
+): void {
+  const synced = syncCombinedNameFields(values);
+  const customerNameField = resolved.find((f) => f.key === "customerName");
+  const furiganaField = resolved.find((f) => f.key === "furigana");
+  if (customerNameField?.fieldId) {
+    payload[customerNameField.fieldId] = (synced.customerName ?? "").trim();
+  }
+  if (furiganaField?.fieldId) {
+    payload[furiganaField.fieldId] = (synced.furigana ?? "").trim();
+  }
+}
+
 /** 蓄電池品番①②＝商品一覧の型番（選択した蓄電池容量と同一レコード・フォーム非表示） */
 async function applyBatteryModelNumbersToPayload(
   values: CustomerInfoFormValues,
@@ -171,10 +191,13 @@ export async function formPayloadFromValues(
   appFields: AtPocketFieldRow[],
   pocketAuth: AtPocketFetchAuth,
 ): Promise<Record<string, unknown>> {
-  const synced = syncCombinedNameFields(syncContractAmountFromPayment(values));
+  const synced = syncCombinedNameFields(
+    expandNamePartsInValues(syncContractAmountFromPayment(values)),
+  );
   const stringPayload = buildCustomerInfoFormPayload(synced, resolved);
   const { resolved: transferResolved } =
     resolveCustomerInfoPtTransferFields(appFields);
+  applyCombinedNameFieldsToPayload(synced, resolved, stringPayload);
   applyPtTransferToPayload(values, transferResolved, stringPayload);
   await applyStaffBranchesToPayload(values, resolved, stringPayload);
   await applyBatteryModelNumbersToPayload(values, resolved, stringPayload);

@@ -42,6 +42,7 @@ import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { applyCustomerInfoFormChange } from "@/lib/customer-info-form/form-change";
 import {
+  expandNamePartsInValues,
   joinJapaneseFullName,
   splitJapaneseFullName,
   syncCombinedNameFields,
@@ -345,7 +346,9 @@ function CustomerInfoPageContent() {
     if (!token || !detail) return;
 
     if (detail.usesFormSchema && formFields.length > 0) {
-      const valuesForValidate = syncCombinedNameFields(editValues);
+      const valuesForValidate = syncCombinedNameFields(
+        expandNamePartsInValues(editValues),
+      );
       const missing = findMissingRequiredCustomerInfoFields(
         formFields.map((f) => ({
           key: f.key,
@@ -379,7 +382,11 @@ function CustomerInfoPageContent() {
           },
           body: JSON.stringify(
             detail.usesFormSchema
-              ? { formValues: syncCombinedNameFields(editValues) }
+              ? {
+                  formValues: syncCombinedNameFields(
+                    expandNamePartsInValues(editValues),
+                  ),
+                }
               : { fields: editValues },
           ),
         },

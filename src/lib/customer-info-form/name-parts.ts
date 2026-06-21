@@ -39,12 +39,27 @@ export function expandNamePartsInValues(
   values: CustomerInfoFormValues,
 ): CustomerInfoFormValues {
   const next = { ...values };
-  const name = splitJapaneseFullName(values.customerName ?? "");
-  next.customerFamilyName = name.family;
-  next.customerGivenName = name.given;
-  const furi = splitJapaneseFullName(values.furigana ?? "");
-  next.furiganaFamily = furi.family;
-  next.furiganaGiven = furi.given;
+
+  const combinedName = (values.customerName ?? "").trim();
+  const hasSplitName =
+    (values.customerFamilyName ?? "").trim() ||
+    (values.customerGivenName ?? "").trim();
+  if (combinedName || !hasSplitName) {
+    const name = splitJapaneseFullName(combinedName);
+    next.customerFamilyName = name.family;
+    next.customerGivenName = name.given;
+  }
+
+  const combinedFuri = (values.furigana ?? "").trim();
+  const hasSplitFuri =
+    (values.furiganaFamily ?? "").trim() ||
+    (values.furiganaGiven ?? "").trim();
+  if (combinedFuri || !hasSplitFuri) {
+    const furi = splitJapaneseFullName(combinedFuri);
+    next.furiganaFamily = furi.family;
+    next.furiganaGiven = furi.given;
+  }
+
   return next;
 }
 
