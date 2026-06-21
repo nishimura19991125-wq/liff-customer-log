@@ -34,7 +34,11 @@ import {
   boundStaffFromRosterRows,
   fetchStaffRosterRowsCached,
 } from "@/lib/staff-roster-cache";
-import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
+import { dateValueForPocket } from "@/lib/customer-info-form/date-pocket";
+import {
+  normalizeDateForInput,
+  resolveCustomerInfoFormFieldId,
+} from "@/lib/customer-info-form/resolve-fields";
 import { readCustomerInfoFieldValue } from "@/lib/customer-info-record";
 import {
   lookupStaffWorkplaceByStaffName,
@@ -289,8 +293,22 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     });
   }
 
+  const constructionFids = resolveConstructionFieldIds(opts.constructionFields);
+  const customerContractorFieldId = resolveCustomerInfoFormFieldId(
+    "constructionContractor",
+    "施工業者",
+    customerFields,
+  );
+  const customerConstructionDateFieldId = resolveCustomerInfoFormFieldId(
+    "constructionDate",
+    "施工予定日",
+    customerFields,
+  );
+
   const fieldsCsv = [
     constructionKeyField,
+    ...(constructionFids.contractor ? [constructionFids.contractor] : []),
+    ...(constructionFids.startDate ? [constructionFids.startDate] : []),
     resolvedCustomerKey,
     ...registrationPairs.map((p) => p.constructionFieldId),
     ...(resolvedCustomerName ? [resolvedCustomerName] : []),
@@ -383,6 +401,26 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       );
       if (regValue) {
         customerRecord[pair.customerFieldId] = regValue;
+      }
+    }
+
+    if (constructionFids.contractor && customerContractorFieldId) {
+      const contractorValue = coercePocketPlainString(
+        pickRecordValueByFieldAliases(recObj, constructionFids.contractor),
+      );
+      if (contractorValue) {
+        customerRecord[customerContractorFieldId] = contractorValue;
+      }
+    }
+
+    if (constructionFids.startDate && customerConstructionDateFieldId) {
+      const dateRaw = coercePocketPlainString(
+        pickRecordValueByFieldAliases(recObj, constructionFids.startDate),
+      );
+      const normalized = normalizeDateForInput(dateRaw);
+      const pocketDate = dateValueForPocket(normalized || dateRaw);
+      if (pocketDate) {
+        customerRecord[customerConstructionDateFieldId] = pocketDate;
       }
     }
   }
