@@ -127,6 +127,14 @@ const FORM_KEY_CAPTION_RULES: Partial<Record<string, CaptionResolveRule>> = {
     captions: ["施工予定日", "工事日"],
     rejectIfCaptionIncludes: ["パネル", "電気", "仕込", "室内", "初回"],
   },
+  contractPowerCompany: {
+    captions: ["契約電力会社", "契約中電力会社"],
+    rejectIfCaptionIncludes: ["記入用紙", "用紙", "プラン"],
+  },
+  contractPowerPlan: {
+    captions: ["契約電力プラン", "契約中電力プラン"],
+    rejectIfCaptionIncludes: ["記入用紙", "用紙", "会社"],
+  },
 };
 
 function captionMatchesRule(caption: string, rule: CaptionResolveRule): boolean {
