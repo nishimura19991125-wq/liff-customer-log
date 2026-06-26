@@ -20,12 +20,17 @@ import {
   updateRecord,
 } from "@/lib/atpocket";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
+import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
 import {
   calendarSlotConflictResponse,
   readFreshConstructionEmptySlotState,
 } from "@/lib/calendar-slot-reservation";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
+import {
+  consumeOneConstructionEmptySlotOnDate,
+  dayKeyFromConstructionRecord,
+} from "@/lib/calendar-consume-empty-slot";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -281,6 +286,23 @@ export async function POST(request: Request) {
     await updateRecord(calAppId, recordId, patch, writeAuth);
     constructionUpdated = true;
     invalidateAllCalendarPayloadCache();
+
+    const slotDayKey =
+      dayKeyFromConstructionRecord(recObj, constructionFields) ??
+      optionalCalendarYmd(body.shigumiDate) ??
+      optionalCalendarYmd(body.panelWorkDate) ??
+      optionalCalendarYmd(body.electricWorkDate) ??
+      optionalCalendarYmd(body.appSettingsDayDate);
+
+    await consumeOneConstructionEmptySlotOnDate({
+      calAppId,
+      dayKey: slotDayKey,
+      excludeRecordId: recordId,
+      customerFieldUniqueId: resolvedCustomer,
+      constructionFields,
+      readAuth,
+      writeAuth,
+    });
 
     return finalizeConstructionCalendarSave({
       calAppId,

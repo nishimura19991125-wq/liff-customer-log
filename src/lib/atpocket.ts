@@ -1278,3 +1278,25 @@ export async function updateRecord(
     throw new Error(`@pocket update record failed: ${res.status} ${text}`);
   }
 }
+
+/** レコード削除 DELETE /api/apps/{appsId}/records/{recordId} */
+export async function deleteRecord(
+  appsId: string,
+  recordId: string,
+  auth?: AtPocketFetchAuth,
+): Promise<void> {
+  const url = `${baseUrl()}/api/apps/${appsId}/records/${encodeURIComponent(recordId)}`;
+  const key = resolvePassedApiKey(auth);
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      Accept: "application/json",
+      [authHeaderName()]: key,
+    },
+  });
+
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`@pocket delete record failed: ${res.status} ${text}`);
+  }
+}

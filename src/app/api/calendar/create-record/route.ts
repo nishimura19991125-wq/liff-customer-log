@@ -15,6 +15,9 @@ import {
   uniqueFieldsCsv,
 } from "@/lib/calendar-construction-pocket-common";
 import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
+import {
+  consumeOneConstructionEmptySlotOnDate,
+} from "@/lib/calendar-consume-empty-slot";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import { isValidEmptyFillHousingStatus } from "@/lib/calendar-empty-fill-options";
@@ -321,6 +324,18 @@ export async function POST(request: Request) {
       });
 
       await updateRecord(calAppId, recordId, patch, writeAuth);
+    }
+
+    if (scheduledStartDate) {
+      await consumeOneConstructionEmptySlotOnDate({
+        calAppId,
+        dayKey: scheduledStartDate,
+        excludeRecordId: recordId,
+        customerFieldUniqueId: resolvedCustomer,
+        constructionFields,
+        readAuth,
+        writeAuth,
+      });
     }
 
     return finalizeConstructionCalendarSave({
