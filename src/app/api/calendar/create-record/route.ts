@@ -17,6 +17,7 @@ import {
 import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
 import {
   consumeOneConstructionEmptySlotOnDate,
+  resolveConsumeEmptySlotDayKey,
 } from "@/lib/calendar-consume-empty-slot";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
@@ -326,10 +327,21 @@ export async function POST(request: Request) {
       await updateRecord(calAppId, recordId, patch, writeAuth);
     }
 
-    if (scheduledStartDate) {
+    const consumeDayKey = resolveConsumeEmptySlotDayKey(
+      {},
+      constructionFields,
+      [
+        scheduledStartDate,
+        body.shigumiDate,
+        body.panelWorkDate,
+        body.electricWorkDate,
+        body.appSettingsDayDate,
+      ],
+    );
+    if (consumeDayKey) {
       await consumeOneConstructionEmptySlotOnDate({
         calAppId,
-        dayKey: scheduledStartDate,
+        dayKey: consumeDayKey,
         excludeRecordId: recordId,
         customerFieldUniqueId: resolvedCustomer,
         constructionFields,

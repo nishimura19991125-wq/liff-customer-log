@@ -619,6 +619,7 @@ function CalendarEmptySlotReadOnly({
 function EmptySlotCard({
   item,
   idToken,
+  slotDayKey,
   viewYear,
   viewMonth,
   onSaved,
@@ -628,6 +629,8 @@ function EmptySlotCard({
 }: {
   item: CalendarMonthApiItem;
   idToken: string | null;
+  /** カレンダー詳細で選択中の日（YYYY-MM-DD） */
+  slotDayKey: string | null;
   viewYear: number;
   viewMonth: number;
   onSaved: (patch?: CalendarRecordMonthPatch | null) => Promise<void>;
@@ -788,6 +791,7 @@ function EmptySlotCard({
           housingStatus: hs,
           viewYear,
           viewMonth,
+          ...(slotDayKey?.trim() ? { slotDayKey: slotDayKey.trim() } : {}),
           ...(handlerFromStaff
             ? {
                 constructionHandlerStaffRecordId:
@@ -2214,6 +2218,7 @@ export function LiffCalendarMonthPage({
                                       <EmptySlotCard
                                         item={item}
                                         idToken={idToken}
+                                        slotDayKey={selectedDayKey}
                                         viewYear={ym.year}
                                         viewMonth={ym.month}
                                         constructionHandlerUsesStaffDirectory={

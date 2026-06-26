@@ -532,6 +532,14 @@ export function CustomerInfoEditForm({
   const [creditCompaniesConfigured, setCreditCompaniesConfigured] =
     useState(false);
 
+  const [constructionContractors, setConstructionContractors] = useState<
+    string[]
+  >([]);
+  const [constructionContractorsLoading, setConstructionContractorsLoading] =
+    useState(false);
+  const [constructionContractorsConfigured, setConstructionContractorsConfigured] =
+    useState(false);
+
   const displayValues = useMemo(
     () => syncContractAmountFromPayment(values),
     [values],
@@ -649,6 +657,49 @@ export function CustomerInfoEditForm({
 
   useEffect(() => {
     if (!idToken) {
+      setConstructionContractors([]);
+      setConstructionContractorsLoading(false);
+      setConstructionContractorsConfigured(false);
+      return;
+    }
+
+    let cancelled = false;
+    setConstructionContractorsLoading(true);
+    void (async () => {
+      try {
+        const res = await fetch("/api/customer-info/construction-contractors", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const data = (await res.json()) as {
+          options?: string[];
+          configured?: boolean;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok) {
+          setConstructionContractors([]);
+          setConstructionContractorsConfigured(false);
+          return;
+        }
+        setConstructionContractors(data.options ?? []);
+        setConstructionContractorsConfigured(data.configured !== false);
+      } catch {
+        if (!cancelled) {
+          setConstructionContractors([]);
+          setConstructionContractorsConfigured(false);
+        }
+      } finally {
+        if (!cancelled) setConstructionContractorsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [idToken]);
+
+  useEffect(() => {
+    if (!idToken) {
       setApClStaff(null);
       setApClStaffLoading(false);
       return;
@@ -725,6 +776,24 @@ export function CustomerInfoEditForm({
             optionsPending: false,
           };
         }
+        if (f.key === "constructionContractor") {
+          if (
+            constructionContractorsLoading ||
+            !constructionContractorsConfigured ||
+            constructionContractors.length === 0
+          ) {
+            return { ...f, options: [], optionsPending: true };
+          }
+          return {
+            ...f,
+            type: "select" as const,
+            options: mergeStaffNameOptions(
+              constructionContractors,
+              displayValues.constructionContractor,
+            ),
+            optionsPending: false,
+          };
+        }
         if (f.key === "apStaff" || f.key === "clStaff") {
           const role = f.key === "apStaff" ? "ap" : "cl";
           if (apClStaffLoading) {
@@ -770,6 +839,9 @@ export function CustomerInfoEditForm({
     creditCompanies,
     creditCompaniesLoading,
     creditCompaniesConfigured,
+    constructionContractors,
+    constructionContractorsLoading,
+    constructionContractorsConfigured,
   ]);
 
   const handleFieldChange = useCallback(

@@ -20,7 +20,6 @@ import {
   updateRecord,
 } from "@/lib/atpocket";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
-import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
 import {
   calendarSlotConflictResponse,
   readFreshConstructionEmptySlotState,
@@ -29,7 +28,7 @@ import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
 import {
   consumeOneConstructionEmptySlotOnDate,
-  dayKeyFromConstructionRecord,
+  resolveConsumeEmptySlotDayKey,
 } from "@/lib/calendar-consume-empty-slot";
 import {
   lineAuthUnauthorizedResponse,
@@ -54,6 +53,8 @@ type Body = {
   panelWorkDate?: string;
   electricWorkDate?: string;
   appSettingsDayDate?: string;
+  /** カレンダー上で選択中の日（YYYY-MM-DD）。同日空枠削除の日付解決に使用 */
+  slotDayKey?: string;
   /** 表示中のカレンダー月（即時反映用・任意） */
   viewYear?: number;
   viewMonth?: number;
@@ -223,6 +224,11 @@ export async function POST(request: Request) {
       resolvedCustomer,
       resolvedHousing,
       resolvedTNumber,
+      fids.startDate,
+      fids.shigumi,
+      fids.panelWork,
+      fids.electricWork,
+      fids.appSettingsDay,
     );
 
     const recRow = await fetchConstructionRecordRow(
@@ -287,12 +293,17 @@ export async function POST(request: Request) {
     constructionUpdated = true;
     invalidateAllCalendarPayloadCache();
 
-    const slotDayKey =
-      dayKeyFromConstructionRecord(recObj, constructionFields) ??
-      optionalCalendarYmd(body.shigumiDate) ??
-      optionalCalendarYmd(body.panelWorkDate) ??
-      optionalCalendarYmd(body.electricWorkDate) ??
-      optionalCalendarYmd(body.appSettingsDayDate);
+    const slotDayKey = resolveConsumeEmptySlotDayKey(
+      recObj,
+      constructionFields,
+      [
+        body.slotDayKey,
+        body.shigumiDate,
+        body.panelWorkDate,
+        body.electricWorkDate,
+        body.appSettingsDayDate,
+      ],
+    );
 
     await consumeOneConstructionEmptySlotOnDate({
       calAppId,

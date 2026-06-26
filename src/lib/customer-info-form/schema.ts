@@ -353,7 +353,8 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   {
     key: "constructionContractor",
     caption: "施工業者",
-    type: "text",
+    type: "select",
+    options: [],
     required: false,
   },
   {
