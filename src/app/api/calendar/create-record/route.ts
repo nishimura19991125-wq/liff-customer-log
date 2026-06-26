@@ -338,17 +338,17 @@ export async function POST(request: Request) {
         body.appSettingsDayDate,
       ],
     );
-    if (consumeDayKey) {
-      await consumeOneConstructionEmptySlotOnDate({
-        calAppId,
-        dayKey: consumeDayKey,
-        excludeRecordId: recordId,
-        customerFieldUniqueId: resolvedCustomer,
-        constructionFields,
-        readAuth,
-        writeAuth,
-      });
-    }
+    const emptySlotCleanup = consumeDayKey
+      ? await consumeOneConstructionEmptySlotOnDate({
+          calAppId,
+          dayKey: consumeDayKey,
+          excludeRecordId: recordId,
+          customerFieldUniqueId: resolvedCustomer,
+          constructionFields,
+          readAuth,
+          writeAuth,
+        })
+      : { deleted: false as const, reason: "no_daykey" as const };
 
     return finalizeConstructionCalendarSave({
       calAppId,
@@ -361,6 +361,7 @@ export async function POST(request: Request) {
       viewYear: body.viewYear,
       viewMonth: body.viewMonth,
       savedVerb: "登録",
+      extraResponse: { emptySlotCleanup },
     });
   } catch (e) {
     console.error("[api/calendar/create-record]", e);

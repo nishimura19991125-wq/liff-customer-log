@@ -202,6 +202,34 @@ function contractorHue(key: string): number {
   return h % 360;
 }
 
+type EmptySlotCleanupResult = {
+  deleted?: boolean;
+  reason?: string;
+  status?: number;
+  candidateCount?: number;
+};
+
+/** 同日空枠削除の結果を保存完了メッセージに足す注記（空文字＝注記なし） */
+function emptySlotCleanupNote(cleanup?: EmptySlotCleanupResult | null): string {
+  if (!cleanup) return "";
+  if (cleanup.deleted) return "（同日の工事空枠を1件削除しました）";
+  if (cleanup.reason === "no_candidate") {
+    return "（同日に削除できる別の工事空枠はありませんでした）";
+  }
+  if (cleanup.reason === "no_daykey") {
+    return "（施工予定日が取得できず、空枠削除はスキップしました）";
+  }
+  if (cleanup.reason === "no_start_field") {
+    return "（施工予定日の列を特定できず、空枠削除はスキップしました）";
+  }
+  if (cleanup.reason === "error") {
+    return cleanup.status === 403
+      ? "（空枠の削除に失敗：削除権限をご確認ください）"
+      : `（空枠の削除に失敗しました${cleanup.status ? `：HTTP ${cleanup.status}` : ""}）`;
+  }
+  return "";
+}
+
 function ymdKey(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -822,6 +850,7 @@ function EmptySlotCard({
         customerInfoSynced?: boolean;
         constructionSaved?: boolean;
         calendarPatch?: CalendarRecordMonthPatch;
+        emptySlotCleanup?: EmptySlotCleanupResult;
       } = {};
       if (rawBody.trim()) {
         try {
@@ -889,9 +918,11 @@ function EmptySlotCard({
       }
       setFeedback({
         kind: "ok",
-        text: data.customerInfoSynced
-          ? "保存しました。@pocket に反映し、お客様情報アプリにも連携しました。"
-          : "保存しました。@pocket にも反映済みです。",
+        text:
+          (data.customerInfoSynced
+            ? "保存しました。@pocket に反映し、お客様情報アプリにも連携しました。"
+            : "保存しました。@pocket にも反映済みです。") +
+          emptySlotCleanupNote(data.emptySlotCleanup),
       });
     } catch (e) {
       setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
@@ -1262,6 +1293,7 @@ function NewConstructionRecordPanel({
         customerInfoSynced?: boolean;
         constructionSaved?: boolean;
         calendarPatch?: CalendarRecordMonthPatch;
+        emptySlotCleanup?: EmptySlotCleanupResult;
       } = {};
       if (rawBody.trim()) {
         try {
@@ -1319,9 +1351,11 @@ function NewConstructionRecordPanel({
       }
       setFeedback({
         kind: "ok",
-        text: data.customerInfoSynced
-          ? "登録しました。@pocket で T番号が採番され、お客様情報アプリにも連携しました。"
-          : "登録しました。@pocket で T番号が採番されています。",
+        text:
+          (data.customerInfoSynced
+            ? "登録しました。@pocket で T番号が採番され、お客様情報アプリにも連携しました。"
+            : "登録しました。@pocket で T番号が採番されています。") +
+          emptySlotCleanupNote(data.emptySlotCleanup),
       });
     } catch (e) {
       setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });

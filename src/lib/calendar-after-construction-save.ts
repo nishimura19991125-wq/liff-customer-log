@@ -20,6 +20,8 @@ export async function finalizeConstructionCalendarSave(opts: {
   viewMonth?: number;
   /** エラー文言用: 「登録」|「更新」 */
   savedVerb?: "登録" | "更新";
+  /** 成功レスポンスに追記する任意フィールド（同日空枠削除の結果など） */
+  extraResponse?: Record<string, unknown>;
 }): Promise<NextResponse> {
   const savedVerb = opts.savedVerb ?? "更新";
   const recordId = opts.constructionRecordId?.trim() || null;
@@ -73,5 +75,6 @@ export async function finalizeConstructionCalendarSave(opts: {
     customerInfoSynced: customerSync.kind === "synced",
     ...(recordId ? { recordId } : {}),
     ...(calendarPatch ? { calendarPatch } : {}),
+    ...(opts.extraResponse ?? {}),
   });
 }

@@ -342,13 +342,18 @@ export function resolveConstructionFieldIds(
       pickFieldUniqueId(fields, KW.zankoDay),
   };
 
-  const envContractor = process.env.CALENDAR_CONTRACTOR_FIELD_ID?.trim();
-  if (envContractor) {
-    const resolved = resolveConfiguredFieldToSchemaUniqueId(
-      envContractor,
-      fields,
-    );
-    if (resolved) return { ...base, contractor: resolved };
+  const envOverrides: Array<[keyof ConstructionFieldIds, string | undefined]> = [
+    ["contractor", process.env.CALENDAR_CONTRACTOR_FIELD_ID?.trim()],
+    ["startDate", process.env.CALENDAR_START_DATE_FIELD_ID?.trim()],
+    ["shigumi", process.env.CALENDAR_SHIGUMI_DATE_FIELD_ID?.trim()],
+    ["panelWork", process.env.CALENDAR_PANEL_WORK_DATE_FIELD_ID?.trim()],
+    ["electricWork", process.env.CALENDAR_ELECTRIC_WORK_DATE_FIELD_ID?.trim()],
+    ["appSettingsDay", process.env.CALENDAR_APP_SETTINGS_DATE_FIELD_ID?.trim()],
+  ];
+  for (const [key, envValue] of envOverrides) {
+    if (!envValue) continue;
+    const resolved = resolveConfiguredFieldToSchemaUniqueId(envValue, fields);
+    if (resolved) base[key] = resolved;
   }
 
   return base;

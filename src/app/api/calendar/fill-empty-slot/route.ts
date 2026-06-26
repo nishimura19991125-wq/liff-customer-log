@@ -305,7 +305,7 @@ export async function POST(request: Request) {
       ],
     );
 
-    await consumeOneConstructionEmptySlotOnDate({
+    const emptySlotCleanup = await consumeOneConstructionEmptySlotOnDate({
       calAppId,
       dayKey: slotDayKey,
       excludeRecordId: recordId,
@@ -325,6 +325,7 @@ export async function POST(request: Request) {
       viewYear: body.viewYear,
       viewMonth: body.viewMonth,
       savedVerb: "更新",
+      extraResponse: { emptySlotCleanup },
     });
   } catch (e) {
     console.error("[api/calendar/fill-empty-slot]", e);

@@ -41,6 +41,7 @@ import {
 import { invalidateCustomerInfoKeyLookupCache } from "@/lib/customer-info-key-lookup-cache";
 import { invalidateCustomerInfoPendingCache } from "@/lib/customer-info-pending-cache";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
+import { consumeConstructionEmptySlotOnDateStandalone } from "@/lib/calendar-consume-empty-slot";
 import { resolveCustomerInfoCreatorFieldId } from "@/lib/customer-info-creator-field";
 import {
   lineAuthUnauthorizedResponse,
@@ -51,6 +52,14 @@ import { enrichCustomerInfoFormFieldsWithManufacturers } from "@/lib/trading-par
 export const dynamic = "force-dynamic";
 
 type RouteCtx = { params: Promise<{ recordId: string }> };
+
+/** 最初に値が入っている日付文字列（同日空枠削除の基準日）。なければ null */
+function firstFilledDate(values: Array<unknown>): string | null {
+  for (const v of values) {
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
+}
 
 async function attachImportKeyAndUpdate(
   appId: string,
@@ -371,7 +380,14 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         payload,
       );
       if (keyErr) return keyErr;
-      return NextResponse.json({ ok: true });
+
+      const emptySlotCleanup = await consumeConstructionEmptySlotOnDateStandalone(
+        firstFilledDate([
+          values.constructionDate,
+          values.firstConstructionDate,
+        ]),
+      );
+      return NextResponse.json({ ok: true, emptySlotCleanup });
     }
 
     const editableResolved = resolveCustomerInfoFieldIds(
