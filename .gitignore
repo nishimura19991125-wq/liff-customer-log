@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# standalone @pocket / LINE bot scripts (managed outside this repo)
+/ranking_pt_dashboard.js
+/ranking_pt_dashboard.config.js
