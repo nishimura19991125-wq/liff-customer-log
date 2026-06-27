@@ -5,6 +5,7 @@ import {
   buildCalendarPayload,
   buildConstructionRecordsMonthOverlapQuery,
   collectConstructionFieldsCsv,
+  resolveConstructionFieldIds,
 } from "@/lib/calendar-kojo";
 import { resolveConstructionMapAddressFieldIds } from "@/lib/map-address-fields";
 import {
@@ -100,10 +101,9 @@ export async function GET(request: Request) {
       "true" ||
     process.env.CALENDAR_INCLUDE_SANDWICH_NATIONAL_HOLIDAY?.trim() === "true";
 
-  const recordsQueryFilterDisabled =
+  const recordsQueryFilterEnabled =
     process.env.COMMUNICATION_BRIDGE_CALENDAR_RECORDS_QUERY_FILTER?.trim() ===
-      "false" || process.env.CALENDAR_RECORDS_QUERY_FILTER?.trim() === "false";
-  const recordsQueryFilterEnabled = !recordsQueryFilterDisabled;
+    "true";
 
   const refresh =
     url.searchParams.get("refresh") === "1" ||
@@ -129,6 +129,7 @@ export async function GET(request: Request) {
           appEnv: "COMMUNICATION_BRIDGE_CALENDAR_APP_ID",
         });
 
+        const listFids = resolveConstructionFieldIds(constructionFields);
         const bridgeFids =
           resolveCommunicationBridgeCalendarFieldIds(constructionFields);
         const mapAddressIds =
@@ -136,7 +137,7 @@ export async function GET(request: Request) {
         const attachmentFieldId =
           resolveCommunicationBridgeAttachmentFieldId(constructionFields);
         const csv = collectConstructionFieldsCsv(
-          bridgeFids,
+          listFids,
           mapAddressIds,
           [attachmentFieldId],
         );
@@ -145,10 +146,10 @@ export async function GET(request: Request) {
           recordsQueryFilterEnabled &&
           isCommunicationBridgeDateFieldForQuery(
             constructionFields,
-            bridgeFids.startDate,
+            listFids.startDate,
           )
             ? buildConstructionRecordsMonthOverlapQuery(
-                bridgeFids,
+                listFids,
                 year,
                 month,
               )

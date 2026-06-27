@@ -178,15 +178,21 @@ export function resolveCommunicationBridgeCalendarFieldIds(
     "";
 
   return {
-    ...base,
     title,
+    contractor: "",
     startDate,
     endDate: "",
+    memo: "",
+    housingStatus: "",
     shigumi: "",
     panelWork: "",
     electricWork: "",
     appSettingsDay: "",
+    tNumber: "",
+    manufacturer: "",
+    panelCapacity: "",
+    batteryCapacity: "",
+    inputStatus: "",
     zankoDay: "",
-    housingStatus: "",
   };
 }

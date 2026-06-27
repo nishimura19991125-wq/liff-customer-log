@@ -33,11 +33,11 @@ export function buildCommunicationBridgeCalendarPayloadCacheKey(
       "true" ||
     process.env.CALENDAR_INCLUDE_SANDWICH_NATIONAL_HOLIDAY?.trim() === "true";
   const recordsQueryFilterEnabled =
-    process.env.COMMUNICATION_BRIDGE_CALENDAR_RECORDS_QUERY_FILTER?.trim() !==
-      "false" && process.env.CALENDAR_RECORDS_QUERY_FILTER?.trim() !== "false";
+    process.env.COMMUNICATION_BRIDGE_CALENDAR_RECORDS_QUERY_FILTER?.trim() ===
+    "true";
 
   return JSON.stringify({
-    v: 5,
+    v: 6,
     appId,
     attachmentField:
       process.env.COMMUNICATION_BRIDGE_CALENDAR_ATTACHMENT_FIELD_ID?.trim() ??
