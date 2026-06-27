@@ -132,7 +132,7 @@ export async function GET(request: Request) {
       resolveCommunicationBridgeAttachmentFieldId(fields);
     if (!attachmentFieldId) {
       return NextResponse.json(
-        { error: "添付画像フィールドを特定できませんでした" },
+        { error: "「添付ファイル」列を特定できませんでした" },
         { status: 503 },
       );
     }

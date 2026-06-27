@@ -1,224 +1,68 @@
 import "server-only";
 
-import type { AtPocketFieldRow } from "@/lib/atpocket";
+import type { AtPocketFieldRow, AtPocketRecordRow } from "@/lib/atpocket";
+import { parseAtPocketFileField } from "@/lib/at-pocket-file-field";
 import {
   type ConstructionFieldIds,
   pocketFieldUniqueIdByCaption,
   resolveConfiguredFieldToSchemaUniqueId,
-  resolveConstructionFieldIds,
 } from "@/lib/calendar-kojo";
 
-const ATTACHMENT_CAPTION_KEYWORDS = [
-  "添付画像",
-  "添付ファイル",
-  "添付",
-  "画像",
-  "ファイル",
-  "写真",
-];
+export const COMMUNICATION_BRIDGE_DATE_CAPTION = "日付";
+export const COMMUNICATION_BRIDGE_ATTACHMENT_CAPTION = "添付ファイル";
 
-function pickAttachmentFieldByCaption(fields: AtPocketFieldRow[]): string | null {
-  for (const caption of ATTACHMENT_CAPTION_KEYWORDS) {
-    const id = pocketFieldUniqueIdByCaption(fields, caption);
-    if (id) return id;
-  }
-  const lowered = ATTACHMENT_CAPTION_KEYWORDS.map((k) => k.toLowerCase());
-  for (const f of fields) {
-    const cap = (f.caption ?? "").trim().toLowerCase();
-    if (!cap) continue;
-    if (lowered.some((k) => cap.includes(k))) {
-      const id = f.uniqueId?.trim();
-      if (id) return id;
-    }
-  }
-  return null;
-}
+export type CommunicationBridgeFieldIds = {
+  dateFieldId: string | null;
+  attachmentFieldId: string | null;
+};
 
-const FILE_FIELD_TYPES = new Set([
-  "File",
-  "Attachment",
-  "Attachments",
-  "Image",
-  "Images",
-]);
-
-/** コミュニケーションブリッジカレンダーの添付画像列 uniqueId */
-export function resolveCommunicationBridgeAttachmentFieldId(
+function resolveFieldByCaptionOrEnv(
   fields: AtPocketFieldRow[],
+  envName: string,
+  caption: string,
 ): string | null {
-  const fromEnv =
-    process.env.COMMUNICATION_BRIDGE_CALENDAR_ATTACHMENT_FIELD_ID?.trim();
+  const fromEnv = process.env[envName]?.trim();
   if (fromEnv) {
     return resolveConfiguredFieldToSchemaUniqueId(fromEnv, fields);
   }
-
-  for (const f of fields) {
-    if (FILE_FIELD_TYPES.has((f.fieldType ?? "").trim())) {
-      const id = f.uniqueId?.trim();
-      if (id) return id;
-    }
-  }
-
-  return pickAttachmentFieldByCaption(fields);
-}
-
-const BRIDGE_START_DATE_KEYWORDS = [
-  "日付",
-  "配信日",
-  "掲載日",
-  "公開日",
-  "カレンダー日",
-  "年月日",
-  "投稿日",
-  "登録日",
-  "作成日",
-  "表示日",
-  "施工予定日",
-  "予定日",
-  "着工日",
-  "工事日",
-];
-
-const BRIDGE_TITLE_KEYWORDS = [
-  "タイトル",
-  "件名",
-  "タイトル名",
-  "コメント",
-  "内容",
-  "お客様名",
-  "顧客名",
-];
-
-const DATE_FIELD_TYPES = new Set([
-  "Date",
-  "Datetime",
-  "DateTime",
-  "date",
-  "datetime",
-]);
-
-function nfkcLower(s: string): string {
-  return s.normalize("NFKC").trim().toLowerCase();
-}
-
-function pickFieldByCaptionKeywords(
-  fields: AtPocketFieldRow[],
-  keywords: string[],
-): string | null {
-  const lowered = keywords.map((k) => nfkcLower(k));
-  for (const f of fields) {
-    const cap = nfkcLower(String(f.caption ?? ""));
-    if (!cap) continue;
-    if (lowered.some((k) => cap.includes(k))) {
-      const id = f.uniqueId?.trim();
-      if (id) return id;
-    }
-  }
-  return null;
-}
-
-function pickFirstDateTypeField(fields: AtPocketFieldRow[]): string | null {
-  for (const f of fields) {
-    if (DATE_FIELD_TYPES.has((f.fieldType ?? "").trim())) {
-      const id = f.uniqueId?.trim();
-      if (id) return id;
-    }
-  }
-  return null;
-}
-
-function fieldUniqueIdByCaptionExact(
-  fields: AtPocketFieldRow[],
-  caption: string,
-): string | null {
   return pocketFieldUniqueIdByCaption(fields, caption);
 }
 
-/** @pocket query に使える日付列か */
-export function isCommunicationBridgeDateFieldForQuery(
+/** コミュニケーションブリッジは「日付」「添付ファイル」列のみ使用 */
+export function resolveCommunicationBridgeFieldIds(
   fields: AtPocketFieldRow[],
-  fieldId: string | null | undefined,
-): boolean {
-  const id = fieldId?.trim();
-  if (!id) return false;
-  for (const f of fields) {
-    if (f.uniqueId?.trim() !== id) continue;
-    if (DATE_FIELD_TYPES.has((f.fieldType ?? "").trim())) return true;
-    const cap = nfkcLower(String(f.caption ?? ""));
-    return /日|date|年月|配信|掲載|公開|予定|着工|工事|カレンダー|ymd/i.test(
-      cap,
-    );
-  }
-  return false;
-}
-
-/** レコードから日付を読む際に試す列（優先順） */
-export function listCommunicationBridgeDateFieldIds(
-  fields: AtPocketFieldRow[],
-  primaryFieldId: string,
-): string[] {
-  const ids: string[] = [];
-  const seen = new Set<string>();
-  const push = (id: string | null | undefined) => {
-    const t = id?.trim();
-    if (!t || seen.has(t)) return;
-    seen.add(t);
-    ids.push(t);
-  };
-
-  push(primaryFieldId);
-  push(fieldUniqueIdByCaptionExact(fields, "日付"));
-  for (const f of fields) {
-    if (DATE_FIELD_TYPES.has((f.fieldType ?? "").trim())) {
-      push(f.uniqueId);
-    }
-  }
-  for (const f of fields) {
-    const cap = nfkcLower(String(f.caption ?? ""));
-    if (!cap) continue;
-    if (
-      BRIDGE_START_DATE_KEYWORDS.some((kw) => cap.includes(nfkcLower(kw)))
-    ) {
-      push(f.uniqueId);
-    }
-  }
-
-  return ids;
-}
-
-/** コミュニケーションブリッジカレンダーの日付・タイトル列（工事カレンダー用推定より優先） */
-export function resolveCommunicationBridgeCalendarFieldIds(
-  fields: AtPocketFieldRow[],
-): ConstructionFieldIds {
-  const base = resolveConstructionFieldIds(fields);
-
-  const startFromEnv =
-    process.env.COMMUNICATION_BRIDGE_CALENDAR_START_DATE_FIELD_ID?.trim();
-  const startDate =
-    (startFromEnv
-      ? resolveConfiguredFieldToSchemaUniqueId(startFromEnv, fields)
-      : null) ??
-    fieldUniqueIdByCaptionExact(fields, "日付") ??
-    pickFirstDateTypeField(fields) ??
-    pickFieldByCaptionKeywords(fields, BRIDGE_START_DATE_KEYWORDS) ??
-    base.startDate?.trim() ??
-    "";
-
-  const titleFromEnv =
-    process.env.COMMUNICATION_BRIDGE_CALENDAR_TITLE_FIELD_ID?.trim();
-  const title =
-    (titleFromEnv
-      ? resolveConfiguredFieldToSchemaUniqueId(titleFromEnv, fields)
-      : null) ??
-    pocketFieldUniqueIdByCaption(fields, "タイトル") ??
-    pickFieldByCaptionKeywords(fields, BRIDGE_TITLE_KEYWORDS) ??
-    base.title ??
-    "";
-
+): CommunicationBridgeFieldIds {
   return {
-    title,
+    dateFieldId: resolveFieldByCaptionOrEnv(
+      fields,
+      "COMMUNICATION_BRIDGE_CALENDAR_START_DATE_FIELD_ID",
+      COMMUNICATION_BRIDGE_DATE_CAPTION,
+    ),
+    attachmentFieldId: resolveFieldByCaptionOrEnv(
+      fields,
+      "COMMUNICATION_BRIDGE_CALENDAR_ATTACHMENT_FIELD_ID",
+      COMMUNICATION_BRIDGE_ATTACHMENT_CAPTION,
+    ),
+  };
+}
+
+export function communicationBridgeFieldsCsv(
+  ids: CommunicationBridgeFieldIds,
+): string {
+  return [ids.dateFieldId, ids.attachmentFieldId]
+    .map((id) => id?.trim())
+    .filter(Boolean)
+    .join(",");
+}
+
+/** buildCalendarPayload 用（日付列のみ・タイトルなし＝添付画像表示） */
+export function toCommunicationBridgeCalendarFieldIds(
+  ids: CommunicationBridgeFieldIds,
+): ConstructionFieldIds {
+  return {
+    title: "",
     contractor: "",
-    startDate,
+    startDate: ids.dateFieldId?.trim() ?? "",
     endDate: "",
     memo: "",
     housingStatus: "",
@@ -233,4 +77,51 @@ export function resolveCommunicationBridgeCalendarFieldIds(
     inputStatus: "",
     zankoDay: "",
   };
+}
+
+function recordObject(
+  rec: AtPocketRecordRow,
+): Record<string, unknown> | null {
+  if (!rec.record || typeof rec.record !== "object") return null;
+  return rec.record as Record<string, unknown>;
+}
+
+/** 日付・添付ファイルが両方あるレコードだけ残す */
+export function filterCommunicationBridgeRecords(
+  records: AtPocketRecordRow[],
+  ids: CommunicationBridgeFieldIds,
+): AtPocketRecordRow[] {
+  const dateId = ids.dateFieldId?.trim();
+  const attachmentId = ids.attachmentFieldId?.trim();
+  if (!dateId || !attachmentId) return [];
+
+  return records.filter((rec) => {
+    const recObj = recordObject(rec);
+    if (!recObj) return false;
+    const dateRaw = recObj[dateId];
+    if (dateRaw == null || String(dateRaw).trim() === "") return false;
+    const files = parseAtPocketFileField(recObj[attachmentId]);
+    return files.some(
+      (f) =>
+        f.contentBase64?.trim() ||
+        f.externalUrl?.trim() ||
+        f.name.trim(),
+    );
+  });
+}
+
+/** @deprecated resolveCommunicationBridgeFieldIds を使用してください */
+export function resolveCommunicationBridgeAttachmentFieldId(
+  fields: AtPocketFieldRow[],
+): string | null {
+  return resolveCommunicationBridgeFieldIds(fields).attachmentFieldId;
+}
+
+/** @deprecated toCommunicationBridgeCalendarFieldIds を使用してください */
+export function resolveCommunicationBridgeCalendarFieldIds(
+  fields: AtPocketFieldRow[],
+): ConstructionFieldIds {
+  return toCommunicationBridgeCalendarFieldIds(
+    resolveCommunicationBridgeFieldIds(fields),
+  );
 }

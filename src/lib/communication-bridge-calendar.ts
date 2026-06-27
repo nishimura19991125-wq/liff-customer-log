@@ -37,7 +37,7 @@ export function buildCommunicationBridgeCalendarPayloadCacheKey(
     "true";
 
   return JSON.stringify({
-    v: 7,
+    v: 8,
     appId,
     attachmentField:
       process.env.COMMUNICATION_BRIDGE_CALENDAR_ATTACHMENT_FIELD_ID?.trim() ??

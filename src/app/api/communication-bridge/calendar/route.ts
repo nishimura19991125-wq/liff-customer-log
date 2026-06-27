@@ -1,16 +1,12 @@
 import { NextResponse } from "next/server";
 
 import type { CalendarApiPayload } from "@/lib/calendar-api-types";
+import { buildCalendarPayload } from "@/lib/calendar-kojo";
 import {
-  buildCalendarPayload,
-  buildConstructionRecordsMonthOverlapQuery,
-  collectConstructionFieldsCsv,
-} from "@/lib/calendar-kojo";
-import {
-  isCommunicationBridgeDateFieldForQuery,
-  listCommunicationBridgeDateFieldIds,
-  resolveCommunicationBridgeAttachmentFieldId,
-  resolveCommunicationBridgeCalendarFieldIds,
+  communicationBridgeFieldsCsv,
+  filterCommunicationBridgeRecords,
+  resolveCommunicationBridgeFieldIds,
+  toCommunicationBridgeCalendarFieldIds,
 } from "@/lib/communication-bridge-calendar-fields";
 import { cacheCommunicationBridgeAttachmentFiles } from "@/lib/communication-bridge-attachment-cache";
 import { parseAtPocketFileField } from "@/lib/at-pocket-file-field";
@@ -100,10 +96,6 @@ export async function GET(request: Request) {
       "true" ||
     process.env.CALENDAR_INCLUDE_SANDWICH_NATIONAL_HOLIDAY?.trim() === "true";
 
-  const recordsQueryFilterEnabled =
-    process.env.COMMUNICATION_BRIDGE_CALENDAR_RECORDS_QUERY_FILTER?.trim() ===
-    "true";
-
   const refresh =
     url.searchParams.get("refresh") === "1" ||
     url.searchParams.get("nocache") === "1";
@@ -128,74 +120,41 @@ export async function GET(request: Request) {
           appEnv: "COMMUNICATION_BRIDGE_CALENDAR_APP_ID",
         });
 
-        const bridgeFids =
-          resolveCommunicationBridgeCalendarFieldIds(constructionFields);
-        const startDateFieldCandidates = listCommunicationBridgeDateFieldIds(
-          constructionFields,
-          bridgeFids.startDate,
-        );
-        const attachmentFieldId =
-          resolveCommunicationBridgeAttachmentFieldId(constructionFields);
-        const csv = collectConstructionFieldsCsv(
-          bridgeFids,
-          undefined,
-          [attachmentFieldId, ...startDateFieldCandidates],
-        );
-
-        const pocketQuery =
-          recordsQueryFilterEnabled &&
-          isCommunicationBridgeDateFieldForQuery(
-            constructionFields,
-            bridgeFids.startDate,
-          )
-            ? buildConstructionRecordsMonthOverlapQuery(
-                bridgeFids,
-                year,
-                month,
-              )
-            : undefined;
-
-        let constructionRecords: Awaited<
-          ReturnType<typeof fetchCommunicationBridgeCalendarRecordsCached>
-        >;
-        try {
-          constructionRecords =
-            await fetchCommunicationBridgeCalendarRecordsCached(
-              calAppId,
-              csv,
-              pocketQuery,
-            );
-        } catch (fetchError) {
-          if (!pocketQuery?.trim()) throw fetchError;
-          console.warn(
-            "[api/communication-bridge/calendar] query fetch failed, retrying without query",
-            fetchError,
+        const bridgeIds = resolveCommunicationBridgeFieldIds(constructionFields);
+        if (!bridgeIds.dateFieldId || !bridgeIds.attachmentFieldId) {
+          throw new Error(
+            "コミュニケーションブリッジカレンダーに「日付」「添付ファイル」列が見つかりません",
           );
-          constructionRecords =
-            await fetchCommunicationBridgeCalendarRecordsCached(
-              calAppId,
-              csv,
-              null,
-            );
         }
 
-        if (attachmentFieldId) {
-          for (const rec of constructionRecords) {
-            const rid =
-              rec.recordId != null
-                ? String(rec.recordId)
-                : rec.id != null
-                  ? String(rec.id)
-                  : "";
-            const recObj =
-              rec.record && typeof rec.record === "object"
-                ? (rec.record as Record<string, unknown>)
-                : null;
-            if (!rid || !recObj) continue;
-            const files = parseAtPocketFileField(recObj[attachmentFieldId]);
-            if (files.length > 0) {
-              cacheCommunicationBridgeAttachmentFiles(calAppId, rid, files);
-            }
+        const bridgeFids = toCommunicationBridgeCalendarFieldIds(bridgeIds);
+        const csv = communicationBridgeFieldsCsv(bridgeIds);
+        const rawRecords = await fetchCommunicationBridgeCalendarRecordsCached(
+          calAppId,
+          csv,
+          null,
+        );
+        const constructionRecords = filterCommunicationBridgeRecords(
+          rawRecords,
+          bridgeIds,
+        );
+
+        const attachmentFieldId = bridgeIds.attachmentFieldId;
+        for (const rec of constructionRecords) {
+          const rid =
+            rec.recordId != null
+              ? String(rec.recordId)
+              : rec.id != null
+                ? String(rec.id)
+                : "";
+          const recObj =
+            rec.record && typeof rec.record === "object"
+              ? (rec.record as Record<string, unknown>)
+              : null;
+          if (!rid || !recObj) continue;
+          const files = parseAtPocketFileField(recObj[attachmentFieldId]);
+          if (files.length > 0) {
+            cacheCommunicationBridgeAttachmentFiles(calAppId, rid, files);
           }
         }
 
@@ -212,7 +171,6 @@ export async function GET(request: Request) {
             attachmentFieldId,
             attachmentIncludeAllFiles: true,
             constructionFieldIdsOverride: bridgeFids,
-            startDateFieldCandidates,
           },
         );
       },
@@ -239,12 +197,10 @@ export async function GET(request: Request) {
         { status: 429, headers: { "Retry-After": String(retrySec) } },
       );
     }
-    return NextResponse.json(
-      {
-        error:
-          "カレンダーデータの取得に失敗しました。しばらくしてから再度お試しください。",
-      },
-      { status: 502 },
-    );
+    const message =
+      e instanceof Error && e.message.includes("日付")
+        ? e.message
+        : "カレンダーデータの取得に失敗しました。しばらくしてから再度お試しください。";
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }
