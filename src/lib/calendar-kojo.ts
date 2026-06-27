@@ -1238,6 +1238,8 @@ export type BuildCalendarPayloadOptions = {
   attachmentFieldId?: string | null;
   /** 画像以外の添付もメタデータに含める（ブリッジカレンダー向け） */
   attachmentIncludeAllFiles?: boolean;
+  /** フィールド推定の上書き（コミュニケーションブリッジ等） */
+  constructionFieldIdsOverride?: ConstructionFieldIds;
 };
 
 export function buildCalendarPayload(
@@ -1250,7 +1252,9 @@ export function buildCalendarPayload(
   opts?: BuildCalendarPayloadOptions,
 ): CalendarApiPayload {
   const viewMonth0 = viewMonth1To12 - 1;
-  const fids = resolveConstructionFieldIds(constructionFields);
+  const fids =
+    opts?.constructionFieldIdsOverride ??
+    resolveConstructionFieldIds(constructionFields);
   const mapAddressIds = resolveConstructionMapAddressFieldIds(
     constructionFields,
   );

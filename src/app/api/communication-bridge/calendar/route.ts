@@ -5,10 +5,12 @@ import {
   buildCalendarPayload,
   buildConstructionRecordsMonthOverlapQuery,
   collectConstructionFieldsCsv,
-  resolveConstructionFieldIds,
 } from "@/lib/calendar-kojo";
 import { resolveConstructionMapAddressFieldIds } from "@/lib/map-address-fields";
-import { resolveCommunicationBridgeAttachmentFieldId } from "@/lib/communication-bridge-calendar-fields";
+import {
+  resolveCommunicationBridgeAttachmentFieldId,
+  resolveCommunicationBridgeCalendarFieldIds,
+} from "@/lib/communication-bridge-calendar-fields";
 import { cacheCommunicationBridgeAttachmentFiles } from "@/lib/communication-bridge-attachment-cache";
 import { parseAtPocketFileField } from "@/lib/at-pocket-file-field";
 import {
@@ -126,19 +128,24 @@ export async function GET(request: Request) {
           appEnv: "COMMUNICATION_BRIDGE_CALENDAR_APP_ID",
         });
 
-        const fids = resolveConstructionFieldIds(constructionFields);
+        const bridgeFids =
+          resolveCommunicationBridgeCalendarFieldIds(constructionFields);
         const mapAddressIds =
           resolveConstructionMapAddressFieldIds(constructionFields);
         const attachmentFieldId =
           resolveCommunicationBridgeAttachmentFieldId(constructionFields);
         const csv = collectConstructionFieldsCsv(
-          fids,
+          bridgeFids,
           mapAddressIds,
           [attachmentFieldId],
         );
 
         const pocketQuery = recordsQueryFilterEnabled
-          ? buildConstructionRecordsMonthOverlapQuery(fids, year, month)
+          ? buildConstructionRecordsMonthOverlapQuery(
+              bridgeFids,
+              year,
+              month,
+            )
           : undefined;
 
         const constructionRecords =
@@ -180,6 +187,7 @@ export async function GET(request: Request) {
             includeSandwichNationalHoliday: includeSandwich,
             attachmentFieldId,
             attachmentIncludeAllFiles: true,
+            constructionFieldIdsOverride: bridgeFids,
           },
         );
       },

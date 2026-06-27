@@ -2,8 +2,10 @@ import "server-only";
 
 import type { AtPocketFieldRow } from "@/lib/atpocket";
 import {
+  type ConstructionFieldIds,
   pocketFieldUniqueIdByCaption,
   resolveConfiguredFieldToSchemaUniqueId,
+  resolveConstructionFieldIds,
 } from "@/lib/calendar-kojo";
 
 const ATTACHMENT_CAPTION_KEYWORDS = [
@@ -58,4 +60,109 @@ export function resolveCommunicationBridgeAttachmentFieldId(
   }
 
   return pickAttachmentFieldByCaption(fields);
+}
+
+const BRIDGE_START_DATE_KEYWORDS = [
+  "日付",
+  "配信日",
+  "掲載日",
+  "公開日",
+  "カレンダー日",
+  "年月日",
+  "施工予定日",
+  "予定日",
+  "着工日",
+  "工事日",
+  "ブリッジ",
+];
+
+const BRIDGE_TITLE_KEYWORDS = [
+  "タイトル",
+  "件名",
+  "タイトル名",
+  "コメント",
+  "内容",
+  "お客様名",
+  "顧客名",
+];
+
+const DATE_FIELD_TYPES = new Set([
+  "Date",
+  "Datetime",
+  "DateTime",
+  "date",
+  "datetime",
+]);
+
+function nfkcLower(s: string): string {
+  return s.normalize("NFKC").trim().toLowerCase();
+}
+
+function pickFieldByCaptionKeywords(
+  fields: AtPocketFieldRow[],
+  keywords: string[],
+): string | null {
+  const lowered = keywords.map((k) => nfkcLower(k));
+  for (const f of fields) {
+    const cap = nfkcLower(String(f.caption ?? ""));
+    if (!cap) continue;
+    if (lowered.some((k) => cap.includes(k))) {
+      const id = f.uniqueId?.trim();
+      if (id) return id;
+    }
+  }
+  return null;
+}
+
+function pickFirstDateTypeField(fields: AtPocketFieldRow[]): string | null {
+  for (const f of fields) {
+    if (DATE_FIELD_TYPES.has((f.fieldType ?? "").trim())) {
+      const id = f.uniqueId?.trim();
+      if (id) return id;
+    }
+  }
+  return null;
+}
+
+/** コミュニケーションブリッジカレンダーの日付・タイトル列（工事カレンダー用推定より優先） */
+export function resolveCommunicationBridgeCalendarFieldIds(
+  fields: AtPocketFieldRow[],
+): ConstructionFieldIds {
+  const base = resolveConstructionFieldIds(fields);
+
+  const startFromEnv =
+    process.env.COMMUNICATION_BRIDGE_CALENDAR_START_DATE_FIELD_ID?.trim();
+  const startDate =
+    (startFromEnv
+      ? resolveConfiguredFieldToSchemaUniqueId(startFromEnv, fields)
+      : null) ??
+    pocketFieldUniqueIdByCaption(fields, "日付") ??
+    pickFieldByCaptionKeywords(fields, BRIDGE_START_DATE_KEYWORDS) ??
+    base.startDate?.trim() ??
+    pickFirstDateTypeField(fields) ??
+    "";
+
+  const titleFromEnv =
+    process.env.COMMUNICATION_BRIDGE_CALENDAR_TITLE_FIELD_ID?.trim();
+  const title =
+    (titleFromEnv
+      ? resolveConfiguredFieldToSchemaUniqueId(titleFromEnv, fields)
+      : null) ??
+    pocketFieldUniqueIdByCaption(fields, "タイトル") ??
+    pickFieldByCaptionKeywords(fields, BRIDGE_TITLE_KEYWORDS) ??
+    base.title ??
+    "";
+
+  return {
+    ...base,
+    title,
+    startDate,
+    endDate: "",
+    shigumi: "",
+    panelWork: "",
+    electricWork: "",
+    appSettingsDay: "",
+    zankoDay: "",
+    housingStatus: "",
+  };
 }
