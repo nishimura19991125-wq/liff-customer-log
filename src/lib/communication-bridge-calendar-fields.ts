@@ -73,7 +73,6 @@ const BRIDGE_START_DATE_KEYWORDS = [
   "予定日",
   "着工日",
   "工事日",
-  "ブリッジ",
 ];
 
 const BRIDGE_TITLE_KEYWORDS = [
@@ -124,6 +123,31 @@ function pickFirstDateTypeField(fields: AtPocketFieldRow[]): string | null {
   return null;
 }
 
+function fieldUniqueIdByCaptionExact(
+  fields: AtPocketFieldRow[],
+  caption: string,
+): string | null {
+  return pocketFieldUniqueIdByCaption(fields, caption);
+}
+
+/** @pocket query に使える日付列か */
+export function isCommunicationBridgeDateFieldForQuery(
+  fields: AtPocketFieldRow[],
+  fieldId: string | null | undefined,
+): boolean {
+  const id = fieldId?.trim();
+  if (!id) return false;
+  for (const f of fields) {
+    if (f.uniqueId?.trim() !== id) continue;
+    if (DATE_FIELD_TYPES.has((f.fieldType ?? "").trim())) return true;
+    const cap = nfkcLower(String(f.caption ?? ""));
+    return /日|date|年月|配信|掲載|公開|予定|着工|工事|カレンダー|ymd/i.test(
+      cap,
+    );
+  }
+  return false;
+}
+
 /** コミュニケーションブリッジカレンダーの日付・タイトル列（工事カレンダー用推定より優先） */
 export function resolveCommunicationBridgeCalendarFieldIds(
   fields: AtPocketFieldRow[],
@@ -136,10 +160,10 @@ export function resolveCommunicationBridgeCalendarFieldIds(
     (startFromEnv
       ? resolveConfiguredFieldToSchemaUniqueId(startFromEnv, fields)
       : null) ??
-    pocketFieldUniqueIdByCaption(fields, "日付") ??
+    fieldUniqueIdByCaptionExact(fields, "日付") ??
+    pickFirstDateTypeField(fields) ??
     pickFieldByCaptionKeywords(fields, BRIDGE_START_DATE_KEYWORDS) ??
     base.startDate?.trim() ??
-    pickFirstDateTypeField(fields) ??
     "";
 
   const titleFromEnv =

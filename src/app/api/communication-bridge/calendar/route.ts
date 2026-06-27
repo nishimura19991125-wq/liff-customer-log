@@ -8,6 +8,7 @@ import {
 } from "@/lib/calendar-kojo";
 import { resolveConstructionMapAddressFieldIds } from "@/lib/map-address-fields";
 import {
+  isCommunicationBridgeDateFieldForQuery,
   resolveCommunicationBridgeAttachmentFieldId,
   resolveCommunicationBridgeCalendarFieldIds,
 } from "@/lib/communication-bridge-calendar-fields";
@@ -140,20 +141,42 @@ export async function GET(request: Request) {
           [attachmentFieldId],
         );
 
-        const pocketQuery = recordsQueryFilterEnabled
-          ? buildConstructionRecordsMonthOverlapQuery(
-              bridgeFids,
-              year,
-              month,
-            )
-          : undefined;
+        const pocketQuery =
+          recordsQueryFilterEnabled &&
+          isCommunicationBridgeDateFieldForQuery(
+            constructionFields,
+            bridgeFids.startDate,
+          )
+            ? buildConstructionRecordsMonthOverlapQuery(
+                bridgeFids,
+                year,
+                month,
+              )
+            : undefined;
 
-        const constructionRecords =
-          await fetchCommunicationBridgeCalendarRecordsCached(
-            calAppId,
-            csv,
-            pocketQuery,
+        let constructionRecords: Awaited<
+          ReturnType<typeof fetchCommunicationBridgeCalendarRecordsCached>
+        >;
+        try {
+          constructionRecords =
+            await fetchCommunicationBridgeCalendarRecordsCached(
+              calAppId,
+              csv,
+              pocketQuery,
+            );
+        } catch (fetchError) {
+          if (!pocketQuery?.trim()) throw fetchError;
+          console.warn(
+            "[api/communication-bridge/calendar] query fetch failed, retrying without query",
+            fetchError,
           );
+          constructionRecords =
+            await fetchCommunicationBridgeCalendarRecordsCached(
+              calAppId,
+              csv,
+              null,
+            );
+        }
 
         if (attachmentFieldId) {
           for (const rec of constructionRecords) {
