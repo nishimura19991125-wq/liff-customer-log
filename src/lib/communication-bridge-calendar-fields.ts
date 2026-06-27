@@ -69,6 +69,10 @@ const BRIDGE_START_DATE_KEYWORDS = [
   "公開日",
   "カレンダー日",
   "年月日",
+  "投稿日",
+  "登録日",
+  "作成日",
+  "表示日",
   "施工予定日",
   "予定日",
   "着工日",
@@ -146,6 +150,40 @@ export function isCommunicationBridgeDateFieldForQuery(
     );
   }
   return false;
+}
+
+/** レコードから日付を読む際に試す列（優先順） */
+export function listCommunicationBridgeDateFieldIds(
+  fields: AtPocketFieldRow[],
+  primaryFieldId: string,
+): string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  const push = (id: string | null | undefined) => {
+    const t = id?.trim();
+    if (!t || seen.has(t)) return;
+    seen.add(t);
+    ids.push(t);
+  };
+
+  push(primaryFieldId);
+  push(fieldUniqueIdByCaptionExact(fields, "日付"));
+  for (const f of fields) {
+    if (DATE_FIELD_TYPES.has((f.fieldType ?? "").trim())) {
+      push(f.uniqueId);
+    }
+  }
+  for (const f of fields) {
+    const cap = nfkcLower(String(f.caption ?? ""));
+    if (!cap) continue;
+    if (
+      BRIDGE_START_DATE_KEYWORDS.some((kw) => cap.includes(nfkcLower(kw)))
+    ) {
+      push(f.uniqueId);
+    }
+  }
+
+  return ids;
 }
 
 /** コミュニケーションブリッジカレンダーの日付・タイトル列（工事カレンダー用推定より優先） */

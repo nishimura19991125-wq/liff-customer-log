@@ -502,6 +502,19 @@ function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
 }
 
+function parseRecordStartDate(
+  recObj: Record<string, unknown>,
+  fieldIds: string[],
+): Date | null {
+  for (const id of fieldIds) {
+    const t = id.trim();
+    if (!t) continue;
+    const parsed = parseDate(recObj[t]);
+    if (parsed) return startOfDay(parsed);
+  }
+  return null;
+}
+
 function addDays(d: Date, n: number): Date {
   const x = new Date(d.getTime());
   x.setDate(x.getDate() + n);
@@ -661,6 +674,7 @@ function recordToEvent(
   mapAddressIds: MapAddressFieldIds,
   attachmentFieldId?: string | null,
   attachmentIncludeAllFiles = false,
+  startDateFieldCandidates: string[] = [],
 ): CalendarEventInternal | null {
   const recObj =
     rec && rec.record && typeof rec.record === "object"
@@ -710,10 +724,17 @@ function recordToEvent(
   let start: Date;
   let end: Date | null;
 
+  const startFieldIds = [
+    ...(fids.startDate?.trim() ? [fids.startDate.trim()] : []),
+    ...startDateFieldCandidates.filter(
+      (id) => id.trim() && id.trim() !== fids.startDate?.trim(),
+    ),
+  ];
+
   if (category === "empty") {
-    const sEmpty = fids.startDate ? parseDate(recObj[fids.startDate]) : null;
+    const sEmpty = parseRecordStartDate(recObj, startFieldIds);
     if (!sEmpty) return null;
-    start = startOfDay(sEmpty);
+    start = sEmpty;
     end = fids.endDate ? parseDate(recObj[fids.endDate]) : null;
     if (end) end = startOfDay(end);
     if (end && end.getTime() < start.getTime()) end = null;
@@ -722,9 +743,9 @@ function recordToEvent(
     start = startOfDay(new Date(Math.min(...tms)));
     end = startOfDay(new Date(Math.max(...tms)));
   } else {
-    const s0 = fids.startDate ? parseDate(recObj[fids.startDate]) : null;
+    const s0 = parseRecordStartDate(recObj, startFieldIds);
     if (!s0) return null;
-    start = startOfDay(s0);
+    start = s0;
     end = fids.endDate ? parseDate(recObj[fids.endDate]) : null;
     if (end) end = startOfDay(end);
     if (end && end.getTime() < start.getTime()) end = null;
@@ -1240,6 +1261,8 @@ export type BuildCalendarPayloadOptions = {
   attachmentIncludeAllFiles?: boolean;
   /** フィールド推定の上書き（コミュニケーションブリッジ等） */
   constructionFieldIdsOverride?: ConstructionFieldIds;
+  /** startDate 以外に試す日付列（ブリッジカレンダー等） */
+  startDateFieldCandidates?: string[];
 };
 
 export function buildCalendarPayload(
@@ -1260,6 +1283,7 @@ export function buildCalendarPayload(
   );
   const attachmentFieldId = opts?.attachmentFieldId?.trim() || null;
   const attachmentIncludeAllFiles = opts?.attachmentIncludeAllFiles === true;
+  const startDateFieldCandidates = opts?.startDateFieldCandidates ?? [];
 
   const events: CalendarEventInternal[] = [];
   for (const rec of constructionRecords) {
@@ -1269,6 +1293,7 @@ export function buildCalendarPayload(
       mapAddressIds,
       attachmentFieldId,
       attachmentIncludeAllFiles,
+      startDateFieldCandidates,
     );
     if (ev) events.push(ev);
   }

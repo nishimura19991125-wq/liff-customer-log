@@ -5,11 +5,10 @@ import {
   buildCalendarPayload,
   buildConstructionRecordsMonthOverlapQuery,
   collectConstructionFieldsCsv,
-  resolveConstructionFieldIds,
 } from "@/lib/calendar-kojo";
-import { resolveConstructionMapAddressFieldIds } from "@/lib/map-address-fields";
 import {
   isCommunicationBridgeDateFieldForQuery,
+  listCommunicationBridgeDateFieldIds,
   resolveCommunicationBridgeAttachmentFieldId,
   resolveCommunicationBridgeCalendarFieldIds,
 } from "@/lib/communication-bridge-calendar-fields";
@@ -129,27 +128,28 @@ export async function GET(request: Request) {
           appEnv: "COMMUNICATION_BRIDGE_CALENDAR_APP_ID",
         });
 
-        const listFids = resolveConstructionFieldIds(constructionFields);
         const bridgeFids =
           resolveCommunicationBridgeCalendarFieldIds(constructionFields);
-        const mapAddressIds =
-          resolveConstructionMapAddressFieldIds(constructionFields);
+        const startDateFieldCandidates = listCommunicationBridgeDateFieldIds(
+          constructionFields,
+          bridgeFids.startDate,
+        );
         const attachmentFieldId =
           resolveCommunicationBridgeAttachmentFieldId(constructionFields);
         const csv = collectConstructionFieldsCsv(
-          listFids,
-          mapAddressIds,
-          [attachmentFieldId],
+          bridgeFids,
+          undefined,
+          [attachmentFieldId, ...startDateFieldCandidates],
         );
 
         const pocketQuery =
           recordsQueryFilterEnabled &&
           isCommunicationBridgeDateFieldForQuery(
             constructionFields,
-            listFids.startDate,
+            bridgeFids.startDate,
           )
             ? buildConstructionRecordsMonthOverlapQuery(
-                listFids,
+                bridgeFids,
                 year,
                 month,
               )
@@ -212,6 +212,7 @@ export async function GET(request: Request) {
             attachmentFieldId,
             attachmentIncludeAllFiles: true,
             constructionFieldIdsOverride: bridgeFids,
+            startDateFieldCandidates,
           },
         );
       },
