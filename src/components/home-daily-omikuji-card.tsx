@@ -7,10 +7,15 @@ import {
   DAILY_OMIKUJI_SHOWN_EVENT,
   isDailyOmikujiShownToday,
 } from "@/lib/daily-omikuji-shown";
-import { buildDailyBusinessFortuneView } from "@/lib/home-business-fortune";
+import {
+  buildDailyBusinessFortuneView,
+  type DailyFortuneBuildContext,
+} from "@/lib/home-business-fortune";
 
 type Props = {
   staffName: string | null;
+  department?: string | null;
+  staffRole?: "ap" | "cl" | null;
 };
 
 const RANK_STYLES: Record<string, string> = {
@@ -53,11 +58,19 @@ function useOmikujiShownToday(staffName: string | null): boolean {
   return shown;
 }
 
-export function HomeDailyOmikujiCard({ staffName }: Props) {
+export function HomeDailyOmikujiCard({
+  staffName,
+  department = null,
+  staffRole = null,
+}: Props) {
   const shownToday = useOmikujiShownToday(staffName);
+  const fortuneCtx = useMemo<DailyFortuneBuildContext>(
+    () => ({ department, staffRole }),
+    [department, staffRole],
+  );
   const fortune = useMemo(
-    () => buildDailyBusinessFortuneView(staffName ?? ""),
-    [staffName],
+    () => buildDailyBusinessFortuneView(staffName ?? "", fortuneCtx),
+    [staffName, fortuneCtx],
   );
   const { rank, body } = parseRank(fortune.headline);
   const rankStyle =

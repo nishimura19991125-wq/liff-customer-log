@@ -1,13 +1,18 @@
 /** ブラウザ sessionStorage 上の /api/staff 応答キャッシュ（429 連打防止） */
 
-export const STAFF_API_SESSION_CACHE_KEY = "liff_staff_api_cache_v1";
+export const STAFF_API_SESSION_CACHE_KEY = "liff_staff_api_cache_v2";
 /** サーバー名簿 TTL（既定 30 分）に合わせ、429 連打を抑える */
 const STAFF_API_SESSION_CACHE_TTL_MS = 30 * 60 * 1000;
 
 export type StaffApiSessionCachePayload = {
   savedAt: number;
   staff: { id: string; name: string; importKey?: string }[];
-  boundStaff: { id: string; name: string } | null;
+  boundStaff: {
+    id: string;
+    name: string;
+    department?: string;
+    staffRole?: "ap" | "cl";
+  } | null;
   bindingEnabled: boolean;
   bindingConfigError?: string;
 };

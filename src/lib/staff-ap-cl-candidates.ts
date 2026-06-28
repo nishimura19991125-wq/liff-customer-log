@@ -324,6 +324,45 @@ function buildApClPickerPayload(
   };
 }
 
+/** 名簿の AP/CL 稼働状況から、おみくじ用事業部判定の補助ロールを返す */
+export async function resolveStaffApClRoleByName(
+  staffName: string,
+): Promise<"ap" | "cl" | null> {
+  const resolved = await resolveStaffApClConfig();
+  if (!resolved.ok) return null;
+
+  const cfg = resolved.cfg;
+  const target = normApClStaffName(staffName);
+  if (!target) return null;
+
+  const { rows } = await fetchStaffRowsForApClPicker(cfg);
+  for (const row of rows) {
+    const rec = row.record;
+    if (!rec || typeof rec !== "object") continue;
+    const ro = rec as Record<string, unknown>;
+    const name = normApClStaffName(
+      pocketTableCellToPlainString(
+        pickRecordValueByFieldAliases(ro, cfg.nameFieldId),
+      ),
+    );
+    if (name !== target) continue;
+
+    const apActive = staffConstructionAvailabilityIsActive(
+      pickRecordValueByFieldAliases(ro, cfg.apAvailabilityFieldId),
+      cfg.activeLabel,
+    );
+    const clActive = staffConstructionAvailabilityIsActive(
+      pickRecordValueByFieldAliases(ro, cfg.clAvailabilityFieldId),
+      cfg.activeLabel,
+    );
+    if (apActive && !clActive) return "ap";
+    if (clActive && !apActive) return "cl";
+    return null;
+  }
+
+  return null;
+}
+
 /**
  * AP/CL担当者プルダウン用。
  * AP稼働状況・CL稼働状況が activeLabel（既定「稼働」）の社員名のみ。

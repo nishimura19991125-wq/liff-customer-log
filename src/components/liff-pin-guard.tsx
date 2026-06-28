@@ -12,6 +12,7 @@ import {
 } from "@/lib/daily-omikuji-shown";
 import {
   buildDailyBusinessFortuneView,
+  type DailyFortuneBuildContext,
   type DailyFortuneView,
 } from "@/lib/home-business-fortune";
 import { initLiffAndGetToken } from "@/lib/liff-session";
@@ -45,6 +46,8 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<GuardPhase>("init");
   const [idToken, setIdToken] = useState<string | null>(null);
   const [boundStaffName, setBoundStaffName] = useState<string | null>(null);
+  const [boundStaffFortuneCtx, setBoundStaffFortuneCtx] =
+    useState<DailyFortuneBuildContext>({});
   const [pinStatus, setPinStatus] = useState<PinStatus | null>(null);
   const [omikuji, setOmikuji] = useState<{
     fortune: DailyFortuneView;
@@ -52,29 +55,35 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
   } | null>(null);
   const [clockOutReminderVisible, setClockOutReminderVisible] = useState(false);
 
-  const openDailyOmikujiIfNeeded = useCallback((staffName: string) => {
-    const staffKey = staffName.normalize("NFKC").trim();
-    if (!staffKey || !shouldShowDailyOmikuji(staffKey)) return;
-    setOmikuji((current) => {
-      if (current) return current;
-      return {
-        fortune: buildDailyBusinessFortuneView(staffKey),
-        staffName: staffKey,
-      };
-    });
-  }, []);
+  const openDailyOmikujiIfNeeded = useCallback(
+    (staffName: string, fortuneCtx: DailyFortuneBuildContext = {}) => {
+      const staffKey = staffName.normalize("NFKC").trim();
+      if (!staffKey || !shouldShowDailyOmikuji(staffKey)) return;
+      setOmikuji((current) => {
+        if (current) return current;
+        return {
+          fortune: buildDailyBusinessFortuneView(staffKey, fortuneCtx),
+          staffName: staffKey,
+        };
+      });
+    },
+    [],
+  );
 
   const lockApp = useCallback(() => {
     invalidatePinUnlockOnAppHide();
     setPhase("locked");
   }, []);
 
-  const unlockApp = useCallback((staffName: string) => {
-    markPinUnlockSession();
-    setBoundStaffName(staffName.normalize("NFKC").trim() || null);
-    openDailyOmikujiIfNeeded(staffName);
-    setPhase("unlocked");
-  }, [openDailyOmikujiIfNeeded]);
+  const unlockApp = useCallback(
+    (staffName: string) => {
+      markPinUnlockSession();
+      setBoundStaffName(staffName.normalize("NFKC").trim() || null);
+      openDailyOmikujiIfNeeded(staffName, boundStaffFortuneCtx);
+      setPhase("unlocked");
+    },
+    [openDailyOmikujiIfNeeded, boundStaffFortuneCtx],
+  );
 
   const dismissOmikuji = useCallback(() => {
     if (omikuji) {
@@ -135,6 +144,10 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
         }
 
         setBoundStaffName(staffName || null);
+        setBoundStaffFortuneCtx({
+          department: staffData.boundStaff?.department ?? null,
+          staffRole: staffData.boundStaff?.staffRole ?? null,
+        });
 
         const pinRes = await fetch("/api/staff/pin/status", {
           headers: { Authorization: `Bearer ${result.token}` },
@@ -181,20 +194,20 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (phase !== "unlocked" && phase !== "skip") return;
     if (!boundStaffName) return;
-    openDailyOmikujiIfNeeded(boundStaffName);
-  }, [phase, boundStaffName, openDailyOmikujiIfNeeded]);
+    openDailyOmikujiIfNeeded(boundStaffName, boundStaffFortuneCtx);
+  }, [phase, boundStaffName, boundStaffFortuneCtx, openDailyOmikujiIfNeeded]);
 
   useEffect(() => {
     const onPageShow = (event: PageTransitionEvent) => {
       if (!event.persisted) return;
       invalidatePinUnlockOnAppHide();
       if (boundStaffName) {
-        openDailyOmikujiIfNeeded(boundStaffName);
+        openDailyOmikujiIfNeeded(boundStaffName, boundStaffFortuneCtx);
       }
     };
     window.addEventListener("pageshow", onPageShow);
     return () => window.removeEventListener("pageshow", onPageShow);
-  }, [boundStaffName, openDailyOmikujiIfNeeded]);
+  }, [boundStaffName, boundStaffFortuneCtx, openDailyOmikujiIfNeeded]);
 
   useEffect(() => {
     if (phase !== "unlocked") return;

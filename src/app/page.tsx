@@ -291,7 +291,11 @@ export default function HomeHubPage() {
         ) : null}
 
         {!needsStaffBind ? (
-          <HomeDailyOmikujiCard staffName={account.boundStaffName} />
+          <HomeDailyOmikujiCard
+            staffName={account.boundStaffName}
+            department={account.boundStaffDepartment}
+            staffRole={account.boundStaffRole}
+          />
         ) : null}
 
         <HomeMissingDocumentsAlert

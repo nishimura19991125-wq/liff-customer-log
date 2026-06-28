@@ -5,6 +5,8 @@ import {
   isPocketApiRateLimited,
   pocketApiRateLimitRemainingMs,
 } from "@/lib/atpocket";
+import { resolveStaffApClRoleByName } from "@/lib/staff-ap-cl-candidates";
+import { lookupStaffDepartmentByStaffName } from "@/lib/staff-department-lookup";
 import {
   boundStaffFromRosterRows,
   fetchStaffRosterRowsCached,
@@ -131,8 +133,22 @@ export async function GET(request: Request) {
         ...(importKey !== undefined ? { importKey } : {}),
       }));
 
-    const boundStaff = lineBindingOn
+    const boundStaffBase = lineBindingOn
       ? boundStaffFromRosterRows(rows, caller.lineUserId)
+      : null;
+
+    const boundStaff = boundStaffBase
+      ? await (async () => {
+          const [department, staffRole] = await Promise.all([
+            lookupStaffDepartmentByStaffName(boundStaffBase.name),
+            resolveStaffApClRoleByName(boundStaffBase.name),
+          ]);
+          return {
+            ...boundStaffBase,
+            ...(department ? { department } : {}),
+            ...(staffRole ? { staffRole } : {}),
+          };
+        })()
       : null;
 
     const res = NextResponse.json({

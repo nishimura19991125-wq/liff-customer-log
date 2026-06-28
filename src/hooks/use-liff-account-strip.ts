@@ -9,7 +9,12 @@ import { fetchStaffApiWithSessionCache } from "@/lib/staff-api-session-cache";
 
 type StaffApiPayload = {
   staff?: { id: string; name: string; importKey?: string }[];
-  boundStaff?: { id: string; name: string } | null;
+  boundStaff?: {
+    id: string;
+    name: string;
+    department?: string;
+    staffRole?: "ap" | "cl";
+  } | null;
   lineUserId?: string;
   bindingEnabled?: boolean;
   bindingConfigError?: string;
@@ -22,6 +27,10 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
   const [pictureUrl, setPictureUrl] = useState("");
   const [lineUserId, setLineUserId] = useState("");
   const [boundStaffName, setBoundStaffName] = useState<string | null>(null);
+  const [boundStaffDepartment, setBoundStaffDepartment] = useState<string | null>(
+    null,
+  );
+  const [boundStaffRole, setBoundStaffRole] = useState<"ap" | "cl" | null>(null);
   const [staff, setStaff] = useState<{ id: string; name: string; importKey?: string }[]>([]);
   const [bindingEnabled, setBindingEnabled] = useState(false);
   const [bindingConfigError, setBindingConfigError] = useState<string | null>(
@@ -85,12 +94,16 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
           setStaff([]);
           setBindingEnabled(false);
           setBoundStaffName(null);
+          setBoundStaffDepartment(null);
+          setBoundStaffRole(null);
           setBindingConfigError(null);
           return;
         }
         setStaff(data.staff ?? []);
         setBindingEnabled(Boolean(data.bindingEnabled));
         setBoundStaffName(data.boundStaff?.name ? data.boundStaff.name : null);
+        setBoundStaffDepartment(data.boundStaff?.department?.trim() || null);
+        setBoundStaffRole(data.boundStaff?.staffRole ?? null);
         setBindingConfigError(
           typeof data.bindingConfigError === "string"
             ? data.bindingConfigError
@@ -99,6 +112,8 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
       } catch {
         if (!cancelled) {
           setBoundStaffName(null);
+          setBoundStaffDepartment(null);
+          setBoundStaffRole(null);
           setStaff([]);
           setBindingEnabled(false);
           setBindingConfigError(null);
@@ -176,6 +191,8 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
     pictureUrl,
     lineUserId,
     boundStaffName,
+    boundStaffDepartment,
+    boundStaffRole,
     staff,
     bindingEnabled,
     bindingConfigError,
