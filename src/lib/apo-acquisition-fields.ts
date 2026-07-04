@@ -112,10 +112,16 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
   estimateType: {
     key: "estimateType",
     label: "見積種別",
-    kind: "text",
-    required: false,
+    kind: "select",
+    required: true,
     envKey: "APO_ACQUISITION_ESTIMATE_TYPE_FIELD_ID",
     captions: ["見積種別", "見積り種別", "見積もり種別"],
+    options: [
+      "太陽光パネル＋蓄電池",
+      "蓄電池単体",
+      "太陽光単体",
+      "その他",
+    ],
   },
   scheduledDate: {
     key: "scheduledDate",
