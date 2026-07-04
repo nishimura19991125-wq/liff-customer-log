@@ -40,7 +40,11 @@ import {
 import { pocketFieldUniqueIdByCaption, resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
 import { salesDashboardApoAppId } from "@/lib/sales-dashboard-fields";
 import { fetchApClStaffPickerPayload } from "@/lib/staff-ap-cl-candidates";
-import { resolveMeetingScheduleImportKeyFieldId } from "@/lib/meeting-schedule-fields";
+import {
+  apoImportKeyFieldIdsExcludedOnCreate,
+  resolveMeetingScheduleImportKeyFieldId,
+  stripApoCreatePayloadAutoFields,
+} from "@/lib/meeting-schedule-fields";
 
 function jstDateKey(d = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo" }).format(d);
@@ -202,22 +206,28 @@ export async function buildApoAcquisitionFormPayload(
   };
 }
 
+function resolveWritableApoFieldId(
+  fields: AtPocketFieldRow[],
+  uniqueId: string | null,
+): string | null {
+  if (!uniqueId) return null;
+  if (apoImportKeyFieldIdsExcludedOnCreate(fields).has(uniqueId)) return null;
+  const matched = fields.find((f) => f.uniqueId?.trim() === uniqueId);
+  if (matched && !isWritableAtPocketField(matched)) return null;
+  return uniqueId;
+}
+
 function resolveEstimateStatusFieldId(
   fields: AtPocketFieldRow[],
 ): string | null {
   const env = process.env.MEETING_SCHEDULE_STATUS_FIELD_ID?.trim();
   if (env) {
     const id = resolveConfiguredFieldToSchemaUniqueId(env, fields);
-    if (id) {
-      const matched = fields.find((f) => f.uniqueId?.trim() === id);
-      if (matched && isWritableAtPocketField(matched)) return id;
-    }
+    if (id) return resolveWritableApoFieldId(fields, id);
   }
   const id = pocketFieldUniqueIdByCaption(fields, "見積ステータス");
   if (!id) return null;
-  const matched = fields.find((f) => f.uniqueId?.trim() === id);
-  if (matched && isWritableAtPocketField(matched)) return id;
-  return null;
+  return resolveWritableApoFieldId(fields, id);
 }
 
 /** 初回商談予定日（新規登録時に商談・資料送付予定日時から自動反映） */
@@ -227,18 +237,24 @@ function resolveFirstMeetingScheduledDateFieldId(
   const env = process.env.APO_ACQUISITION_FIRST_MEETING_DATE_FIELD_ID?.trim();
   if (env) {
     const id = resolveConfiguredFieldToSchemaUniqueId(env, fields);
-    if (id) {
-      const matched = fields.find((f) => f.uniqueId?.trim() === id);
-      if (matched && isWritableAtPocketField(matched)) return id;
-    }
+    if (id) return resolveWritableApoFieldId(fields, id);
   }
   for (const cap of ["初回商談予定日", "初回商談 予定日"]) {
     const id = pocketFieldUniqueIdByCaption(fields, cap);
     if (!id) continue;
-    const matched = fields.find((f) => f.uniqueId?.trim() === id);
-    if (matched && isWritableAtPocketField(matched)) return id;
+    const resolved = resolveWritableApoFieldId(fields, id);
+    if (resolved) return resolved;
   }
   return null;
+}
+
+function formatApoAcquisitionCreateError(msg: string): string {
+  if (msg.includes("アポ通番") && msg.includes("取込設定")) {
+    return (
+      "アポ通番(仮)は登録時に自動採番されます。送信データから除外しましたが、まだエラーが出る場合は @pocket の取込設定を確認してください。"
+    );
+  }
+  return msg;
 }
 
 function findFieldKeyByUniqueId(
@@ -549,7 +565,12 @@ export async function createApoAcquisitionRecord(
       console.warn("[apo-acquisition:create] dropped field", drop);
     }
 
-    const created = await createRecord(apoAppId, filteredRecord, writeAuth);
+    const createPayload = stripApoCreatePayloadAutoFields(
+      filteredRecord,
+      apoFields,
+    );
+
+    const created = await createRecord(apoAppId, createPayload, writeAuth);
     const recordId = atPocketRecordIdFromCreateResult(created);
     if (!recordId) {
       return {
@@ -576,7 +597,7 @@ export async function createApoAcquisitionRecord(
     return {
       ok: false,
       status: 502,
-      error: msg || "アポ取得情報の登録に失敗しました",
+      error: formatApoAcquisitionCreateError(msg) || "アポ取得情報の登録に失敗しました",
     };
   }
 }

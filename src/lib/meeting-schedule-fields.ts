@@ -272,3 +272,48 @@ export function resolveMeetingScheduleImportKeyFieldId(
   }
   return pickByKeywords(fields, ["アポ通番(仮)", "アポ通番（仮）", "アポ通番"]);
 }
+
+function fieldCaptionLooksLikeApoImportKey(caption: string): boolean {
+  const cap = nfkc(caption).toLowerCase();
+  return cap.includes("アポ通番");
+}
+
+export function isApoImportKeyField(field: AtPocketFieldRow): boolean {
+  if (field.primaryKey) return true;
+  return fieldCaptionLooksLikeApoImportKey(field.caption ?? "");
+}
+
+/** 新規登録時は自動採番のため POST に含めない列（アポ通番(仮) 等） */
+export function apoImportKeyFieldIdsExcludedOnCreate(
+  fields: AtPocketFieldRow[],
+): Set<string> {
+  const ids = new Set<string>();
+  const importKeyId = resolveMeetingScheduleImportKeyFieldId(fields);
+  if (importKeyId) ids.add(importKeyId);
+  for (const f of fields) {
+    const id = f.uniqueId?.trim();
+    if (!id) continue;
+    if (isApoImportKeyField(f)) ids.add(id);
+    const ft = (f.fieldType ?? "").trim();
+    if (ft === "UniqueId" || ft === "RecordId" || ft === "QRCode") {
+      ids.add(id);
+    }
+  }
+  return ids;
+}
+
+export function stripApoCreatePayloadAutoFields(
+  payload: Record<string, unknown>,
+  fields: AtPocketFieldRow[],
+): Record<string, unknown> {
+  const exclude = apoImportKeyFieldIdsExcludedOnCreate(fields);
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(payload)) {
+    if (exclude.has(k.trim())) {
+      console.warn("[apo-acquisition:create] omitted auto-number field", k);
+      continue;
+    }
+    out[k] = v;
+  }
+  return out;
+}

@@ -32,6 +32,8 @@ export type AtPocketFieldRow = {
   fieldType?: string;
   /** 連携項目のとき連携元アプリ ID（API: relation_id） */
   relationId?: number;
+  /** キー項目（API: is_primary_key） */
+  primaryKey?: boolean;
 };
 
 function readAtPocketFieldProp(
@@ -58,12 +60,23 @@ export function normalizeAtPocketFieldRow(raw: unknown): AtPocketFieldRow {
   const caption = readAtPocketFieldProp(o, "caption");
   const fieldType = readAtPocketFieldProp(o, "fieldType", "field_type");
   const relationRaw = readAtPocketFieldProp(o, "relationId", "relation_id");
+  const primaryKeyRaw = readAtPocketFieldProp(
+    o,
+    "primaryKey",
+    "is_primary_key",
+    "isPrimaryKey",
+  );
   const relationId =
     typeof relationRaw === "number"
       ? relationRaw
       : typeof relationRaw === "string" && relationRaw.trim()
         ? Number(relationRaw)
         : undefined;
+  const primaryKey =
+    primaryKeyRaw === true ||
+    primaryKeyRaw === 1 ||
+    primaryKeyRaw === "1" ||
+    primaryKeyRaw === "true";
 
   return {
     ...(typeof uniqueId === "string" && uniqueId.trim()
@@ -78,6 +91,7 @@ export function normalizeAtPocketFieldRow(raw: unknown): AtPocketFieldRow {
     ...(relationId != null && Number.isFinite(relationId) && relationId > 0
       ? { relationId }
       : {}),
+    ...(primaryKey ? { primaryKey: true } : {}),
   };
 }
 

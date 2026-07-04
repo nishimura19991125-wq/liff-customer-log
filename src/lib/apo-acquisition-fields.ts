@@ -11,6 +11,7 @@ import {
   type ApoAcquisitionInputKind,
 } from "@/lib/apo-acquisition-types";
 import { isWritableAtPocketField } from "@/lib/customer-info-form/pocket-writable-fields";
+import { apoImportKeyFieldIdsExcludedOnCreate } from "@/lib/meeting-schedule-fields";
 
 function nfkc(s: string): string {
   return s.normalize("NFKC").trim();
@@ -423,6 +424,9 @@ function resolveSpecFieldId(
 ): { uniqueId: string | null; writable: boolean } {
   const rawId = resolveSpecFieldIdRaw(spec, fields);
   if (!rawId) return { uniqueId: null, writable: false };
+  if (apoImportKeyFieldIdsExcludedOnCreate(fields).has(rawId)) {
+    return { uniqueId: null, writable: false };
+  }
   const matched = fields.find((f) => f.uniqueId?.trim() === rawId);
   const writable = matched ? isWritableAtPocketField(matched) : false;
   return {
