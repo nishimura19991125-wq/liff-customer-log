@@ -175,6 +175,22 @@ function resolveEstimateStatusFieldId(
   return pocketFieldUniqueIdByCaption(fields, "見積ステータス");
 }
 
+/** 初回商談予定日（新規登録時に商談・資料送付予定日時から自動反映） */
+function resolveFirstMeetingScheduledDateFieldId(
+  fields: AtPocketFieldRow[],
+): string | null {
+  const env = process.env.APO_ACQUISITION_FIRST_MEETING_DATE_FIELD_ID?.trim();
+  if (env) {
+    const id = pocketFieldUniqueIdByCaption(fields, env);
+    if (id) return id;
+  }
+  for (const cap of ["初回商談予定日", "初回商談 予定日"]) {
+    const id = pocketFieldUniqueIdByCaption(fields, cap);
+    if (id) return id;
+  }
+  return null;
+}
+
 export async function createApoAcquisitionRecord(
   boundStaffName: string,
   input: ApoAcquisitionCreateInput,
@@ -271,6 +287,20 @@ export async function createApoAcquisitionRecord(
       }
       if (value === "") continue;
       record[r.uniqueId] = customerInfoPutValue(value);
+    }
+
+    // 初回商談予定日は新規登録時のみ、商談・資料送付予定日時と同じ値を自動セット
+    const scheduledRaw = nfkc(values.scheduledDate ?? "");
+    const scheduledForPocket = dateValueForPocket(scheduledRaw, true);
+    const firstMeetingDateId = resolveFirstMeetingScheduledDateFieldId(apoFields);
+    const scheduledDateId = resolved.scheduledDate.uniqueId;
+    if (
+      firstMeetingDateId &&
+      scheduledForPocket &&
+      firstMeetingDateId !== scheduledDateId &&
+      record[firstMeetingDateId] === undefined
+    ) {
+      record[firstMeetingDateId] = customerInfoPutValue(scheduledForPocket);
     }
 
     // 見積ステータスは既定値で自動セット

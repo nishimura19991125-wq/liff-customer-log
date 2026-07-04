@@ -61,10 +61,11 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
   giftCoupon: {
     key: "giftCoupon",
     label: "ギフト券",
-    kind: "text",
+    kind: "select",
     required: false,
     envKey: "APO_ACQUISITION_GIFT_COUPON_FIELD_ID",
     captions: ["ギフト券", "ギフト", "商品券"],
+    options: ["有", "無"],
   },
   apoRank: {
     key: "apoRank",
