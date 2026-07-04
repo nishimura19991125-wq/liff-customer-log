@@ -42,8 +42,8 @@ import { salesDashboardApoAppId } from "@/lib/sales-dashboard-fields";
 import { fetchApClStaffPickerPayload } from "@/lib/staff-ap-cl-candidates";
 import {
   apoImportKeyFieldIdsExcludedOnCreate,
+  applyApoAutoNumberOnCreate,
   resolveMeetingScheduleImportKeyFieldId,
-  stripApoCreatePayloadAutoFields,
 } from "@/lib/meeting-schedule-fields";
 
 function jstDateKey(d = new Date()): string {
@@ -250,9 +250,11 @@ function resolveFirstMeetingScheduledDateFieldId(
 
 function formatApoAcquisitionCreateError(msg: string): string {
   if (msg.includes("アポ通番") && msg.includes("取込設定")) {
-    return (
-      "アポ通番(仮)は登録時に自動採番されます。送信データから除外しましたが、まだエラーが出る場合は @pocket の取込設定を確認してください。"
-    );
+    return [
+      "アポ通番(仮)は自動採番ですが、@pocket の取込設定が未完了のため登録できません。",
+      "アプリ管理 → アポ取得情報連携 → 取込 で「アポ通番(仮)」を取込項目に追加して保存してください。",
+      "（番号の手入力は不要です）",
+    ].join("");
   }
   return msg;
 }
@@ -565,10 +567,7 @@ export async function createApoAcquisitionRecord(
       console.warn("[apo-acquisition:create] dropped field", drop);
     }
 
-    const createPayload = stripApoCreatePayloadAutoFields(
-      filteredRecord,
-      apoFields,
-    );
+    const createPayload = applyApoAutoNumberOnCreate(filteredRecord, apoFields);
 
     const created = await createRecord(apoAppId, createPayload, writeAuth);
     const recordId = atPocketRecordIdFromCreateResult(created);

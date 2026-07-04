@@ -283,7 +283,7 @@ export function isApoImportKeyField(field: AtPocketFieldRow): boolean {
   return fieldCaptionLooksLikeApoImportKey(field.caption ?? "");
 }
 
-/** 新規登録時は自動採番のため POST に含めない列（アポ通番(仮) 等） */
+/** フォーム列解決時にマッピングしない列（アポ通番(仮) 等） */
 export function apoImportKeyFieldIdsExcludedOnCreate(
   fields: AtPocketFieldRow[],
 ): Set<string> {
@@ -302,18 +302,52 @@ export function apoImportKeyFieldIdsExcludedOnCreate(
   return ids;
 }
 
-export function stripApoCreatePayloadAutoFields(
+const POCKET_SYSTEM_FIELD_TYPES_ON_CREATE = new Set([
+  "RecordId",
+  "UniqueId",
+  "QRCode",
+  "Delete",
+  "CreatedAt",
+  "CreatorCode",
+  "CreatorName",
+  "UpdatedAt",
+  "UpdaterCode",
+  "UpdaterName",
+  "AccessUrl",
+  "AccessEditUrl",
+]);
+
+/**
+ * 新規登録用ペイロード調整。
+ * 自動採番（キー項目）は @pocket 公式どおり空文字 "" を送って採番させる（T番号と同様）。
+ */
+export function applyApoAutoNumberOnCreate(
   payload: Record<string, unknown>,
   fields: AtPocketFieldRow[],
 ): Record<string, unknown> {
-  const exclude = apoImportKeyFieldIdsExcludedOnCreate(fields);
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(payload)) {
-    if (exclude.has(k.trim())) {
-      console.warn("[apo-acquisition:create] omitted auto-number field", k);
-      continue;
+  const out: Record<string, unknown> = { ...payload };
+
+  for (const [k, v] of Object.entries(out)) {
+    const field = fields.find((f) => f.uniqueId?.trim() === k.trim());
+    const ft = (field?.fieldType ?? "").trim();
+    if (ft && POCKET_SYSTEM_FIELD_TYPES_ON_CREATE.has(ft)) {
+      delete out[k];
     }
-    out[k] = v;
   }
+
+  const importKeyId = resolveMeetingScheduleImportKeyFieldId(fields);
+  if (importKeyId) {
+    out[importKeyId] = "";
+  }
+
+  for (const f of fields) {
+    const id = f.uniqueId?.trim();
+    if (!id) continue;
+    const ft = (f.fieldType ?? "").trim();
+    if (ft === "AutoNumber" && (f.primaryKey || isApoImportKeyField(f))) {
+      out[id] = "";
+    }
+  }
+
   return out;
 }

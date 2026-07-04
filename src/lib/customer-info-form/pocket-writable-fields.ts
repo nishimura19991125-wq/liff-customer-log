@@ -21,11 +21,10 @@ const POCKET_NON_UPDATABLE_FIELD_TYPES = new Set([
   "AccessEditUrl",
 ]);
 
+/** 関連レコード（RelationRecords）のみ登録不可。連携項目（RelationSelect）は API 書込可 */
 export function isRelationAtPocketField(field: AtPocketFieldRow): boolean {
-  if (field.relationId != null && field.relationId > 0) return true;
   const ft = (field.fieldType ?? "").trim();
-  if (!ft) return false;
-  return ft === "RelationRecords" || ft.includes("Relation");
+  return ft === "RelationRecords";
 }
 
 export function isWritableAtPocketField(field: AtPocketFieldRow): boolean {
