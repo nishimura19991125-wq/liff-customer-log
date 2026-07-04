@@ -116,3 +116,22 @@ export function atPocketFileHasPayload(file: AtPocketFileEntry): boolean {
       file.name.trim(),
   );
 }
+
+export type AtPocketFilePutEntry = {
+  name: string;
+  type: string;
+  content: string;
+};
+
+/** @pocket レコード登録・更新用のファイル配列 */
+export function buildAtPocketFilePutPayload(
+  files: Array<{ name: string; mimeType: string; contentBase64: string }>,
+): AtPocketFilePutEntry[] {
+  return files
+    .filter((f) => f.name.trim() && f.contentBase64.trim())
+    .map((f) => ({
+      name: f.name.trim(),
+      type: f.mimeType.trim() || guessMimeFromName(f.name),
+      content: f.contentBase64.trim(),
+    }));
+}

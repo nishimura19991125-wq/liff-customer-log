@@ -27,6 +27,7 @@ type FieldSpec = {
   placeholder?: string;
   /** select の既定選択肢（@pocket 側の選択肢が取れない場合のフォールバック） */
   options?: string[];
+  hint?: string;
 };
 
 /** 各項目の定義（表示順は APO_ACQUISITION_FIELD_KEYS） */
@@ -143,8 +144,8 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
   },
   elevationPlanAttachment: {
     key: "elevationPlanAttachment",
-    label: "立平面図の添付場所",
-    kind: "textarea",
+    label: "立平面図",
+    kind: "file",
     required: false,
     envKey: "APO_ACQUISITION_ELEVATION_PLAN_FIELD_ID",
     captions: [
@@ -153,8 +154,8 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
       "立平面図添付場所",
       "立平面図",
       "図面添付",
+      "図面",
     ],
-    placeholder: "例）〇〇フォルダ／LINEアルバム 等",
   },
   postalCode: {
     key: "postalCode",
@@ -164,6 +165,31 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
     envKey: "APO_ACQUISITION_POSTAL_CODE_FIELD_ID",
     captions: ["郵便番号", "〒", "郵便"],
     placeholder: "例）530-0001",
+    hint: "000-0000 形式で入力すると都道府県・市区郡・町村を自動入力します",
+  },
+  prefecture: {
+    key: "prefecture",
+    label: "都道府県",
+    kind: "text",
+    required: false,
+    envKey: "APO_ACQUISITION_PREFECTURE_FIELD_ID",
+    captions: ["都道府県"],
+  },
+  city: {
+    key: "city",
+    label: "市区郡",
+    kind: "text",
+    required: false,
+    envKey: "APO_ACQUISITION_CITY_FIELD_ID",
+    captions: ["市区郡", "市区町村"],
+  },
+  town: {
+    key: "town",
+    label: "町村",
+    kind: "text",
+    required: false,
+    envKey: "APO_ACQUISITION_TOWN_FIELD_ID",
+    captions: ["町村", "町村名"],
   },
   subsidy: {
     key: "subsidy",
@@ -214,7 +240,7 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
     required: false,
     envKey: "APO_ACQUISITION_ROOF_SHAPE_FIELD_ID",
     captions: ["屋根形状", "屋根の形状"],
-    options: ["切妻", "寄棟", "片流れ", "陸屋根", "入母屋", "複合", "その他"],
+    options: ["片流れ", "切妻", "寄棟", "陸屋根"],
   },
   roofMaterial: {
     key: "roofMaterial",
@@ -224,11 +250,15 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
     envKey: "APO_ACQUISITION_ROOF_MATERIAL_FIELD_ID",
     captions: ["屋根材", "屋根材質"],
     options: [
-      "スレート（コロニアル）",
-      "ガルバリウム",
-      "陶器瓦",
-      "セメント瓦",
+      "金属縦平葺",
+      "カラーベスト",
       "アスファルトシングル",
+      "平板瓦",
+      "洋瓦",
+      "ルーガ鉄平(XSOL不可)",
+      "ルーガ雅(XSOL不可)",
+      "和瓦",
+      "金属横葺",
       "その他",
     ],
   },
@@ -247,7 +277,7 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
     required: false,
     envKey: "APO_ACQUISITION_ELECTRIC_OR_GAS_FIELD_ID",
     captions: ["オール電化orガス", "オール電化", "電化ガス", "電気ガス"],
-    options: ["オール電化", "ガス併用", "不明"],
+    options: ["オール電化", "ガス"],
   },
   existingEquipment: {
     key: "existingEquipment",
@@ -366,6 +396,21 @@ function extractPocketOptions(field: AtPocketFieldRow | undefined): string[] {
   return values;
 }
 
+const POCKET_FILE_FIELD_TYPES = new Set([
+  "File",
+  "Attachment",
+  "Attachments",
+  "Image",
+  "Images",
+]);
+
+function isPocketFileField(field: AtPocketFieldRow | undefined): boolean {
+  if (!field) return false;
+  const fieldType = (field.fieldType ?? "").trim();
+  if (!fieldType) return true;
+  return POCKET_FILE_FIELD_TYPES.has(fieldType);
+}
+
 export function resolveApoAcquisitionFields(
   fields: AtPocketFieldRow[],
 ): Record<ApoAcquisitionFieldKey, ApoAcquisitionResolvedField> {
@@ -375,10 +420,13 @@ export function resolveApoAcquisitionFields(
   >;
   for (const key of APO_ACQUISITION_FIELD_KEYS) {
     const spec = APO_ACQUISITION_FIELD_SPECS[key];
-    const uniqueId = resolveSpecFieldId(spec, fields);
+    let uniqueId = resolveSpecFieldId(spec, fields);
     const matched = uniqueId
       ? fields.find((f) => f.uniqueId?.trim() === uniqueId)
       : undefined;
+    if (spec.kind === "file" && uniqueId && !isPocketFileField(matched)) {
+      uniqueId = null;
+    }
     result[key] = {
       spec,
       uniqueId,

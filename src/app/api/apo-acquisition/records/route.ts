@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createApoAcquisitionRecord } from "@/lib/apo-acquisition-server";
 import type {
   ApoAcquisitionCreateInput,
+  ApoAcquisitionFileAttachment,
   ApoAcquisitionValues,
 } from "@/lib/apo-acquisition-types";
 import {
@@ -16,6 +17,7 @@ export const dynamic = "force-dynamic";
 type Body = {
   apStaffName?: string;
   values?: ApoAcquisitionValues;
+  files?: Partial<Record<string, ApoAcquisitionFileAttachment[]>>;
 };
 
 /** アポ取得情報連携へ新規登録 */
@@ -41,6 +43,7 @@ export async function POST(request: Request) {
   const payload: ApoAcquisitionCreateInput = {
     apStaffName: body.apStaffName ?? boundStaffName,
     values: body.values ?? {},
+    files: body.files ?? {},
   };
 
   const result = await createApoAcquisitionRecord(boundStaffName, payload);

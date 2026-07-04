@@ -19,11 +19,14 @@ import {
   type ApoAcquisitionCreateResult,
   type ApoAcquisitionFieldKey,
   type ApoAcquisitionFieldMeta,
+  type ApoAcquisitionFileAttachment,
   type ApoAcquisitionFormPayload,
 } from "@/lib/apo-acquisition-types";
 import { atPocketRecordIdFromCreateResult } from "@/lib/atpocket-record-id";
 import type { AtPocketFieldRow } from "@/lib/atpocket";
+import { buildAtPocketFilePutPayload } from "@/lib/at-pocket-file-field";
 import { customerInfoPutValue } from "@/lib/customer-info-record";
+import { postalCodeForPocket } from "@/lib/customer-info-form/postal-code";
 import { pocketFieldUniqueIdByCaption } from "@/lib/calendar-kojo";
 import { salesDashboardApoAppId } from "@/lib/sales-dashboard-fields";
 import { fetchApClStaffPickerPayload } from "@/lib/staff-ap-cl-candidates";
@@ -60,6 +63,25 @@ function dateValueForPocket(raw: string, withTime: boolean): string {
   if (!m) return slash;
   const hh = String(Number(m[1])).padStart(2, "0");
   return `${slash} ${hh}:${m[2]}`;
+}
+
+const APO_ACQUISITION_MAX_FILE_BYTES = 5 * 1024 * 1024;
+const APO_ACQUISITION_MAX_FILES_PER_FIELD = 5;
+
+function validateFileAttachments(
+  label: string,
+  files: ApoAcquisitionFileAttachment[],
+): string | null {
+  if (files.length > APO_ACQUISITION_MAX_FILES_PER_FIELD) {
+    return `${label}の添付は${APO_ACQUISITION_MAX_FILES_PER_FIELD}件までです`;
+  }
+  for (const file of files) {
+    const bytes = Buffer.byteLength(file.contentBase64, "base64");
+    if (bytes > APO_ACQUISITION_MAX_FILE_BYTES) {
+      return `${file.name}が大きすぎます（5MBまで）`;
+    }
+  }
+  return null;
 }
 
 function apStaffOptionsWithDefault(
@@ -101,6 +123,10 @@ function buildFieldMeta(
         key === "apStaff",
       ...(options ? { options } : {}),
       ...(spec.placeholder ? { placeholder: spec.placeholder } : {}),
+      ...(spec.hint ? { hint: spec.hint } : {}),
+      ...(spec.kind === "file"
+        ? { accept: "image/*,.pdf,application/pdf" }
+        : {}),
     };
   });
 }
@@ -219,6 +245,7 @@ export async function createApoAcquisitionRecord(
   }
 
   const values = input.values ?? {};
+  const files = input.files ?? {};
   const apStaffName = nfkc(
     values.apStaff ?? input.apStaffName ?? boundStaffName,
   );
@@ -230,10 +257,24 @@ export async function createApoAcquisitionRecord(
   for (const key of APO_ACQUISITION_FIELD_KEYS) {
     const spec = APO_ACQUISITION_FIELD_SPECS[key];
     if (!spec.required) continue;
+    if (spec.kind === "file") {
+      if (!(files[key]?.length ?? 0)) {
+        return { ok: false, status: 400, error: `${spec.label}を添付してください` };
+      }
+      continue;
+    }
     const raw = key === "apStaff" ? apStaffName : nfkc(values[key] ?? "");
     if (!raw) {
       return { ok: false, status: 400, error: `${spec.label}を入力してください` };
     }
+  }
+
+  for (const key of APO_ACQUISITION_FIELD_KEYS) {
+    const spec = APO_ACQUISITION_FIELD_SPECS[key];
+    if (spec.kind !== "file") continue;
+    const fieldFiles = files[key] ?? [];
+    const err = validateFileAttachments(spec.label, fieldFiles);
+    if (err) return { ok: false, status: 400, error: err };
   }
 
   const apoAcquiredYmd = normalizeYmd(values.apoAcquiredDate ?? "");
@@ -273,6 +314,15 @@ export async function createApoAcquisitionRecord(
     for (const key of APO_ACQUISITION_FIELD_KEYS) {
       const r = resolved[key];
       if (!r.uniqueId) continue;
+
+      if (r.spec.kind === "file") {
+        const payload = buildAtPocketFilePutPayload(files[key] ?? []);
+        if (payload.length > 0) {
+          record[r.uniqueId] = payload;
+        }
+        continue;
+      }
+
       const raw =
         key === "apStaff"
           ? apStaffName
@@ -284,6 +334,10 @@ export async function createApoAcquisitionRecord(
         value = dateValueForPocket(raw, false);
       } else if (r.spec.kind === "datetime") {
         value = dateValueForPocket(raw, true);
+      } else if (key === "postalCode") {
+        const pocket = postalCodeForPocket(raw);
+        if (!pocket) continue;
+        value = pocket;
       }
       if (value === "") continue;
       record[r.uniqueId] = customerInfoPutValue(value);

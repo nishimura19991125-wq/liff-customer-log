@@ -14,6 +14,9 @@ export const APO_ACQUISITION_FIELD_KEYS = [
   "customerName",
   "elevationPlanAttachment",
   "postalCode",
+  "prefecture",
+  "city",
+  "town",
   "subsidy",
   "pinpointAddress",
   "customerContact",
@@ -40,7 +43,8 @@ export type ApoAcquisitionInputKind =
   | "date"
   | "datetime"
   | "select"
-  | "staffSelect";
+  | "staffSelect"
+  | "file";
 
 /** UI に渡す各フィールドのメタ情報 */
 export type ApoAcquisitionFieldMeta = {
@@ -52,6 +56,10 @@ export type ApoAcquisitionFieldMeta = {
   present: boolean;
   options?: string[];
   placeholder?: string;
+  /** 入力欄下の補足 */
+  hint?: string;
+  /** file 入力の accept 属性 */
+  accept?: string;
 };
 
 export type ApoAcquisitionFormPayload = {
@@ -70,9 +78,16 @@ export type ApoAcquisitionValues = Partial<
   Record<ApoAcquisitionFieldKey, string>
 >;
 
+export type ApoAcquisitionFileAttachment = {
+  name: string;
+  mimeType: string;
+  contentBase64: string;
+};
+
 export type ApoAcquisitionCreateInput = {
   apStaffName: string;
   values: ApoAcquisitionValues;
+  files?: Partial<Record<ApoAcquisitionFieldKey, ApoAcquisitionFileAttachment[]>>;
 };
 
 export type ApoAcquisitionCreateResult =
