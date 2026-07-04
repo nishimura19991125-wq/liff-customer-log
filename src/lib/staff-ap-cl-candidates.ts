@@ -25,6 +25,10 @@ import {
 import { staffLineUserIdFieldIdsFromEnv } from "@/lib/staff-line-field-config";
 import { staffRecordMatchesLineUser } from "@/lib/staff-line-binding";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
+import {
+  readStaffImportKeyFromRawRecord,
+  staffImportKeyFieldIdResolved,
+} from "@/lib/staff-import-key";
 
 export type ApClStaffRolePicker = {
   options: string[];
@@ -240,6 +244,7 @@ async function fetchStaffRowsForApClPicker(
     cfg.clAvailabilityFieldId,
     cfg.lineField1,
     cfg.lineField2,
+    staffImportKeyFieldIdResolved(),
   );
   const listAuths = staffPocketReadAuthsForStaffLists();
   const rows = await fetchAllRecordsPages(
@@ -421,6 +426,60 @@ export async function fetchApClStaffPickerPayload(
 export function invalidateApClStaffPickerCache(): void {
   pickerCache.clear();
   pickerInflight.clear();
+}
+
+/** 社員名からスタッフ名簿の取込キー（社員ID 等）を引く */
+export async function lookupStaffImportKeyByStaffName(
+  staffName: string,
+): Promise<string | null> {
+  const resolved = await resolveStaffApClConfig();
+  if (!resolved.ok) return null;
+  const target = normApClStaffName(staffName);
+  if (!target) return null;
+
+  const { rows } = await fetchStaffRowsForApClPicker(resolved.cfg);
+  for (const row of rows) {
+    const rec = row.record;
+    if (!rec || typeof rec !== "object") continue;
+    const ro = rec as Record<string, unknown>;
+    const name = normApClStaffName(
+      pocketTableCellToPlainString(
+        pickRecordValueByFieldAliases(ro, resolved.cfg.nameFieldId),
+      ),
+    );
+    if (name !== target) continue;
+    const key = readStaffImportKeyFromRawRecord(ro);
+    return key || null;
+  }
+  return null;
+}
+
+/**
+ * 連携項目（スタッフ名簿参照）へ送る値。
+ * キー項目が社員ID等のときは名簿からキーを引く（社員名は送らない）。
+ */
+export async function resolveStaffRelationPocketValue(
+  staffName: string,
+): Promise<
+  | { ok: true; value: string }
+  | { ok: false; error: string }
+> {
+  const name = normApClStaffName(staffName);
+  if (!name) {
+    return { ok: false, error: "担当者名が空です" };
+  }
+  const keyFieldId = staffImportKeyFieldIdResolved();
+  if (!keyFieldId) {
+    return { ok: true, value: name };
+  }
+  const key = await lookupStaffImportKeyByStaffName(name);
+  if (!key) {
+    return {
+      ok: false,
+      error: `「${name}」の社員IDをスタッフ名簿から取得できません。Netlify の STAFF_IMPORT_KEY_FIELD_ID と名簿のキー項目を確認してください。`,
+    };
+  }
+  return { ok: true, value: key };
 }
 
 /**

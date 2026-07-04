@@ -39,7 +39,10 @@ import {
 } from "@/lib/customer-info-form/pocket-writable-fields";
 import { pocketFieldUniqueIdByCaption, resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
 import { salesDashboardApoAppId } from "@/lib/sales-dashboard-fields";
-import { fetchApClStaffPickerPayload } from "@/lib/staff-ap-cl-candidates";
+import {
+  fetchApClStaffPickerPayload,
+  resolveStaffRelationPocketValue,
+} from "@/lib/staff-ap-cl-candidates";
 import {
   apoImportKeyFieldIdsExcludedOnCreate,
   applyApoAutoNumberOnCreate,
@@ -300,7 +303,7 @@ function restrictApoAcquisitionCreatePayload(
   return out;
 }
 
-/** 連携項目（AP/CL担当者）を登録後に連携元キー（氏名）で反映 */
+/** 連携項目（AP/CL担当者）を登録後に連携元キー（社員ID）で反映 */
 async function applyApoRelationStaffFields(
   apoAppId: string,
   recordId: string,
@@ -316,10 +319,12 @@ async function applyApoRelationStaffFields(
     !resolved.apStaff.writable &&
     staffValues.apStaffName
   ) {
-    relationUpdates[resolved.apStaff.uniqueId] = staffValues.apStaffName;
+    const ap = await resolveStaffRelationPocketValue(staffValues.apStaffName);
+    if (ap.ok) relationUpdates[resolved.apStaff.uniqueId] = ap.value;
   }
   if (resolved.clStaff.uniqueId && !resolved.clStaff.writable && clStaffName) {
-    relationUpdates[resolved.clStaff.uniqueId] = clStaffName;
+    const cl = await resolveStaffRelationPocketValue(clStaffName);
+    if (cl.ok) relationUpdates[resolved.clStaff.uniqueId] = cl.value;
   }
   if (Object.keys(relationUpdates).length === 0) return;
 
@@ -469,6 +474,18 @@ export async function createApoAcquisitionRecord(
       }
     }
 
+    const clStaffName = nfkc(values.clStaff ?? "");
+    const apStaffRelation = await resolveStaffRelationPocketValue(apStaffName);
+    if (!apStaffRelation.ok) {
+      return { ok: false, status: 400, error: apStaffRelation.error };
+    }
+    const clStaffRelation = clStaffName
+      ? await resolveStaffRelationPocketValue(clStaffName)
+      : { ok: true as const, value: "" };
+    if (!clStaffRelation.ok) {
+      return { ok: false, status: 400, error: clStaffRelation.error };
+    }
+
     const record: Record<string, unknown> = {};
 
     for (const key of APO_ACQUISITION_FIELD_KEYS) {
@@ -485,8 +502,10 @@ export async function createApoAcquisitionRecord(
 
       const raw =
         key === "apStaff"
-          ? apStaffName
-          : nfkc(values[key] ?? "");
+          ? apStaffRelation.value
+          : key === "clStaff"
+            ? clStaffRelation.value
+            : nfkc(values[key] ?? "");
       if (!raw) continue;
 
       let value: unknown = raw;
@@ -579,7 +598,6 @@ export async function createApoAcquisitionRecord(
       };
     }
 
-    const clStaffName = nfkc(values.clStaff ?? "");
     await applyApoRelationStaffFields(
       apoAppId,
       recordId,
