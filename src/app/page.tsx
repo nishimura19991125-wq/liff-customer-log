@@ -72,6 +72,34 @@ function CustomerListGlyph() {
   );
 }
 
+function ApoAcquisitionGlyph() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M8 7h8M8 11h8M8 15h5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <rect
+        x="4"
+        y="3"
+        width="16"
+        height="18"
+        rx="2.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M16 17l3 3"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function SalesDashboardGlyph() {
   return (
     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -332,6 +360,13 @@ export default function HomeHubPage() {
               title="お客様情報入力"
               description="お客様名で検索し、@pocket のレコードを編集します。"
               icon={<CustomerInfoGlyph />}
+              disabled={needsStaffBind}
+            />
+            <LiffMenuCard
+              href="/apo-acquisition"
+              title="アポ取得時入力"
+              description="アポ取得情報連携へ、取得したアポを新規登録します。"
+              icon={<ApoAcquisitionGlyph />}
               disabled={needsStaffBind}
             />
             <LiffMenuCard
