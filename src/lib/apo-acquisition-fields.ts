@@ -10,6 +10,7 @@ import {
   type ApoAcquisitionFieldKey,
   type ApoAcquisitionInputKind,
 } from "@/lib/apo-acquisition-types";
+import { isWritableAtPocketField } from "@/lib/customer-info-form/pocket-writable-fields";
 
 function nfkc(s: string): string {
   return s.normalize("NFKC").trim();
@@ -291,7 +292,7 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
     kind: "checkboxGroup",
     required: false,
     envKey: "APO_ACQUISITION_EXISTING_EQUIPMENT_FIELD_ID",
-    captions: ["既設設備", "既存設備", "設備"],
+    captions: ["既設設備", "既存設備"],
     options: ["ガス給湯器", "エコキュート", "IH", "エネファーム", "エコウィル"],
   },
   averageElectricBill: {
@@ -362,11 +363,17 @@ function resolveSpecFieldId(
   fields: AtPocketFieldRow[],
 ): string | null {
   const env = process.env[spec.envKey]?.trim();
+  let uniqueId: string | null = null;
   if (env) {
-    const id = resolveConfiguredFieldToSchemaUniqueId(env, fields);
-    if (id) return id;
+    uniqueId = resolveConfiguredFieldToSchemaUniqueId(env, fields);
   }
-  return pickByCaptionsExactThenPartial(fields, spec.captions);
+  if (!uniqueId) {
+    uniqueId = pickByCaptionsExactThenPartial(fields, spec.captions);
+  }
+  if (!uniqueId) return null;
+  const matched = fields.find((f) => f.uniqueId?.trim() === uniqueId);
+  if (matched && !isWritableAtPocketField(matched)) return null;
+  return uniqueId;
 }
 
 export type ApoAcquisitionResolvedField = {

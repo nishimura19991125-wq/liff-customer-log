@@ -28,7 +28,11 @@ import { buildAtPocketFilePutPayload } from "@/lib/at-pocket-file-field";
 import { customerInfoPutValue } from "@/lib/customer-info-record";
 import { postalCodeForPocket } from "@/lib/customer-info-form/postal-code";
 import { checkboxGroupValueToPocketArray } from "@/lib/customer-info-form/checkbox-pocket";
-import { pocketFieldUniqueIdByCaption } from "@/lib/calendar-kojo";
+import {
+  filterCustomerInfoPutPayload,
+  isWritableAtPocketField,
+} from "@/lib/customer-info-form/pocket-writable-fields";
+import { pocketFieldUniqueIdByCaption, resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
 import { salesDashboardApoAppId } from "@/lib/sales-dashboard-fields";
 import { fetchApClStaffPickerPayload } from "@/lib/staff-ap-cl-candidates";
 
@@ -196,10 +200,17 @@ function resolveEstimateStatusFieldId(
 ): string | null {
   const env = process.env.MEETING_SCHEDULE_STATUS_FIELD_ID?.trim();
   if (env) {
-    const id = pocketFieldUniqueIdByCaption(fields, env);
-    if (id) return id;
+    const id = resolveConfiguredFieldToSchemaUniqueId(env, fields);
+    if (id) {
+      const matched = fields.find((f) => f.uniqueId?.trim() === id);
+      if (matched && isWritableAtPocketField(matched)) return id;
+    }
   }
-  return pocketFieldUniqueIdByCaption(fields, "見積ステータス");
+  const id = pocketFieldUniqueIdByCaption(fields, "見積ステータス");
+  if (!id) return null;
+  const matched = fields.find((f) => f.uniqueId?.trim() === id);
+  if (matched && isWritableAtPocketField(matched)) return id;
+  return null;
 }
 
 /** 初回商談予定日（新規登録時に商談・資料送付予定日時から自動反映） */
@@ -208,12 +219,27 @@ function resolveFirstMeetingScheduledDateFieldId(
 ): string | null {
   const env = process.env.APO_ACQUISITION_FIRST_MEETING_DATE_FIELD_ID?.trim();
   if (env) {
-    const id = pocketFieldUniqueIdByCaption(fields, env);
-    if (id) return id;
+    const id = resolveConfiguredFieldToSchemaUniqueId(env, fields);
+    if (id) {
+      const matched = fields.find((f) => f.uniqueId?.trim() === id);
+      if (matched && isWritableAtPocketField(matched)) return id;
+    }
   }
   for (const cap of ["初回商談予定日", "初回商談 予定日"]) {
     const id = pocketFieldUniqueIdByCaption(fields, cap);
-    if (id) return id;
+    if (!id) continue;
+    const matched = fields.find((f) => f.uniqueId?.trim() === id);
+    if (matched && isWritableAtPocketField(matched)) return id;
+  }
+  return null;
+}
+
+function findFieldKeyByUniqueId(
+  resolved: Record<ApoAcquisitionFieldKey, ApoAcquisitionResolvedField>,
+  uniqueId: string,
+): ApoAcquisitionFieldKey | null {
+  for (const key of APO_ACQUISITION_FIELD_KEYS) {
+    if (resolved[key].uniqueId === uniqueId) return key;
   }
   return null;
 }
@@ -373,7 +399,27 @@ export async function createApoAcquisitionRecord(
       );
     }
 
-    const created = await createRecord(apoAppId, record, writeAuth);
+    const { payload: filteredRecord, dropped } = filterCustomerInfoPutPayload(
+      record,
+      apoFields,
+    );
+    for (const drop of dropped) {
+      const key = findFieldKeyByUniqueId(resolved, drop.fieldId);
+      const label =
+        (key ? APO_ACQUISITION_FIELD_SPECS[key].label : null) ??
+        drop.label ??
+        drop.fieldId;
+      if (key && APO_ACQUISITION_FIELD_SPECS[key].required) {
+        return {
+          ok: false,
+          status: 503,
+          error: `${label}の列（${drop.fieldId}）は登録できません。${drop.reason}。@pocket の列設定または環境変数を確認してください。`,
+        };
+      }
+      console.warn("[apo-acquisition:create] dropped field", drop);
+    }
+
+    const created = await createRecord(apoAppId, filteredRecord, writeAuth);
     const recordId = atPocketRecordIdFromCreateResult(created);
     if (!recordId) {
       return {
