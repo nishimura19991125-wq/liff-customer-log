@@ -21,7 +21,15 @@ const POCKET_NON_UPDATABLE_FIELD_TYPES = new Set([
   "AccessEditUrl",
 ]);
 
+export function isRelationAtPocketField(field: AtPocketFieldRow): boolean {
+  if (field.relationId != null && field.relationId > 0) return true;
+  const ft = (field.fieldType ?? "").trim();
+  if (!ft) return false;
+  return ft === "RelationRecords" || ft.includes("Relation");
+}
+
 export function isWritableAtPocketField(field: AtPocketFieldRow): boolean {
+  if (isRelationAtPocketField(field)) return false;
   const ft = (field.fieldType ?? "").trim();
   if (!ft) return true;
   return !POCKET_NON_UPDATABLE_FIELD_TYPES.has(ft);

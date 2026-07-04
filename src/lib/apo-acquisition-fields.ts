@@ -151,18 +151,21 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
   },
   elevationPlanAttachment: {
     key: "elevationPlanAttachment",
-    label: "立平面図",
+    label: "立面図・平面図",
     kind: "file",
     required: false,
-    envKey: "APO_ACQUISITION_ELEVATION_PLAN_FIELD_ID",
+    envKey: "APO_ACQUISITION_ELEVATION_FLOOR_PLAN_FIELD_ID",
     captions: [
-      "立平面図の添付場所",
-      "立平面図の添付",
-      "立平面図添付場所",
+      "立面図・平面図",
+      "【立面図・平面図】",
+      "立面図・平面図の添付",
+      "立面図・平面図添付",
       "立平面図",
-      "図面添付",
-      "図面",
+      "立平面図の添付",
+      "立面図",
+      "平面図",
     ],
+    hint: "立面図・平面図を画像またはPDFで添付（1ファイル5MBまで・最大5件）",
   },
   postalCode: {
     key: "postalCode",
@@ -389,17 +392,13 @@ function resolveWritableFieldId(
   return uniqueId;
 }
 
-function resolveSpecFieldId(
+function resolveSpecFieldIdRaw(
   spec: FieldSpec,
   fields: AtPocketFieldRow[],
 ): string | null {
   const env = process.env[spec.envKey]?.trim();
 
-  // 見出し完全一致を最優先（環境変数の field-2 等による誤マッピングを防ぐ）
-  let uniqueId = resolveWritableFieldId(
-    fields,
-    pickByCaptionsExact(fields, spec.captions),
-  );
+  let uniqueId = pickByCaptionsExact(fields, spec.captions);
 
   if (!uniqueId && env) {
     const fromEnv = resolveConfiguredFieldToSchemaUniqueId(env, fields);
@@ -407,23 +406,36 @@ function resolveSpecFieldId(
       ? fields.find((f) => f.uniqueId?.trim() === fromEnv)
       : undefined;
     if (matched && captionLooksRelated(matched, spec.captions)) {
-      uniqueId = resolveWritableFieldId(fields, fromEnv);
+      uniqueId = fromEnv;
     }
   }
 
   if (!uniqueId) {
-    uniqueId = resolveWritableFieldId(
-      fields,
-      pickByCaptionsPartial(fields, spec.captions),
-    );
+    uniqueId = pickByCaptionsPartial(fields, spec.captions);
   }
 
   return uniqueId;
 }
 
+function resolveSpecFieldId(
+  spec: FieldSpec,
+  fields: AtPocketFieldRow[],
+): { uniqueId: string | null; writable: boolean } {
+  const rawId = resolveSpecFieldIdRaw(spec, fields);
+  if (!rawId) return { uniqueId: null, writable: false };
+  const matched = fields.find((f) => f.uniqueId?.trim() === rawId);
+  const writable = matched ? isWritableAtPocketField(matched) : false;
+  return {
+    uniqueId: rawId,
+    writable: writable ? resolveWritableFieldId(fields, rawId) !== null : false,
+  };
+}
+
 export type ApoAcquisitionResolvedField = {
   spec: FieldSpec;
   uniqueId: string | null;
+  /** 標準 POST/PUT で書き込み可能か（連携項目は false） */
+  writable: boolean;
   /** @pocket 側の選択肢（取れた場合のみ） */
   pocketOptions?: string[];
 };
@@ -478,7 +490,8 @@ export function resolveApoAcquisitionFields(
   >;
   for (const key of APO_ACQUISITION_FIELD_KEYS) {
     const spec = APO_ACQUISITION_FIELD_SPECS[key];
-    let uniqueId = resolveSpecFieldId(spec, fields);
+    const { uniqueId: resolvedId, writable } = resolveSpecFieldId(spec, fields);
+    let uniqueId = resolvedId;
     const matched = uniqueId
       ? fields.find((f) => f.uniqueId?.trim() === uniqueId)
       : undefined;
@@ -488,6 +501,7 @@ export function resolveApoAcquisitionFields(
     result[key] = {
       spec,
       uniqueId,
+      writable: uniqueId ? writable : false,
       pocketOptions: extractPocketOptions(matched),
     };
   }

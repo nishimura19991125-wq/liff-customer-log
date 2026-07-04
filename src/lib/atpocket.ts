@@ -30,7 +30,56 @@ export type AtPocketFieldRow = {
   caption?: string;
   /** GET /api/apps/{appsId}/fields が返す項目タイプ（連携項目の判定など） */
   fieldType?: string;
+  /** 連携項目のとき連携元アプリ ID（API: relation_id） */
+  relationId?: number;
 };
+
+function readAtPocketFieldProp(
+  row: Record<string, unknown>,
+  ...keys: string[]
+): unknown {
+  for (const key of keys) {
+    const v = row[key];
+    if (v !== undefined && v !== null) return v;
+  }
+  return undefined;
+}
+
+/** GET /fields の生オブジェクトを camelCase に正規化（field_type 等） */
+export function normalizeAtPocketFieldRow(raw: unknown): AtPocketFieldRow {
+  if (!raw || typeof raw !== "object") return {};
+  const o = raw as Record<string, unknown>;
+  const uniqueId = readAtPocketFieldProp(
+    o,
+    "uniqueId",
+    "field_unique_id",
+    "fieldUniqueId",
+  );
+  const caption = readAtPocketFieldProp(o, "caption");
+  const fieldType = readAtPocketFieldProp(o, "fieldType", "field_type");
+  const relationRaw = readAtPocketFieldProp(o, "relationId", "relation_id");
+  const relationId =
+    typeof relationRaw === "number"
+      ? relationRaw
+      : typeof relationRaw === "string" && relationRaw.trim()
+        ? Number(relationRaw)
+        : undefined;
+
+  return {
+    ...(typeof uniqueId === "string" && uniqueId.trim()
+      ? { uniqueId: uniqueId.trim() }
+      : {}),
+    ...(typeof caption === "string" && caption.trim()
+      ? { caption: caption.trim() }
+      : {}),
+    ...(typeof fieldType === "string" && fieldType.trim()
+      ? { fieldType: fieldType.trim() }
+      : {}),
+    ...(relationId != null && Number.isFinite(relationId) && relationId > 0
+      ? { relationId }
+      : {}),
+  };
+}
 
 function baseUrl(): string {
   const domain = process.env.ATPOCKET_DOMAIN?.trim();
@@ -949,8 +998,8 @@ async function fetchAppFieldsOnce(
     );
   }
   if (!text) return [];
-  const json = JSON.parse(text) as { fields?: AtPocketFieldRow[] };
-  return json.fields ?? [];
+  const json = JSON.parse(text) as { fields?: unknown[] };
+  return (json.fields ?? []).map(normalizeAtPocketFieldRow);
 }
 
 /** 列定義キャッシュを破棄（@pocket で列追加直後の PUT 向け） */

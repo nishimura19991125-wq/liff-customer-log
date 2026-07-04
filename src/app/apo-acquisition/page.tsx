@@ -296,9 +296,15 @@ function FileFieldRow({
           e.target.value = "";
         }}
       />
-      <p className="text-[11px] text-slate-500 dark:text-slate-400">
-        画像またはPDF（1件5MBまで・最大{MAX_FILES_PER_FIELD}件）
-      </p>
+      {field.hint ? (
+        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+          {field.hint}
+        </p>
+      ) : (
+        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+          画像またはPDF（1件5MBまで・最大{MAX_FILES_PER_FIELD}件）
+        </p>
+      )}
       {files.length > 0 ? (
         <ul className="space-y-1">
           {files.map((file, index) => (

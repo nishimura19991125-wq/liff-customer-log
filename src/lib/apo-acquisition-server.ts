@@ -5,7 +5,9 @@ import {
   apiKeyForSalesDashboardApoWrite,
   createRecord,
   fetchAppFields,
+  fetchRecordById,
   salesDashboardApoWriteConfigured,
+  updateRecord,
 } from "@/lib/atpocket";
 import {
   APO_ACQUISITION_FIELD_SPECS,
@@ -25,7 +27,10 @@ import {
 import { atPocketRecordIdFromCreateResult } from "@/lib/atpocket-record-id";
 import type { AtPocketFieldRow } from "@/lib/atpocket";
 import { buildAtPocketFilePutPayload } from "@/lib/at-pocket-file-field";
-import { customerInfoPutValue } from "@/lib/customer-info-record";
+import {
+  customerInfoPutValue,
+  readCustomerInfoImportKeyFromRecord,
+} from "@/lib/customer-info-record";
 import { postalCodeForPocket } from "@/lib/customer-info-form/postal-code";
 import { checkboxGroupValueToPocketArray } from "@/lib/customer-info-form/checkbox-pocket";
 import {
@@ -35,6 +40,7 @@ import {
 import { pocketFieldUniqueIdByCaption, resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
 import { salesDashboardApoAppId } from "@/lib/sales-dashboard-fields";
 import { fetchApClStaffPickerPayload } from "@/lib/staff-ap-cl-candidates";
+import { resolveMeetingScheduleImportKeyFieldId } from "@/lib/meeting-schedule-fields";
 
 function jstDateKey(d = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo" }).format(d);
@@ -125,6 +131,7 @@ function buildFieldMeta(
       present:
         Boolean(r.uniqueId) ||
         spec.kind === "staffSelect" ||
+        spec.kind === "file" ||
         key === "apStaff",
       ...(options ? { options } : {}),
       ...(spec.placeholder ? { placeholder: spec.placeholder } : {}),
@@ -252,8 +259,9 @@ function restrictApoAcquisitionCreatePayload(
 ): Record<string, unknown> {
   const allowed = new Set<string>();
   for (const key of APO_ACQUISITION_FIELD_KEYS) {
-    const id = resolved[key].uniqueId?.trim();
-    if (id) allowed.add(id);
+    const r = resolved[key];
+    if (!r.uniqueId || !r.writable) continue;
+    allowed.add(r.uniqueId.trim());
   }
   for (const id of extraFieldIds) {
     const t = id?.trim();
@@ -272,6 +280,70 @@ function restrictApoAcquisitionCreatePayload(
     out[fieldId] = value;
   }
   return out;
+}
+
+/** 連携項目（AP/CL担当者）を登録後に連携元キー（氏名）で反映 */
+async function applyApoRelationStaffFields(
+  apoAppId: string,
+  recordId: string,
+  resolved: Record<ApoAcquisitionFieldKey, ApoAcquisitionResolvedField>,
+  apoFields: AtPocketFieldRow[],
+  staffValues: { apStaffName: string; clStaffName: string },
+  writeAuth: { apiKey: string },
+): Promise<void> {
+  const relationUpdates: Record<string, string> = {};
+  const clStaffName = nfkc(staffValues.clStaffName);
+  if (
+    resolved.apStaff.uniqueId &&
+    !resolved.apStaff.writable &&
+    staffValues.apStaffName
+  ) {
+    relationUpdates[resolved.apStaff.uniqueId] = staffValues.apStaffName;
+  }
+  if (resolved.clStaff.uniqueId && !resolved.clStaff.writable && clStaffName) {
+    relationUpdates[resolved.clStaff.uniqueId] = clStaffName;
+  }
+  if (Object.keys(relationUpdates).length === 0) return;
+
+  const importKeyFieldId = resolveMeetingScheduleImportKeyFieldId(apoFields);
+  const wanted = [
+    importKeyFieldId,
+    ...Object.keys(relationUpdates),
+  ]
+    .filter(Boolean)
+    .join(",");
+
+  const recRow = await fetchRecordById(
+    apoAppId,
+    recordId,
+    { apiKey: apiKeyForSalesDashboardApoPocket() },
+    wanted || undefined,
+  );
+  const recObj = recRow?.record;
+  if (!recObj || typeof recObj !== "object") {
+    console.warn(
+      "[apo-acquisition:create] relation staff skipped: record not found",
+      recordId,
+    );
+    return;
+  }
+
+  const payload: Record<string, unknown> = { ...relationUpdates };
+  if (importKeyFieldId) {
+    const importKey = readCustomerInfoImportKeyFromRecord(
+      recObj as Record<string, unknown>,
+      importKeyFieldId,
+    );
+    if (importKey) {
+      payload[importKeyFieldId] = importKey;
+    }
+  }
+
+  try {
+    await updateRecord(apoAppId, recordId, payload, writeAuth);
+  } catch (e) {
+    console.warn("[apo-acquisition:create] relation staff update failed", e);
+  }
 }
 
 export async function createApoAcquisitionRecord(
@@ -366,11 +438,24 @@ export async function createApoAcquisitionRecord(
       };
     }
 
+    for (const key of APO_ACQUISITION_FIELD_KEYS) {
+      const spec = APO_ACQUISITION_FIELD_SPECS[key];
+      if (spec.kind !== "file") continue;
+      if (!(files[key]?.length ?? 0)) continue;
+      if (!resolved[key].uniqueId) {
+        return {
+          ok: false,
+          status: 503,
+          error: `${spec.label}の添付列が@pocketで見つかりません。アポ取得情報連携に「${spec.label}」列（ファイルタイプ）を追加してください。`,
+        };
+      }
+    }
+
     const record: Record<string, unknown> = {};
 
     for (const key of APO_ACQUISITION_FIELD_KEYS) {
       const r = resolved[key];
-      if (!r.uniqueId) continue;
+      if (!r.uniqueId || !r.writable) continue;
 
       if (r.spec.kind === "file") {
         const payload = buildAtPocketFilePutPayload(files[key] ?? []);
@@ -445,6 +530,15 @@ export async function createApoAcquisitionRecord(
         (key ? APO_ACQUISITION_FIELD_SPECS[key].label : null) ??
         drop.label ??
         drop.fieldId;
+      const isRelationStaff =
+        key != null &&
+        (key === "apStaff" || key === "clStaff") &&
+        resolved[key].uniqueId &&
+        !resolved[key].writable;
+      if (isRelationStaff) {
+        console.warn("[apo-acquisition:create] relation staff deferred", drop);
+        continue;
+      }
       if (key && APO_ACQUISITION_FIELD_SPECS[key].required) {
         return {
           ok: false,
@@ -464,6 +558,16 @@ export async function createApoAcquisitionRecord(
         error: "登録は完了しましたが、レコード ID を取得できませんでした",
       };
     }
+
+    const clStaffName = nfkc(values.clStaff ?? "");
+    await applyApoRelationStaffFields(
+      apoAppId,
+      recordId,
+      resolved,
+      apoFields,
+      { apStaffName, clStaffName },
+      writeAuth,
+    );
 
     return { ok: true, recordId };
   } catch (e) {
