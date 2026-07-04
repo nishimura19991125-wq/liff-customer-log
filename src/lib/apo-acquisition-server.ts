@@ -244,6 +244,36 @@ function findFieldKeyByUniqueId(
   return null;
 }
 
+/** フォームで解決した列と自動セット列だけを登録ペイロードに残す */
+function restrictApoAcquisitionCreatePayload(
+  record: Record<string, unknown>,
+  resolved: Record<ApoAcquisitionFieldKey, ApoAcquisitionResolvedField>,
+  extraFieldIds: Array<string | null | undefined>,
+): Record<string, unknown> {
+  const allowed = new Set<string>();
+  for (const key of APO_ACQUISITION_FIELD_KEYS) {
+    const id = resolved[key].uniqueId?.trim();
+    if (id) allowed.add(id);
+  }
+  for (const id of extraFieldIds) {
+    const t = id?.trim();
+    if (t) allowed.add(t);
+  }
+
+  const out: Record<string, unknown> = {};
+  for (const [fieldId, value] of Object.entries(record)) {
+    if (!allowed.has(fieldId)) {
+      console.warn(
+        "[apo-acquisition:create] stripped unmapped field",
+        fieldId,
+      );
+      continue;
+    }
+    out[fieldId] = value;
+  }
+  return out;
+}
+
 export async function createApoAcquisitionRecord(
   boundStaffName: string,
   input: ApoAcquisitionCreateInput,
@@ -399,8 +429,14 @@ export async function createApoAcquisitionRecord(
       );
     }
 
-    const { payload: filteredRecord, dropped } = filterCustomerInfoPutPayload(
+    const restrictedRecord = restrictApoAcquisitionCreatePayload(
       record,
+      resolved,
+      [firstMeetingDateId, statusId],
+    );
+
+    const { payload: filteredRecord, dropped } = filterCustomerInfoPutPayload(
+      restrictedRecord,
       apoFields,
     );
     for (const drop of dropped) {

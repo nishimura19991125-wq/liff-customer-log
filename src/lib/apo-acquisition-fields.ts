@@ -338,7 +338,7 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
   },
 };
 
-function pickByCaptionsExactThenPartial(
+function pickByCaptionsExact(
   fields: AtPocketFieldRow[],
   captions: string[],
 ): string | null {
@@ -346,7 +346,16 @@ function pickByCaptionsExactThenPartial(
     const id = pocketFieldUniqueIdByCaption(fields, caption);
     if (id) return id;
   }
-  const lowered = captions.map((c) => nfkc(c).toLowerCase());
+  return null;
+}
+
+function pickByCaptionsPartial(
+  fields: AtPocketFieldRow[],
+  captions: string[],
+): string | null {
+  const lowered = captions
+    .map((c) => nfkc(c).toLowerCase())
+    .filter((c) => c.length >= 2);
   for (const f of fields) {
     const cap = f.caption ? nfkc(String(f.caption)).toLowerCase() : "";
     if (!cap) continue;
@@ -358,21 +367,57 @@ function pickByCaptionsExactThenPartial(
   return null;
 }
 
+function captionLooksRelated(
+  field: AtPocketFieldRow,
+  captions: string[],
+): boolean {
+  const cap = field.caption ? nfkc(String(field.caption)).toLowerCase() : "";
+  if (!cap) return false;
+  return captions.some((c) => {
+    const k = nfkc(c).toLowerCase();
+    return cap === k || cap.includes(k) || k.includes(cap);
+  });
+}
+
+function resolveWritableFieldId(
+  fields: AtPocketFieldRow[],
+  uniqueId: string | null,
+): string | null {
+  if (!uniqueId) return null;
+  const matched = fields.find((f) => f.uniqueId?.trim() === uniqueId);
+  if (matched && !isWritableAtPocketField(matched)) return null;
+  return uniqueId;
+}
+
 function resolveSpecFieldId(
   spec: FieldSpec,
   fields: AtPocketFieldRow[],
 ): string | null {
   const env = process.env[spec.envKey]?.trim();
-  let uniqueId: string | null = null;
-  if (env) {
-    uniqueId = resolveConfiguredFieldToSchemaUniqueId(env, fields);
+
+  // 見出し完全一致を最優先（環境変数の field-2 等による誤マッピングを防ぐ）
+  let uniqueId = resolveWritableFieldId(
+    fields,
+    pickByCaptionsExact(fields, spec.captions),
+  );
+
+  if (!uniqueId && env) {
+    const fromEnv = resolveConfiguredFieldToSchemaUniqueId(env, fields);
+    const matched = fromEnv
+      ? fields.find((f) => f.uniqueId?.trim() === fromEnv)
+      : undefined;
+    if (matched && captionLooksRelated(matched, spec.captions)) {
+      uniqueId = resolveWritableFieldId(fields, fromEnv);
+    }
   }
+
   if (!uniqueId) {
-    uniqueId = pickByCaptionsExactThenPartial(fields, spec.captions);
+    uniqueId = resolveWritableFieldId(
+      fields,
+      pickByCaptionsPartial(fields, spec.captions),
+    );
   }
-  if (!uniqueId) return null;
-  const matched = fields.find((f) => f.uniqueId?.trim() === uniqueId);
-  if (matched && !isWritableAtPocketField(matched)) return null;
+
   return uniqueId;
 }
 
