@@ -288,11 +288,11 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
   existingEquipment: {
     key: "existingEquipment",
     label: "既設設備",
-    kind: "textarea",
+    kind: "checkboxGroup",
     required: false,
     envKey: "APO_ACQUISITION_EXISTING_EQUIPMENT_FIELD_ID",
     captions: ["既設設備", "既存設備", "設備"],
-    placeholder: "例）太陽光・エコキュート 等",
+    options: ["ガス給湯器", "エコキュート", "IH", "エネファーム", "エコウィル"],
   },
   averageElectricBill: {
     key: "averageElectricBill",

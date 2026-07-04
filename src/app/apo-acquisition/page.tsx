@@ -45,6 +45,19 @@ const inputClass =
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_FILES_PER_FIELD = 5;
 
+function parseCheckboxValue(raw: string): Set<string> {
+  return new Set(
+    raw
+      .split(/[,、\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+}
+
+function joinCheckboxValue(selected: Set<string>): string {
+  return [...selected].join(",");
+}
+
 async function readFileAsAttachment(file: File): Promise<ApoAcquisitionFileAttachment> {
   const contentBase64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -168,6 +181,40 @@ function FieldRow({ field, value, disabled, onChange, onBlur }: FieldRowProps) {
         </select>
       );
       break;
+    case "checkboxGroup":
+      control = (
+        <div className="flex flex-wrap gap-2">
+          {(field.options ?? []).map((opt) => {
+            const selected = parseCheckboxValue(value);
+            const checked = selected.has(opt);
+            return (
+              <label
+                key={opt}
+                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[13px] font-medium ${
+                  checked
+                    ? "border-orange-400 bg-orange-50 text-orange-900 dark:border-orange-500 dark:bg-orange-950/40 dark:text-orange-100"
+                    : "border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="size-4 rounded border-slate-300 text-orange-500"
+                  checked={checked}
+                  disabled={disabled}
+                  onChange={() => {
+                    const next = new Set(selected);
+                    if (checked) next.delete(opt);
+                    else next.add(opt);
+                    handle(joinCheckboxValue(next));
+                  }}
+                />
+                {opt}
+              </label>
+            );
+          })}
+        </div>
+      );
+      break;
     default:
       control = (
         <input
@@ -182,7 +229,7 @@ function FieldRow({ field, value, disabled, onChange, onBlur }: FieldRowProps) {
   }
 
   return (
-    <label className="block space-y-1.5">
+    <div className="block space-y-1.5">
       {label}
       {control}
       {field.hint ? (
@@ -190,7 +237,7 @@ function FieldRow({ field, value, disabled, onChange, onBlur }: FieldRowProps) {
           {field.hint}
         </p>
       ) : null}
-    </label>
+    </div>
   );
 }
 

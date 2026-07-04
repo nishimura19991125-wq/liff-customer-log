@@ -27,6 +27,7 @@ import type { AtPocketFieldRow } from "@/lib/atpocket";
 import { buildAtPocketFilePutPayload } from "@/lib/at-pocket-file-field";
 import { customerInfoPutValue } from "@/lib/customer-info-record";
 import { postalCodeForPocket } from "@/lib/customer-info-form/postal-code";
+import { checkboxGroupValueToPocketArray } from "@/lib/customer-info-form/checkbox-pocket";
 import { pocketFieldUniqueIdByCaption } from "@/lib/calendar-kojo";
 import { salesDashboardApoAppId } from "@/lib/sales-dashboard-fields";
 import { fetchApClStaffPickerPayload } from "@/lib/staff-ap-cl-candidates";
@@ -107,7 +108,7 @@ function buildFieldMeta(
         ? key === "apStaff"
           ? apStaffOptions
           : clStaffOptions
-        : spec.kind === "select"
+        : spec.kind === "select" || spec.kind === "checkboxGroup"
           ? r.pocketOptions && r.pocketOptions.length
             ? r.pocketOptions
             : spec.options ?? []
@@ -338,6 +339,13 @@ export async function createApoAcquisitionRecord(
         const pocket = postalCodeForPocket(raw);
         if (!pocket) continue;
         value = pocket;
+      } else if (r.spec.kind === "checkboxGroup") {
+        const selected = checkboxGroupValueToPocketArray(
+          raw,
+          r.pocketOptions?.length ? r.pocketOptions : r.spec.options,
+        );
+        if (selected.length === 0) continue;
+        value = selected;
       }
       if (value === "") continue;
       record[r.uniqueId] = customerInfoPutValue(value);

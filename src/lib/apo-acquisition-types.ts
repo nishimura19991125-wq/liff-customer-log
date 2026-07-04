@@ -44,7 +44,8 @@ export type ApoAcquisitionInputKind =
   | "datetime"
   | "select"
   | "staffSelect"
-  | "file";
+  | "file"
+  | "checkboxGroup";
 
 /** UI に渡す各フィールドのメタ情報 */
 export type ApoAcquisitionFieldMeta = {
