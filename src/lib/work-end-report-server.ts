@@ -124,30 +124,6 @@ function parseNonNegativeCount(
   return { ok: true, value: String(Number(trimmed)) };
 }
 
-function workEndCountSuffix(kind: "pinpon" | "meeting" | "apo"): string {
-  const envKey =
-    kind === "pinpon"
-      ? "WORK_END_REPORT_PINPON_COUNT_SUFFIX"
-      : kind === "meeting"
-        ? "WORK_END_REPORT_MEETING_COUNT_SUFFIX"
-        : "WORK_END_REPORT_APO_COUNT_SUFFIX";
-  const defaults: Record<typeof kind, string> = {
-    pinpon: "件",
-    meeting: "面談",
-    apo: "アポ",
-  };
-  const configured = process.env[envKey]?.trim();
-  return configured !== undefined ? configured : defaults[kind];
-}
-
-function formatWorkEndCountForPocket(
-  kind: "pinpon" | "meeting" | "apo",
-  numericValue: string,
-): string {
-  const suffix = workEndCountSuffix(kind);
-  return suffix ? `${numericValue}${suffix}` : numericValue;
-}
-
 async function loadWorkEndReportFieldIds(): Promise<
   | { ok: true; appId: string; ids: WorkEndReportFieldIds }
   | { ok: false; status: number; error: string }
@@ -389,16 +365,13 @@ export async function submitWorkEndReportForLineUser(
     [ids.apoActivity!]: apoActivity,
   };
   if (pinpon.value != null) {
-    payload[ids.pinponCount!] = formatWorkEndCountForPocket("pinpon", pinpon.value);
+    payload[ids.pinponCount!] = Number(pinpon.value);
   }
   if (meeting.value != null) {
-    payload[ids.meetingCount!] = formatWorkEndCountForPocket(
-      "meeting",
-      meeting.value,
-    );
+    payload[ids.meetingCount!] = Number(meeting.value);
   }
   if (apo.value != null) {
-    payload[ids.apoCount!] = formatWorkEndCountForPocket("apo", apo.value);
+    payload[ids.apoCount!] = Number(apo.value);
   }
   if (workArea) payload[ids.workArea!] = workArea;
 
