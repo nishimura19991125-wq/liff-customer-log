@@ -323,7 +323,11 @@ export function buildCustomerInfoFormPayload(
     if (field.type === "date") {
       if (!visible) continue;
       const pocketDate = dateValueForPocket(raw);
-      if (pocketDate) payload[field.fieldId] = pocketDate;
+      if (pocketDate) {
+        payload[field.fieldId] = pocketDate;
+      } else if (isEmptyPocketInput(raw)) {
+        payload[field.fieldId] = "";
+      }
       continue;
     }
     const hiddenFallback = hiddenPayloadValue(field);
