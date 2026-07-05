@@ -185,7 +185,7 @@ async function loadWorkEndReportFieldIds(): Promise<
       status: 503,
       error:
         missing.length > 0
-          ? `稼働終了報告の列が未設定です。Netlify の環境変数を設定してください: ${missing.join(", ")}`
+          ? `稼働終了報告の列を解決できません。Netlify の環境変数（${missing.join(", ")}）を設定するか、@pocket の列見出しを確認してください。`
           : "稼働終了報告アプリの列設定を確認してください。",
     };
   }

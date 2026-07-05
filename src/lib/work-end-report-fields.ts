@@ -26,10 +26,48 @@ export type WorkEndReportFieldIds = {
   workArea: string | null;
 };
 
-function resolveFieldIdFromEnv(
-  envKeys: readonly string[],
-  defaultId: string | undefined,
+function nfkc(s: string): string {
+  return s.normalize("NFKC").trim();
+}
+
+function pickFieldUniqueIdByExactCaption(
   fields: AtPocketFieldRow[],
+  caption: string,
+  options?: { excludeLegacy?: boolean },
+): string | null {
+  const target = nfkc(caption).toLowerCase();
+  for (const f of fields) {
+    const cap = f.caption ? nfkc(String(f.caption)).toLowerCase() : "";
+    if (!cap || cap !== target) continue;
+    if (
+      options?.excludeLegacy &&
+      (cap.includes("旧") || cap.includes("(旧)"))
+    ) {
+      continue;
+    }
+    const id = f.uniqueId?.trim();
+    return id || null;
+  }
+  return null;
+}
+
+function pickFieldUniqueIdByCaptions(
+  fields: AtPocketFieldRow[],
+  captions: string[],
+  options?: { excludeLegacy?: boolean },
+): string | null {
+  for (const caption of captions) {
+    const id = pickFieldUniqueIdByExactCaption(fields, caption, options);
+    if (id) return id;
+  }
+  return null;
+}
+
+function resolveFieldId(
+  envKeys: readonly string[],
+  fields: AtPocketFieldRow[],
+  captionAlts: string[],
+  captionOptions?: { excludeLegacy?: boolean },
 ): string | null {
   for (const envKey of envKeys) {
     const raw = process.env[envKey]?.trim();
@@ -37,50 +75,55 @@ function resolveFieldIdFromEnv(
     const resolved = resolveConfiguredFieldToSchemaUniqueId(raw, fields);
     if (resolved) return resolved;
   }
-  if (defaultId?.trim()) {
-    return resolveConfiguredFieldToSchemaUniqueId(defaultId.trim(), fields);
-  }
-  return null;
+
+  const picked = pickFieldUniqueIdByCaptions(
+    fields,
+    captionAlts,
+    captionOptions,
+  );
+  if (!picked) return null;
+  return resolveConfiguredFieldToSchemaUniqueId(picked, fields) ?? picked;
 }
 
 export function resolveWorkEndReportFieldIds(
   appFields: AtPocketFieldRow[],
 ): WorkEndReportFieldIds {
   return {
-    reporter: resolveFieldIdFromEnv(
+    reporter: resolveFieldId(
       WORK_END_REPORT_FIELD_ENV_KEYS.reporter,
-      undefined,
       appFields,
+      ["報告者", "社員名", "担当者", "氏名"],
+      { excludeLegacy: true },
     ),
-    pinponCount: resolveFieldIdFromEnv(
+    pinponCount: resolveFieldId(
       WORK_END_REPORT_FIELD_ENV_KEYS.pinponCount,
-      undefined,
       appFields,
+      ["ピンポン数", "ピンポン 数"],
     ),
-    meetingCount: resolveFieldIdFromEnv(
+    meetingCount: resolveFieldId(
       WORK_END_REPORT_FIELD_ENV_KEYS.meetingCount,
-      undefined,
       appFields,
+      ["面談数", "面談 数"],
     ),
-    apoCount: resolveFieldIdFromEnv(
+    apoCount: resolveFieldId(
       WORK_END_REPORT_FIELD_ENV_KEYS.apoCount,
-      undefined,
       appFields,
+      ["アポ獲得数", "アポ 獲得数", "アポ取得数"],
     ),
-    apoActivity: resolveFieldIdFromEnv(
+    apoActivity: resolveFieldId(
       WORK_END_REPORT_FIELD_ENV_KEYS.apoActivity,
-      undefined,
       appFields,
+      ["アポ活動実施", "アポ 活動実施", "AP活動実施"],
     ),
-    reportDate: resolveFieldIdFromEnv(
+    reportDate: resolveFieldId(
       WORK_END_REPORT_FIELD_ENV_KEYS.reportDate,
-      undefined,
       appFields,
+      ["報告日", "日付"],
     ),
-    workArea: resolveFieldIdFromEnv(
+    workArea: resolveFieldId(
       WORK_END_REPORT_FIELD_ENV_KEYS.workArea,
-      undefined,
       appFields,
+      ["稼働エリア", "稼働 エリア", "エリア"],
     ),
   };
 }
@@ -95,6 +138,7 @@ const FIELD_ENV_PRIMARY: Record<keyof WorkEndReportFieldIds, string> = {
   workArea: WORK_END_REPORT_FIELD_ENV_KEYS.workArea[0]!,
 };
 
+/** 環境変数も見出し解決もできなかった列の env キー */
 export function workEndReportMissingFieldEnvKeys(
   ids: WorkEndReportFieldIds,
 ): string[] {
