@@ -135,6 +135,26 @@ function CommunicationBridgeGlyph() {
   );
 }
 
+function WorkEndReportGlyph() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M9 9l6 6M15 9l-6 6"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export default function HomeHubPage() {
   const [phase, setPhase] = useState<"init" | "need-login" | "ready" | "error">(
     () => (LIFF_ID ? "init" : "error"),
@@ -373,7 +393,7 @@ export default function HomeHubPage() {
                   社内共通
                 </p>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  営業ダッシュボード・勤怠管理・コミュニケーションブリッジを表示します。
+                  営業ダッシュボード・勤怠管理・稼働終了報告・コミュニケーションブリッジを表示します。
                 </p>
               </div>
               <span
@@ -403,6 +423,14 @@ export default function HomeHubPage() {
                   title="勤怠管理"
                   description="出勤・退勤を打刻し、@pocket の勤怠アプリに記録します。"
                   icon={<AttendanceGlyph />}
+                  iconTone="blue"
+                  disabled={needsStaffBind}
+                />
+                <LiffMenuCard
+                  href="/work-end-report"
+                  title="稼働終了報告"
+                  description="本日の稼働を終了し、スタッフ名簿の稼働状況を非稼働に更新します。"
+                  icon={<WorkEndReportGlyph />}
                   iconTone="blue"
                   disabled={needsStaffBind}
                 />

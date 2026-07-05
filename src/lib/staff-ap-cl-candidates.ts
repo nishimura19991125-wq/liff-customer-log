@@ -121,7 +121,7 @@ function uniqueFieldsCsv(...uids: (string | undefined)[]): string {
   return parts.join(",");
 }
 
-async function resolveStaffApClConfig(): Promise<
+export async function resolveStaffApClConfig(): Promise<
   | { ok: true; cfg: StaffApClConfig }
   | { ok: false; error: string }
 > {
