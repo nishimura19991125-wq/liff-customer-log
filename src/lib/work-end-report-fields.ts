@@ -7,17 +7,26 @@ function nfkc(s: string): string {
   return s.normalize("NFKC").trim();
 }
 
+/** 稼働終了報告の報告者列（@pocket field-52）。旧「報告者（旧）」列は使わない。 */
+export const WORK_END_REPORT_REPORTER_FIELD_DEFAULT = "field-52";
+
 function pickFieldUniqueIdByExactCaption(
   fields: AtPocketFieldRow[],
   caption: string,
+  options?: { excludeLegacy?: boolean },
 ): string | null {
   const target = nfkc(caption).toLowerCase();
   for (const f of fields) {
     const cap = f.caption ? nfkc(String(f.caption)).toLowerCase() : "";
-    if (cap && cap === target) {
-      const id = f.uniqueId?.trim();
-      return id || null;
+    if (!cap || cap !== target) continue;
+    if (
+      options?.excludeLegacy &&
+      (cap.includes("旧") || cap.includes("(旧)"))
+    ) {
+      continue;
     }
+    const id = f.uniqueId?.trim();
+    return id || null;
   }
   return null;
 }
@@ -25,9 +34,10 @@ function pickFieldUniqueIdByExactCaption(
 function pickFieldUniqueIdByCaptions(
   fields: AtPocketFieldRow[],
   captions: string[],
+  options?: { excludeLegacy?: boolean },
 ): string | null {
   for (const caption of captions) {
-    const id = pickFieldUniqueIdByExactCaption(fields, caption);
+    const id = pickFieldUniqueIdByExactCaption(fields, caption, options);
     if (id) return id;
   }
   return null;
@@ -37,12 +47,17 @@ function resolveSchemaFieldId(
   configuredId: string | undefined,
   fields: AtPocketFieldRow[],
   captionAlts: string[],
+  captionOptions?: { excludeLegacy?: boolean },
 ): string | null {
   const fromEnv = configuredId?.trim();
   if (fromEnv) {
     return resolveConfiguredFieldToSchemaUniqueId(fromEnv, fields);
   }
-  const picked = pickFieldUniqueIdByCaptions(fields, captionAlts);
+  const picked = pickFieldUniqueIdByCaptions(
+    fields,
+    captionAlts,
+    captionOptions,
+  );
   if (!picked) return null;
   return resolveConfiguredFieldToSchemaUniqueId(picked, fields) ?? picked;
 }
@@ -63,9 +78,11 @@ export function resolveWorkEndReportFieldIds(
   return {
     reporter: resolveSchemaFieldId(
       process.env.WORK_END_REPORT_REPORTER_FIELD_ID ??
-        process.env.WORK_END_REPORT_STAFF_NAME_FIELD_ID,
+        process.env.WORK_END_REPORT_STAFF_NAME_FIELD_ID ??
+        WORK_END_REPORT_REPORTER_FIELD_DEFAULT,
       appFields,
       ["報告者", "社員名", "担当者", "氏名"],
+      { excludeLegacy: true },
     ),
     pinponCount: resolveSchemaFieldId(
       process.env.WORK_END_REPORT_PINPON_COUNT_FIELD_ID,
