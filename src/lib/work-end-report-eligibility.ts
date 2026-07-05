@@ -27,10 +27,29 @@ export function isWorkEndReportEligibleDepartment(
 ): boolean {
   const label = department ? nfkcDepartmentLabel(department) : "";
   if (!label) return false;
-  const allowed = new Set(
-    workEndReportEligibleDepartmentLabels().map(nfkcDepartmentLabel),
-  );
-  return allowed.has(label);
+
+  for (const allowed of workEndReportEligibleDepartmentLabels()) {
+    const target = nfkcDepartmentLabel(allowed);
+    if (label === target) return true;
+
+    if (target === "DC事業部") {
+      if (
+        label === "DC" ||
+        label === "ＤＣ" ||
+        /^DC/i.test(label) ||
+        label.includes("DC事業部") ||
+        label.includes("ＤＣ事業部")
+      ) {
+        return true;
+      }
+    }
+
+    if (target.includes("工務店アライアンス") && label.includes("工務店アライアンス")) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export function workEndReportIneligibleMessage(

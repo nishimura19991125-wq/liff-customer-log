@@ -154,7 +154,7 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
         const payload = (await res.json()) as {
           ok?: boolean;
           error?: string;
-          boundStaff?: { name?: string };
+          boundStaff?: { name?: string; department?: string; staffRole?: "ap" | "cl" };
         };
         if (!res.ok) {
           if (res.status === 401 && isLineSessionExpiredPayload(payload)) {
@@ -177,6 +177,26 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
         }
         const n = payload.boundStaff?.name?.trim();
         if (n) setBoundStaffName(n);
+
+        try {
+          const { res: staffRes, data: staffData } =
+            await fetchStaffApiWithSessionCache(idToken);
+          if (staffRes.ok || staffData.staff?.length) {
+            setStaff(staffData.staff ?? []);
+            setBoundStaffName(staffData.boundStaff?.name?.trim() || n || null);
+            setBoundStaffDepartment(
+              staffData.boundStaff?.department?.trim() || null,
+            );
+            setBoundStaffRole(staffData.boundStaff?.staffRole ?? null);
+          } else if (payload.boundStaff?.department?.trim()) {
+            setBoundStaffDepartment(payload.boundStaff.department.trim());
+          }
+        } catch {
+          if (payload.boundStaff?.department?.trim()) {
+            setBoundStaffDepartment(payload.boundStaff.department.trim());
+          }
+        }
+
         return { ok: true };
       } catch {
         return { ok: false, error: "通信に失敗しました" };
