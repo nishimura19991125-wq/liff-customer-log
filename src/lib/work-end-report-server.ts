@@ -1,143 +1,322 @@
 import "server-only";
 
 import {
-  apiKeyForStaffPocketRead1,
-  apiKeyForStaffWrite,
+  apiKeyForWorkEndReportPocket,
+  apiKeyForWorkEndReportPocket1,
+  apiKeyForWorkEndReportWrite,
+  createRecord,
   fetchAppFields,
-  updateRecord,
+  fetchRecordsList,
+  type AtPocketRecordRow,
 } from "@/lib/atpocket";
-import {
-  pickRecordValueByFieldAliases,
-  resolveConfiguredFieldToSchemaUniqueId,
-} from "@/lib/calendar-kojo";
+import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
+import { pickRecordValueByFieldAliases, ymdKey } from "@/lib/calendar-kojo";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
+import { lookupStaffDepartmentByStaffName } from "@/lib/staff-department-lookup";
+import { resolveWorkEndReportAppId } from "@/lib/work-end-report-config";
 import {
-  invalidateApClStaffPickerCache,
-  resolveStaffApClConfig,
-} from "@/lib/staff-ap-cl-candidates";
+  isWorkEndReportEligibleDepartment,
+  workEndReportIneligibleMessage,
+} from "@/lib/work-end-report-eligibility";
 import {
-  pocketTableCellToPlainString,
-  staffConstructionAvailabilityIsActive,
-} from "@/lib/staff-construction-availability";
-import { staffGeneralAvailabilityActiveLabel } from "@/lib/staff-general-availability";
-import { resolveStaffGeneralAvailabilityConfig } from "@/lib/staff-general-availability";
+  resolveWorkEndReportFieldIds,
+  workEndReportFieldsConfigured,
+  workEndReportFieldsCsv,
+  type WorkEndReportFieldIds,
+} from "@/lib/work-end-report-fields";
 import {
-  boundStaffFromRosterRows,
-  fetchStaffRosterRowsCached,
-  invalidateStaffRosterCache,
-} from "@/lib/staff-roster-cache";
-import type {
-  WorkEndAvailabilityField,
-  WorkEndReportStatus,
+  WORK_END_REPORT_APO_ACTIVITY_OPTIONS,
+  isWorkEndApoActivityImplemented,
+  type WorkEndReportFormValues,
+  type WorkEndReportRecordSnapshot,
+  type WorkEndReportStatus,
 } from "@/lib/work-end-report-types";
 
 export type { WorkEndReportStatus } from "@/lib/work-end-report-types";
 
-function workEndInactiveLabel(): string {
-  return process.env.WORK_END_INACTIVE_LABEL?.trim() || "非稼働";
-}
+const FIELDS_CACHE_MS = 3_600_000;
+let fieldsCache: {
+  appId: string;
+  ids: WorkEndReportFieldIds;
+  expiresAt: number;
+} | null = null;
 
-function constructionActiveLabel(): string {
-  return (
-    process.env.STAFF_CONSTRUCTION_AVAILABILITY_ACTIVE_LABEL?.trim() ||
-    staffGeneralAvailabilityActiveLabel()
+function todayYmdJst(): string {
+  const d = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }),
   );
+  return ymdKey(d);
 }
 
-function nfkc(s: string): string {
+function nfkcName(s: string): string {
   return s.normalize("NFKC").trim();
 }
 
-function pickFieldUniqueIdByExactCaption(
-  fields: Awaited<ReturnType<typeof fetchAppFields>>,
-  caption: string,
-): string | null {
-  const target = nfkc(caption).toLowerCase();
-  for (const f of fields) {
-    const cap = f.caption ? nfkc(String(f.caption)).toLowerCase() : "";
-    if (cap && cap === target) {
-      const id = f.uniqueId?.trim();
-      return id || null;
-    }
-  }
-  return null;
-}
-
-function pickFieldUniqueIdByCaptions(
-  fields: Awaited<ReturnType<typeof fetchAppFields>>,
-  captions: string[],
-): string | null {
-  for (const caption of captions) {
-    const id = pickFieldUniqueIdByExactCaption(fields, caption);
-    if (id) return id;
-  }
-  return null;
-}
-
-function resolveSchemaFieldId(
-  configuredId: string | undefined,
-  fields: Awaited<ReturnType<typeof fetchAppFields>>,
-  captionAlts: string[],
-): string | null {
-  const fromEnv = configuredId?.trim();
-  if (fromEnv) {
-    return resolveConfiguredFieldToSchemaUniqueId(fromEnv, fields);
-  }
-  const picked = pickFieldUniqueIdByCaptions(fields, captionAlts);
-  if (!picked) return null;
-  return resolveConfiguredFieldToSchemaUniqueId(picked, fields) ?? picked;
-}
-
-async function resolveConstructionAvailabilityFieldId(): Promise<string | null> {
-  const fromEnv = process.env.STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID?.trim();
-  if (fromEnv) return fromEnv;
-
-  const staffAppId = process.env.STAFF_APP_ID?.trim();
-  if (!staffAppId) return null;
-
-  const appFields = await fetchAppFields(
-    staffAppId,
-    { apiKey: apiKeyForStaffPocketRead1() },
-    { operation: "work-end:工事対応稼働(列定義)", appEnv: "STAFF_APP_ID" },
-  );
-
-  return resolveSchemaFieldId(undefined, appFields, [
-    "工事対応稼働状況",
-    "工事対応 稼働状況",
-    "工事稼働状況",
-  ]);
-}
-
-function readAvailabilityValue(
-  rec: Record<string, unknown>,
-  fieldId: string,
+function readFieldText(
+  recObj: Record<string, unknown>,
+  fieldId: string | null,
 ): string {
-  return pocketTableCellToPlainString(
-    pickRecordValueByFieldAliases(rec, fieldId),
-  );
+  if (!fieldId) return "";
+  const raw = pickRecordValueByFieldAliases(recObj, fieldId);
+  if (raw === null || raw === undefined) return "";
+  if (typeof raw === "object" && raw !== null && "value" in raw) {
+    const v = (raw as { value?: unknown }).value;
+    return v === null || v === undefined ? "" : nfkcName(String(v));
+  }
+  return nfkcName(String(raw));
 }
 
-async function loadStaffRowForLineUser(lineUserId: string): Promise<
-  | {
-      ok: true;
-      staffName: string;
-      staffRecordId: string;
-      record: Record<string, unknown>;
+function parseWorkDateYmd(raw: string): string | null {
+  const s = raw.replace(/\//g, "-").trim();
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
+  if (!m) return null;
+  const y = m[1];
+  const mo = String(Number(m[2])).padStart(2, "0");
+  const d = String(Number(m[3])).padStart(2, "0");
+  return `${y}-${mo}-${d}`;
+}
+
+function recordAppliesToToday(
+  recObj: Record<string, unknown>,
+  ids: WorkEndReportFieldIds,
+  today: string,
+): boolean {
+  const dateYmd = parseWorkDateYmd(readFieldText(recObj, ids.reportDate));
+  return dateYmd === today;
+}
+
+function snapshotFromRecord(
+  recObj: Record<string, unknown>,
+  ids: WorkEndReportFieldIds,
+): WorkEndReportRecordSnapshot {
+  return {
+    pinponCount: readFieldText(recObj, ids.pinponCount) || undefined,
+    meetingCount: readFieldText(recObj, ids.meetingCount) || undefined,
+    apoCount: readFieldText(recObj, ids.apoCount) || undefined,
+    apoActivity: readFieldText(recObj, ids.apoActivity) || undefined,
+    workArea: readFieldText(recObj, ids.workArea) || undefined,
+  };
+}
+
+function apoActivityOptions(): readonly string[] {
+  return WORK_END_REPORT_APO_ACTIVITY_OPTIONS;
+}
+
+function workEndReportMaxPages(): number {
+  const raw = process.env.WORK_END_REPORT_MAX_PAGES?.trim();
+  const n = raw ? Number(raw) : 2;
+  if (!Number.isFinite(n) || n < 1) return 2;
+  return Math.min(10, Math.floor(n));
+}
+
+function parseNonNegativeCount(
+  label: string,
+  raw: string | undefined,
+  required: boolean,
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  const trimmed = raw?.trim() ?? "";
+  if (!trimmed) {
+    if (required) {
+      return { ok: false, error: `${label}を入力してください` };
     }
-  | { ok: false; status: number; error: string; needsStaffBind?: boolean }
+    return { ok: true, value: null };
+  }
+  if (!/^\d+$/.test(trimmed)) {
+    return { ok: false, error: `${label}は0以上の整数で入力してください` };
+  }
+  return { ok: true, value: String(Number(trimmed)) };
+}
+
+async function loadWorkEndReportFieldIds(): Promise<
+  | { ok: true; appId: string; ids: WorkEndReportFieldIds }
+  | { ok: false; status: number; error: string }
 > {
-  const staffAppId = process.env.STAFF_APP_ID?.trim();
-  if (!staffAppId) {
+  const resolved = await resolveWorkEndReportAppId();
+  if (!resolved.appId) {
     return {
       ok: false,
       status: 503,
-      error: "STAFF_APP_ID が未設定です",
+      error: resolved.error ?? "稼働終了報告アプリが未設定です",
     };
   }
 
-  const rows = await fetchStaffRosterRowsCached();
-  const bound = boundStaffFromRosterRows(rows, lineUserId);
-  if (!bound) {
+  const appId = resolved.appId;
+
+  if (
+    fieldsCache &&
+    fieldsCache.appId === appId &&
+    fieldsCache.expiresAt > Date.now()
+  ) {
+    return { ok: true, appId, ids: fieldsCache.ids };
+  }
+
+  const appFields = await fetchAppFields(
+    appId,
+    { apiKey: apiKeyForWorkEndReportPocket1() },
+    { operation: "work-end:fields", appEnv: "WORK_END_REPORT_APP_ID" },
+  );
+
+  const ids = resolveWorkEndReportFieldIds(appFields);
+  if (!workEndReportFieldsConfigured(ids)) {
+    return {
+      ok: false,
+      status: 503,
+      error:
+        "稼働終了報告アプリに必要な列（報告者・ピンポン数・面談数・アポ獲得数・アポ活動実施・報告日・稼働エリア）が見つかりません。WORK_END_REPORT_*_FIELD_ID で uniqueId を指定してください。",
+    };
+  }
+
+  fieldsCache = {
+    appId,
+    ids,
+    expiresAt: Date.now() + FIELDS_CACHE_MS,
+  };
+
+  return { ok: true, appId, ids };
+}
+
+async function fetchTodayReportRows(
+  appId: string,
+  ids: WorkEndReportFieldIds,
+): Promise<AtPocketRecordRow[]> {
+  const csv = workEndReportFieldsCsv(ids);
+  const readAuth = { apiKey: apiKeyForWorkEndReportPocket() };
+  const pageCap = workEndReportMaxPages();
+  const all: AtPocketRecordRow[] = [];
+
+  for (let page = 1; page <= pageCap; page++) {
+    const res = await fetchRecordsList(
+      appId,
+      { page: String(page), fields: csv },
+      readAuth,
+      { operation: "work-end:一覧", appEnv: "WORK_END_REPORT_APP_ID" },
+    );
+    const recs = res.records ?? [];
+    all.push(...recs);
+    if (recs.length < 100) break;
+  }
+
+  return all;
+}
+
+function matchTodayReport(
+  rows: AtPocketRecordRow[],
+  staffName: string,
+  ids: WorkEndReportFieldIds,
+  today: string,
+): AtPocketRecordRow | null {
+  const target = nfkcName(staffName);
+
+  for (const row of rows) {
+    const recObj = row.record ?? {};
+    const name = readFieldText(recObj, ids.reporter);
+    if (!name || nfkcName(name) !== target) continue;
+    if (!recordAppliesToToday(recObj as Record<string, unknown>, ids, today)) {
+      continue;
+    }
+    return row;
+  }
+
+  return null;
+}
+
+async function resolveWorkEndReportAccess(staffName: string): Promise<{
+  eligible: boolean;
+  department: string | null;
+  ineligibleMessage?: string;
+}> {
+  const department = await lookupStaffDepartmentByStaffName(staffName);
+  const eligible = isWorkEndReportEligibleDepartment(department);
+  return {
+    eligible,
+    department,
+    ...(!eligible
+      ? { ineligibleMessage: workEndReportIneligibleMessage(department) }
+      : {}),
+  };
+}
+
+export async function getWorkEndReportStatusForLineUser(
+  lineUserId: string,
+): Promise<WorkEndReportStatus> {
+  const today = todayYmdJst();
+  const staffName = await resolveBoundStaffNameForLineUser(lineUserId);
+  if (!staffName) {
+    return {
+      configured: true,
+      needsStaffBind: true,
+      reportDate: today,
+      canReport: false,
+    };
+  }
+
+  const loaded = await loadWorkEndReportFieldIds();
+  if (!loaded.ok) {
+    return {
+      configured: false,
+      configError: loaded.error,
+      staffName,
+      reportDate: today,
+      canReport: false,
+    };
+  }
+
+  const access = await resolveWorkEndReportAccess(staffName);
+  if (!access.eligible) {
+    return {
+      configured: true,
+      staffName,
+      reportDate: today,
+      canReport: false,
+      eligible: false,
+      department: access.department,
+      ineligibleMessage: access.ineligibleMessage,
+    };
+  }
+
+  const { appId, ids } = loaded;
+  let existing: AtPocketRecordRow | null = null;
+
+  try {
+    const rows = await fetchTodayReportRows(appId, ids);
+    existing = matchTodayReport(rows, staffName, ids, today);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      configured: true,
+      configError: `稼働終了報告の取得に失敗しました: ${msg}`,
+      staffName,
+      reportDate: today,
+      canReport: false,
+    };
+  }
+
+  const recObj = (existing?.record ?? {}) as Record<string, unknown>;
+  const existingReport = existing ? snapshotFromRecord(recObj, ids) : null;
+
+  return {
+    configured: true,
+    staffName,
+    reportDate: today,
+    reportedAt: existing ? today : null,
+    recordId: existing ? atPocketRecordIdFromRow(existing) : null,
+    canReport: !existing,
+    eligible: true,
+    department: access.department,
+    existingReport,
+  };
+}
+
+export async function submitWorkEndReportForLineUser(
+  lineUserId: string,
+  input: WorkEndReportFormValues,
+): Promise<
+  | { ok: true; status: WorkEndReportStatus }
+  | { ok: false; status: number; error: string; needsStaffBind?: boolean }
+> {
+  const today = todayYmdJst();
+  const staffName = await resolveBoundStaffNameForLineUser(lineUserId);
+  if (!staffName) {
     return {
       ok: false,
       status: 403,
@@ -146,212 +325,86 @@ async function loadStaffRowForLineUser(lineUserId: string): Promise<
     };
   }
 
-  for (const row of rows) {
-    const id =
-      row.recordId != null ? String(row.recordId) : String(row.uniqueId ?? "");
-    if (id !== bound.id) continue;
-    const rec = row.record;
-    if (!rec || typeof rec !== "object") break;
-    return {
-      ok: true,
-      staffName: bound.name,
-      staffRecordId: id,
-      record: rec as Record<string, unknown>,
-    };
-  }
-
-  return {
-    ok: false,
-    status: 404,
-    error: "スタッフ名簿のレコードが見つかりませんでした",
-  };
-}
-
-async function buildAvailabilityFields(
-  record: Record<string, unknown>,
-): Promise<
-  | { ok: true; fields: WorkEndAvailabilityField[]; activeLabel: string }
-  | { ok: false; error: string }
-> {
-  const activeLabel = staffGeneralAvailabilityActiveLabel();
-  const fields: WorkEndAvailabilityField[] = [];
-
-  const generalCfg = await resolveStaffGeneralAvailabilityConfig();
-  if (generalCfg.ok) {
-    const currentValue = readAvailabilityValue(record, generalCfg.cfg.fieldId);
-    fields.push({
-      key: "general",
-      label: "稼働状況",
-      fieldId: generalCfg.cfg.fieldId,
-      currentValue,
-      isActive: staffConstructionAvailabilityIsActive(currentValue, activeLabel),
-    });
-  }
-
-  const apClCfg = await resolveStaffApClConfig();
-  if (apClCfg.ok) {
-    const apValue = readAvailabilityValue(
-      record,
-      apClCfg.cfg.apAvailabilityFieldId,
-    );
-    fields.push({
-      key: "ap",
-      label: "AP稼働状況",
-      fieldId: apClCfg.cfg.apAvailabilityFieldId,
-      currentValue: apValue,
-      isActive: staffConstructionAvailabilityIsActive(
-        apValue,
-        apClCfg.cfg.activeLabel,
-      ),
-    });
-
-    const clValue = readAvailabilityValue(
-      record,
-      apClCfg.cfg.clAvailabilityFieldId,
-    );
-    fields.push({
-      key: "cl",
-      label: "CL稼働状況",
-      fieldId: apClCfg.cfg.clAvailabilityFieldId,
-      currentValue: clValue,
-      isActive: staffConstructionAvailabilityIsActive(
-        clValue,
-        apClCfg.cfg.activeLabel,
-      ),
-    });
-  }
-
-  const constructionFieldId = await resolveConstructionAvailabilityFieldId();
-  if (constructionFieldId) {
-    const constructionValue = readAvailabilityValue(record, constructionFieldId);
-    const constructionActive = constructionActiveLabel();
-    fields.push({
-      key: "construction",
-      label: "工事対応稼働状況",
-      fieldId: constructionFieldId,
-      currentValue: constructionValue,
-      isActive: staffConstructionAvailabilityIsActive(
-        constructionValue,
-        constructionActive,
-      ),
-    });
-  }
-
-  if (fields.length === 0) {
+  const access = await resolveWorkEndReportAccess(staffName);
+  if (!access.eligible) {
     return {
       ok: false,
+      status: 403,
       error:
-        "スタッフ名簿に稼働状況列が見つかりません。STAFF_AVAILABILITY_FIELD_ID 等の環境変数を確認してください。",
+        access.ineligibleMessage ??
+        workEndReportIneligibleMessage(access.department),
     };
   }
 
-  return { ok: true, fields, activeLabel };
-}
-
-export async function getWorkEndReportStatusForLineUser(
-  lineUserId: string,
-): Promise<WorkEndReportStatus> {
-  const inactiveLabel = workEndInactiveLabel();
-
-  const staffName = await resolveBoundStaffNameForLineUser(lineUserId);
-  if (!staffName) {
-    return {
-      configured: true,
-      needsStaffBind: true,
-      activeLabel: staffGeneralAvailabilityActiveLabel(),
-      inactiveLabel,
-      fields: [],
-      canReport: false,
-    };
+  const apoActivityOptionsList = apoActivityOptions();
+  const apoActivity = input.apoActivity?.trim() ?? "";
+  if (!apoActivity) {
+    return { ok: false, status: 400, error: "アポ活動実施を選択してください" };
   }
-
-  const loaded = await loadStaffRowForLineUser(lineUserId);
-  if (!loaded.ok) {
-    return {
-      configured: loaded.status !== 503,
-      configError: loaded.error,
-      needsStaffBind: loaded.needsStaffBind,
-      activeLabel: staffGeneralAvailabilityActiveLabel(),
-      inactiveLabel,
-      fields: [],
-      canReport: false,
-    };
-  }
-
-  const built = await buildAvailabilityFields(loaded.record);
-  if (!built.ok) {
-    return {
-      configured: false,
-      configError: built.error,
-      staffName: loaded.staffName,
-      activeLabel: staffGeneralAvailabilityActiveLabel(),
-      inactiveLabel,
-      fields: [],
-      canReport: false,
-    };
-  }
-
-  const canReport = built.fields.some((f) => f.isActive);
-
-  return {
-    configured: true,
-    staffName: loaded.staffName,
-    activeLabel: built.activeLabel,
-    inactiveLabel,
-    fields: built.fields,
-    canReport,
-  };
-}
-
-export async function submitWorkEndReportForLineUser(
-  lineUserId: string,
-): Promise<
-  | { ok: true; status: WorkEndReportStatus }
-  | { ok: false; status: number; error: string; needsStaffBind?: boolean }
-> {
-  const inactiveLabel = workEndInactiveLabel();
-  const loaded = await loadStaffRowForLineUser(lineUserId);
-  if (!loaded.ok) {
+  if (!apoActivityOptionsList.includes(apoActivity)) {
     return {
       ok: false,
-      status: loaded.status,
-      error: loaded.error,
-      needsStaffBind: loaded.needsStaffBind,
+      status: 400,
+      error: `アポ活動実施は「実施」または「未実施」を選んでください`,
     };
   }
 
-  const built = await buildAvailabilityFields(loaded.record);
-  if (!built.ok) {
-    return { ok: false, status: 503, error: built.error };
+  const apoActivityRequired = isWorkEndApoActivityImplemented(apoActivity);
+
+  const workArea = input.workArea?.trim() ?? "";
+  if (apoActivityRequired && !workArea) {
+    return { ok: false, status: 400, error: "稼働エリアを入力してください" };
   }
 
-  const activeFields = built.fields.filter((f) => f.isActive);
-  if (activeFields.length === 0) {
+  const pinpon = parseNonNegativeCount(
+    "ピンポン数",
+    input.pinponCount,
+    apoActivityRequired,
+  );
+  if (!pinpon.ok) return { ok: false, status: 400, error: pinpon.error };
+  const meeting = parseNonNegativeCount(
+    "面談数",
+    input.meetingCount,
+    apoActivityRequired,
+  );
+  if (!meeting.ok) return { ok: false, status: 400, error: meeting.error };
+  const apo = parseNonNegativeCount(
+    "アポ獲得数",
+    input.apoCount,
+    apoActivityRequired,
+  );
+  if (!apo.ok) return { ok: false, status: 400, error: apo.error };
+
+  const loaded = await loadWorkEndReportFieldIds();
+  if (!loaded.ok) {
+    return { ok: false, status: loaded.status, error: loaded.error };
+  }
+
+  const { appId, ids } = loaded;
+
+  const rows = await fetchTodayReportRows(appId, ids);
+  const existing = matchTodayReport(rows, staffName, ids, today);
+  if (existing) {
     return {
       ok: false,
       status: 409,
-      error: `すでに稼働終了済みです（${inactiveLabel}）`,
+      error: "本日はすでに稼働終了報告済みです",
     };
   }
 
-  const staffAppId = process.env.STAFF_APP_ID?.trim();
-  if (!staffAppId) {
-    return { ok: false, status: 503, error: "STAFF_APP_ID が未設定です" };
-  }
+  const payload: Record<string, string | number> = {
+    [ids.reporter!]: staffName,
+    [ids.reportDate!]: today,
+    [ids.apoActivity!]: apoActivity,
+  };
+  if (pinpon.value != null) payload[ids.pinponCount!] = pinpon.value;
+  if (meeting.value != null) payload[ids.meetingCount!] = meeting.value;
+  if (apo.value != null) payload[ids.apoCount!] = apo.value;
+  if (workArea) payload[ids.workArea!] = workArea;
 
-  const patch: Record<string, string> = {};
-  for (const field of activeFields) {
-    patch[field.fieldId] = inactiveLabel;
-  }
+  const writeAuth = { apiKey: apiKeyForWorkEndReportWrite() };
+  await createRecord(appId, payload, writeAuth);
 
-  await updateRecord(staffAppId, loaded.staffRecordId, patch, {
-    apiKey: apiKeyForStaffWrite(),
-  });
-
-  invalidateStaffRosterCache(true);
-  invalidateApClStaffPickerCache();
-
-  const updatedLabels = activeFields.map((f) => f.label);
   const status = await getWorkEndReportStatusForLineUser(lineUserId);
 
   return {
@@ -359,7 +412,8 @@ export async function submitWorkEndReportForLineUser(
     status: {
       ...status,
       reported: true,
-      updatedFields: updatedLabels,
+      reportedAt: today,
+      canReport: false,
     },
   };
 }

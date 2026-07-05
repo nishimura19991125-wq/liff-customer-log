@@ -21,6 +21,7 @@ import {
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
+import { isWorkEndReportEligibleDepartment } from "@/lib/work-end-report-eligibility";
 
 type ContinueShortcut = {
   recordId: string;
@@ -174,6 +175,11 @@ export default function HomeHubPage() {
     !account.boundStaffName &&
     !account.loading &&
     account.staff.length > 0;
+  const showWorkEndReportMenu =
+    !needsStaffBind &&
+    !account.loading &&
+    Boolean(account.boundStaffName) &&
+    isWorkEndReportEligibleDepartment(account.boundStaffDepartment);
 
   useEffect(() => {
     if (!LIFF_ID) return;
@@ -393,7 +399,9 @@ export default function HomeHubPage() {
                   社内共通
                 </p>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  営業ダッシュボード・勤怠管理・稼働終了報告・コミュニケーションブリッジを表示します。
+                  営業ダッシュボード・勤怠管理
+                  {showWorkEndReportMenu ? "・稼働終了報告" : ""}
+                  ・コミュニケーションブリッジを表示します。
                 </p>
               </div>
               <span
@@ -426,14 +434,16 @@ export default function HomeHubPage() {
                   iconTone="blue"
                   disabled={needsStaffBind}
                 />
-                <LiffMenuCard
-                  href="/work-end-report"
-                  title="稼働終了報告"
-                  description="本日の稼働を終了し、スタッフ名簿の稼働状況を非稼働に更新します。"
-                  icon={<WorkEndReportGlyph />}
-                  iconTone="blue"
-                  disabled={needsStaffBind}
-                />
+                {showWorkEndReportMenu ? (
+                  <LiffMenuCard
+                    href="/work-end-report"
+                    title="稼働終了報告"
+                    description="DC事業部・工務店アライアンス事業部向け。@pocket に本日分を登録します。"
+                    icon={<WorkEndReportGlyph />}
+                    iconTone="blue"
+                    disabled={needsStaffBind}
+                  />
+                ) : null}
                 <LiffMenuCard
                   href="/communication-bridge"
                   title="コミュニケーションブリッジ"

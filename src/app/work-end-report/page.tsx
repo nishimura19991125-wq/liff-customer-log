@@ -25,34 +25,35 @@ import {
   liffAuthedJsonFetch,
 } from "@/lib/liff-swr";
 import type { WorkEndReportStatus } from "@/lib/work-end-report-types";
+import {
+  WORK_END_REPORT_APO_ACTIVITY_OPTIONS,
+  isWorkEndApoActivityImplemented,
+} from "@/lib/work-end-report-types";
+import { isWorkEndReportEligibleDepartment } from "@/lib/work-end-report-eligibility";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
-function WorkEndGlyph() {
-  return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <circle
-        cx="12"
-        cy="12"
-        r="9"
-        stroke="currentColor"
-        strokeWidth="1.6"
-      />
-      <path
-        d="M9 9l6 6M15 9l-6 6"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
+const inputClass =
+  "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[14px] text-slate-900 shadow-sm disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white";
 
-function statusBadgeClass(isActive: boolean): string {
-  return isActive
-    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
-    : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300";
-}
+const readOnlyClass =
+  "w-full rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 text-[14px] text-slate-700 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-200";
+
+type FormState = {
+  pinponCount: string;
+  meetingCount: string;
+  apoCount: string;
+  apoActivity: string;
+  workArea: string;
+};
+
+const emptyForm = (): FormState => ({
+  pinponCount: "",
+  meetingCount: "",
+  apoCount: "",
+  apoActivity: "",
+  workArea: "",
+});
 
 export default function WorkEndReportPage() {
   const [phase, setPhase] = useState<
@@ -64,6 +65,7 @@ export default function WorkEndReportPage() {
   const [idToken, setIdToken] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [form, setForm] = useState<FormState>(emptyForm);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -98,11 +100,15 @@ export default function WorkEndReportPage() {
     setFeedback(null);
     try {
       await mutateStatus(
-        () => liffAuthedJsonFetch<WorkEndReportStatus>("/api/work-end-report", idToken),
+        () =>
+          liffAuthedJsonFetch<WorkEndReportStatus>(
+            "/api/work-end-report",
+            idToken,
+          ),
         { revalidate: false },
       );
     } catch {
-      setFeedback("稼働状況の取得に失敗しました");
+      setFeedback("報告状況の取得に失敗しました");
     }
   }, [idToken, canUseReport, mutateStatus]);
 
@@ -151,6 +157,7 @@ export default function WorkEndReportPage() {
           Authorization: `Bearer ${idToken}`,
           "Content-Type": "application/json",
         },
+        body: JSON.stringify(form),
       });
       const data = (await res.json()) as WorkEndReportStatus & {
         error?: string;
@@ -169,12 +176,7 @@ export default function WorkEndReportPage() {
         return;
       }
       await mutateStatus(data, { revalidate: false });
-      const updated = data.updatedFields?.join("、");
-      setFeedback(
-        updated
-          ? `稼働終了を報告しました（${updated} → ${data.inactiveLabel}）`
-          : "稼働終了を報告しました",
-      );
+      setFeedback("稼働終了を報告しました");
     } catch {
       setFeedback("稼働終了報告に失敗しました");
     } finally {
@@ -212,18 +214,29 @@ export default function WorkEndReportPage() {
 
   if (phase === "session-expired") {
     return (
-      <LiffSessionExpiredPanel footer={<LiffGhostLink href="/">トップへ</LiffGhostLink>} />
+      <LiffSessionExpiredPanel
+        footer={<LiffGhostLink href="/">トップへ</LiffGhostLink>}
+      />
     );
   }
 
   const showSetupRequired = status?.configured === false;
+  const showIneligible =
+    status?.configured !== false &&
+    status?.eligible === false &&
+    !status?.needsStaffBind;
+  const alreadyReported = Boolean(!status?.canReport && status?.existingReport);
+  const existing = status?.existingReport;
+  const apoActivityRequired = isWorkEndApoActivityImplemented(form.apoActivity);
+  const detailFieldsDisabled =
+    submitting || needsStaffBind || !apoActivityRequired;
 
   return (
     <LiffScreen>
       <main className="liff-page-main mx-auto w-full max-w-lg flex-1 py-6">
         <LiffPageHeader
           title="稼働終了報告"
-          subtitle="本日の稼働を終了し、名簿の稼働状況を更新します"
+          subtitle="@pocket の稼働終了報告アプリに本日分を登録します"
           action={
             <div className="flex shrink-0 items-center gap-2">
               <ThemeToggle />
@@ -247,67 +260,254 @@ export default function WorkEndReportPage() {
         />
 
         {loading ? (
-          <LiffLoadingBlock message="稼働状況を確認しています" />
+          <LiffLoadingBlock message="報告状況を確認しています" />
         ) : showSetupRequired ? (
           <div className="mt-6">
             <LiffCard>
               <div className="px-5 py-6">
-              <p className="text-[15px] leading-relaxed text-slate-700 dark:text-slate-200">
-                {status?.configError ??
-                  "スタッフ名簿の稼働状況列が設定されていません。"}
-              </p>
-              <p className="mt-3 text-[13px] text-slate-500 dark:text-slate-400">
-                <span className="font-mono">STAFF_APP_ID</span> と稼働状況列の
-                環境変数を確認してください。
-              </p>
-            </div>
-          </LiffCard>
+                <p className="text-[15px] leading-relaxed text-slate-700 dark:text-slate-200">
+                  {status?.configError ??
+                    "稼働終了報告アプリが設定されていません。"}
+                </p>
+                <p className="mt-3 text-[13px] text-slate-500 dark:text-slate-400">
+                  <span className="font-mono">WORK_END_REPORT_APP_ID</span> と{" "}
+                  <span className="font-mono">
+                    WORK_END_REPORT_ATPOCKET_API_KEY
+                  </span>{" "}
+                  系の環境変数を確認してください。
+                </p>
+              </div>
+            </LiffCard>
+          </div>
+        ) : showIneligible ? (
+          <div className="mt-6">
+            <LiffCard>
+              <div className="px-5 py-6">
+                <p className="text-[15px] leading-relaxed text-slate-700 dark:text-slate-200">
+                  {status?.ineligibleMessage ??
+                    "この機能は DC事業部・工務店アライアンス事業部の社員のみ利用できます。"}
+                </p>
+                {status?.department ? (
+                  <p className="mt-3 text-[13px] text-slate-500 dark:text-slate-400">
+                    名簿の部署: {status.department}
+                  </p>
+                ) : null}
+              </div>
+            </LiffCard>
           </div>
         ) : (
           <div className="mt-6 flex flex-col gap-4">
-            <LiffCard>
-              <div className="flex items-start gap-4 px-5 py-5">
-                <span className="flex size-[3.25rem] shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100/70 text-blue-500 dark:from-blue-950/80 dark:to-blue-900/50 dark:text-blue-400">
-                  <WorkEndGlyph />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[1.05rem] font-bold text-slate-800 dark:text-slate-100">
-                    {status?.staffName ?? account.boundStaffName ?? "—"}
-                  </p>
-                  <p className="mt-1 text-[13px] text-slate-500 dark:text-slate-400">
-                    「{status?.activeLabel ?? "稼働"}」の項目を「
-                    {status?.inactiveLabel ?? "非稼働"}」に更新します
-                  </p>
-                </div>
-              </div>
-            </LiffCard>
-
-            {status?.fields?.length ? (
+            {alreadyReported ? (
               <LiffCard>
-                <div className="px-5 py-4">
-                  <p className="text-[13px] font-semibold text-slate-600 dark:text-slate-300">
-                    現在の稼働状況
+                <div className="px-5 py-5">
+                  <p className="text-[15px] font-semibold text-emerald-700 dark:text-emerald-400">
+                    本日は報告済みです
                   </p>
-                  <ul className="mt-3 flex flex-col gap-2">
-                    {status.fields.map((field) => (
-                      <li
-                        key={field.key}
-                        className="flex items-center justify-between rounded-xl border border-slate-100 px-3 py-2.5 dark:border-slate-800"
-                      >
-                        <span className="text-[14px] text-slate-700 dark:text-slate-200">
-                          {field.label}
-                        </span>
-                        <span
-                          className={`rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${statusBadgeClass(field.isActive)}`}
-                        >
-                          {field.currentValue || "—"}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                  <dl className="mt-4 grid grid-cols-2 gap-3 text-[14px]">
+                    <div>
+                      <dt className="text-slate-500 dark:text-slate-400">
+                        ピンポン数
+                      </dt>
+                      <dd className="font-medium text-slate-800 dark:text-slate-100">
+                        {existing?.pinponCount ?? "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-500 dark:text-slate-400">
+                        面談数
+                      </dt>
+                      <dd className="font-medium text-slate-800 dark:text-slate-100">
+                        {existing?.meetingCount ?? "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-500 dark:text-slate-400">
+                        アポ獲得数
+                      </dt>
+                      <dd className="font-medium text-slate-800 dark:text-slate-100">
+                        {existing?.apoCount ?? "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-500 dark:text-slate-400">
+                        アポ活動実施
+                      </dt>
+                      <dd className="font-medium text-slate-800 dark:text-slate-100">
+                        {existing?.apoActivity ?? "—"}
+                      </dd>
+                    </div>
+                    <div className="col-span-2">
+                      <dt className="text-slate-500 dark:text-slate-400">
+                        稼働エリア
+                      </dt>
+                      <dd className="font-medium text-slate-800 dark:text-slate-100">
+                        {existing?.workArea ?? "—"}
+                      </dd>
+                    </div>
+                  </dl>
                 </div>
               </LiffCard>
-            ) : null}
+            ) : (
+              <LiffCard>
+                <div className="flex flex-col gap-4 px-5 py-5">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-200">
+                      報告者
+                    </span>
+                    <input
+                      type="text"
+                      className={readOnlyClass}
+                      value={status?.staffName ?? account.boundStaffName ?? ""}
+                      readOnly
+                      aria-readonly
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-200">
+                      報告日
+                    </span>
+                    <input
+                      type="text"
+                      className={readOnlyClass}
+                      value={status?.reportDate ?? ""}
+                      readOnly
+                      aria-readonly
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-200">
+                      アポ活動実施
+                      <span className="ml-0.5 text-red-500">*</span>
+                    </span>
+                    <select
+                      className={inputClass}
+                      value={form.apoActivity}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setForm((prev) => ({
+                          ...prev,
+                          apoActivity: next,
+                          ...(isWorkEndApoActivityImplemented(next)
+                            ? {}
+                            : {
+                                pinponCount: "",
+                                meetingCount: "",
+                                apoCount: "",
+                                workArea: "",
+                              }),
+                        }));
+                      }}
+                      disabled={submitting || needsStaffBind}
+                    >
+                      <option value="">選択してください</option>
+                      {WORK_END_REPORT_APO_ACTIVITY_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-200">
+                      ピンポン数
+                      {apoActivityRequired ? (
+                        <span className="ml-0.5 text-red-500">*</span>
+                      ) : null}
+                    </span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      step={1}
+                      className={inputClass}
+                      value={form.pinponCount}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          pinponCount: e.target.value,
+                        }))
+                      }
+                      disabled={detailFieldsDisabled}
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-200">
+                      面談数
+                      {apoActivityRequired ? (
+                        <span className="ml-0.5 text-red-500">*</span>
+                      ) : null}
+                    </span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      step={1}
+                      className={inputClass}
+                      value={form.meetingCount}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          meetingCount: e.target.value,
+                        }))
+                      }
+                      disabled={detailFieldsDisabled}
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-200">
+                      アポ獲得数
+                      {apoActivityRequired ? (
+                        <span className="ml-0.5 text-red-500">*</span>
+                      ) : null}
+                    </span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      step={1}
+                      className={inputClass}
+                      value={form.apoCount}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          apoCount: e.target.value,
+                        }))
+                      }
+                      disabled={detailFieldsDisabled}
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-[13px] font-medium text-slate-700 dark:text-slate-200">
+                      稼働エリア
+                      {apoActivityRequired ? (
+                        <span className="ml-0.5 text-red-500">*</span>
+                      ) : null}
+                    </span>
+                    <input
+                      type="text"
+                      className={inputClass}
+                      value={form.workArea}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          workArea: e.target.value,
+                        }))
+                      }
+                      placeholder={
+                        apoActivityRequired ? "例: 奈良・大阪北部" : "実施時のみ入力"
+                      }
+                      disabled={detailFieldsDisabled}
+                    />
+                  </label>
+                </div>
+              </LiffCard>
+            )}
 
             {feedback ? (
               <p
@@ -321,21 +521,25 @@ export default function WorkEndReportPage() {
               </p>
             ) : null}
 
-            <LiffPrimaryButton
-              disabled={
-                needsStaffBind ||
-                submitting ||
-                !status?.canReport ||
-                Boolean(feedback?.includes("報告しました"))
-              }
-              onClick={() => void handleSubmit()}
-            >
-              {submitting
-                ? "報告中…"
-                : status?.canReport
-                  ? "稼働終了を報告する"
-                  : "稼働終了済みです"}
-            </LiffPrimaryButton>
+            {!alreadyReported ? (
+              <LiffPrimaryButton
+                disabled={
+                  needsStaffBind ||
+                  submitting ||
+                  !status?.canReport ||
+                  !form.apoActivity ||
+                  Boolean(feedback?.includes("報告しました")) ||
+                  (apoActivityRequired &&
+                    (!form.pinponCount.trim() ||
+                      !form.meetingCount.trim() ||
+                      !form.apoCount.trim() ||
+                      !form.workArea.trim()))
+                }
+                onClick={() => void handleSubmit()}
+              >
+                {submitting ? "報告中…" : "稼働終了を報告する"}
+              </LiffPrimaryButton>
+            ) : null}
 
             <button
               type="button"

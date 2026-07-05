@@ -1,9 +1,28 @@
-export type WorkEndAvailabilityField = {
-  key: "general" | "ap" | "cl" | "construction";
-  label: string;
-  fieldId: string;
-  currentValue: string;
-  isActive: boolean;
+export const WORK_END_REPORT_APO_ACTIVITY_OPTIONS = [
+  "実施",
+  "未実施",
+] as const;
+
+export const WORK_END_REPORT_APO_ACTIVITY_IMPLEMENTED = "実施";
+
+export function isWorkEndApoActivityImplemented(apoActivity: string): boolean {
+  return apoActivity.trim() === WORK_END_REPORT_APO_ACTIVITY_IMPLEMENTED;
+}
+
+export type WorkEndReportFormValues = {
+  pinponCount: string;
+  meetingCount: string;
+  apoCount: string;
+  apoActivity: string;
+  workArea: string;
+};
+
+export type WorkEndReportRecordSnapshot = {
+  pinponCount?: string;
+  meetingCount?: string;
+  apoCount?: string;
+  apoActivity?: string;
+  workArea?: string;
 };
 
 export type WorkEndReportStatus = {
@@ -11,10 +30,16 @@ export type WorkEndReportStatus = {
   configError?: string;
   needsStaffBind?: boolean;
   staffName?: string;
-  activeLabel: string;
-  inactiveLabel: string;
-  fields: WorkEndAvailabilityField[];
+  /** 本日（JST） */
+  reportDate?: string;
+  /** 本日分の報告が既にあるとき */
+  reportedAt?: string | null;
+  recordId?: string | null;
   canReport: boolean;
   reported?: boolean;
-  updatedFields?: string[];
+  /** DC事業部・工務店アライアンス事業部のみ true */
+  eligible?: boolean;
+  department?: string | null;
+  ineligibleMessage?: string;
+  existingReport?: WorkEndReportRecordSnapshot | null;
 };

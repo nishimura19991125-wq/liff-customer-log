@@ -30,8 +30,27 @@ export async function POST(request: Request) {
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
 
+  let body: {
+    pinponCount?: string;
+    meetingCount?: string;
+    apoCount?: string;
+    apoActivity?: string;
+    workArea?: string;
+  };
   try {
-    const result = await submitWorkEndReportForLineUser(auth.lineUserId);
+    body = (await request.json()) as typeof body;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  try {
+    const result = await submitWorkEndReportForLineUser(auth.lineUserId, {
+      pinponCount: body.pinponCount ?? "",
+      meetingCount: body.meetingCount ?? "",
+      apoCount: body.apoCount ?? "",
+      apoActivity: body.apoActivity ?? "",
+      workArea: body.workArea ?? "",
+    });
     if (!result.ok) {
       return NextResponse.json(
         {

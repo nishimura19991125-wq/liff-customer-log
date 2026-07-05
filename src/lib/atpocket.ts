@@ -327,6 +327,21 @@ export function apiKeyForAttendanceWrite(): string {
   return requireAppApiKey("ATTENDANCE", 2, []);
 }
 
+/** 稼働終了報告・読取①（一覧など） */
+export function apiKeyForWorkEndReportPocket(): string {
+  return requireAppApiKey("WORK_END_REPORT", 0, []);
+}
+
+/** 稼働終了報告・読取②（fields など） */
+export function apiKeyForWorkEndReportPocket1(): string {
+  return requireAppApiKey("WORK_END_REPORT", 1, []);
+}
+
+/** 稼働終了報告・更新③（新規登録） */
+export function apiKeyForWorkEndReportWrite(): string {
+  return requireAppApiKey("WORK_END_REPORT", 2, []);
+}
+
 /** コミュニケーションブリッジカレンダー・読取①（fields） */
 export function apiKeyForCommunicationBridgeCalendarPocket(): string {
   const key = firstEnvApiKey(
@@ -556,6 +571,7 @@ function dynamicApiKeyEnvCandidates(): Array<[string, string | undefined]> {
     "CALENDAR",
     "CALENDAR_REPORT",
     "ATTENDANCE",
+    "WORK_END_REPORT",
     "TRADING_PARTNER",
     "PRODUCT_CATALOG",
   ];
@@ -761,6 +777,10 @@ function apiKeyForCreateRecord(appsId: string): string {
   const bridgeCalAppId = process.env.COMMUNICATION_BRIDGE_CALENDAR_APP_ID?.trim();
   if (bridgeCalAppId && appsId === bridgeCalAppId) {
     return apiKeyForCommunicationBridgeCalendarWrite();
+  }
+  const workEndAppId = process.env.WORK_END_REPORT_APP_ID?.trim();
+  if (workEndAppId && appsId === workEndAppId) {
+    return apiKeyForWorkEndReportWrite();
   }
   throw new Error(
     `@pocket レコード登録用の API キーが未設定です（appsId=${appsId}）。該当アプリ用の *_ATPOCKET_API_KEY を設定してください`,
