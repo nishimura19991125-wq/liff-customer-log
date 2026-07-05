@@ -37,9 +37,6 @@ export type WorkEndReportStatus = {
   recordId?: string | null;
   canReport: boolean;
   reported?: boolean;
-  /** DC事業部・工務店アライアンス事業部のみ true */
-  eligible?: boolean;
   department?: string | null;
-  ineligibleMessage?: string;
   existingReport?: WorkEndReportRecordSnapshot | null;
 };

@@ -15,10 +15,6 @@ import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 import { lookupStaffDepartmentByStaffName } from "@/lib/staff-department-lookup";
 import { resolveWorkEndReportAppId } from "@/lib/work-end-report-config";
 import {
-  isWorkEndReportEligibleDepartment,
-  workEndReportIneligibleMessage,
-} from "@/lib/work-end-report-eligibility";
-import {
   resolveWorkEndReportFieldIds,
   workEndReportFieldsConfigured,
   workEndReportFieldsCsv,
@@ -220,20 +216,10 @@ function matchTodayReport(
   return null;
 }
 
-async function resolveWorkEndReportAccess(staffName: string): Promise<{
-  eligible: boolean;
-  department: string | null;
-  ineligibleMessage?: string;
-}> {
-  const department = await lookupStaffDepartmentByStaffName(staffName);
-  const eligible = isWorkEndReportEligibleDepartment(department);
-  return {
-    eligible,
-    department,
-    ...(!eligible
-      ? { ineligibleMessage: workEndReportIneligibleMessage(department) }
-      : {}),
-  };
+async function lookupStaffDepartment(
+  staffName: string,
+): Promise<string | null> {
+  return lookupStaffDepartmentByStaffName(staffName);
 }
 
 export async function getWorkEndReportStatusForLineUser(
@@ -261,18 +247,7 @@ export async function getWorkEndReportStatusForLineUser(
     };
   }
 
-  const access = await resolveWorkEndReportAccess(staffName);
-  if (!access.eligible) {
-    return {
-      configured: true,
-      staffName,
-      reportDate: today,
-      canReport: false,
-      eligible: false,
-      department: access.department,
-      ineligibleMessage: access.ineligibleMessage,
-    };
-  }
+  const department = await lookupStaffDepartment(staffName);
 
   const { appId, ids } = loaded;
   let existing: AtPocketRecordRow | null = null;
@@ -301,8 +276,7 @@ export async function getWorkEndReportStatusForLineUser(
     reportedAt: existing ? today : null,
     recordId: existing ? atPocketRecordIdFromRow(existing) : null,
     canReport: !existing,
-    eligible: true,
-    department: access.department,
+    department,
     existingReport,
   };
 }
@@ -322,17 +296,6 @@ export async function submitWorkEndReportForLineUser(
       status: 403,
       error: "担当者の紐付けが必要です",
       needsStaffBind: true,
-    };
-  }
-
-  const access = await resolveWorkEndReportAccess(staffName);
-  if (!access.eligible) {
-    return {
-      ok: false,
-      status: 403,
-      error:
-        access.ineligibleMessage ??
-        workEndReportIneligibleMessage(access.department),
     };
   }
 

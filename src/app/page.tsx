@@ -429,7 +429,7 @@ export default function HomeHubPage() {
                 <LiffMenuCard
                   href="/work-end-report"
                   title="稼働終了報告"
-                  description="DC事業部・工務店アライアンス事業部向け。@pocket に本日分を登録します。"
+                  description="@pocket に本日分の稼働終了報告を登録します。"
                   icon={<WorkEndReportGlyph />}
                   iconTone="blue"
                   disabled={needsStaffBind}

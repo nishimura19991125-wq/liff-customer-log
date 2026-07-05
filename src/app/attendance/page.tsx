@@ -3,8 +3,19 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { useLiffSwr } from "@/hooks/use-liff-swr";
-import { liffAuthedJsonFetch, LIFF_SWR_ATTENDANCE_OPTIONS, isLiffSwrSessionExpired } from "@/lib/liff-swr";
-
+import {
+  liffAuthedJsonFetch,
+  LIFF_SWR_ATTENDANCE_OPTIONS,
+  LIFF_SWR_DEFAULT_OPTIONS,
+  isLiffSwrSessionExpired,
+} from "@/lib/liff-swr";
+import type { WorkEndReportStatus } from "@/lib/work-end-report-types";
+import {
+  emptyWorkEndReportForm,
+  isWorkEndReportFormSubmittable,
+  submitWorkEndReport,
+} from "@/lib/work-end-report-form-client";
+import { WorkEndReportFormFields } from "@/components/work-end-report-form-fields";
 import {
   LiffAccountBar,
   LiffCard,
@@ -22,6 +33,7 @@ import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { requestMeetingScheduleAlertCheckAfterPunch } from "@/lib/meeting-schedule-pending-set-created-client";
+import { isWorkEndReportEligibleDepartment } from "@/lib/work-end-report-eligibility";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -92,8 +104,11 @@ export default function AttendancePage() {
     LIFF_ID ? null : "NEXT_PUBLIC_LIFF_ID が設定されていません",
   );
   const [idToken, setIdToken] = useState<string | null>(null);
-  const [punching, setPunching] = useState<"in" | "out" | null>(null);
+  const [punching, setPunching] = useState<"in" | "out" | "out-report" | null>(
+    null,
+  );
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [workEndForm, setWorkEndForm] = useState(emptyWorkEndReportForm);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -121,7 +136,24 @@ export default function AttendancePage() {
     LIFF_SWR_ATTENDANCE_OPTIONS,
   );
 
+  const {
+    data: workEndStatus,
+    mutate: mutateWorkEndStatus,
+  } = useLiffSwr<WorkEndReportStatus>(
+    canUseAttendance ? "/api/work-end-report" : null,
+    idToken,
+    LIFF_SWR_DEFAULT_OPTIONS,
+  );
+
   const loading = statusLoading && !status;
+  const showWorkEndOnClockOut = Boolean(
+    status?.canClockOut &&
+      workEndStatus?.configured !== false &&
+      workEndStatus?.canReport &&
+      isWorkEndReportEligibleDepartment(
+        account.boundStaffDepartment ?? workEndStatus?.department,
+      ),
+  );
 
   const refreshStatus = useCallback(async () => {
     if (!idToken || !canUseAttendance) return;
@@ -214,6 +246,58 @@ export default function AttendancePage() {
       setFeedback(kind === "in" ? "出勤を打刻しました" : "退勤を打刻しました");
     } catch {
       setFeedback("打刻に失敗しました");
+    } finally {
+      setPunching(null);
+    }
+  }
+
+  async function handlePunchOutWithReport() {
+    if (!idToken || punching || !isWorkEndReportFormSubmittable(workEndForm)) {
+      return;
+    }
+    setPunching("out-report");
+    setFeedback(null);
+    try {
+      const res = await fetch("/api/attendance/punch", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ kind: "out" }),
+      });
+      const data = (await res.json()) as AttendanceStatus & { ok?: boolean };
+      if (res.status === 401 && isLineSessionExpiredPayload(data)) {
+        setPhase("session-expired");
+        return;
+      }
+      if (!res.ok) {
+        setFeedback(
+          data.error ??
+            (res.status === 429
+              ? "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。"
+              : "退勤打刻に失敗しました"),
+        );
+        return;
+      }
+      await mutateStatus(data, { revalidate: false });
+
+      const reportResult = await submitWorkEndReport(idToken, workEndForm);
+      if (!reportResult.ok) {
+        if (reportResult.sessionExpired) {
+          setPhase("session-expired");
+          return;
+        }
+        setFeedback(
+          `退勤は打刻済みです。稼働終了報告のみ失敗しました: ${reportResult.error}`,
+        );
+        return;
+      }
+      await mutateWorkEndStatus(reportResult.status, { revalidate: false });
+      setWorkEndForm(emptyWorkEndReportForm());
+      setFeedback("退勤打刻と稼働終了報告が完了しました");
+    } catch {
+      setFeedback("退勤打刻または稼働終了報告に失敗しました");
     } finally {
       setPunching(null);
     }
@@ -454,6 +538,35 @@ export default function AttendancePage() {
               </button>
             </p>
 
+            {showWorkEndOnClockOut ? (
+              <LiffCard>
+                <div className="border-b border-slate-100 px-5 py-3 dark:border-slate-700">
+                  <h2 className="text-[14px] font-bold text-slate-800 dark:text-slate-100">
+                    稼働終了報告
+                  </h2>
+                  <p className="mt-1 text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
+                    退勤打刻とあわせて本日分を報告できます（
+                    {workEndStatus?.reportDate ?? workDate}）
+                  </p>
+                </div>
+                <div className="px-5 py-5">
+                  <WorkEndReportFormFields
+                    compact
+                    form={workEndForm}
+                    onChange={setWorkEndForm}
+                    staffName={
+                      workEndStatus?.staffName ??
+                      status?.staffName ??
+                      account.boundStaffName ??
+                      ""
+                    }
+                    reportDate={workEndStatus?.reportDate ?? workDate}
+                    disabled={punching !== null}
+                  />
+                </div>
+              </LiffCard>
+            ) : null}
+
             <div className="mt-4 flex flex-col gap-3">
               <LiffPrimaryButton
                 type="button"
@@ -466,18 +579,49 @@ export default function AttendancePage() {
               >
                 {punching === "in" ? "打刻中…" : "出勤打刻"}
               </LiffPrimaryButton>
-              <button
-                type="button"
-                disabled={
-                  loading ||
-                  punching !== null ||
-                  !status?.canClockOut
-                }
-                onClick={() => void handlePunch("out")}
-                className="inline-flex w-full items-center justify-center rounded-2xl border-2 border-slate-300 bg-white py-3.5 text-[15px] font-semibold text-slate-800 shadow-sm transition active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-              >
-                {punching === "out" ? "打刻中…" : "退勤打刻"}
-              </button>
+              {showWorkEndOnClockOut ? (
+                <>
+                  <LiffPrimaryButton
+                    type="button"
+                    disabled={
+                      loading ||
+                      punching !== null ||
+                      !status?.canClockOut ||
+                      !isWorkEndReportFormSubmittable(workEndForm)
+                    }
+                    onClick={() => void handlePunchOutWithReport()}
+                  >
+                    {punching === "out-report"
+                      ? "打刻・報告中…"
+                      : "退勤打刻して稼働終了を報告"}
+                  </LiffPrimaryButton>
+                  <button
+                    type="button"
+                    disabled={
+                      loading ||
+                      punching !== null ||
+                      !status?.canClockOut
+                    }
+                    onClick={() => void handlePunch("out")}
+                    className="inline-flex w-full items-center justify-center rounded-2xl border-2 border-slate-300 bg-white py-3.5 text-[15px] font-semibold text-slate-800 shadow-sm transition active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                  >
+                    {punching === "out" ? "打刻中…" : "退勤打刻のみ"}
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  disabled={
+                    loading ||
+                    punching !== null ||
+                    !status?.canClockOut
+                  }
+                  onClick={() => void handlePunch("out")}
+                  className="inline-flex w-full items-center justify-center rounded-2xl border-2 border-slate-300 bg-white py-3.5 text-[15px] font-semibold text-slate-800 shadow-sm transition active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                >
+                  {punching === "out" ? "打刻中…" : "退勤打刻"}
+                </button>
+              )}
             </div>
 
             {status?.clockIn && status?.clockOut ? (
