@@ -18,6 +18,7 @@ import {
   resolveWorkEndReportFieldIds,
   workEndReportFieldsConfigured,
   workEndReportFieldsCsv,
+  workEndReportMissingFieldEnvKeys,
   type WorkEndReportFieldIds,
 } from "@/lib/work-end-report-fields";
 import {
@@ -123,6 +124,30 @@ function parseNonNegativeCount(
   return { ok: true, value: String(Number(trimmed)) };
 }
 
+function workEndCountSuffix(kind: "pinpon" | "meeting" | "apo"): string {
+  const envKey =
+    kind === "pinpon"
+      ? "WORK_END_REPORT_PINPON_COUNT_SUFFIX"
+      : kind === "meeting"
+        ? "WORK_END_REPORT_MEETING_COUNT_SUFFIX"
+        : "WORK_END_REPORT_APO_COUNT_SUFFIX";
+  const defaults: Record<typeof kind, string> = {
+    pinpon: "件",
+    meeting: "面談",
+    apo: "アポ",
+  };
+  const configured = process.env[envKey]?.trim();
+  return configured !== undefined ? configured : defaults[kind];
+}
+
+function formatWorkEndCountForPocket(
+  kind: "pinpon" | "meeting" | "apo",
+  numericValue: string,
+): string {
+  const suffix = workEndCountSuffix(kind);
+  return suffix ? `${numericValue}${suffix}` : numericValue;
+}
+
 async function loadWorkEndReportFieldIds(): Promise<
   | { ok: true; appId: string; ids: WorkEndReportFieldIds }
   | { ok: false; status: number; error: string }
@@ -154,11 +179,14 @@ async function loadWorkEndReportFieldIds(): Promise<
 
   const ids = resolveWorkEndReportFieldIds(appFields);
   if (!workEndReportFieldsConfigured(ids)) {
+    const missing = workEndReportMissingFieldEnvKeys(ids);
     return {
       ok: false,
       status: 503,
       error:
-        "稼働終了報告アプリに必要な列（報告者・ピンポン数・面談数・アポ獲得数・アポ活動実施・報告日・稼働エリア）が見つかりません。WORK_END_REPORT_*_FIELD_ID で uniqueId を指定してください。",
+        missing.length > 0
+          ? `稼働終了報告の列が未設定です。Netlify の環境変数を設定してください: ${missing.join(", ")}`
+          : "稼働終了報告アプリの列設定を確認してください。",
     };
   }
 
@@ -360,9 +388,18 @@ export async function submitWorkEndReportForLineUser(
     [ids.reportDate!]: today,
     [ids.apoActivity!]: apoActivity,
   };
-  if (pinpon.value != null) payload[ids.pinponCount!] = pinpon.value;
-  if (meeting.value != null) payload[ids.meetingCount!] = meeting.value;
-  if (apo.value != null) payload[ids.apoCount!] = apo.value;
+  if (pinpon.value != null) {
+    payload[ids.pinponCount!] = formatWorkEndCountForPocket("pinpon", pinpon.value);
+  }
+  if (meeting.value != null) {
+    payload[ids.meetingCount!] = formatWorkEndCountForPocket(
+      "meeting",
+      meeting.value,
+    );
+  }
+  if (apo.value != null) {
+    payload[ids.apoCount!] = formatWorkEndCountForPocket("apo", apo.value);
+  }
   if (workArea) payload[ids.workArea!] = workArea;
 
   const writeAuth = { apiKey: apiKeyForWorkEndReportWrite() };
