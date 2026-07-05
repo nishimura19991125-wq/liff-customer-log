@@ -42,6 +42,7 @@ import {
   parsePtDigitsOnly,
 } from "@/lib/customer-info-form/pt-transfer";
 import { inferPanelComboFromValues } from "@/lib/customer-info-form/panel-combo";
+import { filterKatakanaInput } from "@/lib/customer-info-form/katakana-input";
 import {
   applyCustomerInfoHiddenDefaultsToValues,
   isCustomerInfoFormFieldVisible,
@@ -174,6 +175,7 @@ function NameSplitFieldGroup({
   givenInvalid,
   onFamilyChange,
   onGivenChange,
+  katakanaOnly = false,
 }: {
   groupLabel: string;
   familyLabel: string;
@@ -187,12 +189,15 @@ function NameSplitFieldGroup({
   disabled: boolean;
   familyInvalid: boolean;
   givenInvalid: boolean;
+  katakanaOnly?: boolean;
   onFamilyChange: (next: string) => void;
   onGivenChange: (next: string) => void;
 }) {
   const invalidClass = FIELD_INVALID_CLASS;
   const familyClass = familyInvalid ? `${INPUT_CLASS} ${invalidClass}` : INPUT_CLASS;
   const givenClass = givenInvalid ? `${INPUT_CLASS} ${invalidClass}` : INPUT_CLASS;
+  const applyInputFilter = (next: string) =>
+    katakanaOnly ? filterKatakanaInput(next) : next;
 
   return (
     <div className="grid grid-cols-2 gap-3">
@@ -207,7 +212,7 @@ function NameSplitFieldGroup({
           disabled={disabled}
           autoComplete={familyAutoComplete}
           placeholder={familyPlaceholder}
-          onChange={(e) => onFamilyChange(e.target.value)}
+          onChange={(e) => onFamilyChange(applyInputFilter(e.target.value))}
         />
       </label>
       <label className="block">
@@ -221,7 +226,7 @@ function NameSplitFieldGroup({
           disabled={disabled}
           autoComplete={givenAutoComplete}
           placeholder={givenPlaceholder}
-          onChange={(e) => onGivenChange(e.target.value)}
+          onChange={(e) => onGivenChange(applyInputFilter(e.target.value))}
         />
       </label>
     </div>
@@ -942,6 +947,7 @@ export function CustomerInfoEditForm({
               disabled={saving}
               familyInvalid={invalid}
               givenInvalid={givenInvalid}
+              katakanaOnly={field.key === "furiganaFamily"}
               onFamilyChange={(next) => handleFieldChange(field.key, next)}
               onGivenChange={(next) =>
                 handleFieldChange(nameSplitGroup.givenKey, next)

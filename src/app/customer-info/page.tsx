@@ -47,6 +47,7 @@ import {
   splitJapaneseFullName,
   syncCombinedNameFields,
 } from "@/lib/customer-info-form/name-parts";
+import { filterKatakanaInput } from "@/lib/customer-info-form/katakana-input";
 import { inferPanelComboFromValues } from "@/lib/customer-info-form/panel-combo";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 import {
@@ -689,11 +690,14 @@ function CustomerInfoPageContent() {
                             givenAutoComplete={isFuri ? undefined : "given-name"}
                             disabled={saving}
                             required
+                            katakanaOnly={isFuri}
                             onFamilyChange={(nextFamily) =>
                               setEditValues((prev) => ({
                                 ...prev,
                                 [field.fieldId]: joinJapaneseFullName(
-                                  nextFamily,
+                                  isFuri
+                                    ? filterKatakanaInput(nextFamily)
+                                    : nextFamily,
                                   given,
                                 ),
                               }))
@@ -703,7 +707,9 @@ function CustomerInfoPageContent() {
                                 ...prev,
                                 [field.fieldId]: joinJapaneseFullName(
                                   family,
-                                  nextGiven,
+                                  isFuri
+                                    ? filterKatakanaInput(nextGiven)
+                                    : nextGiven,
                                 ),
                               }))
                             }

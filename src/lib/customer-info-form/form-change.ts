@@ -10,6 +10,7 @@ import {
 import {
   syncCombinedNameFields,
 } from "@/lib/customer-info-form/name-parts";
+import { filterKatakanaInput } from "@/lib/customer-info-form/katakana-input";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 
 function norm(v: string | undefined): string {
@@ -68,7 +69,11 @@ export function applyCustomerInfoFormChange(
     key === "furiganaFamily" ||
     key === "furiganaGiven"
   ) {
-    return syncCombinedNameFields(next);
+    const nextValue =
+      key === "furiganaFamily" || key === "furiganaGiven"
+        ? filterKatakanaInput(value)
+        : value;
+    return syncCombinedNameFields({ ...prev, [key]: nextValue });
   }
   return next;
 }
