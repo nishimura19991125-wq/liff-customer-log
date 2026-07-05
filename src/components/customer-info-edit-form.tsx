@@ -42,7 +42,7 @@ import {
   parsePtDigitsOnly,
 } from "@/lib/customer-info-form/pt-transfer";
 import { inferPanelComboFromValues } from "@/lib/customer-info-form/panel-combo";
-import { filterKatakanaInput } from "@/lib/customer-info-form/katakana-input";
+import { KatakanaAwareTextInput } from "@/components/katakana-aware-text-input";
 import {
   applyCustomerInfoHiddenDefaultsToValues,
   isCustomerInfoFormFieldVisible,
@@ -196,8 +196,6 @@ function NameSplitFieldGroup({
   const invalidClass = FIELD_INVALID_CLASS;
   const familyClass = familyInvalid ? `${INPUT_CLASS} ${invalidClass}` : INPUT_CLASS;
   const givenClass = givenInvalid ? `${INPUT_CLASS} ${invalidClass}` : INPUT_CLASS;
-  const applyInputFilter = (next: string) =>
-    katakanaOnly ? filterKatakanaInput(next) : next;
 
   return (
     <div className="grid grid-cols-2 gap-3">
@@ -205,28 +203,30 @@ function NameSplitFieldGroup({
         <span className="mb-1 block text-[11px] font-medium text-slate-600">
           {familyLabel}
         </span>
-        <input
+        <KatakanaAwareTextInput
           type="text"
           className={familyClass}
           value={familyValue}
           disabled={disabled}
           autoComplete={familyAutoComplete}
           placeholder={familyPlaceholder}
-          onChange={(e) => onFamilyChange(applyInputFilter(e.target.value))}
+          katakanaOnly={katakanaOnly}
+          onChange={onFamilyChange}
         />
       </label>
       <label className="block">
         <span className="mb-1 block text-[11px] font-medium text-slate-600">
           {givenLabel}
         </span>
-        <input
+        <KatakanaAwareTextInput
           type="text"
           className={givenClass}
           value={givenValue}
           disabled={disabled}
           autoComplete={givenAutoComplete}
           placeholder={givenPlaceholder}
-          onChange={(e) => onGivenChange(applyInputFilter(e.target.value))}
+          katakanaOnly={katakanaOnly}
+          onChange={onGivenChange}
         />
       </label>
     </div>

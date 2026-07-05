@@ -1,6 +1,6 @@
 "use client";
 
-import { filterKatakanaInput } from "@/lib/customer-info-form/katakana-input";
+import { KatakanaAwareTextInput } from "@/components/katakana-aware-text-input";
 
 const INPUT_CLASS =
   "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200";
@@ -55,9 +55,6 @@ export function CustomerNameSplitInput({
     ? `${inputClassName} ${FIELD_INVALID_CLASS}`
     : inputClassName;
 
-  const applyInputFilter = (next: string) =>
-    katakanaOnly ? filterKatakanaInput(next) : next;
-
   return (
     <div>
       <span className="mb-1 block text-[12px] font-semibold text-slate-700">
@@ -71,28 +68,30 @@ export function CustomerNameSplitInput({
           <span className="mb-1 block text-[11px] font-medium text-slate-600">
             {familyLabel}
           </span>
-          <input
+          <KatakanaAwareTextInput
             type="text"
             className={familyClass}
             value={familyValue}
             disabled={disabled}
             autoComplete={familyAutoComplete}
             placeholder={familyPlaceholder}
-            onChange={(e) => onFamilyChange(applyInputFilter(e.target.value))}
+            katakanaOnly={katakanaOnly}
+            onChange={onFamilyChange}
           />
         </label>
         <label className="block">
           <span className="mb-1 block text-[11px] font-medium text-slate-600">
             {givenLabel}
           </span>
-          <input
+          <KatakanaAwareTextInput
             type="text"
             className={givenClass}
             value={givenValue}
             disabled={disabled}
             autoComplete={givenAutoComplete}
             placeholder={givenPlaceholder}
-            onChange={(e) => onGivenChange(applyInputFilter(e.target.value))}
+            katakanaOnly={katakanaOnly}
+            onChange={onGivenChange}
           />
         </label>
       </div>

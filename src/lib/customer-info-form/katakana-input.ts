@@ -1,7 +1,20 @@
-/** カタカナ入力（全角カナ・長音・中黒）。半角カナは NFKC で全角に寄せる。 */
+/** カタカナ入力（全角カナ・長音・中黒）。半角カナは NFKC、ひらがなは確定時にカタカナへ。 */
 export function filterKatakanaInput(raw: string): string {
   const normalized = raw.normalize("NFKC");
-  return [...normalized].filter(isAllowedKatakanaChar).join("");
+  const katakana = hiraganaToKatakana(normalized);
+  return [...katakana].filter(isAllowedKatakanaChar).join("");
+}
+
+function hiraganaToKatakana(str: string): string {
+  return [...str]
+    .map((ch) => {
+      const cp = ch.codePointAt(0);
+      if (cp != null && cp >= 0x3041 && cp <= 0x3096) {
+        return String.fromCodePoint(cp + 0x60);
+      }
+      return ch;
+    })
+    .join("");
 }
 
 function isAllowedKatakanaChar(ch: string): boolean {
