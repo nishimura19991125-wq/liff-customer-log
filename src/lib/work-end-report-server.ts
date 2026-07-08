@@ -7,6 +7,7 @@ import {
   createRecord,
   fetchAppFields,
   fetchRecordsList,
+  type AtPocketFieldRow,
   type AtPocketRecordRow,
 } from "@/lib/atpocket";
 import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
@@ -15,6 +16,7 @@ import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 import { lookupStaffDepartmentByStaffName } from "@/lib/staff-department-lookup";
 import { resolveWorkEndReportAppId } from "@/lib/work-end-report-config";
 import {
+  applyWorkEndReportAutoNumberOnCreate,
   resolveWorkEndReportFieldIds,
   workEndReportFieldsConfigured,
   workEndReportFieldsCsv,
@@ -35,6 +37,7 @@ const FIELDS_CACHE_MS = 3_600_000;
 let fieldsCache: {
   appId: string;
   ids: WorkEndReportFieldIds;
+  appFields: AtPocketFieldRow[];
   expiresAt: number;
 } | null = null;
 
@@ -124,8 +127,22 @@ function parseNonNegativeCount(
   return { ok: true, value: String(Number(trimmed)) };
 }
 
+function formatWorkEndReportCreateError(msg: string): string {
+  if (
+    (msg.includes("案件番号") || msg.includes("管理番号")) &&
+    msg.includes("取込設定")
+  ) {
+    return [
+      "案件番号（管理番号）は登録時に自動採番されますが、@pocket の取込設定が未完了のため登録できません。",
+      "アプリ管理 → 稼働終了報告 → 取込 で「案件番号」を取込項目に追加して保存してください。",
+      "（番号の手入力は不要です）",
+    ].join("");
+  }
+  return msg;
+}
+
 async function loadWorkEndReportFieldIds(): Promise<
-  | { ok: true; appId: string; ids: WorkEndReportFieldIds }
+  | { ok: true; appId: string; ids: WorkEndReportFieldIds; appFields: AtPocketFieldRow[] }
   | { ok: false; status: number; error: string }
 > {
   const resolved = await resolveWorkEndReportAppId();
@@ -144,7 +161,7 @@ async function loadWorkEndReportFieldIds(): Promise<
     fieldsCache.appId === appId &&
     fieldsCache.expiresAt > Date.now()
   ) {
-    return { ok: true, appId, ids: fieldsCache.ids };
+    return { ok: true, appId, ids: fieldsCache.ids, appFields: fieldsCache.appFields };
   }
 
   const appFields = await fetchAppFields(
@@ -169,10 +186,11 @@ async function loadWorkEndReportFieldIds(): Promise<
   fieldsCache = {
     appId,
     ids,
+    appFields,
     expiresAt: Date.now() + FIELDS_CACHE_MS,
   };
 
-  return { ok: true, appId, ids };
+  return { ok: true, appId, ids, appFields };
 }
 
 async function fetchTodayReportRows(
@@ -253,7 +271,7 @@ export async function getWorkEndReportStatusForLineUser(
 
   const department = await lookupStaffDepartment(staffName);
 
-  const { appId, ids } = loaded;
+  const { appId, ids, appFields } = loaded;
   let existing: AtPocketRecordRow | null = null;
 
   try {
@@ -347,7 +365,7 @@ export async function submitWorkEndReportForLineUser(
     return { ok: false, status: loaded.status, error: loaded.error };
   }
 
-  const { appId, ids } = loaded;
+  const { appId, ids, appFields } = loaded;
 
   const rows = await fetchTodayReportRows(appId, ids);
   const existing = matchTodayReport(rows, staffName, ids, today);
@@ -376,7 +394,17 @@ export async function submitWorkEndReportForLineUser(
   if (workArea) payload[ids.workArea!] = workArea;
 
   const writeAuth = { apiKey: apiKeyForWorkEndReportWrite() };
-  await createRecord(appId, payload, writeAuth);
+  const createPayload = applyWorkEndReportAutoNumberOnCreate(payload, appFields);
+  try {
+    await createRecord(appId, createPayload, writeAuth);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      ok: false,
+      status: 502,
+      error: formatWorkEndReportCreateError(msg),
+    };
+  }
 
   const status = await getWorkEndReportStatusForLineUser(lineUserId);
 

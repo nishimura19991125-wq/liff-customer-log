@@ -165,3 +165,94 @@ export function workEndReportFieldsCsv(ids: WorkEndReportFieldIds): string {
   ].filter((id): id is string => Boolean(id?.trim()));
   return [...new Set(parts)].join(",");
 }
+
+const WORK_END_REPORT_IMPORT_KEY_CAPTIONS = [
+  "案件番号",
+  "管理番号",
+] as const;
+
+function fieldCaptionLooksLikeWorkEndImportKey(caption: string): boolean {
+  const cap = nfkc(caption).toLowerCase();
+  return (
+    cap === "案件番号" ||
+    cap === "管理番号" ||
+    cap.includes("案件番号") ||
+    cap.includes("管理番号")
+  );
+}
+
+/** 稼働終了報告の取込キー（案件番号 / 管理番号・自動採番） */
+export function resolveWorkEndReportImportKeyFieldId(
+  appFields: AtPocketFieldRow[],
+): string | null {
+  const env = process.env.WORK_END_REPORT_IMPORT_KEY_FIELD_ID?.trim();
+  if (env) {
+    const id = resolveConfiguredFieldToSchemaUniqueId(env, appFields);
+    if (id) return id;
+  }
+  for (const cap of WORK_END_REPORT_IMPORT_KEY_CAPTIONS) {
+    const id = pickFieldUniqueIdByExactCaption(appFields, cap);
+    if (id) return id;
+  }
+  for (const f of appFields) {
+    const id = f.uniqueId?.trim();
+    if (!id) continue;
+    if (fieldCaptionLooksLikeWorkEndImportKey(f.caption ?? "")) return id;
+    const ft = (f.fieldType ?? "").trim();
+    if (f.primaryKey && ft === "AutoNumber") return id;
+  }
+  return null;
+}
+
+const POCKET_SYSTEM_FIELD_TYPES_ON_CREATE = new Set([
+  "RecordId",
+  "UniqueId",
+  "QRCode",
+  "Delete",
+  "CreatedAt",
+  "CreatorCode",
+  "CreatorName",
+  "UpdatedAt",
+  "UpdaterCode",
+  "UpdaterName",
+  "AccessUrl",
+  "AccessEditUrl",
+]);
+
+/**
+ * 新規登録用ペイロード調整。
+ * 自動採番（キー項目）は @pocket 公式どおり空文字 "" を送って採番させる。
+ */
+export function applyWorkEndReportAutoNumberOnCreate(
+  payload: Record<string, unknown>,
+  appFields: AtPocketFieldRow[],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...payload };
+
+  for (const [k, v] of Object.entries(out)) {
+    const field = appFields.find((f) => f.uniqueId?.trim() === k.trim());
+    const ft = (field?.fieldType ?? "").trim();
+    if (ft && POCKET_SYSTEM_FIELD_TYPES_ON_CREATE.has(ft)) {
+      delete out[k];
+    }
+  }
+
+  const importKeyId = resolveWorkEndReportImportKeyFieldId(appFields);
+  if (importKeyId) {
+    out[importKeyId] = "";
+  }
+
+  for (const f of appFields) {
+    const id = f.uniqueId?.trim();
+    if (!id) continue;
+    const ft = (f.fieldType ?? "").trim();
+    if (
+      ft === "AutoNumber" &&
+      (f.primaryKey || fieldCaptionLooksLikeWorkEndImportKey(f.caption ?? ""))
+    ) {
+      out[id] = "";
+    }
+  }
+
+  return out;
+}
