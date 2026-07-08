@@ -268,6 +268,7 @@ function CaseConstructionHandlerEditor({
 }) {
   const recordId = item.recordId?.trim() ?? "";
   const currentName = item.constructionHandlerName?.trim() ?? "";
+  const [editing, setEditing] = useState(false);
   const [selectedHandlerStaffId, setSelectedHandlerStaffId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
@@ -276,6 +277,8 @@ function CaseConstructionHandlerEditor({
   } | null>(null);
 
   useEffect(() => {
+    setEditing(false);
+    setFeedback(null);
     setSelectedHandlerStaffId(matchHandlerStaffRecordId(currentName, handlerRows));
   }, [currentName, handlerRows, recordId]);
 
@@ -284,6 +287,18 @@ function CaseConstructionHandlerEditor({
     Boolean(selectedHandlerStaffId.trim()) &&
     matchHandlerStaffRecordId(currentName, handlerRows) !==
       selectedHandlerStaffId.trim();
+
+  function openEditor() {
+    setSelectedHandlerStaffId(matchHandlerStaffRecordId(currentName, handlerRows));
+    setFeedback(null);
+    setEditing(true);
+  }
+
+  function cancelEditor() {
+    setSelectedHandlerStaffId(matchHandlerStaffRecordId(currentName, handlerRows));
+    setFeedback(null);
+    setEditing(false);
+  }
 
   async function handleSave() {
     if (!recordId || !selectedHandlerStaffId.trim()) return;
@@ -334,6 +349,7 @@ function CaseConstructionHandlerEditor({
         kind: "ok",
         text: `工事対応者を更新しました（${data.constructionHandlerName ?? "保存済"}）`,
       });
+      setEditing(false);
     } catch (e) {
       setFeedback({
         kind: "err",
@@ -346,37 +362,63 @@ function CaseConstructionHandlerEditor({
 
   return (
     <div className="border-t border-slate-100 px-4 pb-4 pt-3">
-      <p className="text-[13px] font-semibold text-slate-800">
-        工事対応:{" "}
-        <span className="font-bold text-slate-900">
-          {currentName || "未設定"}
-        </span>
-      </p>
-      <ConstructionHandlerStaffSelect
-        submitting={submitting}
-        canSubmit={canSubmit}
-        handlerListStatus={handlerListStatus}
-        handlerListError={handlerListError}
-        handlerRows={handlerRows}
-        selectedHandlerStaffId={selectedHandlerStaffId}
-        setSelectedHandlerStaffId={setSelectedHandlerStaffId}
-        required={false}
-      />
-      <button
-        type="button"
-        className="mt-3 w-full rounded-xl bg-emerald-600 py-2.5 text-[13px] font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
-        disabled={
-          submitting ||
-          !canSubmit ||
-          handlerListStatus !== "ok" ||
-          handlerRows.length === 0 ||
-          !selectedHandlerStaffId.trim() ||
-          !handlerChanged
-        }
-        onClick={() => void handleSave()}
-      >
-        {submitting ? "保存中…" : "工事対応者を保存"}
-      </button>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[13px] font-semibold text-slate-800">
+          工事対応:{" "}
+          <span className="font-bold text-slate-900">
+            {currentName || "未設定"}
+          </span>
+        </p>
+        {!editing ? (
+          <button
+            type="button"
+            className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-700 shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99] disabled:opacity-50"
+            disabled={!canSubmit || submitting}
+            onClick={openEditor}
+          >
+            編集
+          </button>
+        ) : null}
+      </div>
+      {editing ? (
+        <>
+          <ConstructionHandlerStaffSelect
+            submitting={submitting}
+            canSubmit={canSubmit}
+            handlerListStatus={handlerListStatus}
+            handlerListError={handlerListError}
+            handlerRows={handlerRows}
+            selectedHandlerStaffId={selectedHandlerStaffId}
+            setSelectedHandlerStaffId={setSelectedHandlerStaffId}
+            required={false}
+          />
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className="rounded-xl border border-slate-200 bg-white py-2.5 text-[13px] font-bold text-slate-700 shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99] disabled:opacity-50"
+              disabled={submitting}
+              onClick={cancelEditor}
+            >
+              キャンセル
+            </button>
+            <button
+              type="button"
+              className="rounded-xl bg-emerald-600 py-2.5 text-[13px] font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+              disabled={
+                submitting ||
+                !canSubmit ||
+                handlerListStatus !== "ok" ||
+                handlerRows.length === 0 ||
+                !selectedHandlerStaffId.trim() ||
+                !handlerChanged
+              }
+              onClick={() => void handleSave()}
+            >
+              {submitting ? "保存中…" : "保存"}
+            </button>
+          </div>
+        </>
+      ) : null}
       {feedback ? (
         <p
           className={`mt-2 text-[12px] font-semibold leading-relaxed ${
