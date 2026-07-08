@@ -97,6 +97,7 @@ function ConstructionHandlerStaffSelect({
   handlerRows,
   selectedHandlerStaffId,
   setSelectedHandlerStaffId,
+  required = true,
 }: {
   submitting: boolean;
   canSubmit: boolean;
@@ -105,6 +106,7 @@ function ConstructionHandlerStaffSelect({
   handlerRows: HandlerStaffRow[];
   selectedHandlerStaffId: string;
   setSelectedHandlerStaffId: (id: string) => void;
+  required?: boolean;
 }) {
   const selectDisabled =
     submitting ||
@@ -127,7 +129,11 @@ function ConstructionHandlerStaffSelect({
     <label className="mt-3 block">
       <span className="mb-1 block text-[12px] font-bold text-slate-700">
         工事対応者{" "}
-        <span className="font-semibold text-red-600">必須</span>
+        {required ? (
+          <span className="font-semibold text-red-600">必須</span>
+        ) : (
+          <span className="font-medium text-slate-500">（変更）</span>
+        )}
         <span className="block text-[11px] font-normal leading-snug text-slate-500">
           スタッフ名簿のうち、工事対応稼働状況が「稼働」の社員のみ表示します。
         </span>
@@ -189,6 +195,199 @@ async function idTokenForConstructionSubmit(
     return fresh;
   }
   return current;
+}
+
+function matchHandlerStaffRecordId(
+  handlerName: string | undefined,
+  rows: HandlerStaffRow[],
+): string {
+  const target = handlerName?.normalize("NFKC").trim();
+  if (!target) return "";
+  const matches = rows.filter(
+    (row) => row.name.normalize("NFKC").trim() === target,
+  );
+  return matches.length === 1 ? matches[0]!.staffRecordId : "";
+}
+
+async function fetchConstructionHandlerStaffRows(
+  idToken: string,
+): Promise<
+  | { ok: true; rows: HandlerStaffRow[] }
+  | { ok: false; error: string; sessionExpired?: boolean }
+> {
+  try {
+    const res = await fetch("/api/calendar/construction-handler-staff", {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    const data = (await res.json()) as {
+      handlers?: unknown;
+      registrants?: unknown;
+      error?: string;
+    };
+    if (isLineSessionExpiredPayload(data)) {
+      return { ok: false, error: "セッションが切れました", sessionExpired: true };
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        error:
+          typeof data.error === "string" && data.error.trim()
+            ? data.error.trim()
+            : "工事対応者リストを取得できませんでした",
+      };
+    }
+    return { ok: true, rows: parseConstructionHandlerStaffApiPayload(data) };
+  } catch (e) {
+    return {
+      ok: false,
+      error: calendarSubmitCatchMessage(e),
+    };
+  }
+}
+
+function CaseConstructionHandlerEditor({
+  item,
+  idToken,
+  viewYear,
+  viewMonth,
+  handlerListStatus,
+  handlerListError,
+  handlerRows,
+  onSaved,
+  onSessionExpired,
+}: {
+  item: CalendarMonthApiItem;
+  idToken: string | null;
+  viewYear: number;
+  viewMonth: number;
+  handlerListStatus: "idle" | "loading" | "ok" | "err";
+  handlerListError: string;
+  handlerRows: HandlerStaffRow[];
+  onSaved: (patch?: CalendarRecordMonthPatch | null) => Promise<void>;
+  onSessionExpired?: () => void;
+}) {
+  const recordId = item.recordId?.trim() ?? "";
+  const currentName = item.constructionHandlerName?.trim() ?? "";
+  const [selectedHandlerStaffId, setSelectedHandlerStaffId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<{
+    kind: "ok" | "err";
+    text: string;
+  } | null>(null);
+
+  useEffect(() => {
+    setSelectedHandlerStaffId(matchHandlerStaffRecordId(currentName, handlerRows));
+  }, [currentName, handlerRows, recordId]);
+
+  const canSubmit = Boolean(idToken && recordId);
+  const handlerChanged =
+    Boolean(selectedHandlerStaffId.trim()) &&
+    matchHandlerStaffRecordId(currentName, handlerRows) !==
+      selectedHandlerStaffId.trim();
+
+  async function handleSave() {
+    if (!recordId || !selectedHandlerStaffId.trim()) return;
+    setSubmitting(true);
+    setFeedback(null);
+    try {
+      const token = await idTokenForConstructionSubmit(idToken, onSessionExpired);
+      if (!token) return;
+      const res = await fetch("/api/calendar/update-construction-handler", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          recordId,
+          constructionHandlerStaffRecordId: selectedHandlerStaffId.trim(),
+          viewYear,
+          viewMonth,
+        }),
+      });
+      const rawBody = await res.text();
+      let data: {
+        error?: string;
+        calendarPatch?: CalendarRecordMonthPatch;
+        constructionHandlerName?: string;
+      } = {};
+      if (rawBody.trim()) {
+        try {
+          data = JSON.parse(rawBody) as typeof data;
+        } catch {
+          data = {};
+        }
+      }
+      if (!res.ok) {
+        setFeedback({
+          kind: "err",
+          text: data.error ?? "工事対応者の更新に失敗しました",
+        });
+        return;
+      }
+      if (data.calendarPatch) {
+        await onSaved(data.calendarPatch);
+      } else {
+        await onSaved(null);
+      }
+      setFeedback({
+        kind: "ok",
+        text: `工事対応者を更新しました（${data.constructionHandlerName ?? "保存済"}）`,
+      });
+    } catch (e) {
+      setFeedback({
+        kind: "err",
+        text: calendarSubmitCatchMessage(e),
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-slate-100 px-4 pb-4 pt-3">
+      <p className="text-[13px] font-semibold text-slate-800">
+        工事対応:{" "}
+        <span className="font-bold text-slate-900">
+          {currentName || "未設定"}
+        </span>
+      </p>
+      <ConstructionHandlerStaffSelect
+        submitting={submitting}
+        canSubmit={canSubmit}
+        handlerListStatus={handlerListStatus}
+        handlerListError={handlerListError}
+        handlerRows={handlerRows}
+        selectedHandlerStaffId={selectedHandlerStaffId}
+        setSelectedHandlerStaffId={setSelectedHandlerStaffId}
+        required={false}
+      />
+      <button
+        type="button"
+        className="mt-3 w-full rounded-xl bg-emerald-600 py-2.5 text-[13px] font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+        disabled={
+          submitting ||
+          !canSubmit ||
+          handlerListStatus !== "ok" ||
+          handlerRows.length === 0 ||
+          !selectedHandlerStaffId.trim() ||
+          !handlerChanged
+        }
+        onClick={() => void handleSave()}
+      >
+        {submitting ? "保存中…" : "工事対応者を保存"}
+      </button>
+      {feedback ? (
+        <p
+          className={`mt-2 text-[12px] font-semibold leading-relaxed ${
+            feedback.kind === "ok" ? "text-emerald-800" : "text-red-700"
+          }`}
+        >
+          {feedback.text}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 const WEEK_LABELS = ["日", "月", "火", "水", "木", "金", "土"] as const;
@@ -1591,6 +1790,11 @@ export function LiffCalendarMonthPage({
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
   const [newRecordOpen, setNewRecordOpen] = useState(false);
   const [idToken, setIdToken] = useState<string | null>(null);
+  const [handlerRows, setHandlerRows] = useState<HandlerStaffRow[]>([]);
+  const [handlerListStatus, setHandlerListStatus] = useState<
+    "idle" | "loading" | "ok" | "err"
+  >("idle");
+  const [handlerListError, setHandlerListError] = useState("");
 
   const calendarPath = useMemo(() => {
     if (!idToken) return null;
@@ -1611,6 +1815,44 @@ export function LiffCalendarMonthPage({
     idToken,
     LIFF_SWR_CALENDAR_OPTIONS,
   );
+
+  const handlerFromStaff = useMemo(
+    () =>
+      config.enableEmptySlotFill &&
+      (data?.emptyFillConstructionHandlerUsesStaffDirectory ??
+        data?.emptyFillConstructionRegistrantUsesStaffDirectory) === true,
+    [config.enableEmptySlotFill, data],
+  );
+
+  useEffect(() => {
+    if (!idToken || !handlerFromStaff) {
+      setHandlerRows([]);
+      setHandlerListStatus("idle");
+      setHandlerListError("");
+      return;
+    }
+    let cancelled = false;
+    setHandlerListStatus("loading");
+    setHandlerListError("");
+    void (async () => {
+      const result = await fetchConstructionHandlerStaffRows(idToken);
+      if (cancelled) return;
+      if (result.ok) {
+        setHandlerRows(result.rows);
+        setHandlerListStatus("ok");
+        return;
+      }
+      setHandlerRows([]);
+      setHandlerListStatus("err");
+      setHandlerListError(result.error);
+      if (result.sessionExpired) {
+        setPhase("session-expired");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [idToken, handlerFromStaff]);
 
   useEffect(() => {
     if (!idToken) return;
@@ -2196,6 +2438,21 @@ export function LiffCalendarMonthPage({
                                   タップして @pocket で開く →
                                 </p>
                               </button>
+                              {handlerFromStaff ? (
+                                <CaseConstructionHandlerEditor
+                                  item={item}
+                                  idToken={idToken}
+                                  viewYear={ym.year}
+                                  viewMonth={ym.month}
+                                  handlerListStatus={handlerListStatus}
+                                  handlerListError={handlerListError}
+                                  handlerRows={handlerRows}
+                                  onSaved={applyCalendarSaveToView}
+                                  onSessionExpired={() =>
+                                    setPhase("session-expired")
+                                  }
+                                />
+                              ) : null}
                               <div className="border-t border-slate-100 px-4 pb-4 pt-3">
                                 <MapNavigationButton
                                   pinpointAddress={item.pinpointAddress}

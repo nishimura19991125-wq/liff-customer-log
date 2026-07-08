@@ -20,6 +20,7 @@ import {
   resolveConstructionMapAddressFieldIds,
   type MapAddressFieldIds,
 } from "@/lib/map-address-fields";
+import { pocketTableCellToPlainString } from "@/lib/staff-construction-availability";
 
 export type { CalendarApiPayload, CalendarMonthApiItem } from "@/lib/calendar-api-types";
 
@@ -40,6 +41,7 @@ export type ConstructionFieldIds = {
   batteryCapacity: string;
   inputStatus: string;
   zankoDay: string;
+  constructionHandler: string;
 };
 
 export type ReportFieldIds = {
@@ -63,6 +65,7 @@ type CalendarEventInternal = {
   tNumberKey: string | null;
   _reportContentRaws: unknown[] | null;
   chipSpecLine2: string;
+  constructionHandlerName: string;
   pinpointAddress: string;
   normalAddress: string;
   attachments: CalendarAttachmentMeta[];
@@ -81,6 +84,7 @@ type CalendarMonthRow = {
   reportKankoComplete: boolean;
   reportPostponed: boolean;
   chipSpecLine2: string;
+  constructionHandlerName: string;
   inputStatusIsShinki: boolean;
   pinpointAddress: string;
   normalAddress: string;
@@ -340,6 +344,10 @@ export function resolveConstructionFieldIds(
     zankoDay:
       pickFieldUniqueIdByExactCaption(fields, "残工日") ||
       pickFieldUniqueId(fields, KW.zankoDay),
+    constructionHandler:
+      pickFieldUniqueIdByExactCaption(fields, "工事対応者") ||
+      pickFieldUniqueIdByExactCaption(fields, "工事登録者") ||
+      pickFieldUniqueId(fields, ["工事対応者", "工事登録者"]),
   };
 
   const envOverrides: Array<[keyof ConstructionFieldIds, string | undefined]> = [
@@ -349,6 +357,11 @@ export function resolveConstructionFieldIds(
     ["panelWork", process.env.CALENDAR_PANEL_WORK_DATE_FIELD_ID?.trim()],
     ["electricWork", process.env.CALENDAR_ELECTRIC_WORK_DATE_FIELD_ID?.trim()],
     ["appSettingsDay", process.env.CALENDAR_APP_SETTINGS_DATE_FIELD_ID?.trim()],
+    [
+      "constructionHandler",
+      process.env.CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID?.trim() ||
+        process.env.CALENDAR_EMPTY_FILL_CONSTRUCTION_REGISTRANT_FIELD_ID?.trim(),
+    ],
   ];
   for (const [key, envValue] of envOverrides) {
     if (!envValue) continue;
@@ -761,6 +774,13 @@ function recordToEvent(
     chipSpecLine2 = buildChipSpecLine2(recObj, fids) || "";
   }
 
+  let constructionHandlerName = "";
+  if (category === "list" && fids.constructionHandler) {
+    constructionHandlerName = pocketTableCellToPlainString(
+      pickRecordValueByFieldAliases(recObj, fids.constructionHandler),
+    );
+  }
+
   let zankoCalendarSegment: { date: Date; label: string } | null = null;
   if (
     category === "list" &&
@@ -805,6 +825,7 @@ function recordToEvent(
     tNumberKey,
     _reportContentRaws: null,
     chipSpecLine2,
+    constructionHandlerName,
     pinpointAddress,
     normalAddress,
     attachments,
@@ -965,6 +986,8 @@ function displayNameLine1OnChipWithReport(row: CalendarMonthRow): string {
 function displayNameLine2OnChip(row: CalendarMonthRow): string {
   const parts: string[] = [];
   if (row?.category === "list") {
+    const handler = row.constructionHandlerName?.trim();
+    if (handler) parts.push(`工事対応: ${handler}`);
     const spec =
       row.chipSpecLine2 != null && String(row.chipSpecLine2).trim() !== ""
         ? String(row.chipSpecLine2).trim()
@@ -1027,6 +1050,7 @@ function eventsForDisplayMonth(
           reportKankoComplete: rowMatchesReportKanko(ev, seg.label),
           reportPostponed: evHasReportPostponed(ev),
           chipSpecLine2: ev.chipSpecLine2 ?? "",
+          constructionHandlerName: ev.constructionHandlerName ?? "",
           inputStatusIsShinki: ev.inputStatusIsShinki === true,
           pinpointAddress: ev.pinpointAddress ?? "",
           normalAddress: ev.normalAddress ?? "",
@@ -1067,6 +1091,7 @@ function eventsForDisplayMonth(
             reportKankoComplete: rowMatchesReportKanko(ev, ""),
             reportPostponed: evHasReportPostponed(ev),
             chipSpecLine2: ev.chipSpecLine2 ?? "",
+            constructionHandlerName: ev.constructionHandlerName ?? "",
             inputStatusIsShinki: ev.inputStatusIsShinki === true,
             pinpointAddress: ev.pinpointAddress ?? "",
             normalAddress: ev.normalAddress ?? "",
@@ -1093,6 +1118,7 @@ function eventsForDisplayMonth(
           reportKankoComplete: rowMatchesReportKanko(ev, zx.label),
           reportPostponed: false,
           chipSpecLine2: ev.chipSpecLine2 ?? "",
+          constructionHandlerName: ev.constructionHandlerName ?? "",
           inputStatusIsShinki: ev.inputStatusIsShinki === true,
           pinpointAddress: ev.pinpointAddress ?? "",
           normalAddress: ev.normalAddress ?? "",
@@ -1250,6 +1276,7 @@ function rowToApiItem(row: CalendarMonthRow): CalendarMonthApiItem {
     pinpointAddress: row.pinpointAddress ?? "",
     normalAddress: row.normalAddress ?? "",
     attachments: row.attachments?.length ? row.attachments : undefined,
+    constructionHandlerName: row.constructionHandlerName?.trim() || undefined,
   };
 }
 

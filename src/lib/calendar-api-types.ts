@@ -25,6 +25,8 @@ export type CalendarMonthApiItem = {
   normalAddress: string;
   /** 添付画像（コミュニケーションブリッジカレンダー等） */
   attachments?: CalendarAttachmentMeta[];
+  /** 工事対応者（@pocket 工事アプリ） */
+  constructionHandlerName?: string;
 };
 
 /** 1件の工事レコードを表示月カレンダーに即時反映するための差分 */

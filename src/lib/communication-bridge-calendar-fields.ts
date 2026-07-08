@@ -76,6 +76,7 @@ export function toCommunicationBridgeCalendarFieldIds(
     batteryCapacity: "",
     inputStatus: "",
     zankoDay: "",
+    constructionHandler: "",
   };
 }
 
