@@ -1,22 +1,37 @@
-import type {
-  InternalEventsContent,
-  InternalEventsDayBlock,
-  InternalEventsDaySection,
-  InternalEventsScheduleStep,
+import {
+  INTERNAL_EVENTS_OUTSIDE_FRAME,
+  type InternalEventsContent,
+  type InternalEventsDayBlock,
+  type InternalEventsDaySection,
+  type InternalEventsScheduleStep,
 } from "@/lib/internal-events-sections";
 
 function isItemSectionHeading(item: string) {
   return item.startsWith("■");
 }
 
-function groupItemsByHeading(items: string[]) {
-  const groups: { heading?: string; items: string[] }[] = [];
-  let current: { heading?: string; items: string[] } | null = null;
+type ParsedItemBlock =
+  | { kind: "group"; heading: string; items: string[] }
+  | { kind: "plain"; items: string[] };
+
+function groupItemsByHeading(items: string[]): ParsedItemBlock[] {
+  const blocks: ParsedItemBlock[] = [];
+  let current: { heading: string; items: string[] } | null = null;
 
   for (const item of items) {
+    if (item === INTERNAL_EVENTS_OUTSIDE_FRAME) {
+      if (current) {
+        blocks.push({ kind: "group", ...current });
+        current = null;
+      }
+      continue;
+    }
+
     if (isItemSectionHeading(item)) {
+      if (current) {
+        blocks.push({ kind: "group", ...current });
+      }
       current = { heading: item, items: [] };
-      groups.push(current);
       continue;
     }
 
@@ -25,10 +40,19 @@ function groupItemsByHeading(items: string[]) {
       continue;
     }
 
-    groups.push({ items: [item] });
+    const last = blocks.at(-1);
+    if (last?.kind === "plain") {
+      last.items.push(item);
+    } else {
+      blocks.push({ kind: "plain", items: [item] });
+    }
   }
 
-  return groups;
+  if (current) {
+    blocks.push({ kind: "group", ...current });
+  }
+
+  return blocks;
 }
 
 function ItemBulletList({ items }: { items: string[] }) {
@@ -81,26 +105,31 @@ function DaySectionCard({ section }: { section: InternalEventsDaySection }) {
         <div
           className={`flex flex-col gap-3 ${section.title || section.notes?.length ? "mt-2.5" : ""}`}
         >
-          {groupItemsByHeading(section.items).map((group) => {
-            if (group.heading) {
+          {groupItemsByHeading(section.items).map((block) => {
+            if (block.kind === "group") {
               return (
                 <div
-                  key={group.heading}
+                  key={block.heading}
                   className="rounded-xl bg-emerald-50/90 px-3.5 py-3 ring-1 ring-emerald-100 dark:bg-emerald-950/35 dark:ring-emerald-900/60"
                 >
                   <p className="text-[15px] font-extrabold leading-snug tracking-wide text-emerald-800 dark:text-emerald-300">
-                    {group.heading}
+                    {block.heading}
                   </p>
-                  {group.items.length ? (
+                  {block.items.length ? (
                     <div className="mt-2.5 border-t border-emerald-100 pt-2.5 dark:border-emerald-900/70">
-                      <ItemBulletList items={group.items} />
+                      <ItemBulletList items={block.items} />
                     </div>
                   ) : null}
                 </div>
               );
             }
 
-            return <ItemBulletList key={group.items[0]} items={group.items} />;
+            return (
+              <ItemBulletList
+                key={block.items.join("|")}
+                items={block.items}
+              />
+            );
           })}
         </div>
       ) : null}

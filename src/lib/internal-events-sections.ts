@@ -13,6 +13,9 @@ export type InternalEventsDaySection = {
   items?: string[];
 };
 
+/** ■グループの枠外に表示する項目の区切り（表示されない） */
+export const INTERNAL_EVENTS_OUTSIDE_FRAME = "__outside_frame__";
+
 export type InternalEventsDayBlock = {
   timeRange: string;
   sections: InternalEventsDaySection[];
@@ -73,7 +76,10 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
                 "なるほど",
                 "面白い",
                 "■(聞き手　信頼関係構築)",
-                "笑顔 / 視線 / 姿勢",
+                "笑顔",
+                "視線",
+                "姿勢",
+                INTERNAL_EVENTS_OUTSIDE_FRAME,
                 "身だしなみ・服装チェック",
                 "スマイルチェック",
               ],
