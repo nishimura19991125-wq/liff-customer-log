@@ -9,6 +9,13 @@ import {
   atPocketAbsoluteUrl,
   fetchRecordById,
 } from "@/lib/atpocket";
+import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
+import {
+  formatPhoneNumberInput,
+  parsePhoneDigits,
+} from "@/lib/customer-info-form/phone-number";
+import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
+import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
 import {
   buildStaffVcard,
   parsePocketContactField,
@@ -16,19 +23,17 @@ import {
 } from "@/lib/pocket-contact-field";
 import {
   resolveStaffContactsDirectoryConfig,
+  STAFF_CONTACTS_EXCLUDED_NAMES,
 } from "@/lib/staff-contacts-directory";
-import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
-import { fetchStaffRosterRowsCached } from "@/lib/staff-roster-cache";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
 import {
-  pickRecordValueByFieldAliases,
-} from "@/lib/calendar-kojo";
-import { formatPhoneNumberInput, parsePhoneDigits } from "@/lib/customer-info-form/phone-number";
-import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
-import { STAFF_CONTACTS_EXCLUDED_NAMES } from "@/lib/staff-contacts-directory";
+  pickStaffPocketFieldValue,
+  staffPocketRecordPayload,
+} from "@/lib/staff-pocket-record";
+import { staffPhoneFieldIdConfigured } from "@/lib/staff-phone-field-config";
 
 export const dynamic = "force-dynamic";
 
@@ -105,6 +110,16 @@ function isExcludedStaffName(name: string): boolean {
   );
 }
 
+function staffContactFieldIds(phoneFieldId: string): string[] {
+  return [
+    ...new Set(
+      [phoneFieldId, staffPhoneFieldIdConfigured(), "field-4", "field_4"]
+        .map((id) => id.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
 export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
@@ -129,16 +144,15 @@ export async function GET(request: Request) {
   const staffAuth = { apiKey: apiKeyForStaffPocketReadApClList() };
 
   try {
-    const rows = await fetchStaffRosterRowsCached();
-    const row = rows.find((r) => atPocketRecordIdFromRow(r) === recordId);
-    if (!row?.record || typeof row.record !== "object") {
+    let row = await fetchRecordById(cfg.staffAppId, recordId, staffAuth);
+    if (!row) {
       return NextResponse.json(
         { error: "スタッフが見つかりませんでした" },
         { status: 404 },
       );
     }
 
-    const recObj = row.record as Record<string, unknown>;
+    const recObj = staffPocketRecordPayload(row);
     const staffName = String(
       pickRecordValueByFieldAliases(recObj, cfg.nameFieldId) ?? "",
     ).trim();
@@ -149,12 +163,14 @@ export async function GET(request: Request) {
       );
     }
 
-    const contactRaw = pickRecordValueByFieldAliases(recObj, cfg.phoneFieldId);
+    let contactRaw = pickStaffPocketFieldValue(
+      row,
+      staffContactFieldIds(cfg.phoneFieldId),
+    );
     const parsed = parsePocketContactField(contactRaw);
     const files = parseAtPocketFileField(contactRaw);
     const vcardFile =
-      files.find(isVcardFile) ??
-      (files.length === 1 ? files[0] : undefined);
+      files.find(isVcardFile) ?? (files.length === 1 ? files[0] : undefined);
 
     const downloadName = vcardFileName(staffName);
 
@@ -164,17 +180,18 @@ export async function GET(request: Request) {
 
     let phone = parsed.phone;
     if (!phone) {
-      const detail = await fetchRecordById(
+      row = await fetchRecordById(
         cfg.staffAppId,
         recordId,
         staffAuth,
-        cfg.phoneFieldId,
+        staffContactFieldIds(cfg.phoneFieldId).join(","),
       );
-      if (detail?.record && typeof detail.record === "object") {
-        const detailObj = detail.record as Record<string, unknown>;
-        phone = parsePocketContactField(
-          pickRecordValueByFieldAliases(detailObj, cfg.phoneFieldId),
-        ).phone;
+      if (row) {
+        contactRaw = pickStaffPocketFieldValue(
+          row,
+          staffContactFieldIds(cfg.phoneFieldId),
+        );
+        phone = parsePocketContactField(contactRaw).phone;
       }
     }
 

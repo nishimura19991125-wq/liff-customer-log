@@ -15,10 +15,13 @@ import {
 import { formatPhoneNumberInput } from "@/lib/customer-info-form/phone-number";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
-import { parseAtPocketFileField } from "@/lib/at-pocket-file-field";
 import { parsePocketContactField } from "@/lib/pocket-contact-field";
 import { pocketTableCellToPlainString } from "@/lib/staff-construction-availability";
 import { staffPhoneFieldIdConfigured } from "@/lib/staff-phone-field-config";
+import {
+  pickStaffPocketFieldValue,
+  staffPocketRecordPayload,
+} from "@/lib/staff-pocket-record";
 
 export type StaffContactEntry = {
   recordId: string;
@@ -157,11 +160,25 @@ export async function resolveStaffContactsDirectoryConfig(): Promise<StaffContac
       appFields,
       ["勤務場所"],
     );
-  const phoneFieldId = resolveSchemaFieldId(
-    staffPhoneFieldIdConfigured(),
-    appFields,
-    ["連絡先", "電話番号", "電話", "TEL", "tel", "携帯", "スタッフ連絡先"],
-  );
+  const phoneByCaption = pickFieldUniqueIdByCaptions(appFields, [
+    "連絡先",
+    "電話番号",
+    "電話",
+    "TEL",
+    "tel",
+    "携帯",
+    "スタッフ連絡先",
+  ]);
+  const phoneFieldId =
+    (phoneByCaption
+      ? resolveConfiguredFieldToSchemaUniqueId(phoneByCaption, appFields) ??
+        phoneByCaption
+      : null) ??
+    resolveSchemaFieldId(
+      staffPhoneFieldIdConfigured(),
+      appFields,
+      ["連絡先", "電話番号", "電話", "TEL", "tel", "携帯", "スタッフ連絡先"],
+    );
   const workplaceFieldId = resolveSchemaFieldId(
     process.env.STAFF_WORKPLACE_FIELD_ID,
     appFields,
@@ -257,19 +274,25 @@ function staffContactFieldIds(cfg: StaffContactsDirectoryConfig): string[] {
 }
 
 function readStaffContactRaw(
-  recObj: Record<string, unknown>,
+  row: AtPocketRecordRow,
   cfg: StaffContactsDirectoryConfig,
 ): unknown {
-  for (const fieldId of staffContactFieldIds(cfg)) {
-    const value = pickRecordValueByFieldAliases(recObj, fieldId);
-    if (value !== undefined && value !== null) return value;
-  }
-  for (const [key, value] of Object.entries(recObj)) {
-    if (/^field[-_]4$/i.test(key) && value !== undefined && value !== null) {
-      return value;
-    }
-  }
-  return undefined;
+  return pickStaffPocketFieldValue(row, staffContactFieldIds(cfg));
+}
+
+function staffContactsFetchFieldsCsv(cfg: StaffContactsDirectoryConfig): string {
+  return [
+    ...new Set(
+      [
+        cfg.nameFieldId,
+        cfg.departmentFieldId,
+        cfg.workplaceFieldId,
+        ...staffContactFieldIds(cfg),
+      ]
+        .map((id) => id?.trim())
+        .filter(Boolean),
+    ),
+  ].join(",");
 }
 
 async function fetchStaffContactRows(
@@ -280,10 +303,10 @@ async function fetchStaffContactRows(
     operation: "contacts:名簿一覧",
     appEnv: "STAFF_APP_ID",
   };
-  // fields を省略し全列を取得（field-4 が CSV 指定で落ちるケースを避ける）
+  const fields = staffContactsFetchFieldsCsv(cfg);
   const first = await fetchRecordsList(
     cfg.staffAppId,
-    { limit: "1000", page: "1" },
+    { limit: "1000", page: "1", fields },
     listAuths[0],
     ctx,
     { maxRetries: 0 },
@@ -291,33 +314,38 @@ async function fetchStaffContactRows(
   return first.records ?? [];
 }
 
-function shouldFetchContactDetail(contactRaw: unknown): boolean {
-  if (contactRaw === undefined || contactRaw === null) return false;
-  if (formatContactPhone(contactRaw)) return false;
-  const files = parseAtPocketFileField(contactRaw);
-  return files.some(
-    (file) =>
-      Boolean(file.externalUrl?.trim() && !file.contentBase64?.trim()) ||
-      (file.name.trim().toLowerCase().endsWith(".vcf") &&
-        !file.contentBase64?.trim()),
-  );
-}
-
 async function enrichContactFromRecordDetail(
   cfg: StaffContactsDirectoryConfig,
   recordId: string,
-  contactRaw: unknown,
 ): Promise<unknown> {
-  const parsed = parsePocketContactField(contactRaw);
-  if (parsed.phone) return contactRaw;
   const auth = staffPocketAuth();
-  const row = await fetchRecordById(cfg.staffAppId, recordId, auth);
-  if (!row?.record || typeof row.record !== "object") return contactRaw;
-  const detailRaw = readStaffContactRaw(
-    row.record as Record<string, unknown>,
-    cfg,
+  const fields = staffContactsFetchFieldsCsv(cfg);
+  const row = await fetchRecordById(cfg.staffAppId, recordId, auth, fields);
+  if (!row) return undefined;
+  return readStaffContactRaw(row, cfg);
+}
+
+async function enrichContactsInBatch(
+  cfg: StaffContactsDirectoryConfig,
+  pending: Array<{ recordId: string; contactRaw: unknown }>,
+): Promise<void> {
+  const targets = pending.filter(
+    ({ contactRaw }) =>
+      contactRaw === undefined || !formatContactPhone(contactRaw),
   );
-  return detailRaw ?? contactRaw;
+  const chunkSize = 8;
+  for (let i = 0; i < targets.length; i += chunkSize) {
+    const chunk = targets.slice(i, i + chunkSize);
+    await Promise.all(
+      chunk.map(async (item) => {
+        const detailRaw = await enrichContactFromRecordDetail(
+          cfg,
+          item.recordId,
+        );
+        if (detailRaw !== undefined) item.contactRaw = detailRaw;
+      }),
+    );
+  }
 }
 
 function formatContactPhone(raw: unknown): string {
@@ -343,15 +371,19 @@ export async function fetchStaffContactsByDepartment(
   }
 
   const rows = await fetchStaffContactRows(cfg);
-  const grouped = new Map<string, StaffContactEntry[]>();
+  const pending: Array<{
+    recordId: string;
+    staffName: string;
+    department: string;
+    workplace: string;
+    contactRaw: unknown;
+  }> = [];
 
   for (const row of rows) {
     const recordId = atPocketRecordIdFromRow(row);
     if (!recordId) continue;
 
-    const rec = row.record;
-    if (!rec || typeof rec !== "object") continue;
-    const ro = rec as Record<string, unknown>;
+    const ro = staffPocketRecordPayload(row);
 
     const staffName = nfkc(
       pocketTableCellToPlainString(
@@ -371,17 +403,6 @@ export async function fetchStaffContactsByDepartment(
     );
     if (!department) continue;
 
-    let contactRaw = readStaffContactRaw(ro, cfg);
-    if (shouldFetchContactDetail(contactRaw)) {
-      contactRaw = await enrichContactFromRecordDetail(
-        cfg,
-        recordId,
-        contactRaw,
-      );
-    }
-    const contactParsed = parsePocketContactField(contactRaw);
-    const phone = formatContactPhone(contactRaw);
-
     const workplace =
       department === DC_DEPARTMENT && cfg.workplaceFieldId
         ? nfkc(
@@ -391,11 +412,27 @@ export async function fetchStaffContactsByDepartment(
           )
         : "";
 
-    const groupLabel = contactsDisplayGroup(department, workplace);
-    const list = grouped.get(groupLabel) ?? [];
-    list.push({
+    pending.push({
       recordId,
       staffName,
+      department,
+      workplace,
+      contactRaw: readStaffContactRaw(row, cfg),
+    });
+  }
+
+  await enrichContactsInBatch(cfg, pending);
+
+  const grouped = new Map<string, StaffContactEntry[]>();
+
+  for (const item of pending) {
+    const contactParsed = parsePocketContactField(item.contactRaw);
+    const phone = formatContactPhone(item.contactRaw);
+    const groupLabel = contactsDisplayGroup(item.department, item.workplace);
+    const list = grouped.get(groupLabel) ?? [];
+    list.push({
+      recordId: item.recordId,
+      staffName: item.staffName,
       phone,
       hasContactAttachment: contactParsed.hasAttachment,
     });

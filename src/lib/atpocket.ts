@@ -27,6 +27,8 @@ export type AtPocketListResponse = {
 
 export type AtPocketFieldRow = {
   uniqueId?: string;
+  /** GET /fields の fieldId（管理画面の列番号と一致しない場合あり） */
+  fieldId?: number;
   caption?: string;
   /** GET /api/apps/{appsId}/fields が返す項目タイプ（連携項目の判定など） */
   fieldType?: string;
@@ -58,6 +60,7 @@ export function normalizeAtPocketFieldRow(raw: unknown): AtPocketFieldRow {
     "fieldUniqueId",
   );
   const caption = readAtPocketFieldProp(o, "caption");
+  const fieldIdRaw = readAtPocketFieldProp(o, "fieldId", "field_id");
   const fieldType = readAtPocketFieldProp(o, "fieldType", "field_type");
   const relationRaw = readAtPocketFieldProp(o, "relationId", "relation_id");
   const primaryKeyRaw = readAtPocketFieldProp(
@@ -77,11 +80,18 @@ export function normalizeAtPocketFieldRow(raw: unknown): AtPocketFieldRow {
     primaryKeyRaw === 1 ||
     primaryKeyRaw === "1" ||
     primaryKeyRaw === "true";
+  const fieldId =
+    typeof fieldIdRaw === "number" && Number.isFinite(fieldIdRaw)
+      ? fieldIdRaw
+      : typeof fieldIdRaw === "string" && fieldIdRaw.trim()
+        ? Number(fieldIdRaw)
+        : undefined;
 
   return {
     ...(typeof uniqueId === "string" && uniqueId.trim()
       ? { uniqueId: uniqueId.trim() }
       : {}),
+    ...(fieldId != null && Number.isFinite(fieldId) ? { fieldId } : {}),
     ...(typeof caption === "string" && caption.trim()
       ? { caption: caption.trim() }
       : {}),

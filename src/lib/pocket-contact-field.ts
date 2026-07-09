@@ -119,6 +119,10 @@ function deepFindPhoneString(raw: unknown, depth = 0): string {
       "number",
       "caption",
       "content",
+      "連絡先",
+      "電話番号",
+      "電話",
+      "携帯",
     ]) {
       const found = deepFindPhoneString(o[k], depth + 1);
       if (found) return found;
