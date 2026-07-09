@@ -398,9 +398,16 @@ export function InternalEventsSectionContent({
         ))}
         {content.closing?.length ? (
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 dark:border-slate-700 dark:bg-slate-900/40">
-            <p className="text-[14px] font-semibold leading-relaxed text-slate-800 dark:text-slate-100">
-              {content.closing.join("")}
-            </p>
+            <div className="space-y-1">
+              {content.closing.map((line) => (
+                <p
+                  key={line}
+                  className="text-[14px] font-semibold leading-relaxed text-slate-800 dark:text-slate-100"
+                >
+                  {line}
+                </p>
+              ))}
+            </div>
           </div>
         ) : null}
       </div>
