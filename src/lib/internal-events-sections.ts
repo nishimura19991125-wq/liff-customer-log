@@ -26,6 +26,14 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
     body: ["連絡先一覧は準備中です。内容が決まり次第、ここに掲載します。"],
   },
   {
+    slug: "line-send-list",
+    title: "LINE情動送信リスト",
+    description: "LINE情動送信リストを確認します。",
+    body: [
+      "LINE情動送信リストは準備中です。内容が決まり次第、ここに掲載します。",
+    ],
+  },
+  {
     slug: "trarchi-culture",
     title: "トラーチの文化",
     description: "トラーチの文化・方針を確認します。",
