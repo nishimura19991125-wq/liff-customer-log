@@ -61,13 +61,47 @@ function staffRosterMinRefetchMs(): number {
 /** 429 時の再試行は上限をさらに消費するため行わない */
 const STAFF_LIST_FETCH_OPTIONS = { maxRetries: 0 } as const;
 
+/** 名簿 fields CSV の版（列追加時にキャッシュを無効化） */
+const STAFF_ROSTER_FIELDS_CSV_VERSION = "2";
+
+function appendFieldIdsToCsv(
+  fields: string,
+  ids: Array<string | null | undefined>,
+): string {
+  const parts = new Set(
+    fields
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean),
+  );
+  for (const id of ids) {
+    const t = id?.trim();
+    if (t) parts.add(t);
+  }
+  return [...parts].join(",");
+}
+
+async function mergeContactsPhoneFieldIntoCsv(fields: string): Promise<string> {
+  try {
+    const { resolveStaffContactsDirectoryConfig } = await import(
+      "@/lib/staff-contacts-directory"
+    );
+    const cfg = await resolveStaffContactsDirectoryConfig();
+    if (!cfg?.phoneFieldId) return fields;
+    return appendFieldIdsToCsv(fields, [cfg.phoneFieldId]);
+  } catch {
+    return fields;
+  }
+}
+
 function rosterCacheKey(): string | null {
   const staffAppId = process.env.STAFF_APP_ID?.trim();
   const staffNameFieldId = process.env.STAFF_NAME_FIELD_ID?.trim();
   if (!staffAppId || !staffNameFieldId) return null;
   const lineIds = staffLineUserIdFieldIdsFromEnv();
   const lineOn = staffLineBindingEnabled(lineIds);
-  return `${staffAppId}\0${staffNameFieldId}\0${lineOn ? "line" : "name"}`;
+  const phoneEnv = process.env.STAFF_PHONE_FIELD_ID?.trim() ?? "";
+  return `${staffAppId}\0${staffNameFieldId}\0${lineOn ? "line" : "name"}\0${phoneEnv}\0${STAFF_ROSTER_FIELDS_CSV_VERSION}`;
 }
 
 function isRateLimited(now: number): boolean {
@@ -169,19 +203,10 @@ async function fetchStaffRosterRowsFromPocket(
   if (extended) {
     const avail = await resolveStaffGeneralAvailabilityConfig();
     if (avail.ok) {
-      const extra = avail.cfg.fieldId.trim();
-      if (extra) {
-        const parts = new Set(
-          fields
-            .split(",")
-            .map((p) => p.trim())
-            .filter(Boolean),
-        );
-        parts.add(extra);
-        fields = [...parts].join(",");
-      }
+      fields = appendFieldIdsToCsv(fields, [avail.cfg.fieldId]);
     }
   }
+  fields = await mergeContactsPhoneFieldIntoCsv(fields);
 
   const listOptions = {
     ...STAFF_LIST_FETCH_OPTIONS,
