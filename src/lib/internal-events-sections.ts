@@ -124,7 +124,7 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
               items: [
                 "月曜日：企業理念",
                 "火曜日：ミッション",
-                "水曜日：For Happiness　10分",
+                "水曜日：For Happiness",
                 "木曜日：ビジョン",
                 "金曜日：行動規範、社員心得",
                 "土曜日：共通認識①～⑤",
