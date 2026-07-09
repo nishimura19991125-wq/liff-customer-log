@@ -95,7 +95,6 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
                 {
                   mark: "1",
                   title: "司会者が当日のページを読む",
-                  notes: ["写真の赤枠を読む"],
                 },
                 { mark: "2", title: "司会者が感想を述べる", duration: "1分" },
                 {
