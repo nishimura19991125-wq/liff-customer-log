@@ -1,24 +1,81 @@
 "use client";
 
+import { useCallback } from "react";
+
 import { parsePhoneDigits } from "@/lib/customer-info-form/phone-number";
 import { useLiffIdToken } from "@/lib/liff-id-token-context";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
+
+type StaffContact = {
+  recordId: string;
+  staffName: string;
+  phone: string;
+  hasContactAttachment: boolean;
+};
 
 type ContactsApiResponse = {
   configured?: boolean;
   error?: string;
   groups: Array<{
     department: string;
-    contacts: Array<{ staffName: string; phone: string }>;
+    contacts: StaffContact[];
   }>;
 };
+
+function buildVcardDownloadUrl(recordId: string): string {
+  const qs = new URLSearchParams({ recordId });
+  return `/api/internal-events/contacts/vcard?${qs.toString()}`;
+}
+
+function ContactVcardButton({
+  contact,
+  idToken,
+}: {
+  contact: StaffContact;
+  idToken: string;
+}) {
+  const onDownload = useCallback(async () => {
+    const url = buildVcardDownloadUrl(contact.recordId);
+    try {
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = `${contact.staffName.replace(/\s+/g, "_")}.vcf`;
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      // ignore
+    }
+  }, [contact.recordId, contact.staffName, idToken]);
+
+  return (
+    <button
+      type="button"
+      onClick={() => void onDownload()}
+      className="shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-800 ring-1 ring-emerald-100/80 transition hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200 dark:ring-emerald-900/40 dark:hover:bg-emerald-950/60"
+      aria-label={`${contact.staffName}の連絡先を保存`}
+    >
+      連絡先保存
+    </button>
+  );
+}
 
 function ContactsDepartmentGroup({
   department,
   contacts,
+  idToken,
 }: {
   department: string;
-  contacts: Array<{ staffName: string; phone: string }>;
+  contacts: StaffContact[];
+  idToken: string;
 }) {
   return (
     <section className="overflow-hidden rounded-xl border border-emerald-100 bg-white shadow-sm dark:border-emerald-900/45 dark:bg-slate-900/45">
@@ -34,24 +91,30 @@ function ContactsDepartmentGroup({
       <ul className="divide-y divide-slate-100 dark:divide-slate-800">
         {contacts.map((contact) => {
           const tel = parsePhoneDigits(contact.phone);
+          const canSaveContact = Boolean(tel || contact.hasContactAttachment);
           return (
             <li
-              key={`${department}-${contact.staffName}-${contact.phone}`}
+              key={`${department}-${contact.recordId}`}
               className="flex items-center justify-between gap-3 px-4 py-3"
             >
               <span className="min-w-0 text-[14px] font-semibold leading-snug text-slate-900 dark:text-slate-100">
                 {contact.staffName}
               </span>
-              {contact.phone ? (
-                <a
-                  href={tel ? `tel:${tel}` : undefined}
-                  className="shrink-0 text-[14px] font-medium text-emerald-700 underline decoration-emerald-300 underline-offset-2 dark:text-emerald-300"
-                >
-                  {contact.phone}
-                </a>
-              ) : (
-                <span className="shrink-0 text-[13px] text-slate-400">—</span>
-              )}
+              <div className="flex shrink-0 items-center gap-2">
+                {contact.phone ? (
+                  <a
+                    href={tel ? `tel:${tel}` : undefined}
+                    className="text-[14px] font-medium text-emerald-700 underline decoration-emerald-300 underline-offset-2 dark:text-emerald-300"
+                  >
+                    {contact.phone}
+                  </a>
+                ) : (
+                  <span className="text-[13px] text-slate-400">—</span>
+                )}
+                {canSaveContact ? (
+                  <ContactVcardButton contact={contact} idToken={idToken} />
+                ) : null}
+              </div>
             </li>
           );
         })}
@@ -105,6 +168,7 @@ export function InternalEventsContactsContent() {
           key={group.department}
           department={group.department}
           contacts={group.contacts}
+          idToken={idToken}
         />
       ))}
     </div>

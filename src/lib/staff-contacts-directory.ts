@@ -11,12 +11,17 @@ import {
 } from "@/lib/calendar-kojo";
 import { formatPhoneNumberInput } from "@/lib/customer-info-form/phone-number";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
+import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
+import { parsePocketContactField } from "@/lib/pocket-contact-field";
 import { pocketTableCellToPlainString } from "@/lib/staff-construction-availability";
 import { fetchStaffRosterRowsCached } from "@/lib/staff-roster-cache";
 
 export type StaffContactEntry = {
+  recordId: string;
   staffName: string;
   phone: string;
+  /** @pocket 連絡先列に vCard 等の添付がある */
+  hasContactAttachment: boolean;
 };
 
 export type StaffContactDepartmentGroup = {
@@ -231,8 +236,9 @@ function dcWorkplaceSortIndex(groupLabel: string): number {
   return DC_WORKPLACE_ORDER.length;
 }
 
-function formatContactPhone(raw: string): string {
-  const trimmed = nfkc(raw);
+function formatContactPhone(raw: unknown): string {
+  const parsed = parsePocketContactField(raw);
+  const trimmed = nfkc(parsed.phone);
   if (!trimmed) return "";
   return formatPhoneNumberInput(trimmed) || trimmed;
 }
@@ -256,6 +262,9 @@ export async function fetchStaffContactsByDepartment(
   const grouped = new Map<string, StaffContactEntry[]>();
 
   for (const row of rows) {
+    const recordId = atPocketRecordIdFromRow(row);
+    if (!recordId) continue;
+
     const rec = row.record;
     if (!rec || typeof rec !== "object") continue;
     const ro = rec as Record<string, unknown>;
@@ -278,11 +287,9 @@ export async function fetchStaffContactsByDepartment(
     );
     if (!department) continue;
 
-    const phone = formatContactPhone(
-      pocketTableCellToPlainString(
-        pickRecordValueByFieldAliases(ro, cfg.phoneFieldId),
-      ),
-    );
+    const contactRaw = pickRecordValueByFieldAliases(ro, cfg.phoneFieldId);
+    const contactParsed = parsePocketContactField(contactRaw);
+    const phone = formatContactPhone(contactRaw);
 
     const workplace =
       department === DC_DEPARTMENT && cfg.workplaceFieldId
@@ -295,7 +302,12 @@ export async function fetchStaffContactsByDepartment(
 
     const groupLabel = contactsDisplayGroup(department, workplace);
     const list = grouped.get(groupLabel) ?? [];
-    list.push({ staffName, phone });
+    list.push({
+      recordId,
+      staffName,
+      phone,
+      hasContactAttachment: contactParsed.hasAttachment,
+    });
     grouped.set(groupLabel, list);
   }
 
