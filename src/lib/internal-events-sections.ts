@@ -84,7 +84,7 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
           timeRange: "9:33～9:35",
           sections: [
             {
-              title: "コミュニケーションブリッジ ※PDF化したものを使用",
+              title: "コミュニケーションブリッジ",
               notes: [
                 "1. 司会者が当日のページを読む",
                 "（読む箇所は写真の赤枠）",

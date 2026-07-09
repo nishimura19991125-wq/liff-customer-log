@@ -5,6 +5,51 @@ import type {
   InternalEventsScheduleStep,
 } from "@/lib/internal-events-sections";
 
+function isItemSectionHeading(item: string) {
+  return item.startsWith("■");
+}
+
+function groupItemsByHeading(items: string[]) {
+  const groups: { heading?: string; items: string[] }[] = [];
+  let current: { heading?: string; items: string[] } | null = null;
+
+  for (const item of items) {
+    if (isItemSectionHeading(item)) {
+      current = { heading: item, items: [] };
+      groups.push(current);
+      continue;
+    }
+
+    if (current) {
+      current.items.push(item);
+      continue;
+    }
+
+    groups.push({ items: [item] });
+  }
+
+  return groups;
+}
+
+function ItemBulletList({ items }: { items: string[] }) {
+  return (
+    <ul className="space-y-1.5">
+      {items.map((item) => (
+        <li
+          key={item}
+          className="flex items-start gap-2 text-[13px] leading-relaxed text-slate-700 dark:text-slate-300"
+        >
+          <span
+            className="mt-1.5 size-1.5 shrink-0 rounded-full bg-emerald-500"
+            aria-hidden
+          />
+          <span>{item}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function DaySectionCard({ section }: { section: InternalEventsDaySection }) {
   return (
     <div className="rounded-2xl border border-slate-200/90 bg-white px-4 py-3.5 shadow-sm ring-1 ring-slate-100 dark:border-slate-700 dark:bg-slate-900/40 dark:ring-slate-800">
@@ -33,22 +78,31 @@ function DaySectionCard({ section }: { section: InternalEventsDaySection }) {
         </ol>
       ) : null}
       {section.items?.length ? (
-        <ul
-          className={`space-y-1.5 ${section.title || section.notes?.length ? "mt-2.5" : ""}`}
+        <div
+          className={`flex flex-col gap-3 ${section.title || section.notes?.length ? "mt-2.5" : ""}`}
         >
-          {section.items.map((item) => (
-            <li
-              key={item}
-              className="flex items-start gap-2 text-[13px] leading-relaxed text-slate-700 dark:text-slate-300"
-            >
-              <span
-                className="mt-1.5 size-1.5 shrink-0 rounded-full bg-emerald-500"
-                aria-hidden
-              />
-              <span>{item}</span>
-            </li>
-          ))}
-        </ul>
+          {groupItemsByHeading(section.items).map((group) => {
+            if (group.heading) {
+              return (
+                <div
+                  key={group.heading}
+                  className="rounded-xl bg-emerald-50/90 px-3.5 py-3 ring-1 ring-emerald-100 dark:bg-emerald-950/35 dark:ring-emerald-900/60"
+                >
+                  <p className="text-[15px] font-extrabold leading-snug tracking-wide text-emerald-800 dark:text-emerald-300">
+                    {group.heading}
+                  </p>
+                  {group.items.length ? (
+                    <div className="mt-2.5 border-t border-emerald-100 pt-2.5 dark:border-emerald-900/70">
+                      <ItemBulletList items={group.items} />
+                    </div>
+                  ) : null}
+                </div>
+              );
+            }
+
+            return <ItemBulletList key={group.items[0]} items={group.items} />;
+          })}
+        </div>
       ) : null}
     </div>
   );
