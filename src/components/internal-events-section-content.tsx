@@ -55,22 +55,103 @@ function groupItemsByHeading(items: string[]): ParsedItemBlock[] {
   return blocks;
 }
 
-function ItemBulletList({ items }: { items: string[] }) {
+function formatGroupHeading(heading: string) {
+  return heading.replace(/^■\s?/, "");
+}
+
+function shouldUseChipLayout(items: string[]) {
   return (
-    <ul className="space-y-1.5">
+    items.length > 0 &&
+    items.every((item) => item.length <= 12 && !item.includes("/"))
+  );
+}
+
+function ItemChipGrid({ items }: { items: string[] }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {items.map((item) => (
+        <span
+          key={item}
+          className="inline-flex min-w-[4.5rem] flex-1 basis-[calc(50%-0.25rem)] items-center justify-center rounded-xl bg-emerald-600/[0.08] px-3 py-2.5 text-center text-[14px] font-bold leading-tight text-emerald-950 ring-1 ring-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-100 dark:ring-emerald-800/80 sm:basis-auto sm:flex-initial"
+        >
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ItemBulletList({
+  items,
+  size = "default",
+}: {
+  items: string[];
+  size?: "default" | "compact";
+}) {
+  return (
+    <ul className={size === "compact" ? "space-y-1" : "space-y-2"}>
       {items.map((item) => (
         <li
           key={item}
-          className="flex items-start gap-2 text-[13px] leading-relaxed text-slate-700 dark:text-slate-300"
+          className="flex items-start gap-2.5 text-[14px] font-medium leading-relaxed text-slate-800 dark:text-slate-100"
         >
           <span
-            className="mt-1.5 size-1.5 shrink-0 rounded-full bg-emerald-500"
+            className="mt-2 size-1.5 shrink-0 rounded-full bg-emerald-500"
             aria-hidden
           />
           <span>{item}</span>
         </li>
       ))}
     </ul>
+  );
+}
+
+function OutsideCheckList({ items }: { items: string[] }) {
+  return (
+    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/90 px-3.5 py-3 dark:border-slate-600 dark:bg-slate-900/35">
+      <p className="mb-2.5 text-[11px] font-extrabold tracking-[0.12em] text-slate-500 uppercase dark:text-slate-400">
+        チェック項目
+      </p>
+      <ul className="space-y-2.5">
+        {items.map((item) => (
+          <li
+            key={item}
+            className="flex items-center gap-3 text-[14px] font-semibold leading-snug text-slate-800 dark:text-slate-100"
+          >
+            <span
+              className="flex size-5 shrink-0 items-center justify-center rounded-md border-2 border-slate-300 bg-white dark:border-slate-500 dark:bg-slate-950"
+              aria-hidden
+            />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ItemGroupCard({
+  heading,
+  items,
+}: {
+  heading: string;
+  items: string[];
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-emerald-100 bg-white shadow-sm dark:border-emerald-900/45 dark:bg-slate-900/45">
+      <div className="border-b border-emerald-100/80 bg-emerald-50 px-3.5 py-2.5 dark:border-emerald-900/40 dark:bg-emerald-950/35">
+        <p className="text-[14px] font-extrabold leading-snug text-emerald-900 dark:text-emerald-200">
+          {formatGroupHeading(heading)}
+        </p>
+      </div>
+      <div className="px-3.5 py-3">
+        {shouldUseChipLayout(items) ? (
+          <ItemChipGrid items={items} />
+        ) : (
+          <ItemBulletList items={items} size="compact" />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -83,11 +164,11 @@ function DaySectionCard({ section }: { section: InternalEventsDaySection }) {
         </p>
       ) : null}
       {section.notes?.length ? (
-        <ul className={`space-y-1 ${section.title ? "mt-2" : ""}`}>
+        <ul className={`space-y-2 ${section.title ? "mt-2.5" : ""}`}>
           {section.notes.map((note) => (
             <li
               key={note}
-              className="text-[13px] leading-relaxed text-slate-600 dark:text-slate-400"
+              className="list-none rounded-lg bg-amber-50 px-3 py-2 text-[13px] font-medium leading-relaxed text-amber-950 ring-1 ring-amber-100 dark:bg-amber-950/25 dark:text-amber-100 dark:ring-amber-900/40"
             >
               {note}
             </li>
@@ -103,29 +184,21 @@ function DaySectionCard({ section }: { section: InternalEventsDaySection }) {
       ) : null}
       {section.items?.length ? (
         <div
-          className={`flex flex-col gap-3 ${section.title || section.notes?.length ? "mt-2.5" : ""}`}
+          className={`flex flex-col gap-2.5 ${section.title || section.notes?.length ? "mt-3" : ""}`}
         >
           {groupItemsByHeading(section.items).map((block) => {
             if (block.kind === "group") {
               return (
-                <div
+                <ItemGroupCard
                   key={block.heading}
-                  className="rounded-xl bg-emerald-50/90 px-3.5 py-3 ring-1 ring-emerald-100 dark:bg-emerald-950/35 dark:ring-emerald-900/60"
-                >
-                  <p className="text-[15px] font-extrabold leading-snug tracking-wide text-emerald-800 dark:text-emerald-300">
-                    {block.heading}
-                  </p>
-                  {block.items.length ? (
-                    <div className="mt-2.5 border-t border-emerald-100 pt-2.5 dark:border-emerald-900/70">
-                      <ItemBulletList items={block.items} />
-                    </div>
-                  ) : null}
-                </div>
+                  heading={block.heading}
+                  items={block.items}
+                />
               );
             }
 
             return (
-              <ItemBulletList
+              <OutsideCheckList
                 key={block.items.join("|")}
                 items={block.items}
               />
