@@ -121,6 +121,26 @@ function InternalCommonGlyph() {
   );
 }
 
+function InternalEventGlyph() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M8 2v3M16 2v3M3.5 9.09h17M21 8.5V17c0 3-1.5 5-5 5H8c-3.5 0-5-2-5-5V8.5c0-3 1.5-5 5-5h8c3.5 0 5 2 5 5Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 13l1.5 3h-3L12 13z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function CommunicationBridgeGlyph() {
   return (
     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -393,7 +413,7 @@ export default function HomeHubPage() {
                   社内共通
                 </p>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  営業ダッシュボード・勤怠管理・稼働終了報告・コミュニケーションブリッジを表示します。
+                  営業ダッシュボード・勤怠管理・稼働終了報告・社内イベント・コミュニケーションブリッジを表示します。
                 </p>
               </div>
               <span
@@ -431,6 +451,14 @@ export default function HomeHubPage() {
                   title="稼働終了報告"
                   description="@pocket に本日分の稼働終了報告を登録します。"
                   icon={<WorkEndReportGlyph />}
+                  iconTone="blue"
+                  disabled={needsStaffBind}
+                />
+                <LiffMenuCard
+                  href="/internal-events"
+                  title="社内イベント"
+                  description="社内イベントの情報を確認します。"
+                  icon={<InternalEventGlyph />}
                   iconTone="blue"
                   disabled={needsStaffBind}
                 />
