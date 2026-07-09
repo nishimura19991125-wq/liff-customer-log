@@ -39,11 +39,6 @@ export function InternalEventsLiffFrame({
   const [idToken, setIdToken] = useState<string | null>(null);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
-  const needsStaffBind =
-    account.bindingEnabled &&
-    !account.boundStaffName &&
-    !account.loading &&
-    account.staff.length > 0;
 
   useEffect(() => {
     if (!LIFF_ID) return;
@@ -126,7 +121,7 @@ export function InternalEventsLiffFrame({
         accountLoading={account.loading}
         onBind={account.bindStaff}
       />
-      {needsStaffBind ? null : children}
+      {children}
       <div className="mt-6 flex flex-col gap-3">
         {backHref !== "/" ? (
           <LiffGhostLink href={backHref}>{backLabel}</LiffGhostLink>
