@@ -160,7 +160,7 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
         },
         {
           timeRange: "9:46～9:47",
-          sections: [{ title: "経理部（松岡課長、秋山主任、近藤主任）" }],
+          sections: [{ title: "経理部（松岡次長、秋山係長、近藤係長）" }],
         },
         {
           timeRange: "9:47～9:48",
@@ -172,15 +172,15 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
         },
         {
           timeRange: "9:49～9:50",
-          sections: [{ title: "工事部（羽野主任、藏田係員、岩切係員）" }],
+          sections: [{ title: "工事部（羽野主任、栗尾主任、岩切係員）" }],
         },
         {
           timeRange: "9:50～9:51",
-          sections: [{ title: "DC事業部（森澤課長、中尾主任など）" }],
+          sections: [{ title: "DC事業部（森澤次長、中尾主任など）" }],
         },
         {
           timeRange: "9:51～9:52",
-          sections: [{ title: "ネット集客事業部（大江課長、敏蔭係員）" }],
+          sections: [{ title: "ネット集客事業部（松浪主任、藤岡主任）" }],
         },
         {
           timeRange: "9:52～9:53",
@@ -188,7 +188,7 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
         },
         {
           timeRange: "9:53～9:54",
-          sections: [{ title: "トラーチ倶楽部（大山課長、松岡課長、山口係員）" }],
+          sections: [{ title: "トラーチ倶楽部（大山次長、松岡次長、敏蔭係員）" }],
         },
         {
           timeRange: "9:54～9:55",
