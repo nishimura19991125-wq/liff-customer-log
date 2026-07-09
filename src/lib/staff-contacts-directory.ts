@@ -15,6 +15,7 @@ import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
 import { parsePocketContactField } from "@/lib/pocket-contact-field";
 import { pocketTableCellToPlainString } from "@/lib/staff-construction-availability";
 import { fetchStaffRosterRowsCached } from "@/lib/staff-roster-cache";
+import { staffPhoneFieldIdConfigured } from "@/lib/staff-phone-field-config";
 
 export type StaffContactEntry = {
   recordId: string;
@@ -153,7 +154,7 @@ export async function resolveStaffContactsDirectoryConfig(): Promise<StaffContac
       ["勤務場所"],
     );
   const phoneFieldId = resolveSchemaFieldId(
-    process.env.STAFF_PHONE_FIELD_ID,
+    staffPhoneFieldIdConfigured(),
     appFields,
     ["連絡先", "電話番号", "電話", "TEL", "tel", "携帯", "スタッフ連絡先"],
   );

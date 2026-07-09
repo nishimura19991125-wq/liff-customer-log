@@ -14,6 +14,7 @@ import {
   staffLineUserIdFieldIdsFromEnv,
   staffLineUserIdFieldsCsv,
 } from "@/lib/staff-line-field-config";
+import { staffPhoneFieldIdConfigured } from "@/lib/staff-phone-field-config";
 
 type RosterCacheEntry = {
   key: string;
@@ -62,7 +63,7 @@ function staffRosterMinRefetchMs(): number {
 const STAFF_LIST_FETCH_OPTIONS = { maxRetries: 0 } as const;
 
 /** 名簿 fields CSV の版（列追加時にキャッシュを無効化） */
-const STAFF_ROSTER_FIELDS_CSV_VERSION = "2";
+const STAFF_ROSTER_FIELDS_CSV_VERSION = "3";
 
 function appendFieldIdsToCsv(
   fields: string,
@@ -100,7 +101,7 @@ function rosterCacheKey(): string | null {
   if (!staffAppId || !staffNameFieldId) return null;
   const lineIds = staffLineUserIdFieldIdsFromEnv();
   const lineOn = staffLineBindingEnabled(lineIds);
-  const phoneEnv = process.env.STAFF_PHONE_FIELD_ID?.trim() ?? "";
+  const phoneEnv = staffPhoneFieldIdConfigured();
   return `${staffAppId}\0${staffNameFieldId}\0${lineOn ? "line" : "name"}\0${phoneEnv}\0${STAFF_ROSTER_FIELDS_CSV_VERSION}`;
 }
 
@@ -163,13 +164,14 @@ function staffRosterListFieldsCsv(): string {
     "STAFF_CL_AVAILABILITY_FIELD_ID",
     "STAFF_WORKPLACE_FIELD_ID",
     "STAFF_DEPARTMENT_FIELD_ID",
-    "STAFF_PHONE_FIELD_ID",
     "STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID",
     "STAFF_PIN_HASH_FIELD_ID",
   ] as const) {
     const id = process.env[envKey]?.trim();
     if (id) parts.push(id);
   }
+
+  parts.push(staffPhoneFieldIdConfigured());
 
   return [...new Set(parts.map((p) => p.trim()).filter(Boolean))].join(",");
 }
