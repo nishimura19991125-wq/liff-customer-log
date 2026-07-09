@@ -1,5 +1,6 @@
 import {
   INTERNAL_EVENTS_OUTSIDE_FRAME,
+  type InternalEventsBulletGroup,
   type InternalEventsContent,
   type InternalEventsDayBlock,
   type InternalEventsDaySection,
@@ -310,6 +311,39 @@ function ScheduleStepCard({
   );
 }
 
+function CultureBulletGroup({ group }: { group: InternalEventsBulletGroup }) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-emerald-100 bg-white shadow-sm dark:border-emerald-900/45 dark:bg-slate-900/45">
+      <div className="border-b border-emerald-100/80 bg-emerald-50 px-4 py-3 dark:border-emerald-900/40 dark:bg-emerald-950/35">
+        <p className="text-[15px] font-extrabold leading-snug text-emerald-900 dark:text-emerald-200">
+          {group.heading}
+        </p>
+        {group.subheading ? (
+          <p className="mt-1 text-[13px] font-semibold text-emerald-800/80 dark:text-emerald-300/90">
+            {group.subheading}
+          </p>
+        ) : null}
+      </div>
+      <ul className="grid gap-2 px-4 py-3 sm:grid-cols-2">
+        {group.items.map((item) => (
+          <li
+            key={item}
+            className="flex items-start gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-slate-100 dark:bg-slate-950/40 dark:ring-slate-800"
+          >
+            <span
+              className="mt-1.5 size-1.5 shrink-0 rounded-full bg-emerald-500"
+              aria-hidden
+            />
+            <span className="text-[14px] font-medium leading-snug text-slate-800 dark:text-slate-100">
+              {item}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function InternalEventsSectionContent({
   content,
 }: {
@@ -354,6 +388,30 @@ export function InternalEventsSectionContent({
             </li>
           ))}
         </ul>
+      </div>
+    );
+  }
+
+  if (content.type === "grouped-bullet") {
+    return (
+      <div className="flex flex-col gap-4">
+        {content.groups.map((group) => (
+          <CultureBulletGroup key={group.heading} group={group} />
+        ))}
+        {content.closing?.length ? (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 dark:border-slate-700 dark:bg-slate-900/40">
+            <ul className="space-y-2">
+              {content.closing.map((line) => (
+                <li
+                  key={line}
+                  className="text-[14px] font-semibold leading-relaxed text-slate-800 dark:text-slate-100"
+                >
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
     );
   }

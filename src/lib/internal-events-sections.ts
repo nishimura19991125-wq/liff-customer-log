@@ -21,9 +21,20 @@ export type InternalEventsDayBlock = {
   sections: InternalEventsDaySection[];
 };
 
+export type InternalEventsBulletGroup = {
+  heading: string;
+  subheading?: string;
+  items: string[];
+};
+
 export type InternalEventsContent =
   | { type: "text"; paragraphs: string[] }
   | { type: "bullet-list"; heading?: string; items: string[] }
+  | {
+      type: "grouped-bullet";
+      groups: InternalEventsBulletGroup[];
+      closing?: string[];
+    }
   | {
       type: "schedule";
       timeRange: string;
@@ -374,9 +385,36 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
     title: "トラーチの文化",
     description: "トラーチの文化・方針を確認します。",
     content: {
-      type: "text",
-      paragraphs: [
-        "トラーチの文化に関する内容は準備中です。内容が決まり次第、ここに掲載します。",
+      type: "grouped-bullet",
+      groups: [
+        {
+          heading: "トラーチの文化",
+          subheading: "〔当たり前基準〕",
+          items: [
+            "自分から挨拶する",
+            "感謝の気持ちを持ち伝える",
+            "レスポンス(信頼)",
+            "時間を守る(時間は命)",
+            "嘘をつかない",
+          ],
+        },
+        {
+          heading: "情熱と達成の文化",
+          items: [
+            "達成して当たり前",
+            "誰よりも圧倒的に達成する",
+            "期待を超える",
+            "全員が熱狂して鼓舞する",
+            "出る杭になれ",
+          ],
+        },
+      ],
+      closing: [
+        "傍観者、被害者ではなく責任者へ。",
+        "０→１を創り出す。",
+        "指示待ちではなく、攻め。",
+        "浸透するまで、声をかけてやり続ける。",
+        "自分が主人公、株式会社自分の経営者。",
       ],
     },
   },
