@@ -27,10 +27,23 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
   },
   {
     slug: "line-send-list",
-    title: "LINE情動送信リスト",
-    description: "LINE情動送信リストを確認します。",
+    title: "LINE自動送信リスト",
+    description: "LINE自動送信リストを確認します。",
     body: [
-      "LINE情動送信リストは準備中です。内容が決まり次第、ここに掲載します。",
+      `【LINE自動送信リスト】
+
+・本日の商談
+・本日の商談結果
+・本日の工事案件
+・本日の工事結果
+・工事優先順位
+・本日の出勤者
+・工事対応者未定（水曜日からの一週間分）
+・CLランキング
+・APランキング
+・営業成績
+・卸案件の書類進捗
+・トラーチの書類進捗`,
     ],
   },
   {
