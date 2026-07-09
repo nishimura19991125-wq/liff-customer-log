@@ -1,11 +1,96 @@
 import type {
   InternalEventsContent,
+  InternalEventsDayBlock,
+  InternalEventsDaySection,
   InternalEventsScheduleStep,
 } from "@/lib/internal-events-sections";
 
-function ScheduleStepCard({ step }: { step: InternalEventsScheduleStep }) {
+function DaySectionCard({ section }: { section: InternalEventsDaySection }) {
   return (
-    <li className="rounded-2xl border border-slate-200/90 bg-white px-4 py-3.5 shadow-sm ring-1 ring-slate-100 dark:border-slate-700 dark:bg-slate-900/40 dark:ring-slate-800">
+    <div className="rounded-2xl border border-slate-200/90 bg-white px-4 py-3.5 shadow-sm ring-1 ring-slate-100 dark:border-slate-700 dark:bg-slate-900/40 dark:ring-slate-800">
+      {section.title ? (
+        <p className="text-[15px] font-bold leading-snug text-slate-900 dark:text-slate-100">
+          {section.title}
+        </p>
+      ) : null}
+      {section.notes?.length ? (
+        <ul className={`space-y-1 ${section.title ? "mt-2" : ""}`}>
+          {section.notes.map((note) => (
+            <li
+              key={note}
+              className="text-[13px] leading-relaxed text-slate-600 dark:text-slate-400"
+            >
+              {note}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {section.steps?.length ? (
+        <ol className={`flex flex-col gap-3 ${section.title ? "mt-3" : ""}`}>
+          {section.steps.map((step) => (
+            <ScheduleStepCard key={step.mark} step={step} nested />
+          ))}
+        </ol>
+      ) : null}
+      {section.items?.length ? (
+        <ul
+          className={`space-y-1.5 ${section.title || section.notes?.length ? "mt-2.5" : ""}`}
+        >
+          {section.items.map((item) => (
+            <li
+              key={item}
+              className="flex items-start gap-2 text-[13px] leading-relaxed text-slate-700 dark:text-slate-300"
+            >
+              <span
+                className="mt-1.5 size-1.5 shrink-0 rounded-full bg-emerald-500"
+                aria-hidden
+              />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function DayScheduleBlock({ block }: { block: InternalEventsDayBlock }) {
+  const multiSection = block.sections.length > 1;
+
+  return (
+    <section>
+      <div className="mb-3 inline-flex rounded-full bg-emerald-600 px-3 py-1 text-[12px] font-extrabold tracking-wide text-white shadow-sm">
+        {block.timeRange}
+      </div>
+      <div
+        className={
+          multiSection ? "grid gap-3 sm:grid-cols-2" : "flex flex-col gap-3"
+        }
+      >
+        {block.sections.map((section, index) => (
+          <DaySectionCard
+            key={`${block.timeRange}-${section.title ?? index}`}
+            section={section}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ScheduleStepCard({
+  step,
+  nested = false,
+}: {
+  step: InternalEventsScheduleStep;
+  nested?: boolean;
+}) {
+  const cardClass = nested
+    ? "rounded-xl bg-slate-50 px-3 py-3 ring-1 ring-slate-100 dark:bg-slate-950/40 dark:ring-slate-800"
+    : "rounded-2xl border border-slate-200/90 bg-white px-4 py-3.5 shadow-sm ring-1 ring-slate-100 dark:border-slate-700 dark:bg-slate-900/40 dark:ring-slate-800";
+
+  return (
+    <li className={cardClass}>
       <div className="flex items-start gap-3">
         <span
           className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-[15px] font-extrabold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
@@ -102,16 +187,30 @@ export function InternalEventsSectionContent({
     );
   }
 
-  return (
-    <div>
-      <div className="mb-4 inline-flex rounded-full bg-emerald-600 px-3 py-1 text-[12px] font-extrabold tracking-wide text-white shadow-sm">
-        {content.timeRange}
-      </div>
-      <ol className="flex flex-col gap-3">
-        {content.steps.map((step) => (
-          <ScheduleStepCard key={step.mark} step={step} />
+  if (content.type === "day-schedule") {
+    return (
+      <div className="flex flex-col gap-6">
+        {content.blocks.map((block) => (
+          <DayScheduleBlock key={block.timeRange} block={block} />
         ))}
-      </ol>
-    </div>
-  );
+      </div>
+    );
+  }
+
+  if (content.type === "schedule") {
+    return (
+      <div>
+        <div className="mb-4 inline-flex rounded-full bg-emerald-600 px-3 py-1 text-[12px] font-extrabold tracking-wide text-white shadow-sm">
+          {content.timeRange}
+        </div>
+        <ol className="flex flex-col gap-3">
+          {content.steps.map((step) => (
+            <ScheduleStepCard key={step.mark} step={step} />
+          ))}
+        </ol>
+      </div>
+    );
+  }
+
+  return null;
 }

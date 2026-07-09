@@ -21,15 +21,27 @@ function MorningAssemblyGlyph() {
   );
 }
 
-function CompanyAssemblyGlyph() {
+function WeeklyWednesdayGlyph() {
   return (
     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect
+        x="3"
+        y="4"
+        width="18"
+        height="18"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
       <path
-        d="M12 3L2 8l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"
+        d="M3 10h18M8 2v4M16 2v4"
         stroke="currentColor"
         strokeWidth="1.6"
         strokeLinecap="round"
-        strokeLinejoin="round"
+      />
+      <path
+        d="M8 14h2v2H8v-2zm4 0h2v2h-2v-2z"
+        fill="currentColor"
       />
     </svg>
   );
@@ -80,7 +92,7 @@ function CultureGlyph() {
 
 const SECTION_ICONS: Record<string, ReactNode> = {
   "morning-assembly": <MorningAssemblyGlyph />,
-  "company-morning-assembly": <CompanyAssemblyGlyph />,
+  "weekly-wednesday-schedule": <WeeklyWednesdayGlyph />,
   contacts: <ContactsGlyph />,
   "line-send-list": <LineSendListGlyph />,
   "trarchi-culture": <CultureGlyph />,
