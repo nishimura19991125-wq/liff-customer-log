@@ -457,7 +457,7 @@ export default function HomeHubPage() {
                 <LiffMenuCard
                   href="/internal-events"
                   title="社内イベント"
-                  description="朝礼の流れ・連絡先・トラーチの文化など社内情報を確認します。"
+                  description="朝礼の流れ（水曜日以外）・連絡先・トラーチの文化など社内情報を確認します。"
                   icon={<InternalEventGlyph />}
                   iconTone="blue"
                   disabled={needsStaffBind}
