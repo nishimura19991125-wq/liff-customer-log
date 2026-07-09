@@ -317,26 +317,24 @@ function CultureBulletGroup({ group }: { group: InternalEventsBulletGroup }) {
       <div className="border-b border-emerald-100/80 bg-emerald-50 px-4 py-3 dark:border-emerald-900/40 dark:bg-emerald-950/35">
         <p className="text-[15px] font-extrabold leading-snug text-emerald-900 dark:text-emerald-200">
           {group.heading}
+          {group.subheading ? (
+            <span className="ml-1.5 text-[14px] font-semibold text-emerald-800/90 dark:text-emerald-300/90">
+              {group.subheading}
+            </span>
+          ) : null}
         </p>
-        {group.subheading ? (
-          <p className="mt-1 text-[13px] font-semibold text-emerald-800/80 dark:text-emerald-300/90">
-            {group.subheading}
-          </p>
-        ) : null}
       </div>
-      <ul className="grid gap-2 px-4 py-3 sm:grid-cols-2">
+      <ul className="space-y-2 px-4 py-3">
         {group.items.map((item) => (
           <li
             key={item}
-            className="flex items-start gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-slate-100 dark:bg-slate-950/40 dark:ring-slate-800"
+            className="flex items-center gap-2.5 text-[14px] font-medium leading-snug text-slate-800 dark:text-slate-100"
           >
             <span
-              className="mt-1.5 size-1.5 shrink-0 rounded-full bg-emerald-500"
+              className="size-1.5 shrink-0 rounded-full bg-emerald-500"
               aria-hidden
             />
-            <span className="text-[14px] font-medium leading-snug text-slate-800 dark:text-slate-100">
-              {item}
-            </span>
+            <span>{item}</span>
           </li>
         ))}
       </ul>
@@ -400,16 +398,9 @@ export function InternalEventsSectionContent({
         ))}
         {content.closing?.length ? (
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 dark:border-slate-700 dark:bg-slate-900/40">
-            <ul className="space-y-2">
-              {content.closing.map((line) => (
-                <li
-                  key={line}
-                  className="text-[14px] font-semibold leading-relaxed text-slate-800 dark:text-slate-100"
-                >
-                  {line}
-                </li>
-              ))}
-            </ul>
+            <p className="text-[14px] font-semibold leading-relaxed text-slate-800 dark:text-slate-100">
+              {content.closing.join("")}
+            </p>
           </div>
         ) : null}
       </div>
