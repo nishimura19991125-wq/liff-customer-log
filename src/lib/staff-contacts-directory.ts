@@ -10,6 +10,7 @@ import {
   resolveConfiguredFieldToSchemaUniqueId,
 } from "@/lib/calendar-kojo";
 import { formatPhoneNumberInput } from "@/lib/customer-info-form/phone-number";
+import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { pocketTableCellToPlainString } from "@/lib/staff-construction-availability";
 import { fetchStaffRosterRowsCached } from "@/lib/staff-roster-cache";
 
@@ -28,20 +29,56 @@ export type StaffContactsDirectoryConfig = {
   nameFieldId: string;
   departmentFieldId: string;
   phoneFieldId: string;
+  workplaceFieldId: string | null;
 };
+
+const DC_DEPARTMENT = "DC事業部";
+
+const DC_WORKPLACE_ORDER = [
+  "奈良本社",
+  "京都支社",
+  "名古屋支社",
+  "埼玉支社",
+] as const;
 
 export const DEFAULT_STAFF_CONTACTS_DEPARTMENT_ORDER = [
   "役員",
   "DC事業部",
   "DX事業部",
   "経理部",
+  "事務管理部",
   "工務店アライアンス事業部",
-  "トラーチ倶楽部",
-  "ネット案件事業部",
   "人事部",
   "パーソナルトラーチ",
   "施工管理部",
 ] as const;
+
+export const STAFF_CONTACTS_EXCLUDED_NAMES = [
+  "安若滉平",
+  "岡崎大",
+  "加藤綾野",
+  "金子流威",
+  "若松寅二",
+  "浅井仁美",
+  "中村祐貴",
+  "中田拳斗",
+  "田中孝明",
+  "東良悠喜",
+  "湯野昌",
+  "浜田拓哉",
+  "野尻千紘",
+  "宮嶋祐槻",
+  "稗田早希",
+  "大江祐規",
+] as const;
+
+function isExcludedStaffName(name: string): boolean {
+  const normalized = normApClStaffName(name);
+  if (!normalized) return true;
+  return STAFF_CONTACTS_EXCLUDED_NAMES.some(
+    (excluded) => normApClStaffName(excluded) === normalized,
+  );
+}
 
 function staffPocketAuth() {
   return { apiKey: apiKeyForStaffPocketReadApClList() };
@@ -113,10 +150,21 @@ export async function resolveStaffContactsDirectoryConfig(): Promise<StaffContac
     appFields,
     ["連絡先", "電話番号", "電話", "TEL", "tel", "携帯", "スタッフ連絡先"],
   );
+  const workplaceFieldId = resolveSchemaFieldId(
+    process.env.STAFF_WORKPLACE_FIELD_ID,
+    appFields,
+    ["勤務場所"],
+  );
 
   if (!nameFieldId || !departmentFieldId || !phoneFieldId) return null;
 
-  return { staffAppId, nameFieldId, departmentFieldId, phoneFieldId };
+  return {
+    staffAppId,
+    nameFieldId,
+    departmentFieldId,
+    phoneFieldId,
+    workplaceFieldId,
+  };
 }
 
 function normalizeDepartmentLabel(label: string): string {
@@ -142,8 +190,24 @@ function resolveAllowedDepartment(
   return null;
 }
 
+function contactsDisplayGroup(
+  department: string,
+  workplace: string,
+): string {
+  if (department !== DC_DEPARTMENT) return department;
+  const place = nfkc(workplace);
+  return place ? `${DC_DEPARTMENT}（${place}）` : DC_DEPARTMENT;
+}
+
 function departmentSortIndex(department: string, order: readonly string[]): number {
   const normalized = normalizeDepartmentLabel(department);
+  const dcLabel = normalizeDepartmentLabel(DC_DEPARTMENT);
+  if (normalized === dcLabel || normalized.startsWith(`${dcLabel}（`)) {
+    const dcIndex = order.findIndex(
+      (item) => normalizeDepartmentLabel(item) === dcLabel,
+    );
+    if (dcIndex >= 0) return dcIndex;
+  }
   for (let i = 0; i < order.length; i++) {
     const target = normalizeDepartmentLabel(order[i]!);
     if (normalized === target) return i;
@@ -153,6 +217,16 @@ function departmentSortIndex(department: string, order: readonly string[]): numb
     if (normalized.includes(target) || target.includes(normalized)) return i;
   }
   return order.length;
+}
+
+function dcWorkplaceSortIndex(groupLabel: string): number {
+  const match = groupLabel.match(/（(.+)）$/);
+  if (!match) return DC_WORKPLACE_ORDER.length;
+  const place = normalizeDepartmentLabel(match[1]!);
+  for (let i = 0; i < DC_WORKPLACE_ORDER.length; i++) {
+    if (normalizeDepartmentLabel(DC_WORKPLACE_ORDER[i]!) === place) return i;
+  }
+  return DC_WORKPLACE_ORDER.length;
 }
 
 function formatContactPhone(raw: string): string {
@@ -189,7 +263,7 @@ export async function fetchStaffContactsByDepartment(
         pickRecordValueByFieldAliases(ro, cfg.nameFieldId),
       ),
     );
-    if (!staffName) continue;
+    if (!staffName || isExcludedStaffName(staffName)) continue;
 
     const departmentRaw = nfkc(
       pocketTableCellToPlainString(
@@ -208,9 +282,19 @@ export async function fetchStaffContactsByDepartment(
       ),
     );
 
-    const list = grouped.get(department) ?? [];
+    const workplace =
+      department === DC_DEPARTMENT && cfg.workplaceFieldId
+        ? nfkc(
+            pocketTableCellToPlainString(
+              pickRecordValueByFieldAliases(ro, cfg.workplaceFieldId),
+            ),
+          )
+        : "";
+
+    const groupLabel = contactsDisplayGroup(department, workplace);
+    const list = grouped.get(groupLabel) ?? [];
     list.push({ staffName, phone });
-    grouped.set(department, list);
+    grouped.set(groupLabel, list);
   }
 
   const groups = [...grouped.entries()]
@@ -224,6 +308,9 @@ export async function fetchStaffContactsByDepartment(
       const ai = departmentSortIndex(a.department, departmentOrder);
       const bi = departmentSortIndex(b.department, departmentOrder);
       if (ai !== bi) return ai - bi;
+      const adc = dcWorkplaceSortIndex(a.department);
+      const bdc = dcWorkplaceSortIndex(b.department);
+      if (adc !== bdc) return adc - bdc;
       return a.department.localeCompare(b.department, "ja");
     });
 
