@@ -155,6 +155,10 @@ function ItemGroupCard({
   );
 }
 
+function isCalloutNote(note: string) {
+  return note.startsWith("→") || note.startsWith("※");
+}
+
 function DaySectionCard({ section }: { section: InternalEventsDaySection }) {
   return (
     <div className="rounded-2xl border border-slate-200/90 bg-white px-4 py-3.5 shadow-sm ring-1 ring-slate-100 dark:border-slate-700 dark:bg-slate-900/40 dark:ring-slate-800">
@@ -168,7 +172,11 @@ function DaySectionCard({ section }: { section: InternalEventsDaySection }) {
           {section.notes.map((note) => (
             <li
               key={note}
-              className="list-none rounded-lg bg-amber-50 px-3 py-2 text-[13px] font-medium leading-relaxed text-amber-950 ring-1 ring-amber-100 dark:bg-amber-950/25 dark:text-amber-100 dark:ring-amber-900/40"
+              className={
+                isCalloutNote(note)
+                  ? "list-none rounded-lg bg-amber-50 px-3 py-2 text-[13px] font-medium leading-relaxed text-amber-950 ring-1 ring-amber-100 dark:bg-amber-950/25 dark:text-amber-100 dark:ring-amber-900/40"
+                  : "list-none text-[13px] leading-relaxed text-slate-600 dark:text-slate-400"
+              }
             >
               {note}
             </li>
@@ -176,9 +184,9 @@ function DaySectionCard({ section }: { section: InternalEventsDaySection }) {
         </ul>
       ) : null}
       {section.steps?.length ? (
-        <ol className={`flex flex-col gap-3 ${section.title ? "mt-3" : ""}`}>
+        <ol className={`flex flex-col gap-2 ${section.title || section.notes?.length ? "mt-2.5" : ""}`}>
           {section.steps.map((step) => (
-            <ScheduleStepCard key={step.mark} step={step} nested />
+            <ScheduleStepCard key={step.mark} step={step} nested compact />
           ))}
         </ol>
       ) : null}
@@ -237,28 +245,35 @@ function DayScheduleBlock({ block }: { block: InternalEventsDayBlock }) {
 function ScheduleStepCard({
   step,
   nested = false,
+  compact = false,
 }: {
   step: InternalEventsScheduleStep;
   nested?: boolean;
+  compact?: boolean;
 }) {
   const cardClass = nested
-    ? "rounded-xl bg-slate-50 px-3 py-3 ring-1 ring-slate-100 dark:bg-slate-950/40 dark:ring-slate-800"
+    ? compact
+      ? "rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-slate-100 dark:bg-slate-950/40 dark:ring-slate-800"
+      : "rounded-xl bg-slate-50 px-3 py-3 ring-1 ring-slate-100 dark:bg-slate-950/40 dark:ring-slate-800"
     : "rounded-2xl border border-slate-200/90 bg-white px-4 py-3.5 shadow-sm ring-1 ring-slate-100 dark:border-slate-700 dark:bg-slate-900/40 dark:ring-slate-800";
+
+  const markClass = compact
+    ? "flex size-7 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-[13px] font-extrabold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+    : "flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-[15px] font-extrabold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300";
+
+  const titleClass = compact
+    ? "text-[14px] font-bold leading-snug text-slate-900 dark:text-slate-100"
+    : "text-[15px] font-bold leading-snug text-slate-900 dark:text-slate-100";
 
   return (
     <li className={cardClass}>
-      <div className="flex items-start gap-3">
-        <span
-          className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-[15px] font-extrabold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
-          aria-hidden
-        >
+      <div className="flex items-start gap-2.5">
+        <span className={markClass} aria-hidden>
           {step.mark}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-            <p className="text-[15px] font-bold leading-snug text-slate-900 dark:text-slate-100">
-              {step.title}
-            </p>
+            <p className={titleClass}>{step.title}</p>
             {step.duration ? (
               <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
                 {step.duration}
