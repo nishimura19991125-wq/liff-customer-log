@@ -90,10 +90,57 @@ function phoneFromVcardFiles(raw: unknown): {
   return { phone: "", hasAttachment: true };
 }
 
+function deepFindPhoneString(raw: unknown, depth = 0): string {
+  if (depth > 6 || raw == null) return "";
+  if (typeof raw === "string") {
+    const t = raw.trim();
+    return parsePhoneDigits(t) ? t : "";
+  }
+  if (typeof raw === "number" || typeof raw === "boolean") {
+    const t = String(raw).trim();
+    return parsePhoneDigits(t) ? t : "";
+  }
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const found = deepFindPhoneString(item, depth + 1);
+      if (found) return found;
+    }
+    return "";
+  }
+  if (typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    for (const k of [
+      "value",
+      "displayValue",
+      "label",
+      "text",
+      "tel",
+      "phone",
+      "number",
+      "caption",
+      "content",
+    ]) {
+      const found = deepFindPhoneString(o[k], depth + 1);
+      if (found) return found;
+    }
+    for (const value of Object.values(o)) {
+      const found = deepFindPhoneString(value, depth + 1);
+      if (found) return found;
+    }
+  }
+  return "";
+}
+
 /** @pocket「連絡先」列（テキスト・オブジェクト・vCard 添付）を正規化 */
 export function parsePocketContactField(raw: unknown): PocketContactFieldParsed {
   const fromFiles = phoneFromVcardFiles(raw);
   if (fromFiles.phone) return fromFiles;
+
+  const deepPhone = deepFindPhoneString(raw);
+  if (deepPhone) {
+    return { phone: deepPhone, hasAttachment: fromFiles.hasAttachment };
+  }
+
   if (fromFiles.hasAttachment) return fromFiles;
 
   const coerced = coerceContactDisplayString(raw);
@@ -101,8 +148,7 @@ export function parsePocketContactField(raw: unknown): PocketContactFieldParsed 
     return { phone: coerced, hasAttachment: false };
   }
 
-  if (fromFiles.hasAttachment) return fromFiles;
-  return { phone: coerced, hasAttachment: false };
+  return { phone: coerced, hasAttachment: fromFiles.hasAttachment };
 }
 
 function escapeVcardValue(value: string): string {
