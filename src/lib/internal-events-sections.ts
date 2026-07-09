@@ -29,7 +29,8 @@ export type InternalEventsBulletGroup = {
 
 export type InternalEventsContent =
   | { type: "text"; paragraphs: string[] }
-  | { type: "bullet-list"; heading?: string; items: string[] }
+  | { type: "bullet-list"; heading?: string; items: string[]; singleColumn?: boolean }
+  | { type: "pocket-contacts" }
   | {
       type: "grouped-bullet";
       groups: InternalEventsBulletGroup[];
@@ -351,10 +352,7 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
     title: "連絡先一覧",
     description: "社内の連絡先を確認します。",
     content: {
-      type: "text",
-      paragraphs: [
-        "連絡先一覧は準備中です。内容が決まり次第、ここに掲載します。",
-      ],
+      type: "pocket-contacts",
     },
   },
   {

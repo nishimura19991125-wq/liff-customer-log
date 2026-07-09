@@ -13,6 +13,7 @@ import {
 } from "@/components/liff-chrome";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
+import { LiffIdTokenProvider } from "@/lib/liff-id-token-context";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
@@ -121,7 +122,7 @@ export function InternalEventsLiffFrame({
         accountLoading={account.loading}
         onBind={account.bindStaff}
       />
-      {children}
+      <LiffIdTokenProvider idToken={idToken}>{children}</LiffIdTokenProvider>
       <div className="mt-6 flex flex-col gap-3">
         {backHref !== "/" ? (
           <LiffGhostLink href={backHref}>{backLabel}</LiffGhostLink>

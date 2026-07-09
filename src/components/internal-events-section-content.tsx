@@ -1,3 +1,4 @@
+import { InternalEventsContactsContent } from "@/components/internal-events-contacts-content";
 import {
   INTERNAL_EVENTS_OUTSIDE_FRAME,
   type InternalEventsBulletGroup,
@@ -370,7 +371,13 @@ export function InternalEventsSectionContent({
             {content.heading}
           </p>
         ) : null}
-        <ul className="grid gap-2 sm:grid-cols-2">
+        <ul
+          className={
+            content.singleColumn
+              ? "flex flex-col gap-2"
+              : "grid gap-2 sm:grid-cols-2"
+          }
+        >
           {content.items.map((item) => (
             <li
               key={item}
@@ -388,6 +395,10 @@ export function InternalEventsSectionContent({
         </ul>
       </div>
     );
+  }
+
+  if (content.type === "pocket-contacts") {
+    return <InternalEventsContactsContent />;
   }
 
   if (content.type === "grouped-bullet") {

@@ -129,6 +129,7 @@ function staffRosterListFieldsCsv(): string {
     "STAFF_CL_AVAILABILITY_FIELD_ID",
     "STAFF_WORKPLACE_FIELD_ID",
     "STAFF_DEPARTMENT_FIELD_ID",
+    "STAFF_PHONE_FIELD_ID",
     "STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID",
     "STAFF_PIN_HASH_FIELD_ID",
   ] as const) {
@@ -149,6 +150,7 @@ function staffRosterUseExtendedFieldsCsv(): boolean {
     "STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID",
     "STAFF_WORKPLACE_FIELD_ID",
     "STAFF_DEPARTMENT_FIELD_ID",
+    "STAFF_PHONE_FIELD_ID",
     "STAFF_AVAILABILITY_FIELD_ID",
   ] as const) {
     if (process.env[envKey]?.trim()) return true;
