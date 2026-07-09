@@ -12,10 +12,9 @@ import {
   pickRecordValueByFieldAliases,
   resolveConfiguredFieldToSchemaUniqueId,
 } from "@/lib/calendar-kojo";
-import { formatPhoneNumberInput } from "@/lib/customer-info-form/phone-number";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
-import { parsePocketContactField } from "@/lib/pocket-contact-field";
+import { parsePocketContactField, pocketTextContactToDisplay } from "@/lib/pocket-contact-field";
 import { pocketTableCellToPlainString } from "@/lib/staff-construction-availability";
 import { staffPhoneFieldIdConfigured } from "@/lib/staff-phone-field-config";
 import {
@@ -117,6 +116,18 @@ function pickFieldUniqueIdByCaptions(
   return null;
 }
 
+function pickFieldUniqueIdByFieldNumber(
+  fields: AtPocketFieldRow[],
+  num: number,
+): string | null {
+  for (const f of fields) {
+    if (f.fieldId !== num) continue;
+    const id = f.uniqueId?.trim();
+    if (id) return id;
+  }
+  return null;
+}
+
 function resolveSchemaFieldId(
   configuredId: string | undefined,
   fields: AtPocketFieldRow[],
@@ -170,15 +181,17 @@ export async function resolveStaffContactsDirectoryConfig(): Promise<StaffContac
     "スタッフ連絡先",
   ]);
   const phoneFieldId =
-    (phoneByCaption
-      ? resolveConfiguredFieldToSchemaUniqueId(phoneByCaption, appFields) ??
-        phoneByCaption
-      : null) ??
     resolveSchemaFieldId(
       staffPhoneFieldIdConfigured(),
       appFields,
       ["連絡先", "電話番号", "電話", "TEL", "tel", "携帯", "スタッフ連絡先"],
-    );
+    ) ??
+    pickFieldUniqueIdByFieldNumber(appFields, 4) ??
+    (phoneByCaption
+      ? resolveConfiguredFieldToSchemaUniqueId(phoneByCaption, appFields) ??
+        phoneByCaption
+      : null) ??
+    staffPhoneFieldIdConfigured();
   const workplaceFieldId = resolveSchemaFieldId(
     process.env.STAFF_WORKPLACE_FIELD_ID,
     appFields,
@@ -262,10 +275,10 @@ function staffContactFieldIds(cfg: StaffContactsDirectoryConfig): string[] {
   return [
     ...new Set(
       [
-        cfg.phoneFieldId,
-        staffPhoneFieldIdConfigured(),
         "field-4",
         "field_4",
+        staffPhoneFieldIdConfigured(),
+        cfg.phoneFieldId,
       ]
         .map((id) => id.trim())
         .filter(Boolean),
@@ -298,6 +311,10 @@ function staffContactsFetchFieldsCsv(cfg: StaffContactsDirectoryConfig): string 
 async function fetchStaffContactRows(
   cfg: StaffContactsDirectoryConfig,
 ): Promise<AtPocketRecordRow[]> {
+  const { fetchStaffRosterRowsCached } = await import("@/lib/staff-roster-cache");
+  const cached = await fetchStaffRosterRowsCached();
+  if (cached.length > 0) return cached;
+
   const listAuths = staffReadListAuths();
   const ctx: AtPocketRequestContext = {
     operation: "contacts:名簿一覧",
@@ -319,8 +336,7 @@ async function enrichContactFromRecordDetail(
   recordId: string,
 ): Promise<unknown> {
   const auth = staffPocketAuth();
-  const fields = staffContactsFetchFieldsCsv(cfg);
-  const row = await fetchRecordById(cfg.staffAppId, recordId, auth, fields);
+  const row = await fetchRecordById(cfg.staffAppId, recordId, auth);
   if (!row) return undefined;
   return readStaffContactRaw(row, cfg);
 }
@@ -349,10 +365,7 @@ async function enrichContactsInBatch(
 }
 
 function formatContactPhone(raw: unknown): string {
-  const parsed = parsePocketContactField(raw);
-  const trimmed = nfkc(parsed.phone);
-  if (!trimmed) return "";
-  return formatPhoneNumberInput(trimmed) || trimmed;
+  return pocketTextContactToDisplay(raw);
 }
 
 export async function fetchStaffContactsByDepartment(

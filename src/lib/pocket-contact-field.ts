@@ -1,5 +1,5 @@
 import { parseAtPocketFileField } from "@/lib/at-pocket-file-field";
-import { parsePhoneDigits } from "@/lib/customer-info-form/phone-number";
+import { formatPhoneNumberInput, parsePhoneDigits } from "@/lib/customer-info-form/phone-number";
 import { pocketTableCellToPlainString } from "@/lib/staff-construction-availability";
 
 export type PocketContactFieldParsed = {
@@ -93,7 +93,7 @@ function phoneFromVcardFiles(raw: unknown): {
 function deepFindPhoneString(raw: unknown, depth = 0): string {
   if (depth > 6 || raw == null) return "";
   if (typeof raw === "string") {
-    const t = raw.trim();
+    const t = normalizeContactText(raw);
     return parsePhoneDigits(t) ? t : "";
   }
   if (typeof raw === "number" || typeof raw === "boolean") {
@@ -135,6 +135,36 @@ function deepFindPhoneString(raw: unknown, depth = 0): string {
   return "";
 }
 
+function normalizeContactText(raw: string): string {
+  let text = raw.normalize("NFKC").trim();
+  if (!text) return "";
+
+  const telHref = /href\s*=\s*["']tel:([^"']+)["']/i.exec(text);
+  if (telHref?.[1]?.trim()) text = telHref[1].trim();
+
+  const telPlain = /^tel:([+\d\-()\s]+)$/i.exec(text);
+  if (telPlain?.[1]?.trim()) text = telPlain[1].trim();
+
+  if (/<[^>]+>/.test(text)) {
+    text = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  }
+
+  return text;
+}
+
+/** @pocket テキスト「連絡先」列の表示用文字列 */
+export function pocketTextContactToDisplay(raw: unknown): string {
+  const coerced = normalizeContactText(coerceContactDisplayString(raw));
+  if (!coerced) return "";
+
+  const digits = parsePhoneDigits(coerced);
+  if (digits.length >= 10) {
+    return formatPhoneNumberInput(digits) || coerced;
+  }
+
+  return coerced;
+}
+
 /** @pocket「連絡先」列（テキスト・オブジェクト・vCard 添付）を正規化 */
 export function parsePocketContactField(raw: unknown): PocketContactFieldParsed {
   const fromFiles = phoneFromVcardFiles(raw);
@@ -147,7 +177,7 @@ export function parsePocketContactField(raw: unknown): PocketContactFieldParsed 
 
   if (fromFiles.hasAttachment) return fromFiles;
 
-  const coerced = coerceContactDisplayString(raw);
+  const coerced = normalizeContactText(coerceContactDisplayString(raw));
   if (coerced && parsePhoneDigits(coerced)) {
     return { phone: coerced, hasAttachment: false };
   }
