@@ -91,7 +91,7 @@ export const ORG_CHART_DATA: OrgChartData = {
         },
         {
           title: "DX事業課",
-          staff: ["TL 西村係長", "富田主任"],
+          staff: ["TL 西村係長", "冨田主任"],
         },
       ],
     },
@@ -114,7 +114,6 @@ export const ORG_CHART_DATA: OrgChartData = {
               title: "名古屋支社",
               staff: [
                 "TL 松浪主任",
-                "加藤主任",
                 "丸山係員",
                 "瀬島係員",
                 "阪本係員",
@@ -166,8 +165,7 @@ export const ORG_CHART_DATA: OrgChartData = {
           staff: [
             "TL 大山次長",
             "松岡次長（兼）",
-            "山口係員",
-            "敵蔭係員",
+            "敏蔭係員",
             "江戸係員（兼）",
           ],
         },
