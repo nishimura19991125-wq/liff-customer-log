@@ -427,16 +427,6 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
       ],
     },
   },
-  {
-    slug: "trarchi-org-chart",
-    title: "トラーチ組織図",
-    description: "トラーチ倶楽部の組織図を確認します。",
-    content: {
-      type: "image",
-      src: "/trarchi-org-chart.png",
-      alt: "トラーチ組織図",
-    },
-  },
 ];
 
 export function internalEventsSectionBySlug(

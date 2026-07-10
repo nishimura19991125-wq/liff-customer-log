@@ -146,7 +146,6 @@ const SECTION_ICONS: Record<string, ReactNode> = {
   "line-send-list": <LineSendListGlyph />,
   "org-chart": <OrgChartGlyph />,
   "trarchi-culture": <CultureGlyph />,
-  "trarchi-org-chart": <OrgChartGlyph />,
 };
 
 export default function InternalEventsPage() {
