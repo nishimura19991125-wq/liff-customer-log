@@ -35,7 +35,7 @@ function reportMaxPages(): number {
 }
 
 function cacheKey(reportAppId: string, fieldsCsv: string): string {
-  return `${reportAppId}\0${fieldsCsv}`;
+  return `${reportAppId}\u0000${fieldsCsv}`;
 }
 
 function getStaleRows(key: string): AtPocketRecordRow[] | null {

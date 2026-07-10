@@ -11,7 +11,7 @@ const store = new Map<string, CacheEntry>();
 const TTL_MS = 30 * 60 * 1000;
 
 function entryKey(appId: string, recordId: string): string {
-  return `${appId.trim()}\0${recordId.trim()}`;
+  return `${appId.trim()}\u0000${recordId.trim()}`;
 }
 
 /** 一覧取得時の添付ファイルをキャッシュ（content 付きレコードの再取得を避ける） */

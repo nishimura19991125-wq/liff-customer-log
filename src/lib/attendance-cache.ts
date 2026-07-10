@@ -42,11 +42,11 @@ export function attendanceStatusCacheTtlMs(): number {
 }
 
 export function statusCacheKey(staffName: string, workDate: string): string {
-  return `${staffName.normalize("NFKC").trim()}\0${workDate}`;
+  return `${staffName.normalize("NFKC").trim()}\u0000${workDate}`;
 }
 
 export function attendanceRosterCacheKey(workDate: string): string {
-  return `roster\0${workDate}`;
+  return `roster\u0000${workDate}`;
 }
 
 export function getCachedRosterBundle(

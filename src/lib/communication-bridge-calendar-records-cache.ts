@@ -43,7 +43,7 @@ function cacheKey(
   fieldsCsv: string,
   pocketQuery: string | null,
 ): string {
-  return `${appId}\0${fieldsCsv}\0${pocketQuery ?? ""}`;
+  return `${appId}\u0000${fieldsCsv}\u0000${pocketQuery ?? ""}`;
 }
 
 function getStaleRows(key: string): AtPocketRecordRow[] | null {

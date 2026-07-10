@@ -102,7 +102,7 @@ function rosterCacheKey(): string | null {
   const lineIds = staffLineUserIdFieldIdsFromEnv();
   const lineOn = staffLineBindingEnabled(lineIds);
   const phoneEnv = staffPhoneFieldIdConfigured();
-  return `${staffAppId}\0${staffNameFieldId}\0${lineOn ? "line" : "name"}\0${phoneEnv}\0${STAFF_ROSTER_FIELDS_CSV_VERSION}`;
+  return `${staffAppId}\u0000${staffNameFieldId}\u0000${lineOn ? "line" : "name"}\u0000${phoneEnv}\u0000${STAFF_ROSTER_FIELDS_CSV_VERSION}`;
 }
 
 function isRateLimited(now: number): boolean {

@@ -18,7 +18,7 @@ function keyLookupCacheTtlMs(): number {
 }
 
 function cacheKey(fieldId: string, uniqueKey: string): string {
-  return `${fieldId.trim()}\0${uniqueKey.normalize("NFKC").trim()}`;
+  return `${fieldId.trim()}\u0000${uniqueKey.normalize("NFKC").trim()}`;
 }
 
 export function invalidateCustomerInfoKeyLookupCache(): void {

@@ -94,7 +94,7 @@ let cachedMapKey = "";
 async function staffNameToWorkplaceMap(
   cfg: StaffWorkplaceLookupConfig,
 ): Promise<Map<string, string>> {
-  const cacheKey = `${cfg.staffAppId}\0${cfg.nameFieldId}\0${cfg.workplaceFieldId}`;
+  const cacheKey = `${cfg.staffAppId}\u0000${cfg.nameFieldId}\u0000${cfg.workplaceFieldId}`;
   if (cachedMap && cachedMapKey === cacheKey) return cachedMap;
 
   const rows = await fetchStaffRosterRowsCached();
