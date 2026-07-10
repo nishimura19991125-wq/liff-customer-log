@@ -41,7 +41,8 @@ export type InternalEventsContent =
       timeRange: string;
       steps: InternalEventsScheduleStep[];
     }
-  | { type: "day-schedule"; blocks: InternalEventsDayBlock[] };
+  | { type: "day-schedule"; blocks: InternalEventsDayBlock[] }
+  | { type: "image"; src: string; alt: string };
 
 export type InternalEventsSection = {
   slug: string;
@@ -414,6 +415,16 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
         "浸透するまで、声をかけてやり続ける。",
         "自分が主人公、株式会社自分の経営者。",
       ],
+    },
+  },
+  {
+    slug: "trarchi-org-chart",
+    title: "トラーチ組織図",
+    description: "トラーチ倶楽部の組織図を確認します。",
+    content: {
+      type: "image",
+      src: "/trarchi-org-chart.png",
+      alt: "トラーチ組織図",
     },
   },
 ];

@@ -435,6 +435,19 @@ export function InternalEventsSectionContent({
     );
   }
 
+  if (content.type === "image") {
+    return (
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/40">
+        {/* eslint-disable-next-line @next/next/no-img-element -- 社内組織図の静的画像 */}
+        <img
+          src={content.src}
+          alt={content.alt}
+          className="mx-auto block h-auto w-full max-w-full"
+        />
+      </div>
+    );
+  }
+
   if (content.type === "schedule") {
     return (
       <div>

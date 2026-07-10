@@ -90,12 +90,62 @@ function CultureGlyph() {
   );
 }
 
+function OrgChartGlyph() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect
+        x="8"
+        y="3"
+        width="8"
+        height="5"
+        rx="1"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M12 8v3M6 14h12M6 14v3M12 11v3M18 14v3"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <rect
+        x="3"
+        y="17"
+        width="6"
+        height="4"
+        rx="1"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <rect
+        x="9"
+        y="17"
+        width="6"
+        height="4"
+        rx="1"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <rect
+        x="15"
+        y="17"
+        width="6"
+        height="4"
+        rx="1"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+    </svg>
+  );
+}
+
 const SECTION_ICONS: Record<string, ReactNode> = {
   "morning-assembly": <MorningAssemblyGlyph />,
   "weekly-wednesday-schedule": <WeeklyWednesdayGlyph />,
   contacts: <ContactsGlyph />,
   "line-send-list": <LineSendListGlyph />,
   "trarchi-culture": <CultureGlyph />,
+  "trarchi-org-chart": <OrgChartGlyph />,
 };
 
 export default function InternalEventsPage() {
