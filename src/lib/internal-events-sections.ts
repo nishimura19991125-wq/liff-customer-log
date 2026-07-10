@@ -380,6 +380,16 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
     },
   },
   {
+    slug: "org-chart",
+    title: "組織図",
+    description: "会社の組織図を確認します。",
+    content: {
+      type: "image",
+      src: "/org-chart.png",
+      alt: "組織図",
+    },
+  },
+  {
     slug: "trarchi-culture",
     title: "トラーチの文化",
     description: "トラーチの文化・方針を確認します。",
