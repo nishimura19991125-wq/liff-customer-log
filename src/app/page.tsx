@@ -175,6 +175,29 @@ function WorkEndReportGlyph() {
   );
 }
 
+function BulletinGlyph() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect
+        x="3"
+        y="4"
+        width="18"
+        height="16"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M7 9h10M7 13h7"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <circle cx="18" cy="6" r="2.4" fill="currentColor" />
+    </svg>
+  );
+}
+
 export default function HomeHubPage() {
   const [phase, setPhase] = useState<"init" | "need-login" | "ready" | "error">(
     () => (LIFF_ID ? "init" : "error"),
@@ -459,6 +482,14 @@ export default function HomeHubPage() {
                   title="社内イベント"
                   description="朝礼の流れ（水曜日以外）・連絡先・トラーチの文化など社内情報を確認します。"
                   icon={<InternalEventGlyph />}
+                  iconTone="blue"
+                  disabled={needsStaffBind}
+                />
+                <LiffMenuCard
+                  href="/bulletin"
+                  title="掲示板"
+                  description="社内のお知らせをカテゴリ別に確認します。"
+                  icon={<BulletinGlyph />}
                   iconTone="blue"
                   disabled={needsStaffBind}
                 />
