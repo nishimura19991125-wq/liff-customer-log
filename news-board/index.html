@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NEWS</title>
+  <style>
+    /* ===== 全体の土台 ===== */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --pink: #e4007f;        /* カテゴリ・NEW の目立つピンク */
+      --line: #eeeeee;        /* 記事を区切る薄いグレー線 */
+      --gray-text: #999999;   /* 日付などのグレー文字 */
+      --search-bg: #f5f5f5;   /* 検索バーの薄いグレー背景 */
+    }
+
+    body {
+      background: #ffffff;
+      color: #111111;
+      font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN",
+                   "Yu Gothic", Meiryo, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.7;
+    }
+
+    /* 中央寄せ＋最大幅（レスポンシブ） */
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 60px 20px;
+    }
+
+    /* ===== ヘッダー（NEWSロゴ） ===== */
+    .logo {
+      text-align: center;
+      font-size: 40px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      margin-bottom: 36px;
+    }
+
+    /* ===== カテゴリタブ ===== */
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 28px;
+      margin-bottom: 32px;
+    }
+    .tab {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      color: #333333;
+      padding: 6px 2px;
+      position: relative;
+      font-family: inherit;
+      transition: color 0.2s;
+    }
+    .tab:hover { color: #000000; }
+    /* 選択中のタブの下に黒い細い下線 */
+    .tab.active {
+      color: #000000;
+      font-weight: 700;
+    }
+    .tab.active::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -4px;
+      height: 2px;
+      background: #000000;
+    }
+
+    /* ===== 検索バー ===== */
+    .search {
+      position: relative;
+      margin-bottom: 40px;
+    }
+    .search svg {
+      position: absolute;
+      left: 18px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 18px;
+      height: 18px;
+      stroke: #888888;
+    }
+    .search input {
+      width: 100%;
+      border: none;
+      background: var(--search-bg);
+      border-radius: 999px;
+      padding: 16px 20px 16px 48px;
+      font-size: 15px;
+      font-family: inherit;
+      color: #333333;
+      outline: none;
+    }
+    .search input::placeholder { color: #aaaaaa; }
+
+    /* ===== NEWSリスト ===== */
+    .news-list {
+      border-top: 1px solid var(--line);
+    }
+    .news-item {
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      padding: 22px 4px;
+      border-bottom: 1px solid var(--line);
+      transition: opacity 0.2s;
+    }
+    .news-item:hover { opacity: 0.55; }  /* ホバーで少し薄く */
+
+    .news-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+    .news-category {
+      color: var(--pink);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .news-date {
+      color: var(--gray-text);
+      font-size: 12px;
+    }
+    .news-new {
+      color: var(--pink);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+    }
+    .news-title {
+      font-size: 15px;
+      color: #111111;
+    }
+
+    /* 検索・フィルタで0件のとき */
+    .empty {
+      text-align: center;
+      color: var(--gray-text);
+      padding: 60px 0;
+      font-size: 14px;
+    }
+
+    /* スマホ向け微調整 */
+    @media (max-width: 600px) {
+      .logo { font-size: 30px; }
+      .tabs { gap: 16px; }
+      .tab { font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- ヘッダー -->
+    <h1 class="logo">NEWS</h1>
+
+    <!-- カテゴリタブ -->
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-category="ALL">ALL</button>
+      <button class="tab" data-category="EVENT & LIVE">EVENT &amp; LIVE</button>
+      <button class="tab" data-category="RELEASE">RELEASE</button>
+      <button class="tab" data-category="MEDIA">MEDIA</button>
+      <button class="tab" data-category="MEMBERSHIP">MEMBERSHIP</button>
+      <button class="tab" data-category="OTHER">OTHER</button>
+      <button class="tab" data-category="SHOP">SHOP</button>
+    </nav>
+
+    <!-- 検索バー -->
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input type="text" id="searchInput" placeholder="NEWS 検索">
+    </div>
+
+    <!-- NEWSリスト（JSで中身を作ります） -->
+    <div class="news-list" id="newsList"></div>
+  </div>
+
+  <script>
+    // ===== お知らせデータ（ここを増やせば記事が増えます） =====
+    const newsData = [
+      {
+        category: "EVENT & LIVE",
+        date: "2026.07.15",
+        isNew: true,
+        title: "TXT VRコンサートツアー再来！「TOMORROW X TOGETHER VR CONCERT：ENDLESS RIDE」全国7都市にて開催決定！ただいまよりローチケにて先行販売スタート！"
+      },
+      {
+        category: "MEMBERSHIP",
+        date: "2026.07.14",
+        isNew: true,
+        title: "TOMORROW X TOGETHER 日本5thシングル「セツナハナビ (Setsuna Hanabi)」リリース記念プレミアムライブ MOA Membership (JP)会員招待企画のご案内"
+      },
+      {
+        category: "RELEASE",
+        date: "2026.07.10",
+        isNew: false,
+        title: "日本5thシングル「セツナハナビ」本日発売！各種音楽配信サービスでも配信開始しました。"
+      },
+      {
+        category: "MEDIA",
+        date: "2026.07.05",
+        isNew: false,
+        title: "音楽番組出演情報を更新しました。放送スケジュールをチェックしてください。"
+      },
+      {
+        category: "SHOP",
+        date: "2026.06.28",
+        isNew: false,
+        title: "オフィシャルショップにて新作グッズの受注販売がスタートしました。"
+      },
+      {
+        category: "OTHER",
+        date: "2026.06.20",
+        isNew: false,
+        title: "公式ファンクラブサイトメンテナンスのお知らせ。"
+      }
+    ];
+
+    // ===== 表示に使う「今の状態」 =====
+    let currentCategory = "ALL"; // 選ばれているタブ
+    let currentKeyword = "";     // 検索文字
+
+    const newsList = document.getElementById("newsList");
+    const tabs = document.getElementById("tabs");
+    const searchInput = document.getElementById("searchInput");
+
+    // ===== 画面を描き直す関数 =====
+    function render() {
+      // 1) カテゴリで絞る
+      let items = newsData.filter(function (item) {
+        return currentCategory === "ALL" || item.category === currentCategory;
+      });
+
+      // 2) 検索キーワードでタイトルを部分一致で絞る
+      const kw = currentKeyword.trim().toLowerCase();
+      if (kw !== "") {
+        items = items.filter(function (item) {
+          return item.title.toLowerCase().includes(kw);
+        });
+      }
+
+      // 3) 0件なら案内、あれば一覧を作る
+      if (items.length === 0) {
+        newsList.innerHTML = '<p class="empty">該当するお知らせはありません。</p>';
+        return;
+      }
+
+      newsList.innerHTML = items.map(function (item) {
+        const newMark = item.isNew ? '<span class="news-new">NEW</span>' : "";
+        return (
+          '<a href="#" class="news-item">' +
+            '<div class="news-meta">' +
+              '<span class="news-category">[ ' + item.category + ' ]</span>' +
+              '<span class="news-date">' + item.date + '</span>' +
+              newMark +
+            '</div>' +
+            '<p class="news-title">' + item.title + '</p>' +
+          '</a>'
+        );
+      }).join("");
+    }
+
+    // ===== タブをクリックしたとき =====
+    tabs.addEventListener("click", function (e) {
+      const btn = e.target.closest(".tab");
+      if (!btn) return;
+
+      // 見た目：activeを付け替える
+      document.querySelectorAll(".tab").forEach(function (t) {
+        t.classList.remove("active");
+      });
+      btn.classList.add("active");
+
+      // 状態を更新して描き直す
+      currentCategory = btn.dataset.category;
+      render();
+    });
+
+    // ===== 検索欄に入力したとき（リアルタイム） =====
+    searchInput.addEventListener("input", function (e) {
+      currentKeyword = e.target.value;
+      render();
+    });
+
+    // ===== 最初の表示 =====
+    render();
+  </script>
+</body>
+</html>
