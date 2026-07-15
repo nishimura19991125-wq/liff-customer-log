@@ -76,7 +76,7 @@ export function BulletinBoard() {
           type="text"
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
-          placeholder="NEWS 検索"
+          placeholder="お知らせ検索"
           className="w-full rounded-full border-none bg-slate-100 py-3.5 pl-12 pr-5 text-[15px] text-slate-700 outline-none placeholder:text-slate-400 dark:bg-slate-800 dark:text-slate-100"
         />
       </div>
