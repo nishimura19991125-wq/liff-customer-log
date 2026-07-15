@@ -272,7 +272,7 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
                   duration: "5分",
                   subItems: [
                     "週間の成約件数が2件以上 → AP対象",
-                    "週間の粗利金額2,000,000pt以上 → CL対象",
+                    "週間の粗利金額1,500,000pt以上 → CL対象",
                     "月～日 ※日曜日締め",
                   ],
                 },
@@ -287,7 +287,11 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
           ],
         },
         {
-          timeRange: "10:00〜11:00",
+          timeRange: "10:00〜10:15",
+          sections: [{ title: "社長講話" }],
+        },
+        {
+          timeRange: "10:30〜11:30",
           sections: [
             {
               title: "各部署の責任者で議論",
@@ -305,6 +309,11 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
                 "★トラーチ倶楽部 → 大山次長",
               ],
             },
+          ],
+        },
+        {
+          timeRange: "10:30～11:30",
+          sections: [
             {
               title: "他メンバー",
               items: ["事務 → 実務", "営業 → アポロープレ"],
@@ -312,11 +321,14 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
           ],
         },
         {
-          timeRange: "11:00〜12:00",
+          timeRange: "11:30〜12:00",
           sections: [
             {
               title: "各部署に分かれて周知事項共有（議事録）",
-              notes: ["ラブコール内容周知及び再発防止"],
+              notes: [
+                "ラブコール内容周知及び再発防止",
+                "工事対応者確認(営業メンバー)",
+              ],
             },
           ],
         },
@@ -330,10 +342,11 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
         },
         {
           timeRange: "13:00〜14:00",
-          sections: [
-            { title: "営業進捗会議" },
-            { title: "トラーチ倶楽部　進捗会議" },
-          ],
+          sections: [{ title: "営業進捗会議" }],
+        },
+        {
+          timeRange: "13:00〜14:00",
+          sections: [{ title: "トラーチ倶楽部　進捗会議" }],
         },
         {
           timeRange: "14:00〜",
