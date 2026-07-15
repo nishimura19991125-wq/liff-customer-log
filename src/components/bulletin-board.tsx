@@ -11,56 +11,15 @@ type NewsItem = {
 
 const CATEGORIES = [
   "ALL",
-  "EVENT & LIVE",
-  "RELEASE",
-  "MEDIA",
-  "MEMBERSHIP",
-  "OTHER",
-  "SHOP",
+  "営業",
+  "経理",
+  "事務",
+  "DX",
+  "工事",
+  "人事",
 ] as const;
 
-const NEWS_DATA: NewsItem[] = [
-  {
-    category: "EVENT & LIVE",
-    date: "2026.07.15",
-    isNew: true,
-    title:
-      "VRコンサートツアー再来！全国7都市にて開催決定！ただいまより先行販売スタート！",
-  },
-  {
-    category: "MEMBERSHIP",
-    date: "2026.07.14",
-    isNew: true,
-    title:
-      "日本5thシングル リリース記念プレミアムライブ 会員招待企画のご案内",
-  },
-  {
-    category: "RELEASE",
-    date: "2026.07.10",
-    isNew: false,
-    title:
-      "日本5thシングル 本日発売！各種音楽配信サービスでも配信開始しました。",
-  },
-  {
-    category: "MEDIA",
-    date: "2026.07.05",
-    isNew: false,
-    title:
-      "音楽番組出演情報を更新しました。放送スケジュールをチェックしてください。",
-  },
-  {
-    category: "SHOP",
-    date: "2026.06.28",
-    isNew: false,
-    title: "オフィシャルショップにて新作グッズの受注販売がスタートしました。",
-  },
-  {
-    category: "OTHER",
-    date: "2026.06.20",
-    isNew: false,
-    title: "公式サイトメンテナンスのお知らせ。",
-  },
-];
+const NEWS_DATA: NewsItem[] = [];
 
 /** NEWS 風の社内掲示板（サンプルデータ・タブ絞り込み＋タイトル部分一致検索） */
 export function BulletinBoard() {
