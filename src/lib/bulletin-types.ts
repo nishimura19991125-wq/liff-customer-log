@@ -1,7 +1,10 @@
 /** 掲示板の共有型（サーバー・クライアント共通・server-only にしない） */
 
 /** カテゴリー（@pocket のテキスト列・投稿時のプルダウン選択肢） */
+export const BULLETIN_CATEGORY_ALL = "ALL" as const;
+
 export const BULLETIN_CATEGORIES = [
+  BULLETIN_CATEGORY_ALL,
   "営業",
   "経理",
   "事務",
@@ -12,6 +15,22 @@ export const BULLETIN_CATEGORIES = [
 ] as const;
 
 export type BulletinCategory = (typeof BULLETIN_CATEGORIES)[number];
+
+const BULLETIN_CATEGORY_LABEL_MAP: Record<BulletinCategory, string> = {
+  ALL: "全体",
+  営業: "営業",
+  経理: "経理",
+  事務: "事務",
+  DX: "DX",
+  工事: "工事",
+  人事: "人事",
+  トラーチ倶楽部: "トラーチ倶楽部",
+};
+
+export function bulletinCategoryLabel(value: string): string {
+  if (isBulletinCategory(value)) return BULLETIN_CATEGORY_LABEL_MAP[value];
+  return value;
+}
 
 export function isBulletinCategory(value: string): value is BulletinCategory {
   return (BULLETIN_CATEGORIES as readonly string[]).includes(value);

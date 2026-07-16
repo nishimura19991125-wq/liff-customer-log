@@ -8,6 +8,7 @@ import { useLiffSwr } from "@/hooks/use-liff-swr";
 import {
   BULLETIN_CATEGORIES,
   BULLETIN_TAGS,
+  bulletinCategoryLabel,
   bulletinTodayLabelJst,
   isBulletinCategory,
   type BulletinListResponse,
@@ -16,7 +17,7 @@ import {
 import { liffAuthedJsonFetch, isLiffSwrSessionExpired } from "@/lib/liff-swr";
 import { useLiffIdToken } from "@/lib/liff-id-token-context";
 
-const TABS = ["ALL", ...BULLETIN_CATEGORIES] as const;
+const TABS = BULLETIN_CATEGORIES;
 
 type BulletinFormData = {
   category: string;
@@ -117,7 +118,7 @@ function PostDetail({
         <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
           {post.category ? (
             <span className="text-[12px] font-bold tracking-wide text-pink-600 dark:text-pink-400">
-              [ {post.category} ]
+              [ {bulletinCategoryLabel(post.category)} ]
             </span>
           ) : null}
         </div>
@@ -215,7 +216,7 @@ function PostForm({
         >
           {BULLETIN_CATEGORIES.map((c) => (
             <option key={c} value={c}>
-              {c}
+              {bulletinCategoryLabel(c)}
             </option>
           ))}
         </select>
@@ -340,7 +341,8 @@ export function BulletinBoard() {
       kw === "" ||
       item.title.toLowerCase().includes(kw) ||
       item.body.toLowerCase().includes(kw) ||
-      item.category.toLowerCase().includes(kw);
+      item.category.toLowerCase().includes(kw) ||
+      bulletinCategoryLabel(item.category).toLowerCase().includes(kw);
     return matchCategory && matchKeyword;
   });
 
@@ -424,7 +426,7 @@ export function BulletinBoard() {
                   : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
               }`}
             >
-              {c}
+              {bulletinCategoryLabel(c)}
               {active ? (
                 <span className="absolute inset-x-0 -bottom-0.5 h-0.5 rounded bg-slate-900 dark:bg-white" />
               ) : null}
@@ -586,7 +588,7 @@ export function BulletinBoard() {
                                   : "font-bold text-pink-600 dark:text-pink-400"
                               }`}
                             >
-                              [ {item.category} ]
+                              [ {bulletinCategoryLabel(item.category)} ]
                             </span>
                           ) : null}
                           {!isRead(item.id) ? (
