@@ -5,6 +5,7 @@ import {
   fetchAppFields,
   fetchRecordsList,
   updateRecord,
+  type AtPocketRecordRow,
 } from "@/lib/atpocket";
 import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
 import {
@@ -90,6 +91,22 @@ function readTags(
     .filter(Boolean);
 }
 
+/** 投稿日：列の値 → なければ一覧 API の updatedAt / createdAt */
+function readPostDate(
+  row: AtPocketRecordRow,
+  recObj: Record<string, unknown>,
+  dateFieldId: string | null,
+): string {
+  const fromField = dateFieldId ? readText(recObj, dateFieldId) : "";
+  if (fromField) return formatDate(fromField);
+  for (const raw of [row.updatedAt, row.createdAt]) {
+    if (!raw) continue;
+    const s = String(raw).trim();
+    if (s) return formatDate(s);
+  }
+  return "";
+}
+
 /** "2026-07-16 15:30" / ISO などを "2026.07.16" に整形 */
 function formatDate(raw: string): string {
   const m = /(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(raw);
@@ -122,12 +139,12 @@ export async function buildBulletinList(): Promise<BulletinListResponse> {
     const title = readText(recObj, ids.title);
     const body = readText(recObj, ids.body);
     if (!title && !body) continue;
-    const dateRaw = readText(recObj, ids.date);
+    const dateRaw = readPostDate(row, recObj, ids.date);
     posts.push({
       id: atPocketRecordIdFromRow(row) ?? String(posts.length),
       category: readText(recObj, ids.category),
       tags: readTags(recObj, ids.tags),
-      date: dateRaw ? formatDate(dateRaw) : "",
+      date: dateRaw,
       title,
       body,
     });
