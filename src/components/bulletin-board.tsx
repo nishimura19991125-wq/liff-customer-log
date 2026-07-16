@@ -30,6 +30,43 @@ function todayLabel(): string {
   return `${y}.${m}.${day}`;
 }
 
+/** タグと投稿日（タグの横に日付を表示） */
+function PostTagsAndDate({
+  tags,
+  date,
+  today,
+  className,
+}: {
+  tags: string[];
+  date: string;
+  today: string;
+  className?: string;
+}) {
+  if (tags.length === 0 && !date) return null;
+  return (
+    <div
+      className={`flex flex-wrap items-center gap-x-2 gap-y-1.5 ${className ?? ""}`}
+    >
+      {tags.map((tag) => (
+        <span
+          key={tag}
+          className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+        >
+          {tag}
+        </span>
+      ))}
+      {date ? (
+        <span className="text-[12px] text-slate-400">{date}</span>
+      ) : null}
+      {date === today ? (
+        <span className="text-[10px] font-bold tracking-wider text-pink-600 dark:text-pink-400">
+          NEW
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 /** お知らせの全文表示（画面全体） */
 function PostDetail({
   post,
@@ -88,28 +125,14 @@ function PostDetail({
               [ {post.category} ]
             </span>
           ) : null}
-          {post.date ? (
-            <span className="text-[12px] text-slate-400">{post.date}</span>
-          ) : null}
-          {post.date === today ? (
-            <span className="text-[10px] font-bold tracking-wider text-pink-600 dark:text-pink-400">
-              NEW
-            </span>
-          ) : null}
         </div>
 
-        {post.tags.length > 0 ? (
-          <div className="mb-4 flex flex-wrap gap-1.5">
-            {post.tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        ) : null}
+        <PostTagsAndDate
+          tags={post.tags}
+          date={post.date}
+          today={today}
+          className="mb-4"
+        />
 
         <h2 className="text-[20px] font-bold leading-relaxed text-slate-900 dark:text-white">
           {post.title}
@@ -525,29 +548,13 @@ export function BulletinBoard() {
                               [ {item.category} ]
                             </span>
                           ) : null}
-                          {item.date ? (
-                            <span className="text-[12px] text-slate-400">
-                              {item.date}
-                            </span>
-                          ) : null}
-                          {item.date === today ? (
-                            <span className="text-[10px] font-bold tracking-wider text-pink-600 dark:text-pink-400">
-                              NEW
-                            </span>
-                          ) : null}
                         </div>
-                        {item.tags.length > 0 ? (
-                          <div className="mb-1.5 flex flex-wrap gap-1.5">
-                            {item.tags.map((tag) => (
-                              <span
-                                key={tag}
-                                className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                              >
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
+                        <PostTagsAndDate
+                          tags={item.tags}
+                          date={item.date}
+                          today={today}
+                          className="mb-1.5"
+                        />
                         <p className="text-[15px] font-bold leading-relaxed text-slate-900 dark:text-white">
                           {item.title}
                         </p>
