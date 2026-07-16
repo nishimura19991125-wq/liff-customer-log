@@ -1,7 +1,9 @@
 "use client";
 
+import liff from "@line/liff";
 import { useEffect, useState, type FormEvent } from "react";
 
+import { useBulletinRead } from "@/hooks/use-bulletin-read";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
 import {
   BULLETIN_CATEGORIES,
@@ -308,8 +310,30 @@ export function BulletinBoard() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedPost, setSelectedPost] = useState<BulletinPost | null>(null);
+  const [lineUserId, setLineUserId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  const { isRead, markRead } = useBulletinRead(lineUserId);
+
+  useEffect(() => {
+    if (!idToken) {
+      setLineUserId("");
+      return;
+    }
+    let cancelled = false;
+    void liff
+      .getProfile()
+      .then((profile) => {
+        if (!cancelled) setLineUserId(profile.userId);
+      })
+      .catch(() => {
+        if (!cancelled) setLineUserId("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [idToken]);
 
   const posts = data?.posts ?? [];
   const notConfigured = data?.configured === false;
@@ -379,10 +403,16 @@ export function BulletinBoard() {
   }
 
   function startEdit(post: BulletinPost) {
+    markRead(post.id);
     setCreateOpen(false);
     setSelectedPost(null);
     setFeedback(null);
     setEditingId(post.id);
+  }
+
+  function openPost(post: BulletinPost) {
+    markRead(post.id);
+    setSelectedPost(post);
   }
 
   return (
@@ -536,16 +566,39 @@ export function BulletinBoard() {
                       />
                     </div>
                   ) : (
-                    <div className="py-5">
+                    <div
+                      className={`py-5 pl-3 transition ${
+                        isRead(item.id)
+                          ? "border-l-2 border-transparent"
+                          : "border-l-2 border-pink-500 bg-pink-50/50 dark:bg-pink-950/15"
+                      }`}
+                    >
                       <button
                         type="button"
-                        onClick={() => setSelectedPost(item)}
+                        onClick={() => openPost(item)}
                         className="block w-full text-left transition hover:opacity-70"
                       >
-                        <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                          {!isRead(item.id) ? (
+                            <span
+                              className="size-2 shrink-0 rounded-full bg-pink-500"
+                              aria-hidden
+                            />
+                          ) : null}
                           {item.category ? (
-                            <span className="text-[12px] font-bold tracking-wide text-pink-600 dark:text-pink-400">
+                            <span
+                              className={`text-[12px] tracking-wide ${
+                                isRead(item.id)
+                                  ? "font-medium text-slate-500 dark:text-slate-400"
+                                  : "font-bold text-pink-600 dark:text-pink-400"
+                              }`}
+                            >
                               [ {item.category} ]
+                            </span>
+                          ) : null}
+                          {!isRead(item.id) ? (
+                            <span className="text-[10px] font-bold tracking-wider text-pink-600 dark:text-pink-400">
+                              未読
                             </span>
                           ) : null}
                         </div>
@@ -555,7 +608,13 @@ export function BulletinBoard() {
                           today={today}
                           className="mb-1.5"
                         />
-                        <p className="text-[15px] font-bold leading-relaxed text-slate-900 dark:text-white">
+                        <p
+                          className={`text-[15px] leading-relaxed ${
+                            isRead(item.id)
+                              ? "font-medium text-slate-600 dark:text-slate-400"
+                              : "font-bold text-slate-900 dark:text-white"
+                          }`}
+                        >
                           {item.title}
                         </p>
                         {item.body ? (
