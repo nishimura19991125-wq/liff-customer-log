@@ -1,7 +1,7 @@
 "use client";
 
 import liff from "@line/liff";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { useBulletinRead } from "@/hooks/use-bulletin-read";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
@@ -18,7 +18,6 @@ import { liffAuthedJsonFetch, isLiffSwrSessionExpired } from "@/lib/liff-swr";
 import { useLiffIdToken } from "@/lib/liff-id-token-context";
 
 const TABS = BULLETIN_CATEGORIES;
-const TAG_TABS = ["ALL", ...BULLETIN_TAGS] as const;
 const DEFAULT_CATEGORY_FOR_POST = "営業";
 
 type BulletinFormData = {
@@ -165,6 +164,120 @@ function PostDetail({
         </button>
       </footer>
     </div>
+  );
+}
+
+/** タグ絞り込み（検索＋チェックボックス） */
+function TagFilterPanel({
+  selectedTags,
+  onChange,
+}: {
+  selectedTags: string[];
+  onChange: (tags: string[]) => void;
+}) {
+  const [query, setQuery] = useState("");
+
+  const filteredTags = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [...BULLETIN_TAGS];
+    return BULLETIN_TAGS.filter((tag) => tag.toLowerCase().includes(q));
+  }, [query]);
+
+  const allTagsSelected = selectedTags.length === BULLETIN_TAGS.length;
+  const showAll = selectedTags.length === 0;
+
+  return (
+    <section
+      className="mb-4 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
+      aria-label="タグで絞り込み"
+    >
+      <div className="flex border-b border-slate-200 dark:border-slate-700">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="タグを検索"
+          className="min-w-0 flex-1 border-none bg-transparent px-3 py-2.5 text-[14px] text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
+        />
+        <div
+          className="flex w-11 shrink-0 items-center justify-center border-l border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400"
+          aria-hidden
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="size-[18px]"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </div>
+      </div>
+
+      <div className="max-h-52 overflow-y-auto py-1">
+        <label className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/60">
+          <input
+            type="checkbox"
+            checked={allTagsSelected}
+            onChange={() =>
+              onChange(allTagsSelected ? [] : [...BULLETIN_TAGS])
+            }
+            className="size-4 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600"
+          />
+          <span className="text-[14px] text-slate-800 dark:text-slate-100">
+            全選択 / 全解除
+          </span>
+        </label>
+
+        <label className="flex cursor-pointer items-center gap-3 border-t border-slate-100 px-3 py-2 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60">
+          <input
+            type="checkbox"
+            checked={showAll}
+            onChange={() => onChange([])}
+            className="size-4 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600"
+          />
+          <span className="text-[14px] text-slate-800 dark:text-slate-100">
+            ALL
+          </span>
+        </label>
+
+        {filteredTags.map((tag) => {
+          const checked = selectedTags.includes(tag);
+          return (
+            <label
+              key={tag}
+              className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() =>
+                  onChange(
+                    checked
+                      ? selectedTags.filter((t) => t !== tag)
+                      : [...selectedTags, tag],
+                  )
+                }
+                className="size-4 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600"
+              />
+              <span className="text-[14px] text-slate-800 dark:text-slate-100">
+                {tag}
+              </span>
+            </label>
+          );
+        })}
+
+        {filteredTags.length === 0 ? (
+          <p className="px-3 py-3 text-[13px] text-slate-500 dark:text-slate-400">
+            該当するタグはありません
+          </p>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
@@ -417,16 +530,6 @@ export function BulletinBoard() {
     setSelectedPost(post);
   }
 
-  function toggleActiveTag(tag: string) {
-    if (tag === "ALL") {
-      setActiveTags([]);
-      return;
-    }
-    setActiveTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
-    );
-  }
-
   return (
     <div className="mt-4">
       <nav className="-mx-1 mb-5 flex gap-5 overflow-x-auto px-1 pb-1">
@@ -452,28 +555,10 @@ export function BulletinBoard() {
         })}
       </nav>
 
-      <nav className="-mx-1 mb-4 flex gap-5 overflow-x-auto px-1 pb-1">
-        {TAG_TABS.map((t) => {
-          const active = t === "ALL" ? activeTags.length === 0 : activeTags.includes(t);
-          return (
-            <button
-              key={t}
-              type="button"
-              onClick={() => toggleActiveTag(t)}
-              className={`relative shrink-0 whitespace-nowrap pb-1.5 text-[13px] transition-colors ${
-                active
-                  ? "font-bold text-slate-900 dark:text-white"
-                  : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-              }`}
-            >
-              {t === "ALL" ? "ALL" : t}
-              {active ? (
-                <span className="absolute inset-x-0 -bottom-0.5 h-0.5 rounded bg-slate-900 dark:bg-white" />
-              ) : null}
-            </button>
-          );
-        })}
-      </nav>
+      <TagFilterPanel
+        selectedTags={activeTags}
+        onChange={setActiveTags}
+      />
 
       <div className="relative mb-4">
         <svg
