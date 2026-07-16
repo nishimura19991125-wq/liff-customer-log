@@ -170,8 +170,19 @@ export async function createBulletinPost(input: {
     await createRecord(appId, record, writeAuth);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, status: 502, error: `投稿に失敗しました: ${msg}` };
+    return { ok: false, status: 502, error: formatBulletinCreateError(msg) };
   }
 
   return { ok: true };
+}
+
+/** @pocket 登録失敗メッセージをユーザー向けに整形 */
+function formatBulletinCreateError(detail: string): string {
+  if (detail.includes("取込設定") && detail.includes("キー項目")) {
+    return (
+      "投稿に失敗しました。@pocket の掲示板アプリで、キー項目（自動採番）が「取込」設定に登録されていません。" +
+      "アプリ管理 > 掲示板 > 取込 で、自動採番の列をキー項目として取込形式に追加してください（自動採番のままで番号入力は不要です）。"
+    );
+  }
+  return `投稿に失敗しました: ${detail}`;
 }
