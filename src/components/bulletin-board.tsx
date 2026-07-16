@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { useLiffSwr } from "@/hooks/use-liff-swr";
 import {
@@ -28,6 +28,123 @@ function todayLabel(): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}.${m}.${day}`;
+}
+
+/** お知らせの全文表示（画面全体） */
+function PostDetail({
+  post,
+  today,
+  onClose,
+  onEdit,
+}: {
+  post: BulletinPost;
+  today: string;
+  onClose: () => void;
+  onEdit: () => void;
+}) {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-slate-950"
+    >
+      <header className="flex shrink-0 items-center gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="一覧に戻る"
+          className="-ml-1 flex size-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="size-5"
+            aria-hidden
+          >
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </button>
+        <span className="text-[14px] font-medium text-slate-600 dark:text-slate-300">
+          お知らせ
+        </span>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+          {post.category ? (
+            <span className="text-[12px] font-bold tracking-wide text-pink-600 dark:text-pink-400">
+              [ {post.category} ]
+            </span>
+          ) : null}
+          {post.date ? (
+            <span className="text-[12px] text-slate-400">{post.date}</span>
+          ) : null}
+          {post.date === today ? (
+            <span className="text-[10px] font-bold tracking-wider text-pink-600 dark:text-pink-400">
+              NEW
+            </span>
+          ) : null}
+        </div>
+
+        {post.tags.length > 0 ? (
+          <div className="mb-4 flex flex-wrap gap-1.5">
+            {post.tags.map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        <h2 className="text-[20px] font-bold leading-relaxed text-slate-900 dark:text-white">
+          {post.title}
+        </h2>
+        {post.body ? (
+          <p className="mt-4 whitespace-pre-wrap text-[15px] leading-[1.85] text-slate-700 dark:text-slate-200">
+            {post.body}
+          </p>
+        ) : null}
+      </div>
+
+      <footer className="shrink-0 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
+        <button
+          type="button"
+          onClick={onEdit}
+          className="flex w-full items-center justify-center gap-1.5 rounded-full bg-slate-900 py-3 text-[14px] font-bold text-white transition active:scale-[0.99] dark:bg-white dark:text-slate-900"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="size-[14px]"
+            aria-hidden
+          >
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          </svg>
+          編集する
+        </button>
+      </footer>
+    </div>
+  );
 }
 
 /** 投稿・編集の共通フォーム（自身で入力状態を保持） */
@@ -167,6 +284,7 @@ export function BulletinBoard() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedPost, setSelectedPost] = useState<BulletinPost | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -239,6 +357,7 @@ export function BulletinBoard() {
 
   function startEdit(post: BulletinPost) {
     setCreateOpen(false);
+    setSelectedPost(null);
     setFeedback(null);
     setEditingId(post.id);
   }
@@ -395,43 +514,49 @@ export function BulletinBoard() {
                     </div>
                   ) : (
                     <div className="py-5">
-                      <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                        {item.category ? (
-                          <span className="text-[12px] font-bold tracking-wide text-pink-600 dark:text-pink-400">
-                            [ {item.category} ]
-                          </span>
-                        ) : null}
-                        {item.date ? (
-                          <span className="text-[12px] text-slate-400">
-                            {item.date}
-                          </span>
-                        ) : null}
-                        {item.date === today ? (
-                          <span className="text-[10px] font-bold tracking-wider text-pink-600 dark:text-pink-400">
-                            NEW
-                          </span>
-                        ) : null}
-                      </div>
-                      {item.tags.length > 0 ? (
-                        <div className="mb-1.5 flex flex-wrap gap-1.5">
-                          {item.tags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                            >
-                              {tag}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPost(item)}
+                        className="block w-full text-left transition hover:opacity-70"
+                      >
+                        <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                          {item.category ? (
+                            <span className="text-[12px] font-bold tracking-wide text-pink-600 dark:text-pink-400">
+                              [ {item.category} ]
                             </span>
-                          ))}
+                          ) : null}
+                          {item.date ? (
+                            <span className="text-[12px] text-slate-400">
+                              {item.date}
+                            </span>
+                          ) : null}
+                          {item.date === today ? (
+                            <span className="text-[10px] font-bold tracking-wider text-pink-600 dark:text-pink-400">
+                              NEW
+                            </span>
+                          ) : null}
                         </div>
-                      ) : null}
-                      <p className="text-[15px] font-bold leading-relaxed text-slate-900 dark:text-white">
-                        {item.title}
-                      </p>
-                      {item.body ? (
-                        <p className="mt-1 whitespace-pre-wrap text-[14px] leading-relaxed text-slate-600 dark:text-slate-300">
-                          {item.body}
+                        {item.tags.length > 0 ? (
+                          <div className="mb-1.5 flex flex-wrap gap-1.5">
+                            {item.tags.map((tag) => (
+                              <span
+                                key={tag}
+                                className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        <p className="text-[15px] font-bold leading-relaxed text-slate-900 dark:text-white">
+                          {item.title}
                         </p>
-                      ) : null}
+                        {item.body ? (
+                          <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-[14px] leading-relaxed text-slate-600 dark:text-slate-300">
+                            {item.body}
+                          </p>
+                        ) : null}
+                      </button>
                       <div className="mt-2 flex justify-end">
                         <button
                           type="button"
@@ -462,6 +587,15 @@ export function BulletinBoard() {
           )}
         </>
       )}
+
+      {selectedPost ? (
+        <PostDetail
+          post={selectedPost}
+          today={today}
+          onClose={() => setSelectedPost(null)}
+          onEdit={() => startEdit(selectedPost)}
+        />
+      ) : null}
     </div>
   );
 }
