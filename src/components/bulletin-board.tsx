@@ -454,7 +454,7 @@ export function BulletinBoard() {
                   : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
               }`}
             >
-              {t === "ALL" ? "全体" : t}
+              {t === "ALL" ? "ALL" : t}
               {active ? (
                 <span className="absolute inset-x-0 -bottom-0.5 h-0.5 rounded bg-slate-900 dark:bg-white" />
               ) : null}
