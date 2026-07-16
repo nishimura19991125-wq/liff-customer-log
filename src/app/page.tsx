@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { HomeBulletinToday } from "@/components/home-bulletin-today";
 import { HomeDailyOmikujiCard } from "@/components/home-daily-omikuji-card";
 import { HomeMeetingScheduleSummary } from "@/components/home-meeting-schedule-summary";
 import { HomeMissingDocumentsAlert } from "@/components/home-missing-documents-alert";
@@ -353,19 +354,32 @@ export default function HomeHubPage() {
           </p>
         ) : null}
 
-        {!needsStaffBind ? (
-          <HomeDailyOmikujiCard
-            staffName={account.boundStaffName}
-            department={account.boundStaffDepartment}
-            staffRole={account.boundStaffRole}
-          />
-        ) : null}
+        <div className="mt-4 flex flex-col gap-4">
+          {!needsStaffBind ? (
+            <HomeDailyOmikujiCard
+              staffName={account.boundStaffName}
+              department={account.boundStaffDepartment}
+              staffRole={account.boundStaffRole}
+            />
+          ) : null}
 
-        <HomeMissingDocumentsAlert
-          idToken={idToken}
-          boundStaffName={account.boundStaffName}
-          disabled={needsStaffBind || account.loading}
-        />
+          <HomeMissingDocumentsAlert
+            idToken={idToken}
+            boundStaffName={account.boundStaffName}
+            disabled={needsStaffBind || account.loading}
+          />
+
+          <HomeBulletinToday
+            idToken={idToken}
+            disabled={needsStaffBind || account.loading}
+          />
+
+          <HomeMeetingScheduleSummary
+            idToken={idToken}
+            boundStaffName={account.boundStaffName}
+            disabled={needsStaffBind || account.loading}
+          />
+        </div>
 
         <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
         <LiffStaffBindPanel
@@ -377,11 +391,6 @@ export default function HomeHubPage() {
         />
 
         <div className="mt-6 flex flex-col gap-4">
-          <HomeMeetingScheduleSummary
-            idToken={idToken}
-            boundStaffName={account.boundStaffName}
-            disabled={needsStaffBind || account.loading}
-          />
           <LiffMenuCard
             href="/calendar"
             title="工事カレンダー"

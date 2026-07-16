@@ -80,7 +80,7 @@ export function HomeDailyOmikujiCard({
 
   return (
     <section
-      className="mt-4 overflow-hidden rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-orange-50 shadow-sm dark:border-amber-800/40 dark:from-amber-950/30 dark:to-slate-900"
+      className="overflow-hidden rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-orange-50 shadow-sm dark:border-amber-800/40 dark:from-amber-950/30 dark:to-slate-900"
       aria-label="今日のおみくじ"
     >
       <div className="flex items-start gap-3 px-4 py-3.5">

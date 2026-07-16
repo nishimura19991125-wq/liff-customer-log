@@ -8,6 +8,7 @@ import { useLiffSwr } from "@/hooks/use-liff-swr";
 import {
   BULLETIN_CATEGORIES,
   BULLETIN_TAGS,
+  bulletinTodayLabelJst,
   isBulletinCategory,
   type BulletinListResponse,
   type BulletinPost,
@@ -24,15 +25,7 @@ type BulletinFormData = {
   body: string;
 };
 
-function todayLabel(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}.${m}.${day}`;
-}
-
-/** タグと投稿日（タグの横に日付を表示） */
+/** お知らせの全文表示（画面全体） */
 function PostTagsAndDate({
   tags,
   date,
@@ -337,7 +330,7 @@ export function BulletinBoard() {
 
   const posts = data?.posts ?? [];
   const notConfigured = data?.configured === false;
-  const today = todayLabel();
+  const today = bulletinTodayLabelJst();
 
   const kw = keyword.trim().toLowerCase();
   const items = posts.filter((item) => {

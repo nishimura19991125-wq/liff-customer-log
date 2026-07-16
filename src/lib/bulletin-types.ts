@@ -56,3 +56,23 @@ export type BulletinListResponse = {
 export function isBulletinTag(value: string): value is BulletinTag {
   return (BULLETIN_TAGS as readonly string[]).includes(value);
 }
+
+/** 掲示板の日付表示（JST・"2026.07.16"） */
+export function bulletinTodayLabelJst(d = new Date()): string {
+  const key = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo",
+  }).format(d);
+  const [y, m, day] = key.split("-");
+  return `${y}.${m}.${day}`;
+}
+
+/** 閲覧者（既読）1件 */
+export type BulletinViewer = {
+  name: string;
+  date: string;
+};
+
+export type BulletinViewersResponse = {
+  configured: boolean;
+  viewers?: BulletinViewer[];
+};

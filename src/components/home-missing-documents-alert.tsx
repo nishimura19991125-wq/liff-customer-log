@@ -72,7 +72,7 @@ export function HomeMissingDocumentsAlert({
 
   if (collapsed) {
     return (
-      <section className="mb-4" aria-label="書類未回収の警告（折りたたみ中）">
+      <section aria-label="書類未回収の警告（折りたたみ中）">
         <button
           type="button"
           onClick={() => setCollapsed(false)}
@@ -86,7 +86,7 @@ export function HomeMissingDocumentsAlert({
 
   return (
     <section
-      className="relative mb-4 rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm dark:border-red-900 dark:bg-red-950/30 dark:shadow-[0_0_15px_rgba(239,68,68,0.1)]"
+      className="relative rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm dark:border-red-900 dark:bg-red-950/30 dark:shadow-[0_0_15px_rgba(239,68,68,0.1)]"
       aria-label="書類未回収の警告"
     >
       <button

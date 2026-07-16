@@ -54,7 +54,7 @@ export function HomeMeetingScheduleSummary({
   if (!boundStaffName || disabled) return null;
   if (isLoading && !data) {
     return (
-      <section className="mb-4" aria-label="商談進捗情報（読み込み中）">
+      <section aria-label="商談進捗情報（読み込み中）">
         <LiffCard>
           <div className="px-4 py-4">
             <p className="text-[14px] text-slate-500 dark:text-slate-400">
@@ -75,7 +75,7 @@ export function HomeMeetingScheduleSummary({
 
   if (collapsed && items.length > 0) {
     return (
-      <section className="mb-4" aria-label="商談進捗情報（折りたたみ中）">
+      <section aria-label="商談進捗情報（折りたたみ中）">
         <button
           type="button"
           onClick={() => setCollapsed(false)}
@@ -88,7 +88,7 @@ export function HomeMeetingScheduleSummary({
   }
 
   return (
-    <section className="mb-4" aria-label="商談進捗情報一覧">
+    <section aria-label="商談進捗情報一覧">
       <LiffCard>
         <div className="px-4 py-4">
           <div className="flex items-start justify-between gap-3">
