@@ -1,5 +1,21 @@
 /** 掲示板の共有型（サーバー・クライアント共通・server-only にしない） */
 
+/** カテゴリー（@pocket のテキスト列・投稿時のプルダウン選択肢） */
+export const BULLETIN_CATEGORIES = [
+  "営業",
+  "経理",
+  "事務",
+  "DX",
+  "工事",
+  "人事",
+] as const;
+
+export type BulletinCategory = (typeof BULLETIN_CATEGORIES)[number];
+
+export function isBulletinCategory(value: string): value is BulletinCategory {
+  return (BULLETIN_CATEGORIES as readonly string[]).includes(value);
+}
+
 /** タグ（@pocket のチェックボックス列の選択肢） */
 export const BULLETIN_TAGS = [
   "社長",

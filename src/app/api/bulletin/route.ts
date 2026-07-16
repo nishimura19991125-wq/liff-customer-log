@@ -4,7 +4,7 @@ import {
   buildBulletinList,
   createBulletinPost,
 } from "@/lib/bulletin-server";
-import { isBulletinTag } from "@/lib/bulletin-types";
+import { isBulletinCategory, isBulletinTag } from "@/lib/bulletin-types";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -68,6 +68,15 @@ export async function POST(request: Request) {
       { error: "詳細（本文）を入力してください" },
       { status: 400 },
     );
+  }
+  if (!category) {
+    return NextResponse.json(
+      { error: "カテゴリーを選択してください" },
+      { status: 400 },
+    );
+  }
+  if (!isBulletinCategory(category)) {
+    return NextResponse.json({ error: "カテゴリーが不正です" }, { status: 400 });
   }
   if (tags.some((t) => !isBulletinTag(t))) {
     return NextResponse.json({ error: "タグが不正です" }, { status: 400 });

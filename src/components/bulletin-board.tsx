@@ -4,13 +4,14 @@ import { useState, type FormEvent } from "react";
 
 import { useLiffSwr } from "@/hooks/use-liff-swr";
 import {
+  BULLETIN_CATEGORIES,
   BULLETIN_TAGS,
   type BulletinListResponse,
 } from "@/lib/bulletin-types";
 import { liffAuthedJsonFetch, isLiffSwrSessionExpired } from "@/lib/liff-swr";
 import { useLiffIdToken } from "@/lib/liff-id-token-context";
 
-const TABS = ["ALL", ...BULLETIN_TAGS] as const;
+const TABS = ["ALL", ...BULLETIN_CATEGORIES] as const;
 
 function todayLabel(): string {
   const d = new Date();
@@ -29,11 +30,13 @@ export function BulletinBoard() {
     idToken,
   );
 
-  const [activeTag, setActiveTag] = useState<string>("ALL");
+  const [activeCategory, setActiveCategory] = useState<string>("ALL");
   const [keyword, setKeyword] = useState("");
 
   const [formOpen, setFormOpen] = useState(false);
-  const [formCategory, setFormCategory] = useState("");
+  const [formCategory, setFormCategory] = useState<string>(
+    BULLETIN_CATEGORIES[0],
+  );
   const [formTags, setFormTags] = useState<string[]>([]);
   const [formTitle, setFormTitle] = useState("");
   const [formBody, setFormBody] = useState("");
@@ -46,13 +49,14 @@ export function BulletinBoard() {
 
   const kw = keyword.trim().toLowerCase();
   const items = posts.filter((item) => {
-    const matchTag = activeTag === "ALL" || item.tags.includes(activeTag);
+    const matchCategory =
+      activeCategory === "ALL" || item.category === activeCategory;
     const matchKeyword =
       kw === "" ||
       item.title.toLowerCase().includes(kw) ||
       item.body.toLowerCase().includes(kw) ||
       item.category.toLowerCase().includes(kw);
-    return matchTag && matchKeyword;
+    return matchCategory && matchKeyword;
   });
 
   function toggleFormTag(tag: string) {
@@ -86,7 +90,7 @@ export function BulletinBoard() {
         },
       );
       await mutate(res, { revalidate: false });
-      setFormCategory("");
+      setFormCategory(BULLETIN_CATEGORIES[0]);
       setFormTags([]);
       setFormTitle("");
       setFormBody("");
@@ -109,12 +113,12 @@ export function BulletinBoard() {
     <div className="mt-4">
       <nav className="-mx-1 mb-5 flex gap-5 overflow-x-auto px-1 pb-1">
         {TABS.map((c) => {
-          const active = c === activeTag;
+          const active = c === activeCategory;
           return (
             <button
               key={c}
               type="button"
-              onClick={() => setActiveTag(c)}
+              onClick={() => setActiveCategory(c)}
               className={`relative shrink-0 whitespace-nowrap pb-1.5 text-[13px] transition-colors ${
                 active
                   ? "font-bold text-slate-900 dark:text-white"
@@ -176,14 +180,21 @@ export function BulletinBoard() {
                 <div className="mb-3">
                   <label className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
                     カテゴリー
+                    <span className="ml-1 text-pink-600 dark:text-pink-400">
+                      *
+                    </span>
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={formCategory}
                     onChange={(e) => setFormCategory(e.target.value)}
-                    placeholder="カテゴリー（任意）"
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-slate-800 outline-none placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                  />
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-slate-800 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    {BULLETIN_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="mb-3">
                   <label className="mb-2 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
