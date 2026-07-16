@@ -301,7 +301,7 @@ export function BulletinBoard() {
   );
 
   const [activeCategory, setActiveCategory] = useState<string>("ALL");
-  const [activeTag, setActiveTag] = useState<string>("ALL");
+  const [activeTags, setActiveTags] = useState<string[]>([]);
   const [keyword, setKeyword] = useState("");
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -340,7 +340,9 @@ export function BulletinBoard() {
   const items = posts.filter((item) => {
     const matchCategory =
       activeCategory === "ALL" || item.category === activeCategory;
-    const matchTag = activeTag === "ALL" || item.tags.includes(activeTag);
+    const matchTag =
+      activeTags.length === 0 ||
+      activeTags.every((tag) => item.tags.includes(tag));
     const matchKeyword =
       kw === "" ||
       item.title.toLowerCase().includes(kw) ||
@@ -415,6 +417,16 @@ export function BulletinBoard() {
     setSelectedPost(post);
   }
 
+  function toggleActiveTag(tag: string) {
+    if (tag === "ALL") {
+      setActiveTags([]);
+      return;
+    }
+    setActiveTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    );
+  }
+
   return (
     <div className="mt-4">
       <nav className="-mx-1 mb-5 flex gap-5 overflow-x-auto px-1 pb-1">
@@ -442,12 +454,12 @@ export function BulletinBoard() {
 
       <nav className="-mx-1 mb-4 flex gap-5 overflow-x-auto px-1 pb-1">
         {TAG_TABS.map((t) => {
-          const active = t === activeTag;
+          const active = t === "ALL" ? activeTags.length === 0 : activeTags.includes(t);
           return (
             <button
               key={t}
               type="button"
-              onClick={() => setActiveTag(t)}
+              onClick={() => toggleActiveTag(t)}
               className={`relative shrink-0 whitespace-nowrap pb-1.5 text-[13px] transition-colors ${
                 active
                   ? "font-bold text-slate-900 dark:text-white"
