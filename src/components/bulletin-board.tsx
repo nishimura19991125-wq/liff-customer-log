@@ -167,7 +167,7 @@ function PostDetail({
   );
 }
 
-/** タグ絞り込み（検索＋チェックボックス） */
+/** タグ絞り込み（折りたたみ・検索＋チェックボックス） */
 function TagFilterPanel({
   selectedTags,
   onChange,
@@ -175,6 +175,7 @@ function TagFilterPanel({
   selectedTags: string[];
   onChange: (tags: string[]) => void;
 }) {
+  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
   const filteredTags = useMemo(() => {
@@ -184,99 +185,113 @@ function TagFilterPanel({
   }, [query]);
 
   const allTagsSelected = selectedTags.length === BULLETIN_TAGS.length;
-  const showAll = selectedTags.length === 0;
 
   return (
-    <section
-      className="mb-4 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
-      aria-label="タグで絞り込み"
-    >
-      <div className="flex border-b border-slate-200 dark:border-slate-700">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="タグを検索"
-          className="min-w-0 flex-1 border-none bg-transparent px-3 py-2.5 text-[14px] text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
-        />
-        <div
-          className="flex w-11 shrink-0 items-center justify-center border-l border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400"
+    <section className="mb-4" aria-label="タグで絞り込み">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-[13px] text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800/60"
+      >
+        <span className="min-w-0 flex-1 font-medium">フィルターをかける</span>
+        {selectedTags.length > 0 ? (
+          <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            {selectedTags.length}件
+          </span>
+        ) : null}
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`size-4 shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}
           aria-hidden
         >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="size-[18px]"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-        </div>
-      </div>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
 
-      <div className="max-h-52 overflow-y-auto py-1">
-        <label className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/60">
-          <input
-            type="checkbox"
-            checked={allTagsSelected}
-            onChange={() =>
-              onChange(allTagsSelected ? [] : [...BULLETIN_TAGS])
-            }
-            className="size-4 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600"
-          />
-          <span className="text-[14px] text-slate-800 dark:text-slate-100">
-            全選択 / 全解除
-          </span>
-        </label>
-
-        <label className="flex cursor-pointer items-center gap-3 border-t border-slate-100 px-3 py-2 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60">
-          <input
-            type="checkbox"
-            checked={showAll}
-            onChange={() => onChange([])}
-            className="size-4 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600"
-          />
-          <span className="text-[14px] text-slate-800 dark:text-slate-100">
-            ALL
-          </span>
-        </label>
-
-        {filteredTags.map((tag) => {
-          const checked = selectedTags.includes(tag);
-          return (
-            <label
-              key={tag}
-              className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+      {open ? (
+        <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex border-b border-slate-200 dark:border-slate-700">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="タグを検索"
+              className="min-w-0 flex-1 border-none bg-transparent px-3 py-2 text-[13px] text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
+            />
+            <div
+              className="flex w-9 shrink-0 items-center justify-center border-l border-slate-200 text-slate-400 dark:border-slate-700"
+              aria-hidden
             >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="size-4"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            </div>
+          </div>
+
+          <div className="max-h-44 overflow-y-auto py-0.5">
+            <label className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800/60">
               <input
                 type="checkbox"
-                checked={checked}
+                checked={allTagsSelected}
                 onChange={() =>
-                  onChange(
-                    checked
-                      ? selectedTags.filter((t) => t !== tag)
-                      : [...selectedTags, tag],
-                  )
+                  onChange(allTagsSelected ? [] : [...BULLETIN_TAGS])
                 }
-                className="size-4 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600"
+                className="size-3.5 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600"
               />
-              <span className="text-[14px] text-slate-800 dark:text-slate-100">
-                {tag}
+              <span className="text-[13px] text-slate-800 dark:text-slate-100">
+                全選択 / 全解除
               </span>
             </label>
-          );
-        })}
 
-        {filteredTags.length === 0 ? (
-          <p className="px-3 py-3 text-[13px] text-slate-500 dark:text-slate-400">
-            該当するタグはありません
-          </p>
-        ) : null}
-      </div>
+            {filteredTags.map((tag) => {
+              const checked = selectedTags.includes(tag);
+              return (
+                <label
+                  key={tag}
+                  className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() =>
+                      onChange(
+                        checked
+                          ? selectedTags.filter((t) => t !== tag)
+                          : [...selectedTags, tag],
+                      )
+                    }
+                    className="size-3.5 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600"
+                  />
+                  <span className="text-[13px] text-slate-800 dark:text-slate-100">
+                    {tag}
+                  </span>
+                </label>
+              );
+            })}
+
+            {filteredTags.length === 0 ? (
+              <p className="px-3 py-2 text-[12px] text-slate-500 dark:text-slate-400">
+                該当するタグはありません
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
