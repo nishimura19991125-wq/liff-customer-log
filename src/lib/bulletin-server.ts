@@ -4,6 +4,7 @@ import {
   createRecord,
   fetchAppFields,
   fetchRecordsList,
+  updateRecord,
 } from "@/lib/atpocket";
 import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
 import {
@@ -174,6 +175,53 @@ export async function createBulletinPost(input: {
   }
 
   return { ok: true };
+}
+
+export async function updateBulletinPost(
+  recordId: string,
+  input: {
+    category: string;
+    tags: string[];
+    title: string;
+    body: string;
+  },
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const loaded = await loadFieldIds();
+  if (!loaded.ok) {
+    return { ok: false, status: 503, error: loaded.error };
+  }
+
+  const { appId, ids } = loaded;
+  const writeAuth = bulletinWriteAuth();
+  if (!writeAuth.apiKey) {
+    return {
+      ok: false,
+      status: 503,
+      error: "更新用の BULLETIN_ATPOCKET_API_KEY_2（書き込みキー）が未設定です",
+    };
+  }
+
+  const record: Record<string, unknown> = {};
+  if (ids.title) record[ids.title] = input.title;
+  if (ids.body) record[ids.body] = input.body;
+  // カテゴリーはテキスト列
+  if (ids.category) record[ids.category] = input.category;
+  // タグはチェックボックス列（空配列で全解除できるよう常に送る）
+  if (ids.tags) record[ids.tags] = input.tags;
+
+  try {
+    await updateRecord(appId, recordId, record, writeAuth);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, status: 502, error: formatBulletinUpdateError(msg) };
+  }
+
+  return { ok: true };
+}
+
+/** @pocket 更新失敗メッセージをユーザー向けに整形 */
+function formatBulletinUpdateError(detail: string): string {
+  return `更新に失敗しました: ${detail}`;
 }
 
 /** @pocket 登録失敗メッセージをユーザー向けに整形 */
