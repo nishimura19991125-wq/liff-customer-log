@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from "react";
 
-import { HomeBulletinToday } from "@/components/home-bulletin-today";
+import { HomeCompactSummaries } from "@/components/home-compact-summaries";
 import { HomeDailyOmikujiCard } from "@/components/home-daily-omikuji-card";
-import { HomeMeetingScheduleSummary } from "@/components/home-meeting-schedule-summary";
 import { HomeMissingDocumentsAlert } from "@/components/home-missing-documents-alert";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
@@ -354,7 +353,7 @@ export default function HomeHubPage() {
           </p>
         ) : null}
 
-        <div className="mt-4 flex flex-col gap-4">
+        <div className="mt-4 flex flex-col gap-3">
           {!needsStaffBind ? (
             <HomeDailyOmikujiCard
               staffName={account.boundStaffName}
@@ -369,12 +368,7 @@ export default function HomeHubPage() {
             disabled={needsStaffBind || account.loading}
           />
 
-          <HomeBulletinToday
-            idToken={idToken}
-            disabled={needsStaffBind || account.loading}
-          />
-
-          <HomeMeetingScheduleSummary
+          <HomeCompactSummaries
             idToken={idToken}
             boundStaffName={account.boundStaffName}
             disabled={needsStaffBind || account.loading}
