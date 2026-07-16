@@ -185,6 +185,10 @@ function TagFilterPanel({
   }, [query]);
 
   const allTagsSelected = selectedTags.length === BULLETIN_TAGS.length;
+  const selectedTagsLabel =
+    selectedTags.length <= 2
+      ? selectedTags.join("、")
+      : `${selectedTags.slice(0, 2).join("、")} ほか${selectedTags.length - 2}件`;
 
   return (
     <section className="mb-4" aria-label="タグで絞り込み">
@@ -194,7 +198,14 @@ function TagFilterPanel({
         aria-expanded={open}
         className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-[13px] text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800/60"
       >
-        <span className="min-w-0 flex-1 font-medium">フィルターをかける</span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-medium">フィルターをかける</span>
+          {selectedTags.length > 0 ? (
+            <span className="mt-0.5 block truncate text-[11px] text-slate-500 dark:text-slate-400">
+              {selectedTagsLabel}
+            </span>
+          ) : null}
+        </span>
         {selectedTags.length > 0 ? (
           <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
             {selectedTags.length}件
