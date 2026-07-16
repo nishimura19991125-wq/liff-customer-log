@@ -18,6 +18,8 @@ import { liffAuthedJsonFetch, isLiffSwrSessionExpired } from "@/lib/liff-swr";
 import { useLiffIdToken } from "@/lib/liff-id-token-context";
 
 const TABS = BULLETIN_CATEGORIES;
+const TAG_TABS = ["ALL", ...BULLETIN_TAGS] as const;
+const DEFAULT_CATEGORY_FOR_POST = "営業";
 
 type BulletinFormData = {
   category: string;
@@ -299,6 +301,7 @@ export function BulletinBoard() {
   );
 
   const [activeCategory, setActiveCategory] = useState<string>("ALL");
+  const [activeTag, setActiveTag] = useState<string>("ALL");
   const [keyword, setKeyword] = useState("");
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -337,13 +340,15 @@ export function BulletinBoard() {
   const items = posts.filter((item) => {
     const matchCategory =
       activeCategory === "ALL" || item.category === activeCategory;
+    const matchTag = activeTag === "ALL" || item.tags.includes(activeTag);
     const matchKeyword =
       kw === "" ||
       item.title.toLowerCase().includes(kw) ||
       item.body.toLowerCase().includes(kw) ||
       item.category.toLowerCase().includes(kw) ||
+      item.tags.some((t) => t.toLowerCase().includes(kw)) ||
       bulletinCategoryLabel(item.category).toLowerCase().includes(kw);
-    return matchCategory && matchKeyword;
+    return matchCategory && matchTag && matchKeyword;
   });
 
   async function submitPost(
@@ -435,6 +440,29 @@ export function BulletinBoard() {
         })}
       </nav>
 
+      <nav className="-mx-1 mb-4 flex gap-5 overflow-x-auto px-1 pb-1">
+        {TAG_TABS.map((t) => {
+          const active = t === activeTag;
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setActiveTag(t)}
+              className={`relative shrink-0 whitespace-nowrap pb-1.5 text-[13px] transition-colors ${
+                active
+                  ? "font-bold text-slate-900 dark:text-white"
+                  : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+              }`}
+            >
+              {t === "ALL" ? "全体" : t}
+              {active ? (
+                <span className="absolute inset-x-0 -bottom-0.5 h-0.5 rounded bg-slate-900 dark:bg-white" />
+              ) : null}
+            </button>
+          );
+        })}
+      </nav>
+
       <div className="relative mb-4">
         <svg
           viewBox="0 0 24 24"
@@ -476,7 +504,7 @@ export function BulletinBoard() {
             {createOpen ? (
               <PostForm
                 initial={{
-                  category: BULLETIN_CATEGORIES[0],
+                  category: DEFAULT_CATEGORY_FOR_POST,
                   tags: [],
                   title: "",
                   body: "",
@@ -544,7 +572,7 @@ export function BulletinBoard() {
                         initial={{
                           category: isBulletinCategory(item.category)
                             ? item.category
-                            : BULLETIN_CATEGORIES[0],
+                        : DEFAULT_CATEGORY_FOR_POST,
                           tags: item.tags,
                           title: item.title,
                           body: item.body,
