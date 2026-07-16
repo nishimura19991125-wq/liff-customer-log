@@ -8,6 +8,7 @@ export const BULLETIN_CATEGORIES = [
   "DX",
   "工事",
   "人事",
+  "トラーチ倶楽部",
 ] as const;
 
 export type BulletinCategory = (typeof BULLETIN_CATEGORIES)[number];
