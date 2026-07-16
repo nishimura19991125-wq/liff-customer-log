@@ -74,20 +74,19 @@ function readText(
   );
 }
 
-/** チェックボックス列 → 先頭の選択肢を1つのカテゴリとして扱う */
-function readCategory(
+/** チェックボックス列 → 選択肢の配列（タグ） */
+function readTags(
   recObj: Record<string, unknown>,
   fieldId: string | null,
-): string {
-  if (!fieldId) return "";
+): string[] {
+  if (!fieldId) return [];
   const joined = checkboxGroupValueFromPocket(
     pickRecordValueByFieldAliases(recObj, fieldId),
   );
-  const first = joined
+  return joined
     .split(",")
     .map((s) => s.trim())
-    .filter(Boolean)[0];
-  return first ?? "";
+    .filter(Boolean);
 }
 
 /** "2026-07-16 15:30" / ISO などを "2026.07.16" に整形 */
@@ -125,7 +124,8 @@ export async function buildBulletinList(): Promise<BulletinListResponse> {
     const dateRaw = readText(recObj, ids.date);
     posts.push({
       id: atPocketRecordIdFromRow(row) ?? String(posts.length),
-      category: readCategory(recObj, ids.category),
+      category: readText(recObj, ids.category),
+      tags: readTags(recObj, ids.tags),
       date: dateRaw ? formatDate(dateRaw) : "",
       title,
       body,
@@ -139,6 +139,7 @@ export async function buildBulletinList(): Promise<BulletinListResponse> {
 
 export async function createBulletinPost(input: {
   category: string;
+  tags: string[];
   title: string;
   body: string;
 }): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
@@ -160,8 +161,10 @@ export async function createBulletinPost(input: {
   const record: Record<string, unknown> = {};
   if (ids.title) record[ids.title] = input.title;
   if (ids.body) record[ids.body] = input.body;
-  // カテゴリはチェックボックス列なので配列で送る
-  if (ids.category && input.category) record[ids.category] = [input.category];
+  // カテゴリーはテキスト列
+  if (ids.category && input.category) record[ids.category] = input.category;
+  // タグはチェックボックス列なので配列で送る
+  if (ids.tags && input.tags.length > 0) record[ids.tags] = input.tags;
 
   try {
     await createRecord(appId, record, writeAuth);

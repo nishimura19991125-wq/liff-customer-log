@@ -4,13 +4,13 @@ import { useState, type FormEvent } from "react";
 
 import { useLiffSwr } from "@/hooks/use-liff-swr";
 import {
-  BULLETIN_CATEGORIES,
+  BULLETIN_TAGS,
   type BulletinListResponse,
 } from "@/lib/bulletin-types";
 import { liffAuthedJsonFetch, isLiffSwrSessionExpired } from "@/lib/liff-swr";
 import { useLiffIdToken } from "@/lib/liff-id-token-context";
 
-const TABS = ["ALL", ...BULLETIN_CATEGORIES] as const;
+const TABS = ["ALL", ...BULLETIN_TAGS] as const;
 
 function todayLabel(): string {
   const d = new Date();
@@ -29,13 +29,12 @@ export function BulletinBoard() {
     idToken,
   );
 
-  const [category, setCategory] = useState<string>("ALL");
+  const [activeTag, setActiveTag] = useState<string>("ALL");
   const [keyword, setKeyword] = useState("");
 
   const [formOpen, setFormOpen] = useState(false);
-  const [formCategory, setFormCategory] = useState<string>(
-    BULLETIN_CATEGORIES[0],
-  );
+  const [formCategory, setFormCategory] = useState("");
+  const [formTags, setFormTags] = useState<string[]>([]);
   const [formTitle, setFormTitle] = useState("");
   const [formBody, setFormBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -47,13 +46,20 @@ export function BulletinBoard() {
 
   const kw = keyword.trim().toLowerCase();
   const items = posts.filter((item) => {
-    const matchCategory = category === "ALL" || item.category === category;
+    const matchTag = activeTag === "ALL" || item.tags.includes(activeTag);
     const matchKeyword =
       kw === "" ||
       item.title.toLowerCase().includes(kw) ||
-      item.body.toLowerCase().includes(kw);
-    return matchCategory && matchKeyword;
+      item.body.toLowerCase().includes(kw) ||
+      item.category.toLowerCase().includes(kw);
+    return matchTag && matchKeyword;
   });
+
+  function toggleFormTag(tag: string) {
+    setFormTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    );
+  }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -72,13 +78,16 @@ export function BulletinBoard() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            category: formCategory,
+            category: formCategory.trim(),
+            tags: formTags,
             title,
             body: bodyText,
           }),
         },
       );
       await mutate(res, { revalidate: false });
+      setFormCategory("");
+      setFormTags([]);
       setFormTitle("");
       setFormBody("");
       setFormOpen(false);
@@ -100,12 +109,12 @@ export function BulletinBoard() {
     <div className="mt-4">
       <nav className="-mx-1 mb-5 flex gap-5 overflow-x-auto px-1 pb-1">
         {TABS.map((c) => {
-          const active = c === category;
+          const active = c === activeTag;
           return (
             <button
               key={c}
               type="button"
-              onClick={() => setCategory(c)}
+              onClick={() => setActiveTag(c)}
               className={`relative shrink-0 whitespace-nowrap pb-1.5 text-[13px] transition-colors ${
                 active
                   ? "font-bold text-slate-900 dark:text-white"
@@ -166,19 +175,39 @@ export function BulletinBoard() {
               >
                 <div className="mb-3">
                   <label className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
-                    カテゴリ
+                    カテゴリー
                   </label>
-                  <select
+                  <input
+                    type="text"
                     value={formCategory}
                     onChange={(e) => setFormCategory(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-slate-800 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                  >
-                    {BULLETIN_CATEGORIES.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="カテゴリー（任意）"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-slate-800 outline-none placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                </div>
+                <div className="mb-3">
+                  <label className="mb-2 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                    タグ
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {BULLETIN_TAGS.map((tag) => {
+                      const selected = formTags.includes(tag);
+                      return (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => toggleFormTag(tag)}
+                          className={`rounded-full border px-3 py-1.5 text-[13px] transition ${
+                            selected
+                              ? "border-pink-500 bg-pink-50 font-bold text-pink-600 dark:border-pink-400 dark:bg-pink-950/40 dark:text-pink-300"
+                              : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300"
+                          }`}
+                        >
+                          {tag}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 <div className="mb-3">
                   <label className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
@@ -294,6 +323,18 @@ export function BulletinBoard() {
                         </span>
                       ) : null}
                     </div>
+                    {item.tags.length > 0 ? (
+                      <div className="mb-1.5 flex flex-wrap gap-1.5">
+                        {item.tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                     <p className="text-[15px] font-bold leading-relaxed text-slate-900 dark:text-white">
                       {item.title}
                     </p>

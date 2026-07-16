@@ -48,7 +48,10 @@ function resolveSchemaFieldId(
 }
 
 export type BulletinFieldIds = {
+  /** カテゴリー列（テキスト） */
   category: string | null;
+  /** タグ列（チェックボックス） */
+  tags: string | null;
   title: string | null;
   body: string | null;
   date: string | null;
@@ -61,7 +64,12 @@ export function resolveBulletinFieldIds(
     category: resolveSchemaFieldId(
       process.env.BULLETIN_CATEGORY_FIELD_ID,
       appFields,
-      ["カテゴリ", "チェックボックス", "部署", "分類"],
+      ["カテゴリー", "カテゴリ", "分類"],
+    ),
+    tags: resolveSchemaFieldId(
+      process.env.BULLETIN_TAGS_FIELD_ID,
+      appFields,
+      ["タグ", "チェックボックス", "部署"],
     ),
     title: resolveSchemaFieldId(
       process.env.BULLETIN_TITLE_FIELD_ID,
@@ -87,7 +95,7 @@ export function bulletinFieldsConfigured(ids: BulletinFieldIds): boolean {
 }
 
 export function bulletinFieldsCsv(ids: BulletinFieldIds): string {
-  return [ids.category, ids.title, ids.body, ids.date]
+  return [ids.category, ids.tags, ids.title, ids.body, ids.date]
     .filter(Boolean)
     .join(",");
 }

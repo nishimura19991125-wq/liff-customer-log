@@ -4,7 +4,7 @@ import {
   buildBulletinList,
   createBulletinPost,
 } from "@/lib/bulletin-server";
-import { isBulletinCategory } from "@/lib/bulletin-types";
+import { isBulletinTag } from "@/lib/bulletin-types";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -46,6 +46,16 @@ export async function POST(request: Request) {
   const title = typeof obj.title === "string" ? obj.title.trim() : "";
   const bodyText = typeof obj.body === "string" ? obj.body.trim() : "";
   const category = typeof obj.category === "string" ? obj.category.trim() : "";
+  const tags = Array.isArray(obj.tags)
+    ? Array.from(
+        new Set(
+          obj.tags
+            .filter((t): t is string => typeof t === "string")
+            .map((t) => t.trim())
+            .filter(Boolean),
+        ),
+      )
+    : [];
 
   if (!title) {
     return NextResponse.json(
@@ -59,12 +69,17 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  if (category && !isBulletinCategory(category)) {
-    return NextResponse.json({ error: "カテゴリが不正です" }, { status: 400 });
+  if (tags.some((t) => !isBulletinTag(t))) {
+    return NextResponse.json({ error: "タグが不正です" }, { status: 400 });
   }
 
   try {
-    const result = await createBulletinPost({ category, title, body: bodyText });
+    const result = await createBulletinPost({
+      category,
+      tags,
+      title,
+      body: bodyText,
+    });
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
