@@ -12,11 +12,6 @@ import {
   type BulletinListResponse,
 } from "@/lib/bulletin-types";
 import { LIFF_SWR_DEFAULT_OPTIONS } from "@/lib/liff-swr";
-import {
-  clearMeetingScheduleHomeSessionCollapse,
-  isMeetingScheduleHomeCollapsed,
-  setMeetingScheduleHomeCollapsed,
-} from "@/lib/meeting-schedule-home-collapse";
 import type { MeetingSchedulePayload } from "@/lib/meeting-schedule-types";
 
 type Props = {
@@ -55,7 +50,6 @@ export function HomeCompactSummaries({
   onClose,
   children,
 }: Props) {
-  const [meetingCollapsed, setMeetingCollapsed] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
   const bulletinPath = idToken && !disabled ? "/api/bulletin" : null;
@@ -86,11 +80,7 @@ export function HomeCompactSummaries({
   );
 
   useEffect(() => {
-    setMeetingCollapsed(isMeetingScheduleHomeCollapsed());
     setHydrated(true);
-    return () => {
-      clearMeetingScheduleHomeSessionCollapse();
-    };
   }, []);
 
   const { isRead } = useBulletinRead(lineUserId);
@@ -141,10 +131,8 @@ export function HomeCompactSummaries({
     (meetingLoading && !meetingData) ||
     (Boolean(docsPath) && docsLoading && !docsData);
 
-  const showMeeting = meetingReady && Boolean(boundStaffName) && !meetingCollapsed;
+  const showMeeting = meetingReady && Boolean(boundStaffName);
   const showDocs = docsReady;
-  const showMeetingCollapsedChip =
-    meetingReady && meetingCollapsed && meetingItems.length > 0;
 
   const greeting = boundStaffName?.trim()
     ? `${boundStaffName.trim()} さん、おつかれさまです`
@@ -244,23 +232,11 @@ export function HomeCompactSummaries({
           </section>
         ) : null}
 
-        {showMeetingCollapsedChip && !showDocs && !showMeeting ? (
-          <button
-            type="button"
-            onClick={() => setMeetingCollapsed(false)}
-            className="w-full rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-left text-[13px] font-semibold text-sky-900 shadow-sm transition active:scale-[0.99] dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-100"
-          >
-            商談進捗情報 {meetingItems.length} 件（タップで表示）
-          </button>
-        ) : null}
-
         {/* 下段：書類未回収 | 商談進捗 */}
-        {showDocs || showMeeting || showMeetingCollapsedChip ? (
+        {showDocs || showMeeting ? (
           <div
             className={`grid gap-3 items-stretch ${
-              showDocs && (showMeeting || showMeetingCollapsedChip)
-                ? "grid-cols-2"
-                : "grid-cols-1"
+              showDocs && showMeeting ? "grid-cols-2" : "grid-cols-1"
             }`}
             aria-label="書類未回収と商談進捗"
           >
@@ -318,27 +294,13 @@ export function HomeCompactSummaries({
                           {meetingItems.length}件
                         </span>
                       </p>
-                      <div className="flex shrink-0 items-center gap-1">
-                        {meetingItems.length > 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setMeetingScheduleHomeCollapsed();
-                              setMeetingCollapsed(true);
-                            }}
-                            className="text-[11px] font-semibold text-sky-800 underline underline-offset-2 dark:text-sky-200"
-                            aria-label="商談進捗情報を折りたたむ"
-                          >
-                            閉
-                          </button>
-                        ) : null}
-                        <Link
-                          href="/meeting-schedule"
-                          className="text-[12px] font-semibold text-sky-700 dark:text-sky-300"
-                        >
-                          ›
-                        </Link>
-                      </div>
+                      <Link
+                        href="/meeting-schedule"
+                        className="shrink-0 text-[12px] font-semibold text-sky-700 dark:text-sky-300"
+                        aria-label="商談進捗情報一覧へ"
+                      >
+                        ›
+                      </Link>
                     </div>
 
                     {meetingItems.length === 0 ? (
@@ -382,14 +344,6 @@ export function HomeCompactSummaries({
                   </div>
                 </LiffCard>
               </section>
-            ) : showMeetingCollapsedChip ? (
-              <button
-                type="button"
-                onClick={() => setMeetingCollapsed(false)}
-                className="w-full rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-left text-[13px] font-semibold text-sky-900 shadow-sm transition active:scale-[0.99] dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-100"
-              >
-                商談進捗情報 {meetingItems.length} 件（タップで表示）
-              </button>
             ) : null}
           </div>
         ) : null}

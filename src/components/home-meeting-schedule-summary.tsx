@@ -1,16 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 
 import { LiffCard } from "@/components/liff-chrome";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
 import { LIFF_SWR_DEFAULT_OPTIONS } from "@/lib/liff-swr";
-import {
-  clearMeetingScheduleHomeSessionCollapse,
-  isMeetingScheduleHomeCollapsed,
-  setMeetingScheduleHomeCollapsed,
-} from "@/lib/meeting-schedule-home-collapse";
 import type { MeetingSchedulePayload } from "@/lib/meeting-schedule-types";
 
 type Props = {
@@ -26,9 +20,6 @@ export function HomeMeetingScheduleSummary({
   boundStaffName,
   disabled = false,
 }: Props) {
-  const [collapsed, setCollapsed] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
-
   const swrPath =
     idToken && boundStaffName && !disabled
       ? "/api/meeting-schedule?scope=list"
@@ -37,19 +28,6 @@ export function HomeMeetingScheduleSummary({
   const { data, isLoading } = useLiffSwr<
     MeetingSchedulePayload & { needsStaffBind?: boolean; disabled?: boolean }
   >(swrPath, idToken, LIFF_SWR_DEFAULT_OPTIONS);
-
-  useEffect(() => {
-    setCollapsed(isMeetingScheduleHomeCollapsed());
-    setHydrated(true);
-    return () => {
-      clearMeetingScheduleHomeSessionCollapse();
-    };
-  }, []);
-
-  const handleCollapse = () => {
-    setMeetingScheduleHomeCollapsed();
-    setCollapsed(true);
-  };
 
   if (!boundStaffName || disabled) return null;
   if (isLoading && !data) {
@@ -65,27 +43,14 @@ export function HomeMeetingScheduleSummary({
       </section>
     );
   }
-  if (!data?.configured || data.error) return null;
 
-  const items = data.items ?? [];
+  if (data?.disabled || data?.needsStaffBind) return null;
+  if (data && data.configured === false) return null;
+  if (data?.error) return null;
+
+  const items = data?.items ?? [];
   const preview = items.slice(0, HOME_PREVIEW_LIMIT);
   const restCount = items.length - preview.length;
-
-  if (!hydrated) return null;
-
-  if (collapsed && items.length > 0) {
-    return (
-      <section aria-label="商談進捗情報（折りたたみ中）">
-        <button
-          type="button"
-          onClick={() => setCollapsed(false)}
-          className="w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-left text-[14px] font-semibold text-sky-900 shadow-sm transition-colors active:scale-[0.99] dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-100"
-        >
-          商談進捗情報 {items.length} 件（タップで表示）
-        </button>
-      </section>
-    );
-  }
 
   return (
     <section aria-label="商談進捗情報一覧">
@@ -100,24 +65,12 @@ export function HomeMeetingScheduleSummary({
                 全 {items.length} 件
               </p>
             </div>
-            <div className="flex shrink-0 flex-col items-end gap-1">
-              {items.length > 0 ? (
-                <button
-                  type="button"
-                  onClick={handleCollapse}
-                  className="rounded-lg px-2 py-1 text-[12px] font-semibold text-sky-800 underline underline-offset-2 dark:text-sky-200"
-                  aria-label="商談進捗情報を折りたたむ"
-                >
-                  閉じる
-                </button>
-              ) : null}
-              <Link
-                href="/meeting-schedule"
-                className="rounded-lg px-2 py-1 text-[13px] font-semibold text-sky-700 active:bg-sky-50 dark:text-sky-300 dark:active:bg-sky-950/40"
-              >
-                一覧 ›
-              </Link>
-            </div>
+            <Link
+              href="/meeting-schedule"
+              className="shrink-0 rounded-lg px-2 py-1 text-[13px] font-semibold text-sky-700 active:bg-sky-50 dark:text-sky-300 dark:active:bg-sky-950/40"
+            >
+              一覧 ›
+            </Link>
           </div>
 
           {items.length === 0 ? (
