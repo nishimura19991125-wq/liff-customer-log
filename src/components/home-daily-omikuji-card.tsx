@@ -64,6 +64,7 @@ export function HomeDailyOmikujiCard({
   staffRole = null,
 }: Props) {
   const shownToday = useOmikujiShownToday(staffName);
+  const [expanded, setExpanded] = useState(false);
   const fortuneCtx = useMemo<DailyFortuneBuildContext>(
     () => ({ department, staffRole }),
     [department, staffRole],
@@ -75,6 +76,10 @@ export function HomeDailyOmikujiCard({
   const { rank, body } = parseRank(fortune.headline);
   const rankStyle =
     RANK_STYLES[rank] ?? "bg-amber-400 text-red-900";
+
+  useEffect(() => {
+    setExpanded(false);
+  }, [staffName, fortune.dateLabel]);
 
   if (!shownToday || !staffName?.trim()) return null;
 
@@ -93,13 +98,25 @@ export function HomeDailyOmikujiCard({
           <p className="text-[12px] font-medium text-amber-800/80 dark:text-amber-300/80">
             今日のおみくじ · {fortune.dateLabel}
           </p>
-          <p className="mt-1 text-[14px] font-semibold leading-snug text-slate-800 dark:text-slate-100">
-            {body}
-          </p>
-          <FortuneDetailPartsList
-            detailLine={fortune.detailLine}
-            variant="card"
-          />
+          {expanded ? (
+            <>
+              <p className="mt-1 text-[14px] font-semibold leading-snug text-slate-800 dark:text-slate-100">
+                {body}
+              </p>
+              <FortuneDetailPartsList
+                detailLine={fortune.detailLine}
+                variant="card"
+              />
+            </>
+          ) : null}
+          <button
+            type="button"
+            className="mt-2 text-[12px] font-bold text-amber-800 underline-offset-2 transition hover:underline dark:text-amber-300"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {expanded ? "閉じる" : "もっと見る"}
+          </button>
         </div>
       </div>
     </section>
