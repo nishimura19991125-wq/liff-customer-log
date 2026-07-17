@@ -1,11 +1,16 @@
 /** テロップ用：日付（YYYY-MM-DD）＋ユーザー名のハッシュで日替わり固定のビジネス占い */
 
+import { ACCOUNTING_BUSINESS_FORTUNE_LINES } from "@/lib/business-fortune-lines-accounting";
 import { AP_BUSINESS_FORTUNE_LINES } from "@/lib/business-fortune-lines-ap";
+import { CLUB_BUSINESS_FORTUNE_LINES } from "@/lib/business-fortune-lines-club";
 import { CL_BUSINESS_FORTUNE_LINES } from "@/lib/business-fortune-lines-cl";
+import { CONSTRUCTION_BUSINESS_FORTUNE_LINES } from "@/lib/business-fortune-lines-construction";
+import { DX_BUSINESS_FORTUNE_LINES } from "@/lib/business-fortune-lines-dx";
+import { HR_BUSINESS_FORTUNE_LINES } from "@/lib/business-fortune-lines-hr";
 import { OFFICE_BUSINESS_FORTUNE_LINES } from "@/lib/business-fortune-lines-office";
 import {
-  resolveFortuneDivision,
-  type FortuneDivision,
+  resolveFortuneDepartment,
+  type FortuneDepartmentKey,
   type FortuneDivisionContext,
 } from "@/lib/fortune-division";
 
@@ -52,12 +57,31 @@ const FORTUNE_RANK_WEIGHTS: ReadonlyArray<{
 ];
 
 const CL_FALLBACK_LINES = CL_BUSINESS_FORTUNE_LINES;
+const OFFICE_FALLBACK_LINES = OFFICE_BUSINESS_FORTUNE_LINES;
 
-const DIVISION_PRIMARY_LINES: Record<FortuneDivision, readonly string[]> = {
-  cl: CL_BUSINESS_FORTUNE_LINES,
-  ap: AP_BUSINESS_FORTUNE_LINES,
-  office: OFFICE_BUSINESS_FORTUNE_LINES,
-};
+const DEPARTMENT_PRIMARY_LINES: Record<FortuneDepartmentKey, readonly string[]> =
+  {
+    ap: AP_BUSINESS_FORTUNE_LINES,
+    cl: CL_BUSINESS_FORTUNE_LINES,
+    office: OFFICE_BUSINESS_FORTUNE_LINES,
+    accounting: ACCOUNTING_BUSINESS_FORTUNE_LINES,
+    dx: DX_BUSINESS_FORTUNE_LINES,
+    construction: CONSTRUCTION_BUSINESS_FORTUNE_LINES,
+    hr: HR_BUSINESS_FORTUNE_LINES,
+    club: CLUB_BUSINESS_FORTUNE_LINES,
+  };
+
+const DEPARTMENT_FALLBACK_LINES: Record<FortuneDepartmentKey, readonly string[]> =
+  {
+    ap: CL_FALLBACK_LINES,
+    cl: CL_FALLBACK_LINES,
+    office: CL_FALLBACK_LINES,
+    accounting: OFFICE_FALLBACK_LINES,
+    dx: OFFICE_FALLBACK_LINES,
+    construction: CL_FALLBACK_LINES,
+    hr: OFFICE_FALLBACK_LINES,
+    club: CL_FALLBACK_LINES,
+  };
 
 function filterLinesByRank(
   lines: readonly string[],
@@ -67,27 +91,38 @@ function filterLinesByRank(
 }
 
 function buildFortuneLinesByRank(
-  division: FortuneDivision,
+  department: FortuneDepartmentKey,
 ): Record<FortuneRank, readonly string[]> {
-  const primary = DIVISION_PRIMARY_LINES[division];
+  const primary = DEPARTMENT_PRIMARY_LINES[department];
+  const fallback = DEPARTMENT_FALLBACK_LINES[department];
   const result = {} as Record<FortuneRank, readonly string[]>;
   for (const rank of FORTUNE_RANKS) {
     const fromPrimary = filterLinesByRank(primary, rank);
+    if (fromPrimary.length > 0) {
+      result[rank] = fromPrimary;
+      continue;
+    }
+    const fromFallback = filterLinesByRank(fallback, rank);
     result[rank] =
-      fromPrimary.length > 0
-        ? fromPrimary
+      fromFallback.length > 0
+        ? fromFallback
         : filterLinesByRank(CL_FALLBACK_LINES, rank);
   }
   return result;
 }
 
-const FORTUNE_LINES_BY_DIVISION: Record<
-  FortuneDivision,
+const FORTUNE_LINES_BY_DEPARTMENT: Record<
+  FortuneDepartmentKey,
   Record<FortuneRank, readonly string[]>
 > = {
-  cl: buildFortuneLinesByRank("cl"),
   ap: buildFortuneLinesByRank("ap"),
+  cl: buildFortuneLinesByRank("cl"),
   office: buildFortuneLinesByRank("office"),
+  accounting: buildFortuneLinesByRank("accounting"),
+  dx: buildFortuneLinesByRank("dx"),
+  construction: buildFortuneLinesByRank("construction"),
+  hr: buildFortuneLinesByRank("hr"),
+  club: buildFortuneLinesByRank("club"),
 };
 
 function pickWeightedFortuneRank(seed: number): FortuneRank {
@@ -101,11 +136,11 @@ function pickWeightedFortuneRank(seed: number): FortuneRank {
 }
 
 function pickFortuneLineForRank(
-  division: FortuneDivision,
+  department: FortuneDepartmentKey,
   rank: FortuneRank,
   seed: number,
 ): string {
-  const pool = FORTUNE_LINES_BY_DIVISION[division][rank];
+  const pool = FORTUNE_LINES_BY_DEPARTMENT[department][rank];
   if (!pool.length) return CL_FALLBACK_LINES[0]!;
   return pool[seed % pool.length]!;
 }
@@ -143,17 +178,18 @@ function normalizeDetailLine(detailRaw: string): string {
   return `👔カラー:${cleaned.replace(/^👔?/, "").trim()}`;
 }
 
-/** 今日の日付＋担当者名から、1日固定の占い2行ビューを返す */
+/** 今日の日付＋担当者名＋部署から、1日固定の占い2行ビューを返す */
 export function buildDailyBusinessFortuneView(
   staffName: string,
   ctx: DailyFortuneBuildContext = {},
 ): DailyFortuneView {
   const name = staffName.normalize("NFKC").trim() || "営業の星";
-  const division = resolveFortuneDivision(ctx);
+  const department = resolveFortuneDepartment(ctx);
+  const deptLabel = ctx.department?.normalize("NFKC").trim() ?? "";
   const dateKey = jstDateKey();
-  const seed = hashSeed(`${dateKey}|${name}|${division}`);
+  const seed = hashSeed(`${dateKey}|${name}|${department}|${deptLabel}`);
   const rank = pickWeightedFortuneRank(seed);
-  const line = pickFortuneLineForRank(division, rank, seed >>> 8);
+  const line = pickFortuneLineForRank(department, rank, seed >>> 8);
   const [headlineRaw, detailRaw = ""] = line.split("\n");
   const headline = headlineRaw.trim();
   const detailLine = normalizeDetailLine(detailRaw);
