@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { mergeStaffNameOptions } from "@/lib/staff-name-options";
+import {
+  commitStaffNameInput,
+  filterStaffNameSuggestions,
+  isExactStaffName,
+  mergeStaffNameOptions,
+} from "@/lib/staff-name-options";
 
 type ApClStaffRolePicker = {
   options: string[];
@@ -233,19 +238,6 @@ function NameSplitFieldGroup({
   );
 }
 
-function filterStaffSuggestions(options: string[], query: string): string[] {
-  const q = query.normalize("NFKC").trim().toLowerCase();
-  if (!q) return options;
-  const ranked: string[] = [];
-  for (const opt of options) {
-    const n = opt.normalize("NFKC").trim().toLowerCase();
-    if (!n) continue;
-    if (n.startsWith(q) || n.includes(q)) ranked.push(opt);
-  }
-  return ranked;
-}
-
-/** AP/CL担当者: 直接入力＋候補サジェスト */
 function StaffSuggestCombobox({
   id,
   label,
@@ -267,14 +259,23 @@ function StaffSuggestCombobox({
 }) {
   const [open, setOpen] = useState(false);
   const listId = `${id}-suggestions`;
-  const controlClass = invalid
-    ? `${INPUT_CLASS} ${FIELD_INVALID_CLASS}`
-    : INPUT_CLASS;
+  const exact = isExactStaffName(options, value);
+  const showMismatch = Boolean(value.trim()) && options.length > 0 && !exact;
+  const controlClass =
+    invalid || showMismatch
+      ? `${INPUT_CLASS} ${FIELD_INVALID_CLASS}`
+      : INPUT_CLASS;
 
   const suggestions = useMemo(
-    () => filterStaffSuggestions(options, value),
+    () => filterStaffNameSuggestions(options, value),
     [options, value],
   );
+
+  function commitCurrentInput() {
+    const committed = commitStaffNameInput(options, value);
+    if (committed !== value) onChange(committed);
+    setOpen(false);
+  }
 
   return (
     <div className="relative">
@@ -286,6 +287,7 @@ function StaffSuggestCombobox({
         aria-expanded={open && suggestions.length > 0}
         aria-controls={listId}
         aria-autocomplete="list"
+        aria-invalid={invalid || showMismatch}
         className={controlClass}
         value={value}
         disabled={disabled}
@@ -293,8 +295,10 @@ function StaffSuggestCombobox({
         autoComplete="off"
         onFocus={() => setOpen(true)}
         onBlur={() => {
-          // 候補クリックを先に処理させる
-          window.setTimeout(() => setOpen(false), 120);
+          // 候補クリックを先に処理させてから確定
+          window.setTimeout(() => {
+            commitCurrentInput();
+          }, 120);
         }}
         onChange={(e) => {
           onChange(e.target.value);
@@ -302,11 +306,14 @@ function StaffSuggestCombobox({
         }}
         onKeyDown={(e) => {
           if (e.key !== "Enter") return;
-          const top = suggestions[0];
-          if (!top) return;
           e.preventDefault();
-          onChange(top);
-          setOpen(false);
+          const top = suggestions[0];
+          if (top) {
+            onChange(top);
+            setOpen(false);
+            return;
+          }
+          commitCurrentInput();
         }}
       />
       {open && !disabled && suggestions.length > 0 ? (
@@ -320,7 +327,7 @@ function StaffSuggestCombobox({
               <button
                 type="button"
                 className={`flex w-full px-3 py-2 text-left text-[13px] transition hover:bg-emerald-50 dark:hover:bg-emerald-950/40 ${
-                  opt === value.trim()
+                  isExactStaffName([opt], value)
                     ? "bg-emerald-50 font-semibold text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-100"
                     : "text-slate-800 dark:text-slate-100"
                 }`}
@@ -335,6 +342,11 @@ function StaffSuggestCombobox({
             </li>
           ))}
         </ul>
+      ) : null}
+      {showMismatch ? (
+        <p className="mt-1 text-[11px] font-semibold text-red-600">
+          スタッフ名を候補から選んでください（Enter で先頭候補を確定）
+        </p>
       ) : null}
     </div>
   );
@@ -629,6 +641,7 @@ export function CustomerInfoEditForm({
   requiredFieldErrors,
   idToken,
   onChange,
+  onApClStaffOptionsChange,
 }: {
   formFields: CustomerInfoFormFieldApi[];
   values: CustomerInfoFormValues;
@@ -637,6 +650,11 @@ export function CustomerInfoEditForm({
   requiredFieldErrors?: ReadonlySet<string>;
   idToken: string | null;
   onChange: (key: string, value: string) => void;
+  /** AP/CL候補名簿（保存時の完全一致チェック用） */
+  onApClStaffOptionsChange?: (opts: {
+    ap: string[];
+    cl: string[];
+  }) => void;
 }) {
   const [catalogOptions, setCatalogOptions] = useState<
     Record<CatalogModelKind, string[]>
@@ -872,6 +890,14 @@ export function CustomerInfoEditForm({
       cancelled = true;
     };
   }, [idToken]);
+
+  useEffect(() => {
+    if (!onApClStaffOptionsChange) return;
+    onApClStaffOptionsChange({
+      ap: apClStaff?.ap.options ?? [],
+      cl: apClStaff?.cl.options ?? [],
+    });
+  }, [apClStaff, onApClStaffOptionsChange]);
 
   const propagateValues = useCallback(
     (next: CustomerInfoFormValues) => {
@@ -1131,7 +1157,7 @@ export function CustomerInfoEditForm({
                           ? "スタッフ名簿を取得できませんでした。しばらくしてから画面を更新してください。"
                           : (apClStaff[roleKey].options.length === 0
                               ? `「稼働」の${roleLabel}担当者が名簿にいません。AP/CL稼働状況の値を確認してください。`
-                              : `未入力時は全員、入力すると一致するスタッフ名が表示されます（${roleLabel}稼働「稼働」）`)
+                              : `スタッフ名と完全一致が必要です。未入力時は全員表示、Enter / フォーカス外しで先頭候補を確定`)
                         : "スタッフ名簿の設定（STAFF_APP_ID・氏名列・AP/CL稼働状況・LINE_USER_ID①②の環境変数）を確認してください"}
                 </p>
               );

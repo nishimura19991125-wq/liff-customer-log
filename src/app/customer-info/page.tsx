@@ -42,6 +42,10 @@ import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { applyCustomerInfoFormChange } from "@/lib/customer-info-form/form-change";
 import {
+  commitStaffNameInput,
+  isExactStaffName,
+} from "@/lib/staff-name-options";
+import {
   expandNamePartsInValues,
   joinJapaneseFullName,
   splitJapaneseFullName,
@@ -136,6 +140,10 @@ function CustomerInfoPageContent() {
   const [requiredFieldErrors, setRequiredFieldErrors] = useState<
     ReadonlySet<string>
   >(() => new Set());
+  const [apClStaffOptions, setApClStaffOptions] = useState<{
+    ap: string[];
+    cl: string[];
+  }>({ ap: [], cl: [] });
   const saveBarRef = useRef<HTMLDivElement>(null);
 
   const editIsCancelled = useMemo(() => {
@@ -345,10 +353,36 @@ function CustomerInfoPageContent() {
     const token = idToken;
     if (!token || !detail) return;
 
+    let formValuesToSave = syncCombinedNameFields(
+      expandNamePartsInValues(editValues),
+    );
+
     if (detail.usesFormSchema && formFields.length > 0) {
-      const valuesForValidate = syncCombinedNameFields(
-        expandNamePartsInValues(editValues),
+      formValuesToSave = syncCombinedNameFields(
+        expandNamePartsInValues({
+          ...editValues,
+          apStaff: commitStaffNameInput(
+            apClStaffOptions.ap,
+            editValues.apStaff,
+          ),
+          clStaff: commitStaffNameInput(
+            apClStaffOptions.cl,
+            editValues.clStaff,
+          ),
+        }),
       );
+
+      if (
+        formValuesToSave.apStaff !== editValues.apStaff ||
+        formValuesToSave.clStaff !== editValues.clStaff
+      ) {
+        setEditValues((prev) => ({
+          ...prev,
+          apStaff: formValuesToSave.apStaff ?? "",
+          clStaff: formValuesToSave.clStaff ?? "",
+        }));
+      }
+
       const missing = findMissingRequiredCustomerInfoFields(
         formFields.map((f) => ({
           key: f.key,
@@ -356,13 +390,35 @@ function CustomerInfoPageContent() {
           type: f.type,
           required: f.required,
         })),
-        valuesForValidate,
+        formValuesToSave,
       );
-      if (missing.length > 0) {
-        setRequiredFieldErrors(new Set(missing.map((f) => f.key)));
+
+      const staffMismatch: string[] = [];
+      if (
+        apClStaffOptions.ap.length > 0 &&
+        (formValuesToSave.apStaff ?? "").trim() &&
+        !isExactStaffName(apClStaffOptions.ap, formValuesToSave.apStaff)
+      ) {
+        staffMismatch.push("apStaff");
+      }
+      if (
+        apClStaffOptions.cl.length > 0 &&
+        (formValuesToSave.clStaff ?? "").trim() &&
+        !isExactStaffName(apClStaffOptions.cl, formValuesToSave.clStaff)
+      ) {
+        staffMismatch.push("clStaff");
+      }
+
+      if (missing.length > 0 || staffMismatch.length > 0) {
+        setRequiredFieldErrors(
+          new Set([...missing.map((f) => f.key), ...staffMismatch]),
+        );
         setSaveFeedback({
           kind: "err",
-          text: formatCustomerInfoRequiredValidationError(missing),
+          text:
+            staffMismatch.length > 0
+              ? "AP/CL担当者はスタッフ名簿の氏名と完全一致で選択してください（例: 「冨田」不可 → 「冨田菜摘」）"
+              : formatCustomerInfoRequiredValidationError(missing),
         });
         return;
       }
@@ -382,11 +438,7 @@ function CustomerInfoPageContent() {
           },
           body: JSON.stringify(
             detail.usesFormSchema
-              ? {
-                  formValues: syncCombinedNameFields(
-                    expandNamePartsInValues(editValues),
-                  ),
-                }
+              ? { formValues: formValuesToSave }
               : { fields: editValues },
           ),
         },
@@ -418,7 +470,14 @@ function CustomerInfoPageContent() {
     } finally {
       setSaving(false);
     }
-  }, [idToken, detail, editValues, formFields, openRecord]);
+  }, [
+    idToken,
+    detail,
+    editValues,
+    formFields,
+    apClStaffOptions,
+    openRecord,
+  ]);
 
   if (phase === "init" || phase === "loading") {
     return (
@@ -646,6 +705,7 @@ function CustomerInfoPageContent() {
                     missingCaptions={missingCaptions}
                     requiredFieldErrors={requiredFieldErrors}
                     idToken={idToken}
+                    onApClStaffOptionsChange={setApClStaffOptions}
                     onChange={(key, value) => {
                       setRequiredFieldErrors((prev) => {
                         if (!prev.has(key)) return prev;
