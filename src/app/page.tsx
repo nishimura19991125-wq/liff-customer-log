@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { parseFortuneHeadline } from "@/components/fortune-rank-badge";
 import { HomeCompactSummaries } from "@/components/home-compact-summaries";
 import { HomeDailyOmikujiCard } from "@/components/home-daily-omikuji-card";
 import { HomeMissingDocumentsAlert } from "@/components/home-missing-documents-alert";
@@ -18,7 +19,9 @@ import {
   LiffStaffBindPanel,
   LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
+import { useDailyOmikujiShownToday } from "@/hooks/use-daily-omikuji-shown-today";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
+import { buildDailyBusinessFortuneView } from "@/lib/home-business-fortune";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 
@@ -217,6 +220,22 @@ export default function HomeHubPage() {
     !account.boundStaffName &&
     !account.loading &&
     account.staff.length > 0;
+  const omikujiShownToday = useDailyOmikujiShownToday(
+    needsStaffBind ? null : account.boundStaffName,
+  );
+  const fortuneRank = useMemo(() => {
+    if (!omikujiShownToday || !account.boundStaffName?.trim()) return null;
+    const view = buildDailyBusinessFortuneView(account.boundStaffName, {
+      department: account.boundStaffDepartment,
+      staffRole: account.boundStaffRole,
+    });
+    return parseFortuneHeadline(view.headline).rank;
+  }, [
+    omikujiShownToday,
+    account.boundStaffName,
+    account.boundStaffDepartment,
+    account.boundStaffRole,
+  ]);
 
   useEffect(() => {
     if (!LIFF_ID) return;
@@ -342,6 +361,7 @@ export default function HomeHubPage() {
                 pictureUrl={account.pictureUrl}
                 boundStaffName={account.boundStaffName}
                 bindingEnabled={account.bindingEnabled}
+                fortuneRank={fortuneRank}
               />
             </div>
           }

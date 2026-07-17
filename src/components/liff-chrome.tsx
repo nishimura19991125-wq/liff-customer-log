@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { ButtonHTMLAttributes, FormEvent, ReactNode } from "react";
 import { useState } from "react";
 
+import { FortuneRankBadge } from "@/components/fortune-rank-badge";
 import { triggerLiffRelogin } from "@/lib/liff-session";
 
 /** LIFF / モバイル WebView 向け：背景・セーフエリア・最大幅 */
@@ -210,17 +211,21 @@ export function LiffNavPill({
 /**
  * ログイン中ユーザー表示：@pocket スタッフ名簿の名前とアイコンのみ（見出し行と同じ高さに載せる想定）。
  * アイコンは LIFF プロフィール画像（名簿側に写真が無いため）。
+ * fortuneRank があるときは名前の直下に運勢バッジのみ表示する。
  */
 export function LiffAccountBar({
   loading,
   pictureUrl,
   boundStaffName,
   bindingEnabled,
+  fortuneRank,
 }: {
   loading?: boolean;
   pictureUrl?: string;
   boundStaffName?: string | null;
   bindingEnabled?: boolean;
+  /** 今日のおみくじ運勢（例: 超大吉）。未設定時は名前のみ */
+  fortuneRank?: string | null;
 }) {
   if (loading) {
     return (
@@ -236,6 +241,7 @@ export function LiffAccountBar({
 
   const staffName = boundStaffName?.trim() ?? "";
   const showBindHint = bindingEnabled && !staffName;
+  const rank = fortuneRank?.trim() ?? "";
 
   const avatarLetter = staffName
     ? staffName.slice(0, 1)
@@ -250,7 +256,13 @@ export function LiffAccountBar({
       : "未登録";
 
   return (
-    <div className="flex max-w-[min(100%,14rem)] items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-3 shadow-sm backdrop-blur-sm transition-all duration-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+    <div
+      className={`flex max-w-[min(100%,14rem)] items-center gap-2 border border-slate-200 bg-white pl-1 pr-3 shadow-sm backdrop-blur-sm transition-all duration-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white ${
+        rank
+          ? "rounded-2xl py-1.5"
+          : "rounded-full py-1"
+      }`}
+    >
       {pictureUrl ? (
         // eslint-disable-next-line @next/next/no-img-element -- LIFF の外部プロフィール画像
         <img
@@ -269,15 +281,18 @@ export function LiffAccountBar({
           {avatarLetter}
         </div>
       )}
-      <p
-        className={`truncate text-right text-[15px] font-bold leading-tight tracking-tight ${
-          showBindHint
-            ? "text-amber-950 dark:text-amber-100"
-            : "text-slate-800 dark:text-white"
-        }`}
-      >
-        {label}
-      </p>
+      <div className="min-w-0 flex flex-col items-end gap-0.5">
+        <p
+          className={`truncate text-right text-[15px] font-bold leading-tight tracking-tight ${
+            showBindHint
+              ? "text-amber-950 dark:text-amber-100"
+              : "text-slate-800 dark:text-white"
+          }`}
+        >
+          {label}
+        </p>
+        {rank ? <FortuneRankBadge rank={rank} size="sm" /> : null}
+      </div>
     </div>
   );
 }

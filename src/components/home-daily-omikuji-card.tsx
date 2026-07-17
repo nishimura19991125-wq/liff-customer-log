@@ -3,10 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { FortuneDetailPartsList } from "@/components/fortune-detail-parts-list";
-import {
-  DAILY_OMIKUJI_SHOWN_EVENT,
-  isDailyOmikujiShownToday,
-} from "@/lib/daily-omikuji-shown";
+import { parseFortuneHeadline } from "@/components/fortune-rank-badge";
+import { useDailyOmikujiShownToday } from "@/hooks/use-daily-omikuji-shown-today";
 import {
   buildDailyBusinessFortuneView,
   type DailyFortuneBuildContext,
@@ -18,52 +16,12 @@ type Props = {
   staffRole?: "ap" | "cl" | null;
 };
 
-const RANK_STYLES: Record<string, string> = {
-  超大吉: "bg-amber-400 text-red-900",
-  大吉: "bg-red-500 text-white",
-  中吉: "bg-orange-500 text-white",
-  小吉: "bg-emerald-500 text-white",
-  吉: "bg-sky-500 text-white",
-  凶: "bg-slate-400 text-white",
-  大凶: "bg-slate-700 text-slate-100",
-};
-
-function parseRank(headline: string): { rank: string; body: string } {
-  const match = headline.match(/^【(.+?)】(.+)$/);
-  if (!match) return { rank: "吉", body: headline };
-  return { rank: match[1]!, body: match[2]!.trim() };
-}
-
-function useOmikujiShownToday(staffName: string | null): boolean {
-  const [shown, setShown] = useState(false);
-
-  useEffect(() => {
-    const sync = () => {
-      if (!staffName?.trim()) {
-        setShown(false);
-        return;
-      }
-      setShown(isDailyOmikujiShownToday(staffName));
-    };
-
-    sync();
-    window.addEventListener(DAILY_OMIKUJI_SHOWN_EVENT, sync);
-    window.addEventListener("focus", sync);
-    return () => {
-      window.removeEventListener(DAILY_OMIKUJI_SHOWN_EVENT, sync);
-      window.removeEventListener("focus", sync);
-    };
-  }, [staffName]);
-
-  return shown;
-}
-
 export function HomeDailyOmikujiCard({
   staffName,
   department = null,
   staffRole = null,
 }: Props) {
-  const shownToday = useOmikujiShownToday(staffName);
+  const shownToday = useDailyOmikujiShownToday(staffName);
   const [expanded, setExpanded] = useState(false);
   const fortuneCtx = useMemo<DailyFortuneBuildContext>(
     () => ({ department, staffRole }),
@@ -73,9 +31,7 @@ export function HomeDailyOmikujiCard({
     () => buildDailyBusinessFortuneView(staffName ?? "", fortuneCtx),
     [staffName, fortuneCtx],
   );
-  const { rank, body } = parseRank(fortune.headline);
-  const rankStyle =
-    RANK_STYLES[rank] ?? "bg-amber-400 text-red-900";
+  const { body } = parseFortuneHeadline(fortune.headline);
 
   useEffect(() => {
     setExpanded(false);
@@ -88,36 +44,29 @@ export function HomeDailyOmikujiCard({
       className="overflow-hidden rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-orange-50 shadow-sm dark:border-amber-800/40 dark:from-amber-950/30 dark:to-slate-900"
       aria-label="今日のおみくじ"
     >
-      <div className="flex items-start gap-3 px-4 py-3.5">
-        <span
-          className={`mt-0.5 shrink-0 rounded-lg px-2 py-1 text-[13px] font-black tracking-wide ${rankStyle}`}
+      <div className="px-4 py-3.5">
+        <p className="text-[12px] font-medium text-amber-800/80 dark:text-amber-300/80">
+          今日のおみくじ · {fortune.dateLabel}
+        </p>
+        {expanded ? (
+          <>
+            <p className="mt-1 text-[14px] font-semibold leading-snug text-slate-800 dark:text-slate-100">
+              {body}
+            </p>
+            <FortuneDetailPartsList
+              detailLine={fortune.detailLine}
+              variant="card"
+            />
+          </>
+        ) : null}
+        <button
+          type="button"
+          className="mt-2 text-[12px] font-bold text-amber-800 underline-offset-2 transition hover:underline dark:text-amber-300"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((v) => !v)}
         >
-          {rank}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-[12px] font-medium text-amber-800/80 dark:text-amber-300/80">
-            今日のおみくじ · {fortune.dateLabel}
-          </p>
-          {expanded ? (
-            <>
-              <p className="mt-1 text-[14px] font-semibold leading-snug text-slate-800 dark:text-slate-100">
-                {body}
-              </p>
-              <FortuneDetailPartsList
-                detailLine={fortune.detailLine}
-                variant="card"
-              />
-            </>
-          ) : null}
-          <button
-            type="button"
-            className="mt-2 text-[12px] font-bold text-amber-800 underline-offset-2 transition hover:underline dark:text-amber-300"
-            aria-expanded={expanded}
-            onClick={() => setExpanded((v) => !v)}
-          >
-            {expanded ? "閉じる" : "もっと見る"}
-          </button>
-        </div>
+          {expanded ? "閉じる" : "もっと見る"}
+        </button>
       </div>
     </section>
   );
