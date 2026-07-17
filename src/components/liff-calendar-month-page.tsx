@@ -57,7 +57,6 @@ import {
 } from "@/lib/liff-swr";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { initLiffAndGetToken, refreshLiffIdToken } from "@/lib/liff-session";
-import { mergeStaffNameOptions } from "@/lib/staff-name-options";
 import type { LiffCalendarPageConfig } from "@/lib/liff-calendar-page-config";
 
 type HandlerStaffRow = {
