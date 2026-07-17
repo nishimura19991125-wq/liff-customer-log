@@ -415,6 +415,15 @@ export default function HomeHubPage() {
               disabled={needsStaffBind || account.loading}
               onClose={() => setIsBulletinBoardVisible(false)}
             />
+          ) : !needsStaffBind && !account.loading ? (
+            <button
+              type="button"
+              onClick={() => setIsBulletinBoardVisible(true)}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-[13px] font-semibold text-slate-700 shadow-sm transition-colors active:scale-[0.99] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              aria-label="掲示場を再表示"
+            >
+              掲示場（タップで表示）
+            </button>
           ) : null}
         </div>
 
