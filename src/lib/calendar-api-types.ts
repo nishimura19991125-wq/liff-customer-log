@@ -53,3 +53,31 @@ export type CalendarApiPayload = {
   calendarStale?: boolean;
   rosterMessage?: string;
 };
+
+/** ホーム：工事対応者として担当する本日以降の案件 */
+export type ConstructionHandlerHomeCase = {
+  recordId: string;
+  customerName: string;
+  /** 直近の工事日（YYYY-MM-DD） */
+  nextDayKey: string;
+  /** 表示用日付（例: 7/18） */
+  nextDateLabel: string;
+  /** 区分（仕込日・パネル工事日など）。なければ空 */
+  segmentLabel: string;
+  housingShort: string;
+  contractorName: string;
+  pinpointAddress: string;
+  normalAddress: string;
+  accessEditUrl: string;
+  /** 本日以降に残っている工事日の件数（次の日を含む） */
+  upcomingDayCount: number;
+};
+
+export type ConstructionHandlerHomePayload = {
+  configured: boolean;
+  staffName: string;
+  items: ConstructionHandlerHomeCase[];
+  needsStaffBind?: boolean;
+  disabled?: boolean;
+  error?: string;
+};

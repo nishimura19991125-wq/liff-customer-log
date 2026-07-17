@@ -8,6 +8,7 @@ import type {
   CalendarAttachmentMeta,
   CalendarMonthApiItem,
   CalendarRecordMonthPatch,
+  ConstructionHandlerHomeCase,
 } from "@/lib/calendar-api-types";
 import {
   atPocketFileHasPayload,
@@ -15,6 +16,7 @@ import {
   parseAtPocketFileField,
 } from "@/lib/at-pocket-file-field";
 import type { AtPocketFieldRow, AtPocketRecordRow } from "@/lib/atpocket";
+import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import {
   readMapAddressesFromRecord,
   resolveConstructionMapAddressFieldIds,
@@ -22,7 +24,11 @@ import {
 } from "@/lib/map-address-fields";
 import { pocketTableCellToPlainString } from "@/lib/staff-construction-availability";
 
-export type { CalendarApiPayload, CalendarMonthApiItem } from "@/lib/calendar-api-types";
+export type {
+  CalendarApiPayload,
+  CalendarMonthApiItem,
+  ConstructionHandlerHomeCase,
+} from "@/lib/calendar-api-types";
 
 export type ConstructionFieldIds = {
   title: string;
@@ -530,6 +536,35 @@ export function buildConstructionRecordsMonthOverlapQuery(
     return `(${overlapCore} or (${zankoId} >= "${ms}" and ${zankoId} <= "${me}"))`;
   }
   return overlapCore;
+}
+
+/**
+ * 本日以降に工事日が残る案件向けの @pocket query。
+ * 施工予定日・終了日・残工日・新築4日程のいずれかが本日以降なら候補に含める。
+ */
+export function buildConstructionRecordsFromTodayQuery(
+  fids: ConstructionFieldIds,
+  todayYmd: string,
+): string | null {
+  const today = todayYmd.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) return null;
+
+  const clauses: string[] = [];
+  const pushGte = (fieldId: string | null | undefined) => {
+    const id = fieldId?.trim();
+    if (id) clauses.push(`${id} >= "${today}"`);
+  };
+
+  pushGte(fids.startDate);
+  pushGte(fids.endDate);
+  pushGte(fids.zankoDay);
+  pushGte(fids.shigumi);
+  pushGte(fids.panelWork);
+  pushGte(fids.electricWork);
+  pushGte(fids.appSettingsDay);
+
+  if (clauses.length === 0) return null;
+  return `(${clauses.join(" or ")})`;
 }
 
 function startOfDay(d: Date): Date {
@@ -1375,6 +1410,125 @@ export function buildCalendarPayload(
     holidayKeys,
     byDay,
   };
+}
+
+function housingShortLabel(housingStatusKey: string): string {
+  if (
+    housingStatusKey === "新築案件" ||
+    housingStatusKey === "既築案件" ||
+    housingStatusKey === "トラーチ倶楽部案件" ||
+    housingStatusKey === "産業用案件"
+  ) {
+    return housingStatusKey.replace(/案件$/, "");
+  }
+  return "";
+}
+
+function dateLabelFromDayKey(dayKey: string): string {
+  const m = dayKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return dayKey;
+  return `${Number(m[2])}/${Number(m[3])}`;
+}
+
+/** イベントから本日以降の工事日（区分付き）を収集 */
+function upcomingWorkDaysFromEvent(
+  ev: CalendarEventInternal,
+  todayYmd: string,
+): Array<{ dayKey: string; segmentLabel: string }> {
+  const out: Array<{ dayKey: string; segmentLabel: string }> = [];
+  const seen = new Set<string>();
+
+  const push = (d: Date, segmentLabel: string) => {
+    const key = ymdKey(startOfDay(d));
+    if (key < todayYmd) return;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ dayKey: key, segmentLabel });
+  };
+
+  if (ev.calendarSegments && ev.calendarSegments.length > 0) {
+    for (const seg of ev.calendarSegments) {
+      push(seg.date, seg.label);
+    }
+  } else {
+    const s0 = startOfDay(ev.start);
+    let e0 = ev.end ? startOfDay(ev.end) : s0;
+    if (e0.getTime() < s0.getTime()) e0 = s0;
+    for (
+      let d = new Date(s0.getTime());
+      d.getTime() <= e0.getTime();
+      d = addDays(d, 1)
+    ) {
+      push(d, "");
+    }
+  }
+
+  if (ev.zankoCalendarSegment) {
+    push(ev.zankoCalendarSegment.date, ev.zankoCalendarSegment.label);
+  }
+
+  out.sort((a, b) => a.dayKey.localeCompare(b.dayKey));
+  return out;
+}
+
+/**
+ * 工事対応者が自分の案件のうち、本日以降に工事日が残るものを一覧化。
+ * 1レコード1件（直近の工事日を表示）。todayYmd は JST の YYYY-MM-DD。
+ */
+export function buildConstructionHandlerHomeCases(
+  constructionRecords: AtPocketRecordRow[],
+  constructionFields: AtPocketFieldRow[],
+  handlerStaffName: string,
+  todayYmd: string,
+): ConstructionHandlerHomeCase[] {
+  const want = normApClStaffName(handlerStaffName);
+  if (!want) return [];
+  const today = todayYmd.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) return [];
+
+  const fids = resolveConstructionFieldIds(constructionFields);
+  const mapAddressIds = resolveConstructionMapAddressFieldIds(constructionFields);
+
+  const byRecord = new Map<string, ConstructionHandlerHomeCase>();
+
+  for (const rec of constructionRecords) {
+    const ev = recordToEvent(rec, fids, mapAddressIds);
+    if (!ev || ev.category !== "list") continue;
+    if (normApClStaffName(ev.constructionHandlerName) !== want) continue;
+
+    const upcoming = upcomingWorkDaysFromEvent(ev, today);
+    if (upcoming.length === 0) continue;
+
+    const recordId =
+      ev.recordId != null ? String(ev.recordId).trim() : "";
+    if (!recordId) continue;
+
+    const next = upcoming[0]!;
+    const item: ConstructionHandlerHomeCase = {
+      recordId,
+      customerName: ev.title.trim() || "（無名）",
+      nextDayKey: next.dayKey,
+      nextDateLabel: dateLabelFromDayKey(next.dayKey),
+      segmentLabel: next.segmentLabel,
+      housingShort: housingShortLabel(ev.housingStatusKey),
+      contractorName: ev.contractorNameForColor.trim(),
+      pinpointAddress: ev.pinpointAddress,
+      normalAddress: ev.normalAddress,
+      accessEditUrl: ev.accessEditUrl,
+      upcomingDayCount: upcoming.length,
+    };
+
+    const prev = byRecord.get(recordId);
+    if (!prev || item.nextDayKey < prev.nextDayKey) {
+      byRecord.set(recordId, item);
+    }
+  }
+
+  return [...byRecord.values()].sort((a, b) => {
+    const byDay = a.nextDayKey.localeCompare(b.nextDayKey);
+    if (byDay !== 0) return byDay;
+    return a.customerName.localeCompare(b.customerName, "ja");
+  });
 }
 
 export type { CalendarRecordMonthPatch } from "@/lib/calendar-api-types";

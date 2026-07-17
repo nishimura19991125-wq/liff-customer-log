@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { parseFortuneHeadline } from "@/components/fortune-rank-badge";
 import { HomeCompactSummaries } from "@/components/home-compact-summaries";
+import { HomeConstructionHandlerCases } from "@/components/home-construction-handler-cases";
 import { HomeDailyOmikujiCard } from "@/components/home-daily-omikuji-card";
 import { HomeMissingDocumentsAlert } from "@/components/home-missing-documents-alert";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -395,6 +396,12 @@ export default function HomeHubPage() {
           ) : null}
 
           <HomeMissingDocumentsAlert
+            idToken={idToken}
+            boundStaffName={account.boundStaffName}
+            disabled={needsStaffBind || account.loading}
+          />
+
+          <HomeConstructionHandlerCases
             idToken={idToken}
             boundStaffName={account.boundStaffName}
             disabled={needsStaffBind || account.loading}
