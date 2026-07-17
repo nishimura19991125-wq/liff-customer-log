@@ -5,6 +5,7 @@ import {
   apiKeyForAttendancePocket1,
   apiKeyForAttendanceWrite,
   createRecord,
+  fetchAllRecordsPages,
   fetchAppFields,
   fetchRecordsList,
   isPocketApiRateLimited,
@@ -39,6 +40,10 @@ import { enrichStaffNamesWithDepartments } from "@/lib/staff-department-lookup";
 import { pickRecordValueByFieldAliases, ymdKey } from "@/lib/calendar-kojo";
 import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
+import {
+  extractDisplayHHmm,
+  type AttendanceDayRecord,
+} from "@/lib/attendance-calendar-types";
 
 export type { AttendancePublicStatus } from "@/lib/attendance-fields";
 
@@ -882,4 +887,226 @@ export async function punchAttendanceForLineUser(
   );
   const status = await publishPunchStatus(punchedRow, rosterRows);
   return { ok: true, status };
+}
+
+export type AttendanceMonthCalendarResponse = {
+  configured: boolean;
+  year: number;
+  month: number;
+  staffName?: string;
+  records: AttendanceDayRecord[];
+  needsStaffBind?: boolean;
+  configError?: string;
+  rateLimited?: boolean;
+};
+
+function pad2Month(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function monthDateBounds(year: number, month: number): {
+  start: string;
+  end: string;
+} {
+  const last = new Date(year, month, 0).getDate();
+  return {
+    start: `${year}-${pad2Month(month)}-01`,
+    end: `${year}-${pad2Month(month)}-${pad2Month(last)}`,
+  };
+}
+
+function escapePocketQueryValue(s: string): string {
+  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function ymdInRange(ymd: string, start: string, end: string): boolean {
+  return ymd >= start && ymd <= end;
+}
+
+function recordWorkYmd(
+  recObj: Record<string, unknown>,
+  ids: AttendanceFieldIds,
+): string | null {
+  const fromDate = parseWorkDateYmd(readFieldText(recObj, ids.workDate));
+  if (fromDate) return fromDate;
+  const fromIn = parseWorkDateYmd(readFieldText(recObj, ids.clockIn));
+  if (fromIn) return fromIn;
+  return parseWorkDateYmd(readFieldText(recObj, ids.clockOut));
+}
+
+function buildMonthDayRecords(
+  rows: AtPocketRecordRow[],
+  staffName: string,
+  ids: AttendanceFieldIds,
+  start: string,
+  end: string,
+): AttendanceDayRecord[] {
+  const target = nfkcName(staffName);
+  const byDate = new Map<
+    string,
+    { id: string; checkIn: string; checkOut: string; sortIn: number }
+  >();
+
+  for (const row of rows) {
+    const recObj = row.record ?? {};
+    const name = readFieldText(recObj, ids.staffName);
+    if (!name || nfkcName(name) !== target) continue;
+
+    const date = recordWorkYmd(recObj, ids);
+    if (!date || !ymdInRange(date, start, end)) continue;
+
+    const checkInRaw = readFieldText(recObj, ids.clockIn);
+    const checkOutRaw = readFieldText(recObj, ids.clockOut);
+    const checkIn = extractDisplayHHmm(checkInRaw);
+    const checkOut = extractDisplayHHmm(checkOutRaw);
+    if (!checkIn && !checkOut) continue;
+
+    const id = atPocketRecordIdFromRow(row) || date;
+    const sortIn = clockInSortKey(checkInRaw || checkOutRaw);
+    const cur = byDate.get(date);
+    if (!cur || (checkIn && sortIn < cur.sortIn) || (!cur.checkIn && checkIn)) {
+      byDate.set(date, { id, checkIn, checkOut, sortIn });
+    }
+  }
+
+  return Array.from(byDate.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, v]) => ({
+      id: v.id,
+      date,
+      checkIn: v.checkIn,
+      checkOut: v.checkOut,
+    }));
+}
+
+async function fetchMonthAttendanceRows(
+  appId: string,
+  ids: AttendanceFieldIds,
+  staffName: string,
+  start: string,
+  end: string,
+): Promise<AtPocketRecordRow[]> {
+  const csv = attendanceFieldsCsv(ids);
+  const readAuth = { apiKey: apiKeyForAttendancePocket() };
+  const readAuth1 = { apiKey: apiKeyForAttendancePocket1() };
+  const staffId = ids.staffName!.trim();
+  const dateId = ids.workDate!.trim();
+  const staffQ = `${staffId}="${escapePocketQueryValue(staffName)}"`;
+  const rangeQ = `${dateId} >= "${start}" and ${dateId} <= "${end}"`;
+  const queries = [`${staffQ} and ${rangeQ}`, staffQ];
+
+  if (
+    isAttendanceFetchBlocked() &&
+    isPocketApiRateLimited(readAuth) &&
+    isPocketApiRateLimited(readAuth1)
+  ) {
+    throw new Error("ATTENDANCE_RATE_LIMIT");
+  }
+
+  const merged = new Map<string, AtPocketRecordRow>();
+  let anon = 0;
+
+  for (const query of queries) {
+    try {
+      const rows = await fetchAllRecordsPages(
+        appId,
+        csv,
+        readAuth,
+        query,
+        { operation: "attendance-month-calendar" },
+        {
+          maxPages: 5,
+          maxRetries: 0,
+          authKeys: [readAuth, readAuth1],
+        },
+      );
+      for (const row of rows) {
+        const key = atPocketRecordIdFromRow(row) ?? `__anon_${anon++}`;
+        if (!merged.has(key)) merged.set(key, row);
+      }
+      if (merged.size > 0) break;
+    } catch (e) {
+      if (isPocketHttpRateLimitError(e)) {
+        markPocketApiRateLimited(readAuth);
+        blockAttendanceFetchAfterRateLimit();
+        throw new Error("ATTENDANCE_RATE_LIMIT");
+      }
+      console.warn("[attendance-month] query failed", {
+        query,
+        error: String(e),
+      });
+    }
+  }
+
+  return [...merged.values()];
+}
+
+/** ログインユーザー本人の月間打刻（出勤・退勤）を返す */
+export async function getAttendanceMonthCalendarForLineUser(
+  lineUserId: string,
+  year: number,
+  month: number,
+): Promise<AttendanceMonthCalendarResponse> {
+  const loaded = await loadAttendanceFieldIds();
+  if (!loaded.ok) {
+    return {
+      configured: loaded.configured !== false,
+      year,
+      month,
+      records: [],
+      configError: loaded.error,
+      rateLimited: loaded.rateLimited,
+    };
+  }
+
+  const staffName = await resolveBoundStaffNameForLineUser(lineUserId);
+  if (!staffName) {
+    return {
+      configured: true,
+      year,
+      month,
+      records: [],
+      needsStaffBind: true,
+      configError: "担当者の紐付けが必要です",
+    };
+  }
+
+  const { start, end } = monthDateBounds(year, month);
+
+  try {
+    const rows = await fetchMonthAttendanceRows(
+      loaded.appId,
+      loaded.ids,
+      staffName,
+      start,
+      end,
+    );
+    const records = buildMonthDayRecords(
+      rows,
+      staffName,
+      loaded.ids,
+      start,
+      end,
+    );
+    return {
+      configured: true,
+      year,
+      month,
+      staffName,
+      records,
+    };
+  } catch (e) {
+    if (e instanceof Error && e.message === "ATTENDANCE_RATE_LIMIT") {
+      return {
+        configured: true,
+        year,
+        month,
+        staffName,
+        records: [],
+        rateLimited: true,
+        configError: ATTENDANCE_RATE_LIMIT_MESSAGE,
+      };
+    }
+    throw e;
+  }
 }

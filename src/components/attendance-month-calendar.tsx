@@ -2,8 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import type { AttendanceDayRecord } from "@/lib/attendance-calendar-dummy";
-import { attendanceRecordsByDate } from "@/lib/attendance-calendar-dummy";
+import { useLiffSwr } from "@/hooks/use-liff-swr";
+import {
+  attendanceRecordsByDate,
+  formatAttendanceTimeRange,
+  type AttendanceDayRecord,
+} from "@/lib/attendance-calendar-types";
+import { LIFF_SWR_ATTENDANCE_OPTIONS } from "@/lib/liff-swr";
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"] as const;
 
@@ -11,6 +16,18 @@ type CalendarCell = {
   day: number;
   dateKey: string;
   inMonth: boolean;
+};
+
+type MonthCalendarApiResponse = {
+  configured?: boolean;
+  year?: number;
+  month?: number;
+  staffName?: string;
+  records?: AttendanceDayRecord[];
+  needsStaffBind?: boolean;
+  configError?: string;
+  rateLimited?: boolean;
+  error?: string;
 };
 
 function pad2(n: number): string {
@@ -24,14 +41,6 @@ function formatMonthTitle(year: number, month: number): string {
 function formatDateLabel(dateKey: string): string {
   const [y, m, d] = dateKey.split("-");
   return `${y}年${Number(m)}月${Number(d)}日`;
-}
-
-function formatTimeRange(record: AttendanceDayRecord | undefined): string | null {
-  if (!record?.checkIn) return null;
-  if (record.checkOut) {
-    return `${record.checkIn} 〜 ${record.checkOut}`;
-  }
-  return `${record.checkIn} 〜`;
 }
 
 function buildMonthCells(year: number, month: number): CalendarCell[] {
@@ -90,7 +99,9 @@ function DayDetailSheet({
     };
   }, []);
 
-  const timeRange = formatTimeRange(record);
+  const checkIn = record?.checkIn?.trim() ?? "";
+  const checkOut = record?.checkOut?.trim() ?? "";
+  const hasAny = Boolean(checkIn || checkOut);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center">
@@ -113,24 +124,28 @@ function DayDetailSheet({
         >
           {formatDateLabel(dateKey)}
         </h3>
-        {timeRange ? (
+        {hasAny ? (
           <dl className="mt-4 space-y-3">
-            <div>
-              <dt className="text-[12px] font-medium text-slate-500 dark:text-slate-400">
-                出勤
-              </dt>
-              <dd className="mt-0.5 text-[18px] font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
-                {record?.checkIn}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-[12px] font-medium text-slate-500 dark:text-slate-400">
-                退勤
-              </dt>
-              <dd className="mt-0.5 text-[18px] font-bold tabular-nums text-slate-800 dark:text-slate-100">
-                {record?.checkOut || "—"}
-              </dd>
-            </div>
+            {checkIn ? (
+              <div>
+                <dt className="text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                  出勤
+                </dt>
+                <dd className="mt-0.5 text-[18px] font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
+                  {checkIn}
+                </dd>
+              </div>
+            ) : null}
+            {checkOut ? (
+              <div>
+                <dt className="text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                  退勤
+                </dt>
+                <dd className="mt-0.5 text-[18px] font-bold tabular-nums text-slate-800 dark:text-slate-100">
+                  {checkOut}
+                </dd>
+              </div>
+            ) : null}
           </dl>
         ) : (
           <p className="mt-4 text-[14px] text-slate-500 dark:text-slate-400">
@@ -150,22 +165,27 @@ function DayDetailSheet({
 }
 
 export function AttendanceMonthCalendar({
-  records,
-  initialYear,
-  initialMonth,
+  idToken,
 }: {
-  records: AttendanceDayRecord[];
-  initialYear?: number;
-  initialMonth?: number;
+  idToken: string;
 }) {
   const now = new Date();
-  const [year, setYear] = useState(initialYear ?? now.getFullYear());
-  const [month, setMonth] = useState(initialMonth ?? now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
+  const path = `/api/attendance/calendar?year=${year}&month=${month}`;
+  const { data, error, isLoading } = useLiffSwr<MonthCalendarApiResponse>(
+    path,
+    idToken,
+    LIFF_SWR_ATTENDANCE_OPTIONS,
+  );
+
+  const records = data?.records ?? [];
   const byDate = useMemo(() => attendanceRecordsByDate(records), [records]);
   const cells = useMemo(() => buildMonthCells(year, month), [year, month]);
   const selectedRecord = selectedDateKey ? byDate[selectedDateKey] : undefined;
+  const loading = isLoading && !data;
 
   function goPrevMonth() {
     if (month === 1) {
@@ -212,6 +232,12 @@ export function AttendanceMonthCalendar({
         </div>
       </div>
 
+      {data?.configError || error ? (
+        <p className="mb-2 text-[12px] text-amber-800 dark:text-amber-200">
+          {data?.configError ?? error?.message}
+        </p>
+      ) : null}
+
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
         <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-700">
           {WEEKDAYS.map((label, i) => (
@@ -230,13 +256,17 @@ export function AttendanceMonthCalendar({
           ))}
         </div>
 
-        <div className="grid grid-cols-7">
+        <div className={`grid grid-cols-7 ${loading ? "opacity-60" : ""}`}>
           {cells.map((cell) => {
             const record = byDate[cell.dateKey];
-            const hasPunch = Boolean(record?.checkIn);
-            const timeRange = formatTimeRange(record);
-            const isSunday = new Date(cell.dateKey).getDay() === 0;
-            const isSaturday = new Date(cell.dateKey).getDay() === 6;
+            const timeRange = formatAttendanceTimeRange(
+              record?.checkIn,
+              record?.checkOut,
+            );
+            const hasPunch = Boolean(timeRange);
+            const isSunday = new Date(`${cell.dateKey}T12:00:00`).getDay() === 0;
+            const isSaturday =
+              new Date(`${cell.dateKey}T12:00:00`).getDay() === 6;
 
             return (
               <button
@@ -283,6 +313,12 @@ export function AttendanceMonthCalendar({
           })}
         </div>
       </div>
+
+      {loading ? (
+        <p className="mt-2 text-[12px] text-slate-500 dark:text-slate-400">
+          打刻データを読み込み中…
+        </p>
+      ) : null}
 
       {selectedDateKey ? (
         <DayDetailSheet

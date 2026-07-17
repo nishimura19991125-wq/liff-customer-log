@@ -1,10 +1,11 @@
-/** 月間カレンダー用の1日分打刻データ */
-export type AttendanceDayRecord = {
-  id: string;
-  date: string;
-  checkIn: string;
-  checkOut: string;
-};
+import type { AttendanceDayRecord } from "@/lib/attendance-calendar-types";
+
+export type { AttendanceDayRecord } from "@/lib/attendance-calendar-types";
+export {
+  attendanceRecordsByDate,
+  extractDisplayHHmm,
+  formatAttendanceTimeRange,
+} from "@/lib/attendance-calendar-types";
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -14,7 +15,7 @@ function ymd(year: number, month: number, day: number): string {
   return `${year}-${pad2(month)}-${pad2(day)}`;
 }
 
-/** 当月を中心にしたテスト用ダミーデータ */
+/** 当月を中心にしたテスト用ダミーデータ（開発確認用） */
 export function buildAttendanceCalendarDummy(
   year = new Date().getFullYear(),
   month = new Date().getMonth() + 1,
@@ -44,15 +45,4 @@ export function buildAttendanceCalendarDummy(
       checkIn: s.checkIn,
       checkOut: s.checkOut,
     }));
-}
-
-/** 日付キーで引けるマップに変換 */
-export function attendanceRecordsByDate(
-  records: AttendanceDayRecord[],
-): Record<string, AttendanceDayRecord> {
-  const map: Record<string, AttendanceDayRecord> = {};
-  for (const r of records) {
-    map[r.date] = r;
-  }
-  return map;
 }
