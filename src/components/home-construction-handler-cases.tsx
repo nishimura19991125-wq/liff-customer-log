@@ -104,13 +104,11 @@ export function HomeConstructionHandlerCases({
     return null;
   }
 
-  if (data.error && data.items.length === 0) {
+  if (data.error && (!data.items || data.items.length === 0)) {
     return null;
   }
 
   const items = data.items ?? [];
-  if (items.length === 0) return null;
-
   const preview = items.slice(0, PREVIEW_LIMIT);
   const restCount = items.length - preview.length;
   const visible = expanded ? items : preview;
@@ -124,9 +122,11 @@ export function HomeConstructionHandlerCases({
               <p className="text-[13px] font-bold tracking-tight text-slate-800 dark:text-white">
                 工事対応（本日以降）
               </p>
-              <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">
-                {items.length}件 · ピンポイントナビで現場へ
-              </p>
+              {items.length > 0 ? (
+                <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">
+                  {items.length}件 · ピンポイントナビで現場へ
+                </p>
+              ) : null}
             </div>
             <Link
               href="/calendar"
@@ -136,22 +136,30 @@ export function HomeConstructionHandlerCases({
             </Link>
           </div>
 
-          <ul className="mt-3 flex flex-col gap-3">
-            {visible.map((item) => (
-              <CaseRow key={item.recordId} item={item} />
-            ))}
-          </ul>
+          {items.length === 0 ? (
+            <p className="mt-3 text-[13px] text-slate-500 dark:text-slate-400">
+              案件なし
+            </p>
+          ) : (
+            <>
+              <ul className="mt-3 flex flex-col gap-3">
+                {visible.map((item) => (
+                  <CaseRow key={item.recordId} item={item} />
+                ))}
+              </ul>
 
-          {restCount > 0 ? (
-            <button
-              type="button"
-              className="mt-3 w-full rounded-xl border border-slate-200 bg-white py-2.5 text-center text-[13px] font-semibold text-slate-700 shadow-sm transition active:scale-[0.99] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
-              aria-expanded={expanded}
-              onClick={() => setExpanded((v) => !v)}
-            >
-              {expanded ? "閉じる" : `他${restCount}件`}
-            </button>
-          ) : null}
+              {restCount > 0 ? (
+                <button
+                  type="button"
+                  className="mt-3 w-full rounded-xl border border-slate-200 bg-white py-2.5 text-center text-[13px] font-semibold text-slate-700 shadow-sm transition active:scale-[0.99] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                  aria-expanded={expanded}
+                  onClick={() => setExpanded((v) => !v)}
+                >
+                  {expanded ? "閉じる" : `他${restCount}件`}
+                </button>
+              ) : null}
+            </>
+          )}
         </div>
       </LiffCard>
     </section>
