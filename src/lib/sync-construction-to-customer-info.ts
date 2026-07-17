@@ -16,9 +16,11 @@ import {
 import { customerInfoPutValue } from "@/lib/customer-info-record";
 import {
   pickRecordValueByFieldAliases,
+  pocketFieldUniqueIdByCaption,
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
   resolveConstructionTNumberFieldId,
+  resolveEmptyFillHousingStatusFieldId,
 } from "@/lib/calendar-kojo";
 import {
   resolveConstructionRegistrationNumberFieldIds,
@@ -119,6 +121,8 @@ export async function syncConstructionRecordToCustomerInfoApp(opts: {
   /** 工事 T番号（recordId 未取得時に空枠登録と同様の連携を行う） */
   constructionUniqueKey?: string;
   customerName: string;
+  /** LIFF で選択した住宅ステータス（工事レコード再取得より優先） */
+  housingStatus?: string;
   constructionFields: AtPocketFieldRow[];
   calendarAuth: AtPocketFetchAuth;
   /** LIFF ログイン者の LINE ID（sub）。AP/CL担当者の自動転記に使用 */
@@ -190,6 +194,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   constructionRecordId?: string;
   constructionUniqueKey?: string;
   customerName: string;
+  housingStatus?: string;
   constructionFields: AtPocketFieldRow[];
   calendarAuth: AtPocketFetchAuth;
   lineUserId?: string;
@@ -294,6 +299,19 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   }
 
   const constructionFids = resolveConstructionFieldIds(opts.constructionFields);
+  const constructionHousingFieldId =
+    resolveEmptyFillHousingStatusFieldId(opts.constructionFields);
+  const customerHousingFieldId = (() => {
+    const fromEnv =
+      process.env.CUSTOMER_INFO_HOUSING_STATUS_FIELD_ID?.trim() || "";
+    if (fromEnv) {
+      return resolveConfiguredFieldToSchemaUniqueId(fromEnv, customerFields);
+    }
+    return (
+      pocketFieldUniqueIdByCaption(customerFields, "住宅ステータス") ||
+      pocketFieldUniqueIdByCaption(customerFields, "住宅 ステータス")
+    );
+  })();
   const customerContractorFieldId = resolveCustomerInfoFormFieldId(
     "constructionContractor",
     "施工業者",
@@ -312,6 +330,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
 
   const fieldsCsv = [
     constructionKeyField,
+    ...(constructionHousingFieldId ? [constructionHousingFieldId] : []),
     ...(constructionFids.contractor ? [constructionFids.contractor] : []),
     ...(constructionFids.startDate ? [constructionFids.startDate] : []),
     resolvedCustomerKey,
@@ -397,6 +416,18 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   };
   if (resolvedCustomerName) {
     customerRecord[resolvedCustomerName] = opts.customerName.trim();
+  }
+
+  if (customerHousingFieldId) {
+    let housingValue = (opts.housingStatus ?? "").trim();
+    if (!housingValue && recObj && constructionHousingFieldId) {
+      housingValue = coercePocketPlainString(
+        pickRecordValueByFieldAliases(recObj, constructionHousingFieldId),
+      );
+    }
+    if (housingValue) {
+      customerRecord[customerHousingFieldId] = housingValue;
+    }
   }
 
   if (recObj) {

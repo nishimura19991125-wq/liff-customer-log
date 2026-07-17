@@ -27,6 +27,7 @@ import {
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
   resolveConstructionTNumberFieldId,
+  resolveEmptyFillHousingStatusFieldId,
 } from "@/lib/calendar-kojo";
 import {
   lineAuthUnauthorizedResponse,
@@ -78,14 +79,12 @@ export async function POST(request: Request) {
   const customerField =
     process.env.CALENDAR_EMPTY_FILL_CUSTOMER_NAME_FIELD_ID?.trim() ||
     process.env.CALENDAR_EMPTY_FILL_TITLE_FIELD_ID?.trim();
-  const housingField =
-    process.env.CALENDAR_EMPTY_FILL_HOUSING_STATUS_FIELD_ID?.trim();
 
-  if (!customerField || !housingField) {
+  if (!customerField) {
     return NextResponse.json(
       {
         error:
-          "工事空枠の入力先フィールドが未設定です。.env に CALENDAR_EMPTY_FILL_CUSTOMER_NAME_FIELD_ID と CALENDAR_EMPTY_FILL_HOUSING_STATUS_FIELD_ID（@pocket の uniqueId）を設定してください。",
+          "工事空枠の入力先フィールドが未設定です。.env に CALENDAR_EMPTY_FILL_CUSTOMER_NAME_FIELD_ID（@pocket の uniqueId）を設定してください。",
       },
       { status: 500 },
     );
@@ -154,15 +153,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const resolvedHousing = resolveConfiguredFieldToSchemaUniqueId(
-      housingField,
-      constructionFields,
-    );
+    const resolvedHousing =
+      resolveEmptyFillHousingStatusFieldId(constructionFields);
     if (!resolvedHousing) {
       return NextResponse.json(
         {
           error:
-            `住宅ステータスフィールド「${housingField}」が工事アプリのフィールド定義と一致しません。GET /api/apps/{アプリID}/fields で返る uniqueId を設定してください。`,
+            "住宅ステータスフィールドが見つかりません。工事アプリに「住宅ステータス」列があるか、CALENDAR_EMPTY_FILL_HOUSING_STATUS_FIELD_ID を設定してください。",
         },
         { status: 500 },
       );
@@ -355,6 +352,7 @@ export async function POST(request: Request) {
       constructionRecordId: recordId,
       constructionUniqueKey: uniqueKey,
       customerName,
+      housingStatus: housingRaw,
       constructionFields,
       calendarAuth: writeAuth,
       lineUserId: auth.lineUserId,

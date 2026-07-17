@@ -388,6 +388,27 @@ export function resolveConstructionTNumberFieldId(
   return resolveConfiguredFieldToSchemaUniqueId(t, fields);
 }
 
+/**
+ * 空枠入力の住宅ステータス書き込み先。
+ * カレンダー表示と同じ「住宅ステータス」見出しを優先し、無いときだけ env を使う。
+ * （env が別列を指していると @pocket 上の住宅ステータスが空のままになる）
+ */
+export function resolveEmptyFillHousingStatusFieldId(
+  fields: AtPocketFieldRow[],
+): string | null {
+  const fids = resolveConstructionFieldIds(fields);
+  const fromCaption = fids.housingStatus?.trim();
+  if (fromCaption) {
+    return (
+      resolveConfiguredFieldToSchemaUniqueId(fromCaption, fields) ?? fromCaption
+    );
+  }
+  const fromEnv =
+    process.env.CALENDAR_EMPTY_FILL_HOUSING_STATUS_FIELD_ID?.trim();
+  if (!fromEnv) return null;
+  return resolveConfiguredFieldToSchemaUniqueId(fromEnv, fields);
+}
+
 export function resolveReportFieldIds(
   fields: AtPocketFieldRow[],
 ): ReportFieldIds {

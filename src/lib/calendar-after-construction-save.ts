@@ -13,6 +13,8 @@ export async function finalizeConstructionCalendarSave(opts: {
   /** 工事レコードの T番号（recordId が取れないときのお客様情報連携用） */
   constructionUniqueKey?: string | null;
   customerName: string;
+  /** LIFF で選択した住宅ステータス（お客様情報・工事アプリ連携用） */
+  housingStatus?: string;
   constructionFields: AtPocketFieldRow[];
   calendarAuth: AtPocketFetchAuth;
   lineUserId?: string;
@@ -45,6 +47,7 @@ export async function finalizeConstructionCalendarSave(opts: {
     constructionRecordId: recordId ?? undefined,
     constructionUniqueKey: uniqueKey ?? undefined,
     customerName: opts.customerName,
+    housingStatus: opts.housingStatus,
     constructionFields: opts.constructionFields,
     calendarAuth: opts.calendarAuth,
     lineUserId: opts.lineUserId,
