@@ -304,6 +304,14 @@ function StaffSuggestCombobox({
           onChange(e.target.value);
           setOpen(true);
         }}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter") return;
+          const top = suggestions[0];
+          if (!top) return;
+          e.preventDefault();
+          onChange(top);
+          setOpen(false);
+        }}
       />
       {open && !disabled && suggestions.length > 0 ? (
         <ul
