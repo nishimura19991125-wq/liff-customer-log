@@ -63,7 +63,7 @@ function staffRosterMinRefetchMs(): number {
 const STAFF_LIST_FETCH_OPTIONS = { maxRetries: 0 } as const;
 
 /** 名簿 fields CSV の版（列追加時にキャッシュを無効化） */
-const STAFF_ROSTER_FIELDS_CSV_VERSION = "3";
+const STAFF_ROSTER_FIELDS_CSV_VERSION = "4";
 
 function appendFieldIdsToCsv(
   fields: string,
