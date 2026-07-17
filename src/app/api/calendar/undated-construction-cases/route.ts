@@ -26,7 +26,7 @@ import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
-import { defaultApClStaffNamesForLineUser } from "@/lib/staff-ap-cl-candidates";
+import { resolveBoundStaffNameForLineUser } from "@/lib/staff-ap-cl-candidates";
 
 export const dynamic = "force-dynamic";
 
@@ -68,15 +68,11 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { apStaff, clStaff } = await defaultApClStaffNamesForLineUser(
-      auth.lineUserId,
+    const staffName = normApClStaffName(
+      (await resolveBoundStaffNameForLineUser(auth.lineUserId)) ?? "",
     );
-    const staffName =
-      normApClStaffName(apStaff ?? "") ||
-      normApClStaffName(clStaff ?? "") ||
-      "";
 
-    if (!apStaff && !clStaff) {
+    if (!staffName) {
       const payload: UndatedConstructionCasesPayload = {
         configured: true,
         staffName: "",
@@ -163,8 +159,8 @@ export async function GET(request: Request) {
       customerKeyFieldId,
       apStaffFieldId,
       clStaffFieldId,
-      callerApStaff: apStaff,
-      callerClStaff: clStaff,
+      callerApStaff: staffName,
+      callerClStaff: staffName,
       customerAuth,
     });
 

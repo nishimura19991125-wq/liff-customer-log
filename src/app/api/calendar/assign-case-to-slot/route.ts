@@ -43,7 +43,7 @@ import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
-import { defaultApClStaffNamesForLineUser } from "@/lib/staff-ap-cl-candidates";
+import { resolveBoundStaffNameForLineUser } from "@/lib/staff-ap-cl-candidates";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 26;
@@ -300,10 +300,10 @@ export async function POST(request: Request) {
     const customerAppId = customerInfoAppId();
     const customerKeyEnv = customerInfoImportKeyFieldId();
     if (customerAppId && customerKeyEnv) {
-      const { apStaff, clStaff } = await defaultApClStaffNamesForLineUser(
+      const boundStaffName = await resolveBoundStaffNameForLineUser(
         auth.lineUserId,
       );
-      if (!apStaff && !clStaff) {
+      if (!boundStaffName) {
         return NextResponse.json(
           {
             error:
@@ -344,8 +344,8 @@ export async function POST(request: Request) {
           "CL担当者",
           customerFields,
         ),
-        callerApStaff: apStaff,
-        callerClStaff: clStaff,
+        callerApStaff: boundStaffName,
+        callerClStaff: boundStaffName,
         customerAuth,
       });
       if (!owns) {

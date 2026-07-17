@@ -5,7 +5,7 @@ import type {
   AtPocketFieldRow,
   AtPocketRecordRow,
 } from "@/lib/atpocket";
-import { fetchRecordById } from "@/lib/atpocket";
+import { fetchAllRecordsPages } from "@/lib/atpocket";
 import type { UndatedConstructionCase } from "@/lib/calendar-api-types";
 import { dayKeyFromConstructionRecord } from "@/lib/calendar-consume-empty-slot";
 import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
@@ -17,7 +17,6 @@ import {
   shortHousingStatusLabel,
   type ConstructionFieldIds,
 } from "@/lib/calendar-kojo";
-import { findCustomerInfoRecordIdByUniqueKeyCached } from "@/lib/customer-info-key-lookup-cache";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { readCustomerInfoFieldValue } from "@/lib/customer-info-record";
 
@@ -185,33 +184,28 @@ export async function filterUndatedCasesByCallerApClStaff(
     .join(",");
   if (!staffFieldsCsv) return [];
 
-  const out: UndatedConstructionCase[] = [];
-  for (const item of items) {
-    const tNumber = item.tNumber.trim();
-    if (!tNumber) continue;
-
-    const customerRecordId = await findCustomerInfoRecordIdByUniqueKeyCached(
-      opts.customerKeyFieldId,
-      tNumber,
+  const keyFieldId = opts.customerKeyFieldId.trim();
+  if (!keyFieldId) return [];
+  const rows = await fetchAllRecordsPages(
+    opts.customerAppId,
+    [keyFieldId, staffFieldsCsv].filter(Boolean).join(","),
+    opts.customerAuth,
+    null,
+    {
+      operation: "calendar:未定案件割り当て(お客様情報AP/CL一括照合)",
+      appEnv: "CUSTOMER_INFO_APP_ID",
+    },
+    { maxPages: 50, maxRetries: 0 },
+  );
+  const staffByT = new Map<string, { apName: string; clName: string }>();
+  for (const row of rows) {
+    const rec = row.record;
+    if (!rec || typeof rec !== "object") continue;
+    const recObj = rec as Record<string, unknown>;
+    const tNumber = normApClStaffName(
+      readCustomerInfoFieldValue(recObj, keyFieldId),
     );
-    if (!customerRecordId) continue;
-
-    let row = await fetchRecordById(
-      opts.customerAppId,
-      customerRecordId,
-      opts.customerAuth,
-      staffFieldsCsv,
-    );
-    if (!row?.record) {
-      row = await fetchRecordById(
-        opts.customerAppId,
-        customerRecordId,
-        opts.customerAuth,
-      );
-    }
-    if (!row?.record || typeof row.record !== "object") continue;
-    const recObj = row.record as Record<string, unknown>;
-
+    if (!tNumber || staffByT.has(tNumber)) continue;
     const apName = opts.apStaffFieldId
       ? normApClStaffName(
           readCustomerInfoFieldValue(recObj, opts.apStaffFieldId),
@@ -222,6 +216,16 @@ export async function filterUndatedCasesByCallerApClStaff(
           readCustomerInfoFieldValue(recObj, opts.clStaffFieldId),
         )
       : "";
+    staffByT.set(tNumber, { apName, clName });
+  }
+
+  const out: UndatedConstructionCase[] = [];
+  for (const item of items) {
+    const tNumber = normApClStaffName(item.tNumber);
+    if (!tNumber) continue;
+    const staff = staffByT.get(tNumber);
+    if (!staff) continue;
+    const { apName, clName } = staff;
 
     if (
       (apName && wantNames.has(apName)) ||
