@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { LiffCard } from "@/components/liff-chrome";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
@@ -28,6 +28,8 @@ type Props = {
   disabled?: boolean;
   /** 掲示板セクション全体を閉じる */
   onClose?: () => void;
+  /** 掲示板内の最下部に表示する追加コンテンツ */
+  children?: ReactNode;
 };
 
 type CustomersApiBody = {
@@ -51,6 +53,7 @@ export function HomeCompactSummaries({
   boundStaffName,
   disabled = false,
   onClose,
+  children,
 }: Props) {
   const [meetingCollapsed, setMeetingCollapsed] = useState(false);
   const [docsCollapsed, setDocsCollapsed] = useState(false);
@@ -399,6 +402,12 @@ export function HomeCompactSummaries({
                 商談進捗情報 {meetingItems.length} 件（タップで表示）
               </button>
             ) : null}
+          </div>
+        ) : null}
+
+        {children ? (
+          <div className="border-t border-slate-100 pt-3 dark:border-slate-700">
+            {children}
           </div>
         ) : null}
       </div>

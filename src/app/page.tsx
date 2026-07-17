@@ -387,7 +387,13 @@ export default function HomeHubPage() {
                 boundStaffName={account.boundStaffName}
                 disabled={false}
                 onClose={() => setIsBulletinBoardVisible(false)}
-              />
+              >
+                <HomeConstructionHandlerCases
+                  idToken={idToken}
+                  boundStaffName={account.boundStaffName}
+                  disabled={needsStaffBind || account.loading}
+                />
+              </HomeCompactSummaries>
             ) : account.boundStaffName ? (
               <p className="text-[15px] font-semibold text-slate-800 dark:text-white">
                 {account.boundStaffName} さん、おつかれさまです
@@ -418,12 +424,6 @@ export default function HomeHubPage() {
               expanded={omikujiExpanded}
             />
           ) : null}
-
-          <HomeConstructionHandlerCases
-            idToken={idToken}
-            boundStaffName={account.boundStaffName}
-            disabled={needsStaffBind || account.loading}
-          />
         </div>
 
         <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
