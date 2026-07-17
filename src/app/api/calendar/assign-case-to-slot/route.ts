@@ -338,6 +338,25 @@ export async function POST(request: Request) {
       return NextResponse.json(conflictBody, { status });
     }
 
+    const contractorFieldId = fids.contractor?.trim();
+    let slotContractor = "";
+    if (contractorFieldId) {
+      const slotRow = await fetchRecordById(
+        calAppId,
+        slotRecordId,
+        readAuth,
+        uniqueFieldsCsv(resolvedCustomer, contractorFieldId),
+      );
+      if (slotRow?.record && typeof slotRow.record === "object") {
+        slotContractor = coercePlainString(
+          pickRecordValueByFieldAliases(
+            slotRow.record as Record<string, unknown>,
+            contractorFieldId,
+          ),
+        );
+      }
+    }
+
     const patch = buildConstructionFillPatch({
       resolvedCustomer: titleId,
       resolvedHousing,
@@ -347,6 +366,7 @@ export async function POST(request: Request) {
       housingRaw: housingStatus,
       fids,
       scheduledStartDate: slotDayKey,
+      contractor: slotContractor || undefined,
     });
 
     await updateRecord(calAppId, caseRecordId, patch, writeAuth);
