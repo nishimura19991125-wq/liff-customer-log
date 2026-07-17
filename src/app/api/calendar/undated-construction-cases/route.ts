@@ -1,0 +1,87 @@
+import { NextResponse } from "next/server";
+
+import {
+  apiKeyForCalendarPocket,
+  fetchAppFields,
+} from "@/lib/atpocket";
+import type { UndatedConstructionCasesPayload } from "@/lib/calendar-api-types";
+import { fetchCalendarConstructionRecordsCached } from "@/lib/calendar-construction-records-cache";
+import {
+  collectConstructionFieldsCsv,
+  resolveConstructionFieldIds,
+} from "@/lib/calendar-kojo";
+import { buildUndatedConstructionCases } from "@/lib/calendar-undated-cases";
+import {
+  lineAuthUnauthorizedResponse,
+  resolveCallerLineAuth,
+} from "@/lib/request-auth";
+
+export const dynamic = "force-dynamic";
+
+/** 工事日未定の既存案件一覧（空き枠への割り当て候補） */
+export async function GET(request: Request) {
+  const auth = await resolveCallerLineAuth(request);
+  if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
+
+  const calAppId = process.env.CALENDAR_APP_ID?.trim();
+  if (!calAppId) {
+    const payload: UndatedConstructionCasesPayload = {
+      configured: false,
+      disabled: true,
+      items: [],
+      error: "CALENDAR_APP_ID が未設定です",
+    };
+    return NextResponse.json(payload, { status: 503 });
+  }
+
+  try {
+    const calAuth = { apiKey: apiKeyForCalendarPocket() };
+    const constructionFields = await fetchAppFields(calAppId, calAuth, {
+      operation: "calendar:工事日未定案件fields",
+      appEnv: "CALENDAR_APP_ID",
+    });
+
+    const fids = resolveConstructionFieldIds(constructionFields);
+    if (!fids.title?.trim()) {
+      const payload: UndatedConstructionCasesPayload = {
+        configured: false,
+        items: [],
+        error: "お客様名フィールドを特定できません",
+      };
+      return NextResponse.json(payload);
+    }
+
+    const csv = collectConstructionFieldsCsv(fids);
+    // 日付フィルタなしで取得し、メモリ内で「名あり・日付なし」を抽出
+    const constructionRecords = await fetchCalendarConstructionRecordsCached(
+      calAppId,
+      csv,
+      null,
+    );
+
+    const items = buildUndatedConstructionCases(
+      constructionRecords,
+      constructionFields,
+    );
+
+    const payload: UndatedConstructionCasesPayload = {
+      configured: true,
+      items,
+    };
+    return NextResponse.json(payload);
+  } catch (e) {
+    console.error("[api/calendar/undated-construction-cases]", e);
+    const msg =
+      e instanceof Error
+        ? e.message
+        : "工事日未定案件の取得に失敗しました";
+    return NextResponse.json(
+      {
+        configured: true,
+        items: [],
+        error: msg,
+      } satisfies UndatedConstructionCasesPayload,
+      { status: 502 },
+    );
+  }
+}

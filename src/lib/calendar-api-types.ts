@@ -81,3 +81,19 @@ export type ConstructionHandlerHomePayload = {
   disabled?: boolean;
   error?: string;
 };
+
+/** 工事日未定の既存案件（空き枠への割り当て候補） */
+export type UndatedConstructionCase = {
+  recordId: string;
+  customerName: string;
+  housingShort: string;
+  contractorName: string;
+  tNumber: string;
+};
+
+export type UndatedConstructionCasesPayload = {
+  configured: boolean;
+  items: UndatedConstructionCase[];
+  disabled?: boolean;
+  error?: string;
+};

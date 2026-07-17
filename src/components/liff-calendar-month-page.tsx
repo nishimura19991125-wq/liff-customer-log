@@ -40,6 +40,8 @@ import type {
   CalendarAttachmentMeta,
   CalendarMonthApiItem,
   CalendarRecordMonthPatch,
+  UndatedConstructionCase,
+  UndatedConstructionCasesPayload,
 } from "@/lib/calendar-api-types";
 import {
   EMPTY_FILL_HOUSING_STATUS_NEW_BUILD,
@@ -1011,6 +1013,7 @@ function EmptySlotCard({
   constructionHandlerUsesStaffDirectory?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [fillMode, setFillMode] = useState<"new" | "assign">("new");
   const [customerFamilyName, setCustomerFamilyName] = useState("");
   const [customerGivenName, setCustomerGivenName] = useState("");
   const [housingStatus, setHousingStatus] = useState<string>("");
@@ -1021,6 +1024,14 @@ function EmptySlotCard({
     "idle" | "loading" | "ok" | "err"
   >("idle");
   const [handlerListError, setHandlerListError] = useState("");
+  const [undatedCases, setUndatedCases] = useState<UndatedConstructionCase[]>(
+    [],
+  );
+  const [undatedListStatus, setUndatedListStatus] = useState<
+    "idle" | "loading" | "ok" | "err"
+  >("idle");
+  const [undatedListError, setUndatedListError] = useState("");
+  const [selectedCaseRecordId, setSelectedCaseRecordId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
     kind: "ok" | "err";
@@ -1050,6 +1061,64 @@ function EmptySlotCard({
       setAppSettingsDayDate("");
     }
   }, [housingStatus]);
+
+  useEffect(() => {
+    if (!open || !idToken || fillMode !== "assign") {
+      if (!open || fillMode !== "assign") {
+        setSelectedCaseRecordId("");
+        setUndatedCases([]);
+        setUndatedListStatus("idle");
+        setUndatedListError("");
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      setSelectedCaseRecordId("");
+      setUndatedCases([]);
+      setUndatedListStatus("loading");
+      setUndatedListError("");
+      try {
+        const res = await fetch("/api/calendar/undated-construction-cases", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const data = (await res.json()) as UndatedConstructionCasesPayload & {
+          error?: string;
+        };
+        if (cancelled) return;
+        if (res.status === 401 && isLineSessionExpiredPayload(data)) {
+          onSessionExpired?.();
+          setUndatedListStatus("err");
+          setUndatedListError(
+            "ログインの有効期限が切れました。画面を更新してください。",
+          );
+          return;
+        }
+        if (!res.ok) {
+          setUndatedListStatus("err");
+          setUndatedListError(
+            typeof data.error === "string"
+              ? data.error
+              : "工事日未定案件の取得に失敗しました",
+          );
+          return;
+        }
+        setUndatedCases(data.items ?? []);
+        setUndatedListStatus("ok");
+      } catch {
+        if (!cancelled) {
+          setUndatedListStatus("err");
+          setUndatedListError("通信に失敗しました");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, idToken, fillMode, onSessionExpired]);
 
   useEffect(() => {
     if (!open || !idToken || !handlerFromStaff) {
@@ -1273,6 +1342,121 @@ function EmptySlotCard({
     }
   }
 
+  async function handleAssignSubmit() {
+    if (!rid) return;
+    const caseId = selectedCaseRecordId.trim();
+    const dayKey = slotDayKey?.trim() ?? "";
+    if (!caseId || !dayKey) return;
+    if (undatedListStatus !== "ok" || undatedCases.length === 0) return;
+
+    setSubmitting(true);
+    setFeedback(null);
+    try {
+      const token = await idTokenForConstructionSubmit(idToken, onSessionExpired);
+      if (!token) return;
+
+      const verify = await verifyConstructionEmptySlotBeforeSubmit(token, rid);
+      if ("sessionExpired" in verify) {
+        onSessionExpired?.();
+        return;
+      }
+      if ("conflict" in verify) {
+        window.alert(CALENDAR_SLOT_CONFLICT_MESSAGE);
+        await onSlotConflict?.();
+        return;
+      }
+      if ("error" in verify) {
+        setFeedback({ kind: "err", text: verify.error });
+        return;
+      }
+
+      const res = await fetch("/api/calendar/assign-case-to-slot", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          slotRecordId: rid,
+          caseRecordId: caseId,
+          slotDayKey: dayKey,
+          viewYear,
+          viewMonth,
+        }),
+      });
+      const rawBody = await res.text();
+      let data: {
+        error?: string;
+        customerInfoSynced?: boolean;
+        constructionSaved?: boolean;
+        calendarPatch?: CalendarRecordMonthPatch;
+        slotConflict?: boolean;
+      } = {};
+      if (rawBody.trim()) {
+        try {
+          data = JSON.parse(rawBody) as typeof data;
+        } catch {
+          data = {};
+        }
+      }
+      if (!res.ok) {
+        if (res.status === 401 && isLineSessionExpiredPayload(data)) {
+          onSessionExpired?.();
+          return;
+        }
+        if (isCalendarSlotConflictApiResponse(res.status, data)) {
+          window.alert(CALENDAR_SLOT_CONFLICT_MESSAGE);
+          await onSlotConflict?.();
+          return;
+        }
+        if (data.constructionSaved) {
+          setSelectedCaseRecordId("");
+          setFillMode("new");
+          setOpen(false);
+          try {
+            await onSaved(data.calendarPatch ?? null);
+          } catch {
+            /* 保存済み */
+          }
+        }
+        const gatewayTimeout =
+          res.status === 504 ||
+          res.status === 408 ||
+          (res.status === 502 && !data.error?.trim() && !data.constructionSaved);
+        setFeedback({
+          kind: "err",
+          text:
+            data.error?.trim() ||
+            (gatewayTimeout
+              ? "処理がタイムアウトしたか、サーバーが応答を返せませんでした。工事アプリに反映されている可能性があります。カレンダーを更新して確認してください。"
+              : data.constructionSaved
+                ? "工事アプリへの保存は完了しましたが、後続処理に失敗しました。"
+                : `割り当てに失敗しました（HTTP ${res.status}）。しばらくしてから再度お試しください。`),
+        });
+        return;
+      }
+      setSelectedCaseRecordId("");
+      setFillMode("new");
+      setOpen(false);
+      try {
+        await onSaved(data.calendarPatch ?? null);
+      } catch (e) {
+        setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
+        return;
+      }
+      setFeedback({
+        kind: "ok",
+        text: data.customerInfoSynced
+          ? "割り当てました。カレンダーに反映し、お客様情報アプリの施工予定日も更新しました。"
+          : "割り当てました。カレンダーに反映済みです。",
+      });
+    } catch (e) {
+      setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div className="min-w-0 rounded-2xl border-2 border-dashed border-slate-400/75 bg-slate-50/95 px-4 py-4 shadow-inner shadow-slate-200/40 ring-1 ring-slate-200/70">
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -1307,6 +1491,7 @@ function EmptySlotCard({
           onClick={() => {
             setOpen((o) => !o);
             setFeedback(null);
+            setFillMode("new");
           }}
         >
           {open ? "入力を閉じる" : "情報を入力"}
@@ -1331,6 +1516,123 @@ function EmptySlotCard({
 
       {open ? (
         <div className="mt-4 min-w-0 border-t border-slate-200/90 pt-4">
+          <div
+            className="mb-3 flex rounded-xl border border-slate-200 bg-white p-1 shadow-inner"
+            role="tablist"
+            aria-label="空き枠の埋め方"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={fillMode === "new"}
+              className={`flex-1 rounded-lg px-2 py-2 text-[12px] font-bold transition ${
+                fillMode === "new"
+                  ? "bg-slate-800 text-white shadow-sm"
+                  : "text-slate-600"
+              }`}
+              disabled={submitting}
+              onClick={() => {
+                setFillMode("new");
+                setFeedback(null);
+              }}
+            >
+              新規入力
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={fillMode === "assign"}
+              className={`flex-1 rounded-lg px-2 py-2 text-[12px] font-bold transition ${
+                fillMode === "assign"
+                  ? "bg-slate-800 text-white shadow-sm"
+                  : "text-slate-600"
+              }`}
+              disabled={submitting}
+              onClick={() => {
+                setFillMode("assign");
+                setFeedback(null);
+              }}
+            >
+              未定案件を割り当て
+            </button>
+          </div>
+
+          {fillMode === "assign" ? (
+            <>
+              <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
+                工事日未定の既存案件を選び、この空き枠の日付（
+                {slotDayKey?.trim() || "未選択"}
+                ）に割り当てます。案件のT番号はそのまま維持され、空き枠は削除されます。
+              </p>
+              {!slotDayKey?.trim() ? (
+                <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-900 ring-1 ring-amber-100">
+                  カレンダー上の日付が特定できないため、割り当てできません。日付を選び直してください。
+                </p>
+              ) : null}
+              <label className="block">
+                <span className="mb-1 block text-[12px] font-bold text-slate-700">
+                  工事日未定案件{" "}
+                  <span className="font-semibold text-red-600">必須</span>
+                </span>
+                <select
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
+                  value={selectedCaseRecordId}
+                  onChange={(e) => setSelectedCaseRecordId(e.target.value)}
+                  disabled={
+                    submitting ||
+                    !canSubmit ||
+                    undatedListStatus === "loading" ||
+                    undatedListStatus === "err"
+                  }
+                >
+                  <option value="">
+                    {undatedListStatus === "loading"
+                      ? "読み込み中…"
+                      : undatedListStatus === "err"
+                        ? "取得に失敗しました"
+                        : undatedCases.length === 0
+                          ? "未定案件はありません"
+                          : "選択してください"}
+                  </option>
+                  {undatedCases.map((c) => {
+                    const meta = [
+                      c.housingShort,
+                      c.contractorName,
+                      c.tNumber ? `T:${c.tNumber}` : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" / ");
+                    return (
+                      <option key={c.recordId} value={c.recordId}>
+                        {c.customerName}
+                        {meta ? `（${meta}）` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+              {undatedListStatus === "err" && undatedListError ? (
+                <p className="mt-2 text-[12px] font-semibold text-red-700">
+                  {undatedListError}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                className="mt-4 w-full rounded-xl bg-slate-800 py-3 text-[14px] font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+                disabled={
+                  submitting ||
+                  !canSubmit ||
+                  !selectedCaseRecordId.trim() ||
+                  !slotDayKey?.trim() ||
+                  undatedListStatus !== "ok"
+                }
+                onClick={() => void handleAssignSubmit()}
+              >
+                {submitting ? "割り当て中…" : "この空き枠に割り当てる"}
+              </button>
+            </>
+          ) : (
+            <>
           <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
             {isNewBuildHousing ? (
               <>
@@ -1475,6 +1777,8 @@ function EmptySlotCard({
           >
             {submitting ? "保存中…" : "保存してカレンダーに反映"}
           </button>
+            </>
+          )}
         </div>
       ) : null}
 
