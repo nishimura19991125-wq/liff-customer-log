@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { LiffCard } from "@/components/liff-chrome";
+import { useBulletinRead } from "@/hooks/use-bulletin-read";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
 import {
   bulletinTodayLabelJst,
+  isBulletinDateOnOrBefore,
   type BulletinListResponse,
 } from "@/lib/bulletin-types";
 import { LIFF_SWR_DEFAULT_OPTIONS } from "@/lib/liff-swr";
@@ -20,6 +22,8 @@ import type { MeetingSchedulePayload } from "@/lib/meeting-schedule-types";
 type Props = {
   idToken: string | null;
   boundStaffName: string | null;
+  /** 掲示板の既読判定用（LINEユーザーID） */
+  lineUserId?: string;
   disabled?: boolean;
   /** 掲示板セクション全体を閉じる */
   onClose?: () => void;
@@ -46,6 +50,7 @@ const PREVIEW_LIMIT = 3;
 export function HomeCompactSummaries({
   idToken,
   boundStaffName,
+  lineUserId = "",
   disabled = false,
   onClose,
   children,
@@ -88,10 +93,21 @@ export function HomeCompactSummaries({
     };
   }, []);
 
+  const { isRead } = useBulletinRead(lineUserId);
+
   const today = bulletinTodayLabelJst();
+  const bulletinPosts = bulletinData?.posts ?? [];
   const bulletinItems = useMemo(
-    () => (bulletinData?.posts ?? []).filter((post) => post.date === today),
-    [bulletinData?.posts, today],
+    () => bulletinPosts.filter((post) => post.date === today),
+    [bulletinPosts, today],
+  );
+  const bulletinUnreadCount = useMemo(
+    () =>
+      bulletinPosts.filter(
+        (post) =>
+          isBulletinDateOnOrBefore(post.date, today) && !isRead(post.id),
+      ).length,
+    [bulletinPosts, today, isRead],
   );
   const bulletinPreview = bulletinItems.slice(0, PREVIEW_LIMIT);
   const bulletinRest = bulletinItems.length - bulletinPreview.length;
@@ -180,6 +196,11 @@ export function HomeCompactSummaries({
                 <span className="ml-1.5 font-normal text-pink-800/80 dark:text-pink-200/80">
                   {bulletinItems.length}件
                 </span>
+                {bulletinUnreadCount > 0 ? (
+                  <span className="ml-1.5 inline-flex items-center rounded-full bg-pink-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white dark:bg-pink-500">
+                    未読{bulletinUnreadCount}件
+                  </span>
+                ) : null}
               </p>
               <Link
                 href="/bulletin"

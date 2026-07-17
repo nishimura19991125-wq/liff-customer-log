@@ -85,6 +85,21 @@ export function bulletinTodayLabelJst(d = new Date()): string {
   return `${y}.${m}.${day}`;
 }
 
+/** "2026.07.16" 形式の日付を比較用キーに変換 */
+function bulletinDateCompareKey(date: string): string {
+  return date.replace(/\./g, "");
+}
+
+/** 掲示板の日付が基準日以前か（同日含む） */
+export function isBulletinDateOnOrBefore(date: string, reference: string): boolean {
+  if (!date.trim() || !reference.trim()) return false;
+  return (
+    bulletinDateCompareKey(date).localeCompare(
+      bulletinDateCompareKey(reference),
+    ) <= 0
+  );
+}
+
 /** 閲覧者（既読）1件 */
 export type BulletinViewer = {
   name: string;

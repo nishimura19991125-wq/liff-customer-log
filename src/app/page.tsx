@@ -385,6 +385,7 @@ export default function HomeHubPage() {
               <HomeCompactSummaries
                 idToken={idToken}
                 boundStaffName={account.boundStaffName}
+                lineUserId={account.lineUserId}
                 disabled={false}
                 onClose={() => setIsBulletinBoardVisible(false)}
               >
