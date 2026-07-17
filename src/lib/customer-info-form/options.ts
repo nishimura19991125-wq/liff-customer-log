@@ -106,8 +106,11 @@ export const INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY = new Set<string>([
   "パワコン取替のみ",
 ]);
 
-/** パネル品番・枚数を非表示にする設置種別（品番は "-"・枚数は半角 0） */
-export const INSTALLATION_TYPES_HIDE_PANEL = new Set<string>(["蓄電池のみ"]);
+/** パネル組み合わせ・品番・枚数・容量を非表示にする設置種別（品番は "-"・枚数・容量は半角 0） */
+export const INSTALLATION_TYPES_HIDE_PANEL = new Set<string>([
+  "蓄電池のみ",
+  "パワコン取替のみ",
+]);
 
 /** 蓄電池複数台・蓄電池容量を非表示にする設置種別（容量・品番は "-"） */
 export const INSTALLATION_TYPES_HIDE_BATTERY = new Set<string>([
