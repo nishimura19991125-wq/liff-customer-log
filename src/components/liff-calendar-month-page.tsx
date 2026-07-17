@@ -29,6 +29,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
 import { joinJapaneseFullName } from "@/lib/customer-info-form/name-parts";
+import { formatDisplayYmd } from "@/lib/format-display-ymd";
 import {
   commitStaffNameInput,
   isExactStaffName,
@@ -590,7 +591,7 @@ function parseDayKey(dayKey: string): Date | null {
 
 function formatDayHeading(dayKey: string): string {
   const dt = parseDayKey(dayKey);
-  if (!dt) return dayKey;
+  if (!dt) return formatDisplayYmd(dayKey) || dayKey;
   const w = WEEKDAY_JA[dt.getDay()];
   return `${dt.getMonth() + 1}月${dt.getDate()}日（${w}）`;
 }
@@ -1570,7 +1571,9 @@ function EmptySlotCard({
             <>
               <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
                 あなたがAP/CL担当の工事日未定案件を選び、この空き枠の日付（
-                {slotDayKey?.trim() || "未選択"}
+                {slotDayKey?.trim()
+                  ? formatDisplayYmd(slotDayKey.trim())
+                  : "未選択"}
                 ）に割り当てます。案件のT番号はそのまま維持され、空き枠は削除されます。
               </p>
               {!slotDayKey?.trim() ? (
