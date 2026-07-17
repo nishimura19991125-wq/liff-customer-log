@@ -9,7 +9,12 @@ import {
   updateRecord,
 } from "@/lib/atpocket";
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
-import { uniqueFieldsCsv } from "@/lib/calendar-construction-pocket-common";
+import {
+  buildConstructionFillPatch,
+  ensureConstructionTNumberOnRecord,
+  readConstructionTNumberFromRecord,
+  uniqueFieldsCsv,
+} from "@/lib/calendar-construction-pocket-common";
 import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import {
@@ -167,11 +172,32 @@ export async function POST(request: Request) {
       );
     }
 
+    const resolvedTNumber =
+      resolveConstructionTNumberFieldId(constructionFields);
+    if (!resolvedTNumber) {
+      return NextResponse.json(
+        {
+          error:
+            "T番号フィールドの uniqueId が分かりません。CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID を .env に設定するか、アプリに「T番号」見出しのフィールドを用意してください。",
+        },
+        { status: 500 },
+      );
+    }
+
     const titleId = fids.title?.trim() || resolvedCustomer;
-    const housingId =
+    const resolvedHousing =
       resolveEmptyFillHousingStatusFieldId(constructionFields) ||
       fids.housingStatus?.trim() ||
       "";
+    if (!resolvedHousing) {
+      return NextResponse.json(
+        {
+          error:
+            "住宅ステータスフィールドが見つかりません。工事アプリに「住宅ステータス」列があるか、CALENDAR_EMPTY_FILL_HOUSING_STATUS_FIELD_ID を設定してください。",
+        },
+        { status: 500 },
+      );
+    }
 
     const freshSlot = await readFreshConstructionEmptySlotState(
       calAppId,
@@ -192,13 +218,13 @@ export async function POST(request: Request) {
 
     const caseFieldsCsv = uniqueFieldsCsv(
       titleId,
-      housingId,
+      resolvedHousing,
+      resolvedTNumber,
       startDateId,
       fids.shigumi,
       fids.panelWork,
       fids.electricWork,
       fids.appSettingsDay,
-      resolveConstructionTNumberFieldId(constructionFields) ?? undefined,
     );
     let caseRow = await fetchRecordById(
       calAppId,
@@ -246,9 +272,29 @@ export async function POST(request: Request) {
       );
     }
 
-    const housingStatus = housingId
-      ? coercePlainString(pickRecordValueByFieldAliases(caseRec, housingId))
-      : "";
+    const housingStatus = coercePlainString(
+      pickRecordValueByFieldAliases(caseRec, resolvedHousing),
+    );
+
+    let existingT = readConstructionTNumberFromRecord(caseRec, resolvedTNumber);
+    if (!existingT) {
+      existingT = await ensureConstructionTNumberOnRecord(
+        calAppId,
+        caseRecordId,
+        resolvedTNumber,
+        readAuth,
+        caseFieldsCsv,
+      );
+    }
+    if (!existingT) {
+      return NextResponse.json(
+        {
+          error:
+            "案件の T番号 を取得できません。@pocket で T番号 が入っているか、フィールド設定を確認してください。",
+        },
+        { status: 400 },
+      );
+    }
 
     // ログイン者がAP/CL担当の案件か（お客様情報のT番号突合）
     const customerAppId = customerInfoAppId();
@@ -265,22 +311,6 @@ export async function POST(request: Request) {
             needsStaffBind: true,
           },
           { status: 403 },
-        );
-      }
-
-      const tNumberId = resolveConstructionTNumberFieldId(constructionFields);
-      const tNumber = tNumberId
-        ? coercePlainString(
-            pickRecordValueByFieldAliases(caseRec, tNumberId),
-          )
-        : "";
-      if (!tNumber) {
-        return NextResponse.json(
-          {
-            error:
-              "案件のT番号を取得できないため、担当確認ができません。",
-          },
-          { status: 400 },
         );
       }
 
@@ -301,7 +331,7 @@ export async function POST(request: Request) {
           { status: 500 },
         );
       }
-      const owns = await callerOwnsCaseByTNumber(tNumber, {
+      const owns = await callerOwnsCaseByTNumber(existingT, {
         customerAppId,
         customerKeyFieldId,
         apStaffFieldId: resolveCustomerInfoFormFieldId(
@@ -347,12 +377,18 @@ export async function POST(request: Request) {
       return NextResponse.json(conflictBody, { status });
     }
 
-    await updateRecord(
-      calAppId,
-      caseRecordId,
-      { [startDateId]: slotDayKey },
-      writeAuth,
-    );
+    const patch = buildConstructionFillPatch({
+      resolvedCustomer: titleId,
+      resolvedHousing,
+      resolvedTNumber,
+      tNumberValue: existingT,
+      customerName,
+      housingRaw: housingStatus,
+      fids,
+      scheduledStartDate: slotDayKey,
+    });
+
+    await updateRecord(calAppId, caseRecordId, patch, writeAuth);
     constructionUpdated = true;
 
     try {
@@ -380,6 +416,7 @@ export async function POST(request: Request) {
     return finalizeConstructionCalendarSave({
       calAppId,
       constructionRecordId: caseRecordId,
+      constructionUniqueKey: existingT,
       customerName,
       housingStatus: housingStatus || undefined,
       constructionFields,
