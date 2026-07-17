@@ -3,10 +3,9 @@ import { NextResponse } from "next/server";
 import {
   apiKeyForCalendarPocket1,
   apiKeyForCalendarWrite,
-  createRecord,
   fetchAppFields,
-  updateRecord,
 } from "@/lib/atpocket";
+import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
 import {
   buildConstructionFillPatch,
@@ -241,9 +240,9 @@ export async function POST(request: Request) {
       contractor: contractor || undefined,
     };
 
-    const createResult = await createRecord(
-      calAppId,
-      buildConstructionFillPatch({
+    const createResult = await writePocketRecordWithImportKey({
+      appId: calAppId,
+      payload: buildConstructionFillPatch({
         resolvedCustomer,
         resolvedHousing,
         resolvedTNumber,
@@ -255,8 +254,12 @@ export async function POST(request: Request) {
         fids,
         ...patchExtras,
       }),
+      importKeyFieldId: resolvedTNumber,
       writeAuth,
-    );
+    });
+    if (!createResult) {
+      throw new Error("工事レコードの新規登録に失敗しました");
+    }
     constructionSaved = true;
     invalidateAllCalendarPayloadCache();
 
@@ -321,7 +324,14 @@ export async function POST(request: Request) {
         ...patchExtras,
       });
 
-      await updateRecord(calAppId, recordId, patch, writeAuth);
+      await writePocketRecordWithImportKey({
+        appId: calAppId,
+        recordId,
+        payload: patch,
+        importKeyFieldId: resolvedTNumber,
+        readAuth,
+        writeAuth,
+      });
     }
 
     const consumeDayKey = resolveConsumeEmptySlotDayKey(

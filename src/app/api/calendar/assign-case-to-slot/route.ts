@@ -6,8 +6,8 @@ import {
   deleteRecord,
   fetchAppFields,
   fetchRecordById,
-  updateRecord,
 } from "@/lib/atpocket";
+import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
 import {
   buildConstructionFillPatch,
@@ -15,6 +15,7 @@ import {
   readConstructionTNumberFromRecord,
   uniqueFieldsCsv,
 } from "@/lib/calendar-construction-pocket-common";
+import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
 import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import {
@@ -369,7 +370,15 @@ export async function POST(request: Request) {
       contractor: slotContractor || undefined,
     });
 
-    await updateRecord(calAppId, caseRecordId, patch, writeAuth);
+    await writePocketRecordWithImportKey({
+      appId: calAppId,
+      recordId: caseRecordId,
+      payload: patch,
+      importKeyFieldId: resolvedTNumber,
+      existingRecord: caseRec,
+      readAuth,
+      writeAuth,
+    });
     constructionUpdated = true;
 
     try {
@@ -414,7 +423,9 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     console.error("[api/calendar/assign-case-to-slot]", e);
-    const detail = e instanceof Error ? e.message : String(e);
+    const detail = formatConstructionCreateRecordError(
+      e instanceof Error ? e.message : String(e),
+    );
     if (constructionUpdated) {
       return NextResponse.json(
         {

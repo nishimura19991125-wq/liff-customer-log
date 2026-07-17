@@ -18,8 +18,8 @@ import {
   apiKeyForCalendarPocket1,
   apiKeyForCalendarWrite,
   fetchAppFields,
-  updateRecord,
 } from "@/lib/atpocket";
+import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import {
   calendarSlotConflictResponse,
@@ -27,6 +27,7 @@ import {
 } from "@/lib/calendar-slot-reservation";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
+import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
 import {
   consumeOneConstructionEmptySlotOnDate,
   resolveConsumeEmptySlotDayKey,
@@ -286,7 +287,15 @@ export async function POST(request: Request) {
       return NextResponse.json(conflictBody, { status });
     }
 
-    await updateRecord(calAppId, recordId, patch, writeAuth);
+    await writePocketRecordWithImportKey({
+      appId: calAppId,
+      recordId,
+      payload: patch,
+      importKeyFieldId: resolvedTNumber,
+      existingRecord: recObj,
+      readAuth,
+      writeAuth,
+    });
     constructionUpdated = true;
     invalidateAllCalendarPayloadCache();
 
@@ -327,7 +336,9 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     console.error("[api/calendar/fill-empty-slot]", e);
-    const detail = e instanceof Error ? e.message : String(e);
+    const detail = formatConstructionCreateRecordError(
+      e instanceof Error ? e.message : String(e),
+    );
     if (constructionUpdated) {
       return NextResponse.json(
         {
