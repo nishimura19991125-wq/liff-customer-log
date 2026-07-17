@@ -211,7 +211,7 @@ export function LiffNavPill({
 /**
  * ログイン中ユーザー表示：@pocket スタッフ名簿の名前とアイコンのみ（見出し行と同じ高さに載せる想定）。
  * アイコンは LIFF プロフィール画像（名簿側に写真が無いため）。
- * fortuneRank があるときは名前の直下に運勢バッジのみ表示する。
+ * fortuneRank があるときは名前の直下に運勢バッジ、その下に「もっと見る」を表示できる。
  */
 export function LiffAccountBar({
   loading,
@@ -219,6 +219,8 @@ export function LiffAccountBar({
   boundStaffName,
   bindingEnabled,
   fortuneRank,
+  fortuneExpanded,
+  onFortuneToggle,
 }: {
   loading?: boolean;
   pictureUrl?: string;
@@ -226,6 +228,8 @@ export function LiffAccountBar({
   bindingEnabled?: boolean;
   /** 今日のおみくじ運勢（例: 超大吉）。未設定時は名前のみ */
   fortuneRank?: string | null;
+  fortuneExpanded?: boolean;
+  onFortuneToggle?: () => void;
 }) {
   if (loading) {
     return (
@@ -242,6 +246,7 @@ export function LiffAccountBar({
   const staffName = boundStaffName?.trim() ?? "";
   const showBindHint = bindingEnabled && !staffName;
   const rank = fortuneRank?.trim() ?? "";
+  const showFortuneMore = Boolean(rank && onFortuneToggle);
 
   const avatarLetter = staffName
     ? staffName.slice(0, 1)
@@ -258,9 +263,7 @@ export function LiffAccountBar({
   return (
     <div
       className={`flex max-w-[min(100%,14rem)] items-center gap-2 border border-slate-200 bg-white pl-1 pr-3 shadow-sm backdrop-blur-sm transition-all duration-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white ${
-        rank
-          ? "rounded-2xl py-1.5"
-          : "rounded-full py-1"
+        rank ? "rounded-2xl py-1.5" : "rounded-full py-1"
       }`}
     >
       {pictureUrl ? (
@@ -292,6 +295,33 @@ export function LiffAccountBar({
           {label}
         </p>
         {rank ? <FortuneRankBadge rank={rank} size="sm" /> : null}
+        {showFortuneMore ? (
+          <button
+            type="button"
+            className="mt-0.5 inline-flex items-center gap-0.5 rounded-md px-0.5 py-0.5 text-[10px] font-semibold leading-none tracking-wide text-amber-700/90 transition hover:bg-amber-50 hover:text-amber-900 active:scale-[0.98] dark:text-amber-300/90 dark:hover:bg-amber-950/40 dark:hover:text-amber-200"
+            aria-expanded={fortuneExpanded}
+            aria-controls="home-daily-omikuji"
+            onClick={onFortuneToggle}
+          >
+            {fortuneExpanded ? "閉じる" : "もっと見る"}
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 12 12"
+              fill="none"
+              aria-hidden
+              className={`opacity-70 transition ${fortuneExpanded ? "rotate-180" : ""}`}
+            >
+              <path
+                d="M3 4.5 6 7.5 9 4.5"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        ) : null}
       </div>
     </div>
   );

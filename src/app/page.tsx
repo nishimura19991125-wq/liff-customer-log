@@ -213,6 +213,7 @@ export default function HomeHubPage() {
     ContinueShortcut[]
   >([]);
   const [internalMenuOpen, setInternalMenuOpen] = useState(false);
+  const [omikujiExpanded, setOmikujiExpanded] = useState(false);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -236,6 +237,10 @@ export default function HomeHubPage() {
     account.boundStaffDepartment,
     account.boundStaffRole,
   ]);
+
+  useEffect(() => {
+    if (!fortuneRank) setOmikujiExpanded(false);
+  }, [fortuneRank]);
 
   useEffect(() => {
     if (!LIFF_ID) return;
@@ -362,6 +367,12 @@ export default function HomeHubPage() {
                 boundStaffName={account.boundStaffName}
                 bindingEnabled={account.bindingEnabled}
                 fortuneRank={fortuneRank}
+                fortuneExpanded={omikujiExpanded}
+                onFortuneToggle={
+                  fortuneRank
+                    ? () => setOmikujiExpanded((v) => !v)
+                    : undefined
+                }
               />
             </div>
           }
@@ -379,6 +390,7 @@ export default function HomeHubPage() {
               staffName={account.boundStaffName}
               department={account.boundStaffDepartment}
               staffRole={account.boundStaffRole}
+              expanded={omikujiExpanded}
             />
           ) : null}
 
