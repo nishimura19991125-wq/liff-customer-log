@@ -215,6 +215,7 @@ export default function HomeHubPage() {
   >([]);
   const [internalMenuOpen, setInternalMenuOpen] = useState(false);
   const [omikujiExpanded, setOmikujiExpanded] = useState(false);
+  const [isBulletinBoardVisible, setIsBulletinBoardVisible] = useState(true);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -407,11 +408,14 @@ export default function HomeHubPage() {
             disabled={needsStaffBind || account.loading}
           />
 
-          <HomeCompactSummaries
-            idToken={idToken}
-            boundStaffName={account.boundStaffName}
-            disabled={needsStaffBind || account.loading}
-          />
+          {isBulletinBoardVisible ? (
+            <HomeCompactSummaries
+              idToken={idToken}
+              boundStaffName={account.boundStaffName}
+              disabled={needsStaffBind || account.loading}
+              onClose={() => setIsBulletinBoardVisible(false)}
+            />
+          ) : null}
         </div>
 
         <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
