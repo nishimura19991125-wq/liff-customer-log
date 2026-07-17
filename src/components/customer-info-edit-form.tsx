@@ -233,6 +233,109 @@ function NameSplitFieldGroup({
   );
 }
 
+function filterStaffSuggestions(
+  options: string[],
+  query: string,
+  limit = 12,
+): string[] {
+  const q = query.normalize("NFKC").trim().toLowerCase();
+  if (!q) return options.slice(0, limit);
+  const ranked: string[] = [];
+  for (const opt of options) {
+    const n = opt.normalize("NFKC").trim().toLowerCase();
+    if (!n) continue;
+    if (n.startsWith(q) || n.includes(q)) ranked.push(opt);
+  }
+  return ranked.slice(0, limit);
+}
+
+/** AP/CL担当者: 直接入力＋候補サジェスト */
+function StaffSuggestCombobox({
+  id,
+  label,
+  value,
+  options,
+  disabled,
+  invalid,
+  loading,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  options: string[];
+  disabled: boolean;
+  invalid?: boolean;
+  loading?: boolean;
+  onChange: (next: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const listId = `${id}-suggestions`;
+  const controlClass = invalid
+    ? `${INPUT_CLASS} ${FIELD_INVALID_CLASS}`
+    : INPUT_CLASS;
+
+  const suggestions = useMemo(
+    () => filterStaffSuggestions(options, value),
+    [options, value],
+  );
+
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        type="text"
+        role="combobox"
+        aria-label={label}
+        aria-expanded={open && suggestions.length > 0}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        className={controlClass}
+        value={value}
+        disabled={disabled}
+        placeholder={loading ? "一覧を読み込み中…" : "名前を入力または候補から選択"}
+        autoComplete="off"
+        onFocus={() => setOpen(true)}
+        onBlur={() => {
+          // 候補クリックを先に処理させる
+          window.setTimeout(() => setOpen(false), 120);
+        }}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+      />
+      {open && !disabled && suggestions.length > 0 ? (
+        <ul
+          id={listId}
+          role="listbox"
+          className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-900"
+        >
+          {suggestions.map((opt) => (
+            <li key={opt} role="option">
+              <button
+                type="button"
+                className={`flex w-full px-3 py-2 text-left text-[13px] transition hover:bg-emerald-50 dark:hover:bg-emerald-950/40 ${
+                  opt === value.trim()
+                    ? "bg-emerald-50 font-semibold text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-100"
+                    : "text-slate-800 dark:text-slate-100"
+                }`}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onChange(opt);
+                  setOpen(false);
+                }}
+              >
+                {opt}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 function FieldControl({
   field,
   value,
@@ -327,13 +430,26 @@ function FieldControl({
     );
   }
 
-  const forceSelectList =
-    AP_CL_STAFF_KEYS.has(field.key) && !field.optionsPending;
+  if (AP_CL_STAFF_KEYS.has(field.key)) {
+    return (
+      <StaffSuggestCombobox
+        id={`customer-info-${field.key}`}
+        label={field.label}
+        value={value}
+        options={field.options ?? []}
+        disabled={disabled}
+        invalid={invalid}
+        loading={Boolean(field.optionsPending)}
+        onChange={onChange}
+      />
+    );
+  }
 
   if (
     field.type === "select" &&
     !field.optionsPending &&
-    (forceSelectList || (field.options && field.options.length > 0))
+    field.options &&
+    field.options.length > 0
   ) {
     const trimmed = value.trim();
     const baseOptions = field.options ?? [];
@@ -1013,7 +1129,7 @@ export function CustomerInfoEditForm({
                           ? "スタッフ名簿を取得できませんでした。しばらくしてから画面を更新してください。"
                           : (apClStaff[roleKey].options.length === 0
                               ? `「稼働」の${roleLabel}担当者が名簿にいません。AP/CL稼働状況の値を確認してください。`
-                              : `スタッフ名簿の${roleLabel}稼働状況が「稼働」の社員から選択`)
+                              : `名前を入力すると候補が表示されます（スタッフ名簿の${roleLabel}稼働状況が「稼働」の社員）`)
                         : "スタッフ名簿の設定（STAFF_APP_ID・氏名列・AP/CL稼働状況・LINE_USER_ID①②の環境変数）を確認してください"}
                 </p>
               );
