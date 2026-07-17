@@ -3,8 +3,15 @@ import { NextResponse } from "next/server";
 import { buildCalendarPatchAfterConstructionSave } from "@/lib/calendar-record-patch-server";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
+import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
+import {
+  fetchConstructionRecordRow,
+  readConstructionTNumberFromRecord,
+  uniqueFieldsCsv,
+} from "@/lib/calendar-construction-pocket-common";
 import {
   resolveConfiguredFieldToSchemaUniqueId,
+  resolveConstructionTNumberFieldId,
 } from "@/lib/calendar-kojo";
 import {
   apiKeyForCalendarPocket,
@@ -104,6 +111,18 @@ export async function POST(request: Request) {
       );
     }
 
+    const resolvedTNumber =
+      resolveConstructionTNumberFieldId(constructionFields);
+    if (!resolvedTNumber) {
+      return NextResponse.json(
+        {
+          error:
+            "T番号フィールドの uniqueId が分かりません。CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID を .env に設定するか、アプリに「T番号」見出しのフィールドを用意してください。",
+        },
+        { status: 500 },
+      );
+    }
+
     const resolvedName = await resolveConstructionHandlerNameForActiveStaff(
       constructionHandlerStaffRecordId,
     );
@@ -119,11 +138,42 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: msg }, { status: 400 });
     }
 
+    const fieldsCsv = uniqueFieldsCsv(resolvedHandlerField, resolvedTNumber);
+    const recRow = await fetchConstructionRecordRow(
+      calAppId,
+      recordId,
+      readAuth,
+      fieldsCsv,
+    );
+    if (!recRow?.record || typeof recRow.record !== "object") {
+      return NextResponse.json(
+        { error: "レコードが見つかりません" },
+        { status: 404 },
+      );
+    }
+
+    const existingT = readConstructionTNumberFromRecord(
+      recRow.record as Record<string, unknown>,
+      resolvedTNumber,
+    );
+    if (!existingT) {
+      return NextResponse.json(
+        {
+          error:
+            "このレコードから T番号 を取得できませんでした。@pocket で T番号 が入っているか、フィールド設定を確認してください。",
+        },
+        { status: 409 },
+      );
+    }
+
     const writeAuth = { apiKey: apiKeyForCalendarWrite() };
     await updateRecord(
       calAppId,
       recordId,
-      { [resolvedHandlerField]: resolvedName.name },
+      {
+        [resolvedTNumber]: existingT,
+        [resolvedHandlerField]: resolvedName.name,
+      },
       writeAuth,
     );
     invalidateAllCalendarPayloadCache();
@@ -145,7 +195,11 @@ export async function POST(request: Request) {
     console.error("[api/calendar/update-construction-handler]", e);
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json(
-      { error: msg || "工事対応者の更新に失敗しました" },
+      {
+        error:
+          formatConstructionCreateRecordError(msg) ||
+          "工事対応者の更新に失敗しました",
+      },
       { status: 502 },
     );
   }
