@@ -6,7 +6,6 @@ import { parseFortuneHeadline } from "@/components/fortune-rank-badge";
 import { HomeCompactSummaries } from "@/components/home-compact-summaries";
 import { HomeConstructionHandlerCases } from "@/components/home-construction-handler-cases";
 import { HomeDailyOmikujiCard } from "@/components/home-daily-omikuji-card";
-import { HomeMissingDocumentsAlert } from "@/components/home-missing-documents-alert";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   LiffAccountBar,
@@ -380,7 +379,31 @@ export default function HomeHubPage() {
           }
         />
 
-        {account.boundStaffName && !needsStaffBind ? (
+        {isBulletinBoardVisible ? (
+          <div className="mt-4">
+            {!needsStaffBind ? (
+              <HomeCompactSummaries
+                idToken={idToken}
+                boundStaffName={account.boundStaffName}
+                disabled={false}
+                onClose={() => setIsBulletinBoardVisible(false)}
+              />
+            ) : account.boundStaffName ? (
+              <p className="text-[15px] font-semibold text-slate-800 dark:text-white">
+                {account.boundStaffName} さん、おつかれさまです
+              </p>
+            ) : null}
+          </div>
+        ) : !needsStaffBind ? (
+          <button
+            type="button"
+            onClick={() => setIsBulletinBoardVisible(true)}
+            className="mt-4 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-[13px] font-semibold text-slate-700 shadow-sm transition-colors active:scale-[0.99] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            aria-label="掲示板を再表示"
+          >
+            掲示板（タップで表示）
+          </button>
+        ) : account.boundStaffName ? (
           <p className="mt-4 text-[15px] font-semibold text-slate-800 dark:text-white">
             {account.boundStaffName} さん、おつかれさまです
           </p>
@@ -396,35 +419,11 @@ export default function HomeHubPage() {
             />
           ) : null}
 
-          <HomeMissingDocumentsAlert
-            idToken={idToken}
-            boundStaffName={account.boundStaffName}
-            disabled={needsStaffBind || account.loading}
-          />
-
           <HomeConstructionHandlerCases
             idToken={idToken}
             boundStaffName={account.boundStaffName}
             disabled={needsStaffBind || account.loading}
           />
-
-          {isBulletinBoardVisible ? (
-            <HomeCompactSummaries
-              idToken={idToken}
-              boundStaffName={account.boundStaffName}
-              disabled={needsStaffBind || account.loading}
-              onClose={() => setIsBulletinBoardVisible(false)}
-            />
-          ) : !needsStaffBind && !account.loading ? (
-            <button
-              type="button"
-              onClick={() => setIsBulletinBoardVisible(true)}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-[13px] font-semibold text-slate-700 shadow-sm transition-colors active:scale-[0.99] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-              aria-label="掲示場を再表示"
-            >
-              掲示場（タップで表示）
-            </button>
-          ) : null}
         </div>
 
         <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
