@@ -16,11 +16,6 @@ import {
   setMeetingScheduleHomeCollapsed,
 } from "@/lib/meeting-schedule-home-collapse";
 import type { MeetingSchedulePayload } from "@/lib/meeting-schedule-types";
-import {
-  clearMissingDocumentsAlertSessionCollapse,
-  isMissingDocumentsAlertCollapsed,
-  setMissingDocumentsAlertCollapsed,
-} from "@/lib/missing-documents-cache";
 
 type Props = {
   idToken: string | null;
@@ -56,7 +51,6 @@ export function HomeCompactSummaries({
   children,
 }: Props) {
   const [meetingCollapsed, setMeetingCollapsed] = useState(false);
-  const [docsCollapsed, setDocsCollapsed] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
   const bulletinPath = idToken && !disabled ? "/api/bulletin" : null;
@@ -88,11 +82,9 @@ export function HomeCompactSummaries({
 
   useEffect(() => {
     setMeetingCollapsed(isMeetingScheduleHomeCollapsed());
-    setDocsCollapsed(isMissingDocumentsAlertCollapsed());
     setHydrated(true);
     return () => {
       clearMeetingScheduleHomeSessionCollapse();
-      clearMissingDocumentsAlertSessionCollapse();
     };
   }, []);
 
@@ -134,8 +126,7 @@ export function HomeCompactSummaries({
     (Boolean(docsPath) && docsLoading && !docsData);
 
   const showMeeting = meetingReady && Boolean(boundStaffName) && !meetingCollapsed;
-  const showDocs = docsReady && !docsCollapsed;
-  const showDocsCollapsedChip = docsReady && docsCollapsed;
+  const showDocs = docsReady;
   const showMeetingCollapsedChip =
     meetingReady && meetingCollapsed && meetingItems.length > 0;
 
@@ -232,16 +223,6 @@ export function HomeCompactSummaries({
           </section>
         ) : null}
 
-        {showDocsCollapsedChip ? (
-          <button
-            type="button"
-            onClick={() => setDocsCollapsed(false)}
-            className="w-full rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-left text-[13px] font-semibold text-red-900 shadow-sm transition active:scale-[0.99] dark:border-red-900 dark:bg-red-950/30 dark:text-red-100"
-          >
-            🚨 書類未回収が {docsItems.length} 件あります（タップで表示）
-          </button>
-        ) : null}
-
         {showMeetingCollapsedChip && !showDocs && !showMeeting ? (
           <button
             type="button"
@@ -273,25 +254,12 @@ export function HomeCompactSummaries({
                           {docsItems.length}件
                         </span>
                       </p>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMissingDocumentsAlertCollapsed();
-                            setDocsCollapsed(true);
-                          }}
-                          className="text-[11px] font-semibold text-red-800 underline underline-offset-2 dark:text-red-200"
-                          aria-label="書類未回収を折りたたむ"
-                        >
-                          閉
-                        </button>
-                        <Link
-                          href="/customer-list"
-                          className="text-[12px] font-semibold text-red-700 dark:text-red-300"
-                        >
-                          ›
-                        </Link>
-                      </div>
+                      <Link
+                        href="/customer-list"
+                        className="shrink-0 text-[12px] font-semibold text-red-700 dark:text-red-300"
+                      >
+                        ›
+                      </Link>
                     </div>
                     <ul className="mt-1.5 flex flex-1 flex-col gap-1">
                       {docsPreview.map((row) => (
