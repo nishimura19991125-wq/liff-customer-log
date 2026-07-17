@@ -233,20 +233,16 @@ function NameSplitFieldGroup({
   );
 }
 
-function filterStaffSuggestions(
-  options: string[],
-  query: string,
-  limit = 12,
-): string[] {
+function filterStaffSuggestions(options: string[], query: string): string[] {
   const q = query.normalize("NFKC").trim().toLowerCase();
-  if (!q) return options.slice(0, limit);
+  if (!q) return options;
   const ranked: string[] = [];
   for (const opt of options) {
     const n = opt.normalize("NFKC").trim().toLowerCase();
     if (!n) continue;
     if (n.startsWith(q) || n.includes(q)) ranked.push(opt);
   }
-  return ranked.slice(0, limit);
+  return ranked;
 }
 
 /** AP/CL担当者: 直接入力＋候補サジェスト */
@@ -932,10 +928,8 @@ export function CustomerInfoEditForm({
           return {
             ...f,
             type: "select" as const,
-            options: mergeStaffNameOptions(
-              picker?.options ?? [],
-              displayValues[f.key],
-            ),
+            // 候補は名簿のスタッフ名のみ（入力途中の文字列は候補に混ぜない）
+            options: [...(picker?.options ?? [])],
             optionsPending: false,
           };
         }
@@ -1137,7 +1131,7 @@ export function CustomerInfoEditForm({
                           ? "スタッフ名簿を取得できませんでした。しばらくしてから画面を更新してください。"
                           : (apClStaff[roleKey].options.length === 0
                               ? `「稼働」の${roleLabel}担当者が名簿にいません。AP/CL稼働状況の値を確認してください。`
-                              : `名前を入力すると候補が表示されます（スタッフ名簿の${roleLabel}稼働状況が「稼働」の社員）`)
+                              : `未入力時は全員、入力すると一致するスタッフ名が表示されます（${roleLabel}稼働「稼働」）`)
                         : "スタッフ名簿の設定（STAFF_APP_ID・氏名列・AP/CL稼働状況・LINE_USER_ID①②の環境変数）を確認してください"}
                 </p>
               );
