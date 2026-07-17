@@ -2,7 +2,14 @@
 
 import liff from "@line/liff";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from "react";
 
 import {
   LiffAccountBar,
@@ -25,6 +32,7 @@ import { joinJapaneseFullName } from "@/lib/customer-info-form/name-parts";
 import {
   commitStaffNameInput,
   isExactStaffName,
+  mergeStaffNameOptions,
 } from "@/lib/staff-name-options";
 import { applyCalendarRecordPatch } from "@/lib/calendar-apply-patch";
 import type {
@@ -121,6 +129,9 @@ function ConstructionHandlerStaffSelect({
   selectedHandlerStaffId,
   setSelectedHandlerStaffId,
   required = true,
+  inputId = "construction-handler-staff",
+  fallbackDisplayName = "",
+  resolveStaffIdRef,
 }: {
   submitting: boolean;
   canSubmit: boolean;
@@ -130,24 +141,51 @@ function ConstructionHandlerStaffSelect({
   selectedHandlerStaffId: string;
   setSelectedHandlerStaffId: (id: string) => void;
   required?: boolean;
+  inputId?: string;
+  /** 変更編集時: 名簿に無い現在名も入力欄・候補に残す */
+  fallbackDisplayName?: string;
+  /** 保存直前に入力を確定してスタッフIDを取る */
+  resolveStaffIdRef?: MutableRefObject<(() => string) | null>;
 }) {
   const nameOptions = useMemo(
-    () => handlerRows.map((r) => r.label || r.name),
-    [handlerRows],
+    () =>
+      mergeStaffNameOptions(
+        handlerRows.map((r) => r.label || r.name),
+        fallbackDisplayName,
+      ),
+    [handlerRows, fallbackDisplayName],
   );
 
   const selectedLabel = useMemo(() => {
     const row = handlerRows.find(
       (r) => r.staffRecordId === selectedHandlerStaffId,
     );
-    return row ? row.label || row.name : "";
-  }, [handlerRows, selectedHandlerStaffId]);
+    if (row) return row.label || row.name;
+    return fallbackDisplayName.trim();
+  }, [handlerRows, selectedHandlerStaffId, fallbackDisplayName]);
 
   const [inputValue, setInputValue] = useState(selectedLabel);
+  const inputValueRef = useRef(inputValue);
+  inputValueRef.current = inputValue;
 
   useEffect(() => {
     setInputValue(selectedLabel);
   }, [selectedLabel, selectedHandlerStaffId]);
+
+  useEffect(() => {
+    if (!resolveStaffIdRef) return;
+    resolveStaffIdRef.current = () => {
+      const committed = commitStaffNameInput(
+        nameOptions,
+        inputValueRef.current,
+      );
+      if (!committed) return "";
+      return resolveHandlerStaffIdFromInput(handlerRows, committed);
+    };
+    return () => {
+      resolveStaffIdRef.current = null;
+    };
+  }, [resolveStaffIdRef, nameOptions, handlerRows]);
 
   const selectDisabled =
     submitting ||
@@ -191,7 +229,7 @@ function ConstructionHandlerStaffSelect({
         </span>
       </span>
       <StaffNameSuggestCombobox
-        id="construction-handler-staff"
+        id={inputId}
         label="工事対応者"
         value={inputValue}
         options={nameOptions}
@@ -321,6 +359,7 @@ function CaseConstructionHandlerEditor({
     kind: "ok" | "err";
     text: string;
   } | null>(null);
+  const resolveStaffIdRef = useRef<(() => string) | null>(null);
 
   useEffect(() => {
     setEditing(false);
@@ -329,10 +368,7 @@ function CaseConstructionHandlerEditor({
   }, [currentName, handlerRows, recordId]);
 
   const canSubmit = Boolean(idToken && recordId);
-  const handlerChanged =
-    Boolean(selectedHandlerStaffId.trim()) &&
-    matchHandlerStaffRecordId(currentName, handlerRows) !==
-      selectedHandlerStaffId.trim();
+  const currentMatchedId = matchHandlerStaffRecordId(currentName, handlerRows);
 
   function openEditor() {
     setSelectedHandlerStaffId(matchHandlerStaffRecordId(currentName, handlerRows));
@@ -347,7 +383,26 @@ function CaseConstructionHandlerEditor({
   }
 
   async function handleSave() {
-    if (!recordId || !selectedHandlerStaffId.trim()) return;
+    const resolvedId =
+      selectedHandlerStaffId.trim() ||
+      resolveStaffIdRef.current?.().trim() ||
+      "";
+    if (!recordId) return;
+    if (!resolvedId) {
+      setFeedback({
+        kind: "err",
+        text: "工事対応者を名簿から選択してください（名前の完全一致が必要です）",
+      });
+      return;
+    }
+    if (resolvedId === currentMatchedId) {
+      setFeedback({
+        kind: "err",
+        text: "工事対応者が変更されていません",
+      });
+      return;
+    }
+    setSelectedHandlerStaffId(resolvedId);
     setSubmitting(true);
     setFeedback(null);
     try {
@@ -361,7 +416,7 @@ function CaseConstructionHandlerEditor({
         },
         body: JSON.stringify({
           recordId,
-          constructionHandlerStaffRecordId: selectedHandlerStaffId.trim(),
+          constructionHandlerStaffRecordId: resolvedId,
           viewYear,
           viewMonth,
         }),
@@ -437,6 +492,9 @@ function CaseConstructionHandlerEditor({
             selectedHandlerStaffId={selectedHandlerStaffId}
             setSelectedHandlerStaffId={setSelectedHandlerStaffId}
             required={false}
+            inputId={`construction-handler-change-${recordId || "unknown"}`}
+            fallbackDisplayName={currentName}
+            resolveStaffIdRef={resolveStaffIdRef}
           />
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button
@@ -454,9 +512,7 @@ function CaseConstructionHandlerEditor({
                 submitting ||
                 !canSubmit ||
                 handlerListStatus !== "ok" ||
-                handlerRows.length === 0 ||
-                !selectedHandlerStaffId.trim() ||
-                !handlerChanged
+                handlerRows.length === 0
               }
               onClick={() => void handleSave()}
             >
@@ -1403,6 +1459,7 @@ function EmptySlotCard({
               handlerRows={handlerRows}
               selectedHandlerStaffId={selectedHandlerStaffId}
               setSelectedHandlerStaffId={setSelectedHandlerStaffId}
+              inputId="construction-handler-empty-fill"
             />
           ) : null}
           <button
