@@ -1,6 +1,11 @@
 import "server-only";
 
-import type { AtPocketFieldRow, AtPocketRecordRow } from "@/lib/atpocket";
+import type {
+  AtPocketFetchAuth,
+  AtPocketFieldRow,
+  AtPocketRecordRow,
+} from "@/lib/atpocket";
+import { fetchRecordById } from "@/lib/atpocket";
 import type { UndatedConstructionCase } from "@/lib/calendar-api-types";
 import { dayKeyFromConstructionRecord } from "@/lib/calendar-consume-empty-slot";
 import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
@@ -12,6 +17,9 @@ import {
   shortHousingStatusLabel,
   type ConstructionFieldIds,
 } from "@/lib/calendar-kojo";
+import { findCustomerInfoRecordIdByUniqueKeyCached } from "@/lib/customer-info-key-lookup-cache";
+import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
+import { readCustomerInfoFieldValue } from "@/lib/customer-info-record";
 
 function coercePlainString(raw: unknown): string {
   if (raw == null) return "";
@@ -147,4 +155,108 @@ export function buildUndatedConstructionCases(
     a.customerName.localeCompare(b.customerName, "ja"),
   );
   return items;
+}
+
+/**
+ * お客様情報の AP/CL 担当がログイン者の担当名のいずれかと一致する案件だけ残す。
+ * T番号が無い／お客様情報に見つからない案件は除外。
+ */
+export async function filterUndatedCasesByCallerApClStaff(
+  items: UndatedConstructionCase[],
+  opts: {
+    customerAppId: string;
+    customerKeyFieldId: string;
+    apStaffFieldId: string | null;
+    clStaffFieldId: string | null;
+    callerApStaff: string | null;
+    callerClStaff: string | null;
+    customerAuth: AtPocketFetchAuth;
+  },
+): Promise<UndatedConstructionCase[]> {
+  const wantNames = new Set(
+    [opts.callerApStaff, opts.callerClStaff]
+      .map((n) => normApClStaffName(n ?? ""))
+      .filter(Boolean),
+  );
+  if (wantNames.size === 0) return [];
+
+  const staffFieldsCsv = [opts.apStaffFieldId, opts.clStaffFieldId]
+    .filter((id): id is string => Boolean(id?.trim()))
+    .join(",");
+  if (!staffFieldsCsv) return [];
+
+  const out: UndatedConstructionCase[] = [];
+  for (const item of items) {
+    const tNumber = item.tNumber.trim();
+    if (!tNumber) continue;
+
+    const customerRecordId = await findCustomerInfoRecordIdByUniqueKeyCached(
+      opts.customerKeyFieldId,
+      tNumber,
+    );
+    if (!customerRecordId) continue;
+
+    let row = await fetchRecordById(
+      opts.customerAppId,
+      customerRecordId,
+      opts.customerAuth,
+      staffFieldsCsv,
+    );
+    if (!row?.record) {
+      row = await fetchRecordById(
+        opts.customerAppId,
+        customerRecordId,
+        opts.customerAuth,
+      );
+    }
+    if (!row?.record || typeof row.record !== "object") continue;
+    const recObj = row.record as Record<string, unknown>;
+
+    const apName = opts.apStaffFieldId
+      ? normApClStaffName(
+          readCustomerInfoFieldValue(recObj, opts.apStaffFieldId),
+        )
+      : "";
+    const clName = opts.clStaffFieldId
+      ? normApClStaffName(
+          readCustomerInfoFieldValue(recObj, opts.clStaffFieldId),
+        )
+      : "";
+
+    if (
+      (apName && wantNames.has(apName)) ||
+      (clName && wantNames.has(clName))
+    ) {
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+/** 割り当て時の権限確認：T番号先のお客様情報で AP/CL がログイン者と一致するか */
+export async function callerOwnsCaseByTNumber(
+  tNumber: string,
+  opts: {
+    customerAppId: string;
+    customerKeyFieldId: string;
+    apStaffFieldId: string | null;
+    clStaffFieldId: string | null;
+    callerApStaff: string | null;
+    callerClStaff: string | null;
+    customerAuth: AtPocketFetchAuth;
+  },
+): Promise<boolean> {
+  const matched = await filterUndatedCasesByCallerApClStaff(
+    [
+      {
+        recordId: "_",
+        customerName: "_",
+        housingShort: "",
+        contractorName: "",
+        tNumber,
+      },
+    ],
+    opts,
+  );
+  return matched.length > 0;
 }

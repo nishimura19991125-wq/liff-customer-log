@@ -1031,6 +1031,7 @@ function EmptySlotCard({
     "idle" | "loading" | "ok" | "err"
   >("idle");
   const [undatedListError, setUndatedListError] = useState("");
+  const [undatedNeedsStaffBind, setUndatedNeedsStaffBind] = useState(false);
   const [selectedCaseRecordId, setSelectedCaseRecordId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
@@ -1069,6 +1070,7 @@ function EmptySlotCard({
         setUndatedCases([]);
         setUndatedListStatus("idle");
         setUndatedListError("");
+        setUndatedNeedsStaffBind(false);
       }
       return;
     }
@@ -1078,6 +1080,7 @@ function EmptySlotCard({
     (async () => {
       setSelectedCaseRecordId("");
       setUndatedCases([]);
+      setUndatedNeedsStaffBind(false);
       setUndatedListStatus("loading");
       setUndatedListError("");
       try {
@@ -1103,6 +1106,12 @@ function EmptySlotCard({
               ? data.error
               : "工事日未定案件の取得に失敗しました",
           );
+          return;
+        }
+        if (data.needsStaffBind) {
+          setUndatedNeedsStaffBind(true);
+          setUndatedCases([]);
+          setUndatedListStatus("ok");
           return;
         }
         setUndatedCases(data.items ?? []);
@@ -1560,13 +1569,18 @@ function EmptySlotCard({
           {fillMode === "assign" ? (
             <>
               <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
-                工事日未定の既存案件を選び、この空き枠の日付（
+                あなたがAP/CL担当の工事日未定案件を選び、この空き枠の日付（
                 {slotDayKey?.trim() || "未選択"}
                 ）に割り当てます。案件のT番号はそのまま維持され、空き枠は削除されます。
               </p>
               {!slotDayKey?.trim() ? (
                 <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-900 ring-1 ring-amber-100">
                   カレンダー上の日付が特定できないため、割り当てできません。日付を選び直してください。
+                </p>
+              ) : null}
+              {undatedNeedsStaffBind ? (
+                <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-amber-900 ring-1 ring-amber-100">
+                  スタッフ紐付けが必要です。LINEアカウントとスタッフ名簿（AP/CL稼働）の紐付け後に、担当の未定案件が表示されます。
                 </p>
               ) : null}
               <label className="block">
@@ -1581,6 +1595,7 @@ function EmptySlotCard({
                   disabled={
                     submitting ||
                     !canSubmit ||
+                    undatedNeedsStaffBind ||
                     undatedListStatus === "loading" ||
                     undatedListStatus === "err"
                   }
@@ -1590,9 +1605,11 @@ function EmptySlotCard({
                       ? "読み込み中…"
                       : undatedListStatus === "err"
                         ? "取得に失敗しました"
-                        : undatedCases.length === 0
-                          ? "未定案件はありません"
-                          : "選択してください"}
+                        : undatedNeedsStaffBind
+                          ? "スタッフ紐付けが必要です"
+                          : undatedCases.length === 0
+                            ? "割り当て可能な未定案件がありません"
+                            : "選択してください"}
                   </option>
                   {undatedCases.map((c) => {
                     const meta = [
@@ -1622,6 +1639,7 @@ function EmptySlotCard({
                 disabled={
                   submitting ||
                   !canSubmit ||
+                  undatedNeedsStaffBind ||
                   !selectedCaseRecordId.trim() ||
                   !slotDayKey?.trim() ||
                   undatedListStatus !== "ok"

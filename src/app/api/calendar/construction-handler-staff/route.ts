@@ -12,7 +12,8 @@ import {
 export const dynamic = "force-dynamic";
 
 /**
- * 工事対応者プルダウン用。スタッフ名簿で工事対応稼働状況が「稼働」の行のみ返す。
+ * 工事対応者プルダウン用。
+ * スタッフ名簿で工事対応稼働状況が「稼働」の行、および常時含める氏名を返す。
  */
 export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);

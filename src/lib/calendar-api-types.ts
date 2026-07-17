@@ -94,6 +94,9 @@ export type UndatedConstructionCase = {
 export type UndatedConstructionCasesPayload = {
   configured: boolean;
   items: UndatedConstructionCase[];
+  /** ログイン者のAP/CL担当名（表示用） */
+  staffName?: string;
+  needsStaffBind?: boolean;
   disabled?: boolean;
   error?: string;
 };

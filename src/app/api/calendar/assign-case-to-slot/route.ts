@@ -17,17 +17,28 @@ import {
   pickRecordValueByFieldAliases,
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
+  resolveConstructionTNumberFieldId,
   resolveEmptyFillHousingStatusFieldId,
 } from "@/lib/calendar-kojo";
 import {
   calendarSlotConflictResponse,
   readFreshConstructionEmptySlotState,
 } from "@/lib/calendar-slot-reservation";
-import { constructionRecordHasAnyWorkDate } from "@/lib/calendar-undated-cases";
+import {
+  callerOwnsCaseByTNumber,
+  constructionRecordHasAnyWorkDate,
+} from "@/lib/calendar-undated-cases";
+import {
+  customerInfoAppId,
+  customerInfoImportKeyFieldId,
+  customerInfoPocketAuth,
+} from "@/lib/customer-info-config";
+import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
+import { defaultApClStaffNamesForLineUser } from "@/lib/staff-ap-cl-candidates";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 26;
@@ -187,6 +198,7 @@ export async function POST(request: Request) {
       fids.panelWork,
       fids.electricWork,
       fids.appSettingsDay,
+      resolveConstructionTNumberFieldId(constructionFields) ?? undefined,
     );
     let caseRow = await fetchRecordById(
       calAppId,
@@ -237,6 +249,85 @@ export async function POST(request: Request) {
     const housingStatus = housingId
       ? coercePlainString(pickRecordValueByFieldAliases(caseRec, housingId))
       : "";
+
+    // ログイン者がAP/CL担当の案件か（お客様情報のT番号突合）
+    const customerAppId = customerInfoAppId();
+    const customerKeyEnv = customerInfoImportKeyFieldId();
+    if (customerAppId && customerKeyEnv) {
+      const { apStaff, clStaff } = await defaultApClStaffNamesForLineUser(
+        auth.lineUserId,
+      );
+      if (!apStaff && !clStaff) {
+        return NextResponse.json(
+          {
+            error:
+              "スタッフ紐付けが必要です。LINEアカウントとスタッフ名簿の紐付け後に割り当ててください。",
+            needsStaffBind: true,
+          },
+          { status: 403 },
+        );
+      }
+
+      const tNumberId = resolveConstructionTNumberFieldId(constructionFields);
+      const tNumber = tNumberId
+        ? coercePlainString(
+            pickRecordValueByFieldAliases(caseRec, tNumberId),
+          )
+        : "";
+      if (!tNumber) {
+        return NextResponse.json(
+          {
+            error:
+              "案件のT番号を取得できないため、担当確認ができません。",
+          },
+          { status: 400 },
+        );
+      }
+
+      const customerAuth = customerInfoPocketAuth();
+      const customerFields = await fetchAppFields(customerAppId, customerAuth, {
+        operation: "calendar:未定案件割り当て(お客様情報fields)",
+        appEnv: "CUSTOMER_INFO_APP_ID",
+      });
+      const customerKeyFieldId = resolveConfiguredFieldToSchemaUniqueId(
+        customerKeyEnv,
+        customerFields,
+      );
+      if (!customerKeyFieldId) {
+        return NextResponse.json(
+          {
+            error: `お客様情報のT番号フィールド「${customerKeyEnv}」が定義と一致しません`,
+          },
+          { status: 500 },
+        );
+      }
+      const owns = await callerOwnsCaseByTNumber(tNumber, {
+        customerAppId,
+        customerKeyFieldId,
+        apStaffFieldId: resolveCustomerInfoFormFieldId(
+          "apStaff",
+          "AP担当者",
+          customerFields,
+        ),
+        clStaffFieldId: resolveCustomerInfoFormFieldId(
+          "clStaff",
+          "CL担当者",
+          customerFields,
+        ),
+        callerApStaff: apStaff,
+        callerClStaff: clStaff,
+        customerAuth,
+      });
+      if (!owns) {
+        return NextResponse.json(
+          {
+            error:
+              "この案件はあなたのAP/CL担当ではありません。担当の未定案件のみ割り当てできます。",
+          },
+          { status: 403 },
+        );
+      }
+    }
 
     // 書き込み直前に空き枠を再確認
     const freshAgain = await readFreshConstructionEmptySlotState(
