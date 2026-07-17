@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { AttendanceMonthCalendar } from "@/components/attendance-month-calendar";
 
 import { useLiffSwr } from "@/hooks/use-liff-swr";
 import {
@@ -34,6 +36,7 @@ import { initLiffAndGetToken } from "@/lib/liff-session";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { requestMeetingScheduleAlertCheckAfterPunch } from "@/lib/meeting-schedule-pending-set-created-client";
 import { isWorkEndReportEligibleDepartment } from "@/lib/work-end-report-eligibility";
+import { buildAttendanceCalendarDummy } from "@/lib/attendance-calendar-dummy";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -154,6 +157,8 @@ export default function AttendancePage() {
         account.boundStaffDepartment ?? workEndStatus?.department,
       ),
   );
+
+  const calendarDummyRecords = useMemo(() => buildAttendanceCalendarDummy(), []);
 
   const refreshStatus = useCallback(async () => {
     if (!idToken || !canUseAttendance) return;
@@ -512,6 +517,14 @@ export default function AttendancePage() {
                 )}
               </div>
             </LiffCard>
+            </div>
+
+            <div className="mt-4">
+              <LiffCard>
+                <div className="px-5 py-4">
+                  <AttendanceMonthCalendar records={calendarDummyRecords} />
+                </div>
+              </LiffCard>
             </div>
 
             {feedback ? (
