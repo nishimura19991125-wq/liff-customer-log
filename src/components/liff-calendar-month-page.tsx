@@ -17,10 +17,15 @@ import {
 import { CustomerNameSplitInput } from "@/components/customer-name-split-input";
 import { CalendarMonthSkeleton } from "@/components/calendar-month-skeleton";
 import { MapNavigationButton } from "@/components/map-navigation-button";
+import { StaffNameSuggestCombobox } from "@/components/staff-name-suggest-combobox";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
 import { joinJapaneseFullName } from "@/lib/customer-info-form/name-parts";
+import {
+  commitStaffNameInput,
+  isExactStaffName,
+} from "@/lib/staff-name-options";
 import { applyCalendarRecordPatch } from "@/lib/calendar-apply-patch";
 import type {
   CalendarApiPayload,
@@ -89,6 +94,24 @@ function isSplitCustomerNameComplete(family: string, given: string): boolean {
   return Boolean(family.trim() && given.trim());
 }
 
+function resolveHandlerStaffIdFromInput(
+  rows: HandlerStaffRow[],
+  raw: string,
+): string {
+  const labels = rows.map((r) => r.label || r.name);
+  const committed = commitStaffNameInput(labels, raw);
+  if (!committed) return "";
+  const want = committed.normalize("NFKC").trim();
+  const byLabel = rows.filter(
+    (r) => (r.label || r.name).normalize("NFKC").trim() === want,
+  );
+  if (byLabel.length === 1) return byLabel[0]!.staffRecordId;
+  const byName = rows.filter(
+    (r) => r.name.normalize("NFKC").trim() === want,
+  );
+  return byName.length === 1 ? byName[0]!.staffRecordId : "";
+}
+
 function ConstructionHandlerStaffSelect({
   submitting,
   canSubmit,
@@ -108,6 +131,24 @@ function ConstructionHandlerStaffSelect({
   setSelectedHandlerStaffId: (id: string) => void;
   required?: boolean;
 }) {
+  const nameOptions = useMemo(
+    () => handlerRows.map((r) => r.label || r.name),
+    [handlerRows],
+  );
+
+  const selectedLabel = useMemo(() => {
+    const row = handlerRows.find(
+      (r) => r.staffRecordId === selectedHandlerStaffId,
+    );
+    return row ? row.label || row.name : "";
+  }, [handlerRows, selectedHandlerStaffId]);
+
+  const [inputValue, setInputValue] = useState(selectedLabel);
+
+  useEffect(() => {
+    setInputValue(selectedLabel);
+  }, [selectedLabel, selectedHandlerStaffId]);
+
   const selectDisabled =
     submitting ||
     !canSubmit ||
@@ -116,13 +157,23 @@ function ConstructionHandlerStaffSelect({
     handlerListStatus === "err" ||
     (handlerListStatus === "ok" && handlerRows.length === 0);
 
-  let placeholder = "選択してください";
-  if (handlerListStatus === "idle" || handlerListStatus === "loading") {
-    placeholder = "読み込み中…";
-  } else if (handlerListStatus === "err") {
-    placeholder = "取得できませんでした";
-  } else if (handlerRows.length === 0) {
-    placeholder = "該当する社員がありません";
+  const loading =
+    handlerListStatus === "idle" || handlerListStatus === "loading";
+
+  function applyInput(next: string) {
+    setInputValue(next);
+    if (!next.trim()) {
+      setSelectedHandlerStaffId("");
+      return;
+    }
+    if (isExactStaffName(nameOptions, next)) {
+      setSelectedHandlerStaffId(
+        resolveHandlerStaffIdFromInput(handlerRows, next),
+      );
+      return;
+    }
+    // 途中入力は未確定扱いにする（保存不可）
+    setSelectedHandlerStaffId("");
   }
 
   return (
@@ -135,25 +186,20 @@ function ConstructionHandlerStaffSelect({
           <span className="font-medium text-slate-500">（変更）</span>
         )}
         <span className="block text-[11px] font-normal leading-snug text-slate-500">
-          スタッフ名簿のうち、工事対応稼働状況が「稼働」の社員のみ表示します。
+          スタッフ名と完全一致が必要です。未入力時は全員表示、Enter /
+          フォーカス外しで先頭候補を確定（工事対応稼働「稼働」）
         </span>
       </span>
-      <select
-        className={HANDLER_STAFF_SELECT_CLASS}
-        aria-label="工事対応者"
-        value={selectedHandlerStaffId}
-        onChange={(e) => setSelectedHandlerStaffId(e.target.value)}
+      <StaffNameSuggestCombobox
+        id="construction-handler-staff"
+        label="工事対応者"
+        value={inputValue}
+        options={nameOptions}
         disabled={selectDisabled}
-      >
-        <option value="">{placeholder}</option>
-        {handlerListStatus === "ok"
-          ? handlerRows.map((row) => (
-              <option key={row.staffRecordId} value={row.staffRecordId}>
-                {row.label}
-              </option>
-            ))
-          : null}
-      </select>
+        loading={loading}
+        inputClassName={HANDLER_STAFF_SELECT_CLASS}
+        onChange={applyInput}
+      />
       {handlerListStatus === "err" && handlerListError ? (
         <p className="mt-1 text-[12px] leading-relaxed text-red-700">
           {handlerListError}
