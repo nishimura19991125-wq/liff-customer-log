@@ -13,7 +13,6 @@ import {
 } from "@/lib/atpocket";
 import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
 import {
-  boundStaffFromRosterRows,
   fetchStaffRosterRowsCached,
   getStaffRosterRowsBestEffort,
   staffRosterCacheTtlMs,
@@ -494,18 +493,4 @@ export async function defaultApClStaffNamesForLineUser(
     apStaff: payload.ap.defaultName,
     clStaff: payload.cl.defaultName,
   };
-}
-
-/**
- * LINE 紐付けされたスタッフ名を返す（AP/CL 稼働列の評価なし）。
- * 名簿一覧の共通キャッシュを使うため、AP/CL候補専用クエリより 429 が起きにくい。
- */
-export async function resolveBoundStaffNameForLineUser(
-  lineUserId: string,
-): Promise<string | null> {
-  const rows = await fetchStaffRosterRowsCached();
-  const bound = boundStaffFromRosterRows(rows, lineUserId);
-  if (!bound?.name) return null;
-  const name = normApClStaffName(bound.name);
-  return name || null;
 }

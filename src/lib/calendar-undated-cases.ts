@@ -1,11 +1,6 @@
 import "server-only";
 
-import type {
-  AtPocketFetchAuth,
-  AtPocketFieldRow,
-  AtPocketRecordRow,
-} from "@/lib/atpocket";
-import { fetchAllRecordsPages } from "@/lib/atpocket";
+import type { AtPocketFieldRow, AtPocketRecordRow } from "@/lib/atpocket";
 import type { UndatedConstructionCase } from "@/lib/calendar-api-types";
 import { dayKeyFromConstructionRecord } from "@/lib/calendar-consume-empty-slot";
 import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
@@ -18,7 +13,6 @@ import {
   type ConstructionFieldIds,
 } from "@/lib/calendar-kojo";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
-import { readCustomerInfoFieldValue } from "@/lib/customer-info-record";
 
 function coercePlainString(raw: unknown): string {
   if (raw == null) return "";
@@ -81,13 +75,15 @@ export function constructionRecordHasAnyWorkDate(
   return false;
 }
 
-function housingStatusRawToShort(
-  raw: string,
-): string {
+function housingStatusRawToShort(raw: string): string {
   const t = raw.replace(/\s+/g, " ").trim();
   if (!t) return "";
-  if (t === "新築案件" || t.includes("新築案件")) return shortHousingStatusLabel("新築案件");
-  if (t === "既築案件" || t.includes("既築案件")) return shortHousingStatusLabel("既築案件");
+  if (t === "新築案件" || t.includes("新築案件")) {
+    return shortHousingStatusLabel("新築案件");
+  }
+  if (t === "既築案件" || t.includes("既築案件")) {
+    return shortHousingStatusLabel("既築案件");
+  }
   if (t === "トラーチ倶楽部案件" || t.includes("トラーチ")) {
     return shortHousingStatusLabel("トラーチ倶楽部案件");
   }
@@ -99,14 +95,19 @@ function housingStatusRawToShort(
 
 /**
  * お客様名あり・工事日未定の案件だけ抽出（メモリ内フィルタ）。
+ * allowedTNumbers を渡すと担当顧客一覧と同じ T番号集合で絞り込む。
  */
 export function buildUndatedConstructionCases(
   records: AtPocketRecordRow[],
   constructionFields: AtPocketFieldRow[],
+  options?: { allowedTNumbers?: Set<string> },
 ): UndatedConstructionCase[] {
   const fids = resolveConstructionFieldIds(constructionFields);
   const titleId = fids.title?.trim();
   if (!titleId) return [];
+
+  const allowedTNumbers = options?.allowedTNumbers;
+  if (allowedTNumbers && allowedTNumbers.size === 0) return [];
 
   const tNumberId = resolveConstructionTNumberFieldId(constructionFields);
   const items: UndatedConstructionCase[] = [];
@@ -127,6 +128,14 @@ export function buildUndatedConstructionCases(
     );
     if (!customerName) continue;
 
+    const tNumber = tNumberId
+      ? coercePlainString(pickRecordValueByFieldAliases(recObj, tNumberId))
+      : "";
+    if (allowedTNumbers) {
+      const normT = normApClStaffName(tNumber);
+      if (!normT || !allowedTNumbers.has(normT)) continue;
+    }
+
     const housingRaw = fids.housingStatus
       ? coercePlainString(
           pickRecordValueByFieldAliases(recObj, fids.housingStatus),
@@ -136,9 +145,6 @@ export function buildUndatedConstructionCases(
       ? coercePlainString(
           pickRecordValueByFieldAliases(recObj, fids.contractor),
         )
-      : "";
-    const tNumber = tNumberId
-      ? coercePlainString(pickRecordValueByFieldAliases(recObj, tNumberId))
       : "";
 
     items.push({
@@ -154,113 +160,4 @@ export function buildUndatedConstructionCases(
     a.customerName.localeCompare(b.customerName, "ja"),
   );
   return items;
-}
-
-/**
- * お客様情報の AP/CL 担当がログイン者の担当名のいずれかと一致する案件だけ残す。
- * T番号が無い／お客様情報に見つからない案件は除外。
- */
-export async function filterUndatedCasesByCallerApClStaff(
-  items: UndatedConstructionCase[],
-  opts: {
-    customerAppId: string;
-    customerKeyFieldId: string;
-    apStaffFieldId: string | null;
-    clStaffFieldId: string | null;
-    callerApStaff: string | null;
-    callerClStaff: string | null;
-    customerAuth: AtPocketFetchAuth;
-  },
-): Promise<UndatedConstructionCase[]> {
-  const wantNames = new Set(
-    [opts.callerApStaff, opts.callerClStaff]
-      .map((n) => normApClStaffName(n ?? ""))
-      .filter(Boolean),
-  );
-  if (wantNames.size === 0) return [];
-
-  const staffFieldsCsv = [opts.apStaffFieldId, opts.clStaffFieldId]
-    .filter((id): id is string => Boolean(id?.trim()))
-    .join(",");
-  if (!staffFieldsCsv) return [];
-
-  const keyFieldId = opts.customerKeyFieldId.trim();
-  if (!keyFieldId) return [];
-  const rows = await fetchAllRecordsPages(
-    opts.customerAppId,
-    [keyFieldId, staffFieldsCsv].filter(Boolean).join(","),
-    opts.customerAuth,
-    null,
-    {
-      operation: "calendar:未定案件割り当て(お客様情報AP/CL一括照合)",
-      appEnv: "CUSTOMER_INFO_APP_ID",
-    },
-    { maxPages: 50, maxRetries: 0 },
-  );
-  const staffByT = new Map<string, { apName: string; clName: string }>();
-  for (const row of rows) {
-    const rec = row.record;
-    if (!rec || typeof rec !== "object") continue;
-    const recObj = rec as Record<string, unknown>;
-    const tNumber = normApClStaffName(
-      readCustomerInfoFieldValue(recObj, keyFieldId),
-    );
-    if (!tNumber || staffByT.has(tNumber)) continue;
-    const apName = opts.apStaffFieldId
-      ? normApClStaffName(
-          readCustomerInfoFieldValue(recObj, opts.apStaffFieldId),
-        )
-      : "";
-    const clName = opts.clStaffFieldId
-      ? normApClStaffName(
-          readCustomerInfoFieldValue(recObj, opts.clStaffFieldId),
-        )
-      : "";
-    staffByT.set(tNumber, { apName, clName });
-  }
-
-  const out: UndatedConstructionCase[] = [];
-  for (const item of items) {
-    const tNumber = normApClStaffName(item.tNumber);
-    if (!tNumber) continue;
-    const staff = staffByT.get(tNumber);
-    if (!staff) continue;
-    const { apName, clName } = staff;
-
-    if (
-      (apName && wantNames.has(apName)) ||
-      (clName && wantNames.has(clName))
-    ) {
-      out.push(item);
-    }
-  }
-  return out;
-}
-
-/** 割り当て時の権限確認：T番号先のお客様情報で AP/CL がログイン者と一致するか */
-export async function callerOwnsCaseByTNumber(
-  tNumber: string,
-  opts: {
-    customerAppId: string;
-    customerKeyFieldId: string;
-    apStaffFieldId: string | null;
-    clStaffFieldId: string | null;
-    callerApStaff: string | null;
-    callerClStaff: string | null;
-    customerAuth: AtPocketFetchAuth;
-  },
-): Promise<boolean> {
-  const matched = await filterUndatedCasesByCallerApClStaff(
-    [
-      {
-        recordId: "_",
-        customerName: "_",
-        housingShort: "",
-        contractorName: "",
-        tNumber,
-      },
-    ],
-    opts,
-  );
-  return matched.length > 0;
 }

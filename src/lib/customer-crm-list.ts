@@ -3,10 +3,14 @@ import "server-only";
 import {
   customerInfoAppId,
   customerInfoConfigReady,
+  customerInfoImportKeyFieldId,
   customerInfoListAuths,
   customerInfoNameFieldId,
+  customerInfoPocketAuth,
   customerInfoSubtitleFieldId,
 } from "@/lib/customer-info-config";
+import { findCustomerInfoRecordIdByUniqueKeyCached } from "@/lib/customer-info-key-lookup-cache";
+import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import {
   crmSortKeyFromRecord,
   evaluateCrmDocuments,
@@ -34,7 +38,12 @@ import {
 } from "@/lib/customer-crm-status";
 import { customerInfoCustomerStatusFieldId } from "@/lib/customer-info-config";
 import type { AtPocketFieldRow } from "@/lib/atpocket";
-import { fetchAppFieldsTryKeys, fetchRecordsList, readAuthsForApp } from "@/lib/atpocket";
+import {
+  fetchAppFieldsTryKeys,
+  fetchRecordById,
+  fetchRecordsList,
+  readAuthsForApp,
+} from "@/lib/atpocket";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
 
 export type CustomerCrmFilter =
@@ -48,6 +57,8 @@ export type CustomerCrmListItem = {
   recordId: string;
   customerName: string;
   subtitle: string;
+  /** 工事連携キー（T番号） */
+  tNumber: string;
   isDocumentMissing: boolean;
   isSubsidyTarget: boolean;
   combinedSubsidyName: string | null;
@@ -129,6 +140,7 @@ function passesCrmFilter(
 type CrmFieldContext = {
   nameField: string;
   subtitleField: string | null;
+  tNumberFieldId: string | null;
   apFieldId: string | null;
   clFieldId: string | null;
   creatorFieldId: string | null;
@@ -175,9 +187,14 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
     appFields,
   );
   const creatorFieldId = resolveCustomerInfoCreatorFieldId(appFields);
+  const tNumberEnv = customerInfoImportKeyFieldId();
+  const tNumberFieldId = tNumberEnv
+    ? resolveConfiguredFieldToSchemaUniqueId(tNumberEnv, appFields)
+    : null;
 
   const fieldIdSet = new Set<string>([nameField]);
   if (subtitleField) fieldIdSet.add(subtitleField);
+  if (tNumberFieldId) fieldIdSet.add(tNumberFieldId);
   if (constructionDateFieldId) fieldIdSet.add(constructionDateFieldId);
   if (subsidyFieldIds.subsidyPresenceId) {
     fieldIdSet.add(subsidyFieldIds.subsidyPresenceId);
@@ -201,6 +218,7 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
   return {
     nameField,
     subtitleField,
+    tNumberFieldId,
     apFieldId,
     clFieldId,
     creatorFieldId,
@@ -313,6 +331,9 @@ async function fetchCustomerCrmCandidatesFromPocket(
         subtitle: ctx.subtitleField
           ? readCustomerInfoFieldValue(recObj, ctx.subtitleField)
           : "",
+        tNumber: ctx.tNumberFieldId
+          ? readCustomerInfoFieldValue(recObj, ctx.tNumberFieldId)
+          : "",
         isDocumentMissing,
         isSubsidyTarget,
         combinedSubsidyName,
@@ -369,11 +390,82 @@ async function getCachedCustomerCrmCandidates(
 export async function listCustomerCrmRecords(
   boundStaffName: string,
   filter: CustomerCrmFilter = "all",
+  options?: { maxResults?: number | null },
 ): Promise<CustomerCrmListItem[]> {
-  const maxResults = crmMaxResults();
+  const maxResults =
+    options?.maxResults === null ? null : (options?.maxResults ?? crmMaxResults());
   const all = await getCachedCustomerCrmCandidates(boundStaffName);
-  return all
-    .filter((item) => passesCrmFilter(item, filter))
-    .slice(0, maxResults)
-    .map(({ sortKey: _s, ...item }) => item);
+  const filtered = all.filter((item) => passesCrmFilter(item, filter));
+  const sliced =
+    maxResults == null ? filtered : filtered.slice(0, maxResults);
+  return sliced.map(({ sortKey: _s, ...item }) => item);
+}
+
+/**
+ * 担当顧客一覧と同じ AP/CL/作成者判定で、T番号の案件がログイン担当のものか確認する。
+ * 一覧キャッシュを優先し、未掲載時のみ単体照合する。
+ */
+export async function staffOwnsCustomerByTNumber(
+  boundStaffName: string,
+  tNumber: string,
+): Promise<boolean> {
+  const normT = normApClStaffName(tNumber);
+  const bound = normApClStaffName(boundStaffName);
+  if (!normT || !bound) return false;
+
+  const cached = await getCachedCustomerCrmCandidates(bound);
+  if (cached.some((c) => normApClStaffName(c.tNumber ?? "") === normT)) {
+    return true;
+  }
+
+  const cfg = customerInfoConfigReady();
+  if (!cfg.ok) return false;
+
+  const appId = customerInfoAppId();
+  const keyEnv = customerInfoImportKeyFieldId();
+  if (!appId || !keyEnv) return false;
+
+  const readAuths = readAuthsForApp("CUSTOMER_INFO");
+  const appFields =
+    (await fetchAppFieldsTryKeys(
+      appId,
+      readAuths.map((a) => a.apiKey ?? ""),
+    )) ?? [];
+  const ctx = buildCrmFieldContext(appFields);
+  if (!ctx?.tNumberFieldId) return false;
+
+  const recordId = await findCustomerInfoRecordIdByUniqueKeyCached(
+    ctx.tNumberFieldId,
+    normT,
+  );
+  if (!recordId) return false;
+
+  const fieldsCsv = [
+    ctx.tNumberFieldId,
+    ctx.apFieldId,
+    ctx.clFieldId,
+    ctx.creatorFieldId,
+  ]
+    .filter((id): id is string => Boolean(id?.trim()))
+    .join(",");
+  let row = await fetchRecordById(
+    appId,
+    recordId,
+    customerInfoPocketAuth(),
+    fieldsCsv,
+  );
+  if (!row?.record) {
+    row = await fetchRecordById(appId, recordId, customerInfoPocketAuth());
+  }
+  if (!row?.record || typeof row.record !== "object") return false;
+
+  return (
+    matchCustomerInfoPendingAudience(
+      row.record as Record<string, unknown>,
+      bound,
+      ctx.apFieldId,
+      ctx.clFieldId,
+      ctx.creatorFieldId,
+    ) != null
+  );
 }

@@ -30,20 +30,15 @@ import {
   readFreshConstructionEmptySlotState,
 } from "@/lib/calendar-slot-reservation";
 import {
-  callerOwnsCaseByTNumber,
   constructionRecordHasAnyWorkDate,
 } from "@/lib/calendar-undated-cases";
-import {
-  customerInfoAppId,
-  customerInfoImportKeyFieldId,
-  customerInfoPocketAuth,
-} from "@/lib/customer-info-config";
-import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
+import { staffOwnsCustomerByTNumber } from "@/lib/customer-crm-list";
+import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
-import { resolveBoundStaffNameForLineUser } from "@/lib/staff-ap-cl-candidates";
+import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 26;
@@ -296,10 +291,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // ログイン者がAP/CL担当の案件か（お客様情報のT番号突合）
-    const customerAppId = customerInfoAppId();
-    const customerKeyEnv = customerInfoImportKeyFieldId();
-    if (customerAppId && customerKeyEnv) {
+    // ログイン者が担当の案件か（担当顧客一覧と同じ AP/CL/作成者判定）
+    const customerCfg = customerInfoConfigReady();
+    if (customerCfg.ok) {
       const boundStaffName = await resolveBoundStaffNameForLineUser(
         auth.lineUserId,
       );
@@ -314,45 +308,12 @@ export async function POST(request: Request) {
         );
       }
 
-      const customerAuth = customerInfoPocketAuth();
-      const customerFields = await fetchAppFields(customerAppId, customerAuth, {
-        operation: "calendar:未定案件割り当て(お客様情報fields)",
-        appEnv: "CUSTOMER_INFO_APP_ID",
-      });
-      const customerKeyFieldId = resolveConfiguredFieldToSchemaUniqueId(
-        customerKeyEnv,
-        customerFields,
-      );
-      if (!customerKeyFieldId) {
-        return NextResponse.json(
-          {
-            error: `お客様情報のT番号フィールド「${customerKeyEnv}」が定義と一致しません`,
-          },
-          { status: 500 },
-        );
-      }
-      const owns = await callerOwnsCaseByTNumber(existingT, {
-        customerAppId,
-        customerKeyFieldId,
-        apStaffFieldId: resolveCustomerInfoFormFieldId(
-          "apStaff",
-          "AP担当者",
-          customerFields,
-        ),
-        clStaffFieldId: resolveCustomerInfoFormFieldId(
-          "clStaff",
-          "CL担当者",
-          customerFields,
-        ),
-        callerApStaff: boundStaffName,
-        callerClStaff: boundStaffName,
-        customerAuth,
-      });
+      const owns = await staffOwnsCustomerByTNumber(boundStaffName, existingT);
       if (!owns) {
         return NextResponse.json(
           {
             error:
-              "この案件はあなたのAP/CL担当ではありません。担当の未定案件のみ割り当てできます。",
+              "この案件はあなたの担当ではありません。担当の未定案件のみ割り当てできます。",
           },
           { status: 403 },
         );

@@ -8,29 +8,21 @@ import type { UndatedConstructionCasesPayload } from "@/lib/calendar-api-types";
 import { fetchCalendarConstructionRecordsCached } from "@/lib/calendar-construction-records-cache";
 import {
   collectConstructionFieldsCsv,
-  resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
 } from "@/lib/calendar-kojo";
-import {
-  buildUndatedConstructionCases,
-  filterUndatedCasesByCallerApClStaff,
-} from "@/lib/calendar-undated-cases";
-import {
-  customerInfoAppId,
-  customerInfoImportKeyFieldId,
-  customerInfoPocketAuth,
-} from "@/lib/customer-info-config";
-import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
+import { buildUndatedConstructionCases } from "@/lib/calendar-undated-cases";
+import { listCustomerCrmRecords } from "@/lib/customer-crm-list";
+import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
-import { resolveBoundStaffNameForLineUser } from "@/lib/staff-ap-cl-candidates";
+import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
 export const dynamic = "force-dynamic";
 
-/** 工事日未定の既存案件一覧（ログイン中のAP/CL担当案件のみ） */
+/** 工事日未定の既存案件一覧（担当顧客一覧と同じ担当・工事日未定条件） */
 export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
@@ -46,31 +38,21 @@ export async function GET(request: Request) {
     return NextResponse.json(payload, { status: 503 });
   }
 
-  const customerAppId = customerInfoAppId();
-  if (!customerAppId) {
+  const customerCfg = customerInfoConfigReady();
+  if (!customerCfg.ok) {
     const payload: UndatedConstructionCasesPayload = {
       configured: false,
       items: [],
-      error: "CUSTOMER_INFO_APP_ID が未設定です",
-    };
-    return NextResponse.json(payload, { status: 503 });
-  }
-
-  const customerKeyEnv = customerInfoImportKeyFieldId();
-  if (!customerKeyEnv) {
-    const payload: UndatedConstructionCasesPayload = {
-      configured: false,
-      items: [],
-      error:
-        "CUSTOMER_INFO_CONSTRUCTION_UNIQUE_KEY_FIELD_ID（T番号）が未設定です",
+      error: customerCfg.error,
     };
     return NextResponse.json(payload, { status: 503 });
   }
 
   try {
-    const staffName = normApClStaffName(
-      (await resolveBoundStaffNameForLineUser(auth.lineUserId)) ?? "",
+    const boundStaffName = await resolveBoundStaffNameForLineUser(
+      auth.lineUserId,
     );
+    const staffName = normApClStaffName(boundStaffName ?? "");
 
     if (!staffName) {
       const payload: UndatedConstructionCasesPayload = {
@@ -82,19 +64,22 @@ export async function GET(request: Request) {
       return NextResponse.json(payload);
     }
 
-    const calAuth = { apiKey: apiKeyForCalendarPocket() };
-    const customerAuth = customerInfoPocketAuth();
+    const crmCustomers = await listCustomerCrmRecords(
+      staffName,
+      "no_construction_date",
+      { maxResults: null },
+    );
+    const allowedTNumbers = new Set(
+      crmCustomers
+        .map((c) => normApClStaffName(c.tNumber ?? ""))
+        .filter(Boolean),
+    );
 
-    const [constructionFields, customerFields] = await Promise.all([
-      fetchAppFields(calAppId, calAuth, {
-        operation: "calendar:工事日未定案件fields",
-        appEnv: "CALENDAR_APP_ID",
-      }),
-      fetchAppFields(customerAppId, customerAuth, {
-        operation: "calendar:工事日未定案件(お客様情報fields)",
-        appEnv: "CUSTOMER_INFO_APP_ID",
-      }),
-    ]);
+    const calAuth = { apiKey: apiKeyForCalendarPocket() };
+    const constructionFields = await fetchAppFields(calAppId, calAuth, {
+      operation: "calendar:工事日未定案件fields",
+      appEnv: "CALENDAR_APP_ID",
+    });
 
     const fids = resolveConstructionFieldIds(constructionFields);
     if (!fids.title?.trim()) {
@@ -107,41 +92,6 @@ export async function GET(request: Request) {
       return NextResponse.json(payload);
     }
 
-    const customerKeyFieldId = resolveConfiguredFieldToSchemaUniqueId(
-      customerKeyEnv,
-      customerFields,
-    );
-    if (!customerKeyFieldId) {
-      const payload: UndatedConstructionCasesPayload = {
-        configured: false,
-        staffName,
-        items: [],
-        error: `お客様情報のT番号フィールド「${customerKeyEnv}」が定義と一致しません`,
-      };
-      return NextResponse.json(payload);
-    }
-
-    const apStaffFieldId = resolveCustomerInfoFormFieldId(
-      "apStaff",
-      "AP担当者",
-      customerFields,
-    );
-    const clStaffFieldId = resolveCustomerInfoFormFieldId(
-      "clStaff",
-      "CL担当者",
-      customerFields,
-    );
-    if (!apStaffFieldId && !clStaffFieldId) {
-      const payload: UndatedConstructionCasesPayload = {
-        configured: false,
-        staffName,
-        items: [],
-        error:
-          "お客様情報のAP担当者／CL担当者フィールドを特定できません",
-      };
-      return NextResponse.json(payload);
-    }
-
     const csv = collectConstructionFieldsCsv(fids);
     const constructionRecords = await fetchCalendarConstructionRecordsCached(
       calAppId,
@@ -149,20 +99,11 @@ export async function GET(request: Request) {
       null,
     );
 
-    const undatedAll = buildUndatedConstructionCases(
+    const items = buildUndatedConstructionCases(
       constructionRecords,
       constructionFields,
+      { allowedTNumbers },
     );
-
-    const items = await filterUndatedCasesByCallerApClStaff(undatedAll, {
-      customerAppId,
-      customerKeyFieldId,
-      apStaffFieldId,
-      clStaffFieldId,
-      callerApStaff: staffName,
-      callerClStaff: staffName,
-      customerAuth,
-    });
 
     const payload: UndatedConstructionCasesPayload = {
       configured: true,
@@ -176,13 +117,17 @@ export async function GET(request: Request) {
       e instanceof Error
         ? e.message
         : "工事日未定案件の取得に失敗しました";
+    const isRateLimited =
+      msg.includes("429") || msg.includes("Too Many Request");
     return NextResponse.json(
       {
         configured: true,
         items: [],
-        error: msg,
+        error: isRateLimited
+          ? "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。"
+          : msg,
       } satisfies UndatedConstructionCasesPayload,
-      { status: 502 },
+      { status: isRateLimited ? 429 : 502 },
     );
   }
 }
