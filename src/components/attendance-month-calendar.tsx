@@ -238,6 +238,17 @@ export function AttendanceMonthCalendar({
         </p>
       ) : null}
 
+      <div className="mb-2 flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-2.5 rounded-sm bg-emerald-100 ring-1 ring-emerald-300 dark:bg-emerald-950/60 dark:ring-emerald-700" />
+          打刻あり
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-2.5 rounded-sm bg-slate-100 ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700" />
+          なし
+        </span>
+      </div>
+
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
         <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-700">
           {WEEKDAYS.map((label, i) => (
@@ -268,6 +279,26 @@ export function AttendanceMonthCalendar({
             const isSaturday =
               new Date(`${cell.dateKey}T12:00:00`).getDay() === 6;
 
+            const cellBg = !cell.inMonth
+              ? "bg-slate-50/60 dark:bg-slate-950/30"
+              : hasPunch
+                ? "bg-emerald-50 ring-1 ring-inset ring-emerald-200/80 dark:bg-emerald-950/35 dark:ring-emerald-800/60"
+                : "bg-slate-50/70 dark:bg-slate-900/80";
+
+            const dayColor = !cell.inMonth
+              ? "text-slate-300 dark:text-slate-600"
+              : hasPunch
+                ? isSunday
+                  ? "text-rose-600 dark:text-rose-400"
+                  : isSaturday
+                    ? "text-sky-700 dark:text-sky-300"
+                    : "text-slate-900 dark:text-white"
+                : isSunday
+                  ? "text-rose-300 dark:text-rose-800"
+                  : isSaturday
+                    ? "text-sky-300 dark:text-sky-800"
+                    : "text-slate-400 dark:text-slate-600";
+
             return (
               <button
                 key={cell.dateKey}
@@ -277,22 +308,12 @@ export function AttendanceMonthCalendar({
                     setSelectedDateKey(cell.dateKey);
                   }
                 }}
-                className={`min-h-[4.5rem] border-b border-r border-slate-100 p-1.5 text-left transition hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50 sm:min-h-[5.5rem] md:min-h-[6rem] ${
-                  cell.inMonth
-                    ? "bg-white dark:bg-slate-900"
-                    : "bg-slate-50/80 dark:bg-slate-950/40"
-                }`}
+                className={`min-h-[4.5rem] border-b border-r border-slate-100 p-1.5 text-left transition hover:brightness-[0.98] dark:border-slate-800 sm:min-h-[5.5rem] md:min-h-[6rem] ${cellBg}`}
               >
                 <span
-                  className={`block text-[12px] font-semibold tabular-nums ${
-                    !cell.inMonth
-                      ? "text-slate-300 dark:text-slate-600"
-                      : isSunday
-                        ? "text-rose-500"
-                        : isSaturday
-                          ? "text-sky-600 dark:text-sky-400"
-                          : "text-slate-700 dark:text-slate-200"
-                  }`}
+                  className={`block text-[12px] tabular-nums ${
+                    hasPunch && cell.inMonth ? "font-bold" : "font-medium"
+                  } ${dayColor}`}
                 >
                   {cell.day}
                 </span>
@@ -300,10 +321,12 @@ export function AttendanceMonthCalendar({
                 {hasPunch ? (
                   <>
                     <span
-                      className="mt-1 block size-1.5 rounded-full bg-emerald-500 md:hidden"
+                      className="mt-1.5 inline-flex items-center rounded-full bg-emerald-500 px-1.5 py-0.5 text-[9px] font-bold text-white md:hidden"
                       aria-hidden
-                    />
-                    <span className="mt-1 hidden text-[10px] leading-tight tabular-nums text-emerald-700 dark:text-emerald-400 md:block">
+                    >
+                      出
+                    </span>
+                    <span className="mt-1 hidden rounded bg-white/70 px-1 py-0.5 text-[10px] font-semibold leading-tight tabular-nums text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 md:block">
                       {timeRange}
                     </span>
                   </>
