@@ -4,6 +4,7 @@ import { commaIntegerForPocket } from "@/lib/customer-info-form/numeric-comma";
 import {
   INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY,
   INSTALLATION_TYPES_WITH_SOLAR_PANEL,
+  installationTypeHidesBatterySection,
   installationTypeHidesPanelSection,
   PAYMENT_METHODS_WITH_CASH,
   PAYMENT_METHODS_WITH_LOAN,
@@ -199,8 +200,14 @@ export function isCustomerInfoFormFieldVisible(
     case "powerConModel2":
       // 台数が 2 のときのみ品番②を表示（1 台のときは非表示で @pocket には "-"）
       return powerConCount === "2";
+    case "batteryMulti":
+    case "batteryCapacity1":
+      return !installationTypeHidesBatterySection(installationType);
     case "batteryCapacity2":
-      return batteryMulti === "有";
+      return (
+        !installationTypeHidesBatterySection(installationType) &&
+        batteryMulti === "有"
+      );
     case "ecoCuteModel":
       return ecoCuteNew === "有";
     case "ihModel":

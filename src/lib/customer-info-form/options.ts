@@ -109,10 +109,22 @@ export const INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY = new Set<string>([
 /** パネル品番・枚数を非表示にする設置種別（品番は "-"・枚数は半角 0） */
 export const INSTALLATION_TYPES_HIDE_PANEL = new Set<string>(["蓄電池のみ"]);
 
+/** 蓄電池複数台・蓄電池容量を非表示にする設置種別（容量・品番は "-"） */
+export const INSTALLATION_TYPES_HIDE_BATTERY = new Set<string>([
+  "太陽光パネルのみ",
+  "パワコン取替のみ",
+]);
+
 export function installationTypeHidesPanelSection(
   installationType: string | undefined,
 ): boolean {
   return INSTALLATION_TYPES_HIDE_PANEL.has((installationType ?? "").trim());
+}
+
+export function installationTypeHidesBatterySection(
+  installationType: string | undefined,
+): boolean {
+  return INSTALLATION_TYPES_HIDE_BATTERY.has((installationType ?? "").trim());
 }
 
 /** 付近見取り図 */
