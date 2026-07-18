@@ -116,6 +116,14 @@ function formatApClAssignees(apPerson: string, clPerson: string): string {
   return parts.join(" / ");
 }
 
+/** 契約日：yyyy/mm/dd */
+function formatContractDateLabel(dateYmd: string): string {
+  const display = dateYmd.trim()
+    ? formatDisplayYmd(dateYmd) || dateYmd.trim()
+    : "";
+  return display ? `契約日：${display}` : "契約日：—";
+}
+
 function resolvePersonalKpi(data: DashboardPayload): PersonalKpi {
   const self = data.ranking.find((r) => r.isSelf);
   const selfApo = data.apoRanking.find((r) => r.isSelf);
@@ -158,6 +166,7 @@ function PersonalKpiHero({ personal, periodLabel }: { personal: PersonalKpi; per
           <ul className="flex flex-col gap-1.5">
             {personal.breakdown.map((item, i) => {
               const assignees = formatApClAssignees(item.apPerson, item.clPerson);
+              const contractDate = formatContractDateLabel(item.dateYmd);
               return (
                 <li
                   key={`self-pt-${i}-${item.dateYmd}-${item.pt}-${item.customerName}`}
@@ -172,6 +181,9 @@ function PersonalKpiHero({ personal, periodLabel }: { personal: PersonalKpi; per
                         {assignees}
                       </p>
                     ) : null}
+                    <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
+                      {contractDate}
+                    </p>
                   </div>
                   <span className={`shrink-0 ${ptValueClass()}`}>
                     {formatPt(item.pt)}
@@ -251,9 +263,7 @@ function PtBreakdownPanel({ rows }: { rows: PtBreakdownRow[] }) {
   return (
     <ul className="mt-1 flex flex-col gap-2 border-t border-slate-200/80 pt-3 dark:border-slate-700/60">
       {rows.map((item, i) => {
-        const dateLabel = item.dateYmd
-          ? formatDisplayYmd(item.dateYmd) || item.dateYmd
-          : "—";
+        const contractDate = formatContractDateLabel(item.dateYmd);
         const assignees = formatApClAssignees(item.apPerson, item.clPerson);
         return (
           <li
@@ -273,7 +283,7 @@ function PtBreakdownPanel({ rows }: { rows: PtBreakdownRow[] }) {
               <p className="mt-1 text-slate-500 dark:text-slate-400">{assignees}</p>
             ) : null}
             <p className="mt-0.5 text-slate-500 dark:text-slate-400">
-              {dateLabel}
+              {contractDate}
             </p>
           </li>
         );
