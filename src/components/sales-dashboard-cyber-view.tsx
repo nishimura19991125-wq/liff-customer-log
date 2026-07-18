@@ -97,26 +97,30 @@ function tabClass(active: boolean): string {
 }
 
 type PersonalKpi = {
+  /** 総合PT（売上PTのみ。アポ件数は加算しない） */
   totalPt: number;
-  salesPt: number;
-  apoPt: number;
   salesAmount: number;
   apoCount: number;
   contractCount: number;
+  /** 本人のPT対象レコード（お客様名・PT） */
+  breakdown: PtBreakdownRow[];
 };
 
 function resolvePersonalKpi(data: DashboardPayload): PersonalKpi {
   const self = data.ranking.find((r) => r.isSelf);
   const selfApo = data.apoRanking.find((r) => r.isSelf);
   const salesPt = self?.pt ?? 0;
-  const apoPt = selfApo?.apoCount ?? 0;
+  const staffKey = self?.staffName?.trim() || "";
+  const breakdown =
+    staffKey && data.ptBreakdownByStaff
+      ? (data.ptBreakdownByStaff[staffKey] ?? [])
+      : [];
   return {
-    totalPt: salesPt + apoPt,
-    salesPt,
-    apoPt,
+    totalPt: salesPt,
     salesAmount: self?.salesAmount ?? 0,
-    apoCount: apoPt,
+    apoCount: selfApo?.apoCount ?? 0,
     contractCount: self?.contractCount ?? 0,
+    breakdown,
   };
 }
 
@@ -134,9 +138,32 @@ function PersonalKpiHero({ personal, periodLabel }: { personal: PersonalKpi; per
         {formatPt(personal.totalPt)}
         <span className="ml-2 text-[1.25rem] font-bold sm:text-[1.35rem]">PT</span>
       </p>
-      <p className="relative mt-2 text-[13px] text-slate-500 dark:text-slate-300">
-        （内訳: 売上 {formatPt(personal.salesPt)}pt + アポ {formatPt(personal.apoPt)}pt）
-      </p>
+
+      <div className="relative mt-4 text-left">
+        {personal.breakdown.length === 0 ? (
+          <p className="rounded-lg bg-slate-50/90 px-3 py-2.5 text-center text-[12px] text-slate-500 dark:bg-slate-950/40 dark:text-slate-400">
+            対象期間のPTレコードがありません
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {personal.breakdown.map((item, i) => (
+              <li
+                key={`self-pt-${i}-${item.dateYmd}-${item.pt}-${item.customerName}`}
+                className="flex items-center justify-between gap-3 rounded-lg bg-slate-50/90 px-3 py-2 text-[13px] dark:bg-slate-950/40"
+              >
+                <span className="min-w-0 truncate font-medium text-slate-700 dark:text-slate-200">
+                  {item.customerName.trim() || "（お客様名なし）"}
+                </span>
+                <span className={`shrink-0 ${ptValueClass()}`}>
+                  {formatPt(item.pt)}
+                  <span className="ml-0.5 text-[11px] font-bold">PT</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <div className="relative mt-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[12px] text-slate-500 dark:text-slate-400">
         <span>
           当月売上{" "}
