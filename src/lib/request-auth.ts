@@ -3,7 +3,10 @@ import "server-only";
 import { NextResponse } from "next/server";
 
 import { LINE_SESSION_EXPIRED_CODE } from "@/lib/line-auth-codes";
-import { LineIdTokenExpiredError, verifyLineIdToken } from "@/lib/line-verify";
+import {
+  LineIdTokenExpiredError,
+  verifyLineIdTokenCached,
+} from "@/lib/line-verify";
 
 export type ResolveCallerLineAuthResult =
   | { ok: true; lineUserId: string }
@@ -25,7 +28,7 @@ export async function resolveCallerLineAuth(
   if (!channelId) return { ok: false, reason: "no_channel" };
 
   try {
-    const { sub } = await verifyLineIdToken(bearer, channelId);
+    const { sub } = await verifyLineIdTokenCached(bearer, channelId);
     return { ok: true, lineUserId: sub };
   } catch (e) {
     if (e instanceof LineIdTokenExpiredError) {
