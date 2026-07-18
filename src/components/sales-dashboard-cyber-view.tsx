@@ -104,7 +104,40 @@ type PersonalKpi = {
   contractCount: number;
   /** 本人のPT対象レコード（お客様名・PT） */
   breakdown: PtBreakdownRow[];
+  /** 本人担当者名（AP/CL 突合の基準） */
+  selfStaffName: string;
 };
+
+function normStaffDisplayName(raw: string): string {
+  return raw.normalize("NFKC").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * お客様情報の AP/CL 表示用。
+ * - 本人以外がいる → その名前のみ
+ * - AP・CL とも本人 → 「APCL担当者」
+ * - それ以外（未設定など）→ 空
+ */
+function otherAssigneeNames(
+  apPerson: string,
+  clPerson: string,
+  selfStaffName: string,
+): string {
+  const self = normStaffDisplayName(selfStaffName);
+  if (!self) return "";
+
+  const ap = normStaffDisplayName(apPerson);
+  const cl = normStaffDisplayName(clPerson);
+  const apIsSelf = Boolean(ap && ap === self);
+  const clIsSelf = Boolean(cl && cl === self);
+  const apIsOther = Boolean(ap && ap !== self);
+  const clIsOther = Boolean(cl && cl !== self);
+
+  if (apIsOther) return ap;
+  if (clIsOther) return cl;
+  if (apIsSelf && clIsSelf) return "APCL担当者";
+  return "";
+}
 
 function resolvePersonalKpi(data: DashboardPayload): PersonalKpi {
   const self = data.ranking.find((r) => r.isSelf);
@@ -121,6 +154,7 @@ function resolvePersonalKpi(data: DashboardPayload): PersonalKpi {
     apoCount: selfApo?.apoCount ?? 0,
     contractCount: self?.contractCount ?? 0,
     breakdown,
+    selfStaffName: staffKey,
   };
 }
 
@@ -146,20 +180,34 @@ function PersonalKpiHero({ personal, periodLabel }: { personal: PersonalKpi; per
           </p>
         ) : (
           <ul className="flex flex-col gap-1.5">
-            {personal.breakdown.map((item, i) => (
-              <li
-                key={`self-pt-${i}-${item.dateYmd}-${item.pt}-${item.customerName}`}
-                className="flex items-center justify-between gap-3 rounded-lg bg-slate-50/90 px-3 py-2 text-[13px] dark:bg-slate-950/40"
-              >
-                <span className="min-w-0 truncate font-medium text-slate-700 dark:text-slate-200">
-                  {item.customerName.trim() || "（お客様名なし）"}
-                </span>
-                <span className={`shrink-0 ${ptValueClass()}`}>
-                  {formatPt(item.pt)}
-                  <span className="ml-0.5 text-[11px] font-bold">PT</span>
-                </span>
-              </li>
-            ))}
+            {personal.breakdown.map((item, i) => {
+              const other = otherAssigneeNames(
+                item.apPerson,
+                item.clPerson,
+                personal.selfStaffName,
+              );
+              return (
+                <li
+                  key={`self-pt-${i}-${item.dateYmd}-${item.pt}-${item.customerName}`}
+                  className="flex items-center justify-between gap-3 rounded-lg bg-slate-50/90 px-3 py-2 text-[13px] dark:bg-slate-950/40"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-slate-700 dark:text-slate-200">
+                      {item.customerName.trim() || "（お客様名なし）"}
+                    </p>
+                    {other ? (
+                      <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
+                        {other}
+                      </p>
+                    ) : null}
+                  </div>
+                  <span className={`shrink-0 ${ptValueClass()}`}>
+                    {formatPt(item.pt)}
+                    <span className="ml-0.5 text-[11px] font-bold">PT</span>
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
@@ -220,7 +268,13 @@ function rankBadgeClass(rank: number): string {
   return "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200";
 }
 
-function PtBreakdownPanel({ rows }: { rows: PtBreakdownRow[] }) {
+function PtBreakdownPanel({
+  rows,
+  selfStaffName,
+}: {
+  rows: PtBreakdownRow[];
+  selfStaffName: string;
+}) {
   if (rows.length === 0) {
     return (
       <p className="px-1 py-2 text-[12px] text-slate-500 dark:text-slate-400">
@@ -234,6 +288,11 @@ function PtBreakdownPanel({ rows }: { rows: PtBreakdownRow[] }) {
         const dateLabel = item.dateYmd
           ? formatDisplayYmd(item.dateYmd) || item.dateYmd
           : "—";
+        const other = otherAssigneeNames(
+          item.apPerson,
+          item.clPerson,
+          selfStaffName,
+        );
         return (
           <li
             key={`pt-bd-${i}-${item.dateYmd}-${item.pt}-${item.customerName}`}
@@ -248,11 +307,9 @@ function PtBreakdownPanel({ rows }: { rows: PtBreakdownRow[] }) {
                 <span className="ml-0.5 text-[11px] font-bold">PT</span>
               </p>
             </div>
-            <p className="mt-1 text-slate-500 dark:text-slate-400">
-              AP: {item.apPerson.trim() || "—"}
-              <span className="mx-1.5 text-slate-300 dark:text-slate-600">·</span>
-              CL: {item.clPerson.trim() || "—"}
-            </p>
+            {other ? (
+              <p className="mt-1 text-slate-500 dark:text-slate-400">{other}</p>
+            ) : null}
             <p className="mt-0.5 text-slate-500 dark:text-slate-400">
               {dateLabel}
             </p>
@@ -312,7 +369,9 @@ function PtPodiumCard({
           </p>
         </div>
       </button>
-      {expanded ? <PtBreakdownPanel rows={breakdown} /> : null}
+      {expanded ? (
+        <PtBreakdownPanel rows={breakdown} selfStaffName={row.staffName} />
+      ) : null}
     </div>
   );
 }
@@ -368,7 +427,9 @@ function PtListRow({
           </p>
         </div>
       </button>
-      {expanded ? <PtBreakdownPanel rows={breakdown} /> : null}
+      {expanded ? (
+        <PtBreakdownPanel rows={breakdown} selfStaffName={row.staffName} />
+      ) : null}
     </div>
   );
 }
