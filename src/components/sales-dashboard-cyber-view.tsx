@@ -104,39 +104,16 @@ type PersonalKpi = {
   contractCount: number;
   /** 本人のPT対象レコード（お客様名・PT） */
   breakdown: PtBreakdownRow[];
-  /** 本人担当者名（AP/CL 突合の基準） */
-  selfStaffName: string;
 };
 
-function normStaffDisplayName(raw: string): string {
-  return raw.normalize("NFKC").replace(/\s+/g, " ").trim();
-}
-
-/**
- * お客様情報の AP/CL 表示用。
- * - 本人以外がいる → その名前のみ
- * - AP・CL とも本人 → 「APCL担当者」
- * - それ以外（未設定など）→ 空
- */
-function otherAssigneeNames(
-  apPerson: string,
-  clPerson: string,
-  selfStaffName: string,
-): string {
-  const self = normStaffDisplayName(selfStaffName);
-  if (!self) return "";
-
-  const ap = normStaffDisplayName(apPerson);
-  const cl = normStaffDisplayName(clPerson);
-  const apIsSelf = Boolean(ap && ap === self);
-  const clIsSelf = Boolean(cl && cl === self);
-  const apIsOther = Boolean(ap && ap !== self);
-  const clIsOther = Boolean(cl && cl !== self);
-
-  if (apIsOther) return ap;
-  if (clIsOther) return cl;
-  if (apIsSelf && clIsSelf) return "APCL担当者";
-  return "";
+/** AP担当者・CL担当者を両方表示（未設定は省略） */
+function formatApClAssignees(apPerson: string, clPerson: string): string {
+  const ap = apPerson.normalize("NFKC").replace(/\s+/g, " ").trim();
+  const cl = clPerson.normalize("NFKC").replace(/\s+/g, " ").trim();
+  const parts: string[] = [];
+  if (ap) parts.push(`AP担当者：${ap}`);
+  if (cl) parts.push(`CL担当者：${cl}`);
+  return parts.join(" / ");
 }
 
 function resolvePersonalKpi(data: DashboardPayload): PersonalKpi {
@@ -154,7 +131,6 @@ function resolvePersonalKpi(data: DashboardPayload): PersonalKpi {
     apoCount: selfApo?.apoCount ?? 0,
     contractCount: self?.contractCount ?? 0,
     breakdown,
-    selfStaffName: staffKey,
   };
 }
 
@@ -181,11 +157,7 @@ function PersonalKpiHero({ personal, periodLabel }: { personal: PersonalKpi; per
         ) : (
           <ul className="flex flex-col gap-1.5">
             {personal.breakdown.map((item, i) => {
-              const other = otherAssigneeNames(
-                item.apPerson,
-                item.clPerson,
-                personal.selfStaffName,
-              );
+              const assignees = formatApClAssignees(item.apPerson, item.clPerson);
               return (
                 <li
                   key={`self-pt-${i}-${item.dateYmd}-${item.pt}-${item.customerName}`}
@@ -195,9 +167,9 @@ function PersonalKpiHero({ personal, periodLabel }: { personal: PersonalKpi; per
                     <p className="truncate font-medium text-slate-700 dark:text-slate-200">
                       {item.customerName.trim() || "（お客様名なし）"}
                     </p>
-                    {other ? (
+                    {assignees ? (
                       <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
-                        {other}
+                        {assignees}
                       </p>
                     ) : null}
                   </div>
@@ -268,13 +240,7 @@ function rankBadgeClass(rank: number): string {
   return "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200";
 }
 
-function PtBreakdownPanel({
-  rows,
-  selfStaffName,
-}: {
-  rows: PtBreakdownRow[];
-  selfStaffName: string;
-}) {
+function PtBreakdownPanel({ rows }: { rows: PtBreakdownRow[] }) {
   if (rows.length === 0) {
     return (
       <p className="px-1 py-2 text-[12px] text-slate-500 dark:text-slate-400">
@@ -288,11 +254,7 @@ function PtBreakdownPanel({
         const dateLabel = item.dateYmd
           ? formatDisplayYmd(item.dateYmd) || item.dateYmd
           : "—";
-        const other = otherAssigneeNames(
-          item.apPerson,
-          item.clPerson,
-          selfStaffName,
-        );
+        const assignees = formatApClAssignees(item.apPerson, item.clPerson);
         return (
           <li
             key={`pt-bd-${i}-${item.dateYmd}-${item.pt}-${item.customerName}`}
@@ -307,8 +269,8 @@ function PtBreakdownPanel({
                 <span className="ml-0.5 text-[11px] font-bold">PT</span>
               </p>
             </div>
-            {other ? (
-              <p className="mt-1 text-slate-500 dark:text-slate-400">{other}</p>
+            {assignees ? (
+              <p className="mt-1 text-slate-500 dark:text-slate-400">{assignees}</p>
             ) : null}
             <p className="mt-0.5 text-slate-500 dark:text-slate-400">
               {dateLabel}
@@ -370,7 +332,7 @@ function PtPodiumCard({
         </div>
       </button>
       {expanded ? (
-        <PtBreakdownPanel rows={breakdown} selfStaffName={row.staffName} />
+        <PtBreakdownPanel rows={breakdown} />
       ) : null}
     </div>
   );
@@ -428,7 +390,7 @@ function PtListRow({
         </div>
       </button>
       {expanded ? (
-        <PtBreakdownPanel rows={breakdown} selfStaffName={row.staffName} />
+        <PtBreakdownPanel rows={breakdown} />
       ) : null}
     </div>
   );
