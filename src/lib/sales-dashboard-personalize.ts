@@ -10,6 +10,7 @@ export function personalizeSalesDashboardPayload(
   return {
     ...core,
     staffName: boundStaffName,
+    ptBreakdownByStaff: core.ptBreakdownByStaff ?? {},
     ranking: core.ranking.map((r) => ({
       ...r,
       isSelf: normApClStaffName(r.staffName) === bound,

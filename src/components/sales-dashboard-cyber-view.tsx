@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
+
 import { LiffCard } from "@/components/liff-chrome";
+import { formatDisplayYmd } from "@/lib/format-display-ymd";
 
 export type DashboardPeriod = "current" | "previous";
 export type DashboardDepartment = "pt" | "sales" | "apo" | "tenka";
@@ -32,6 +35,16 @@ export type ApoRankingRow = {
   isPodium: boolean;
 };
 
+export type PtBreakdownRow = {
+  customerName: string;
+  apPerson: string;
+  clPerson: string;
+  salesperson: string;
+  pt: number;
+  sales: number;
+  dateYmd: string;
+};
+
 export type DashboardPayload = {
   staffName: string;
   period: DashboardPeriod;
@@ -39,6 +52,8 @@ export type DashboardPayload = {
   periodHint: string;
   kpi: DashboardKpi;
   ranking: RankingRow[];
+  /** 正規化担当者名 → PT 明細（全員閲覧可） */
+  ptBreakdownByStaff?: Record<string, PtBreakdownRow[]>;
   apoEnabled: boolean;
   apoReady: boolean;
   apoError: string | null;
@@ -178,14 +193,72 @@ function rankBadgeClass(rank: number): string {
   return "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200";
 }
 
-function PtPodiumCard({ row }: { row: RankingRow }) {
+function PtBreakdownPanel({ rows }: { rows: PtBreakdownRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <p className="px-1 py-2 text-[12px] text-slate-500 dark:text-slate-400">
+        対象期間のPT明細がありません
+      </p>
+    );
+  }
+  return (
+    <ul className="mt-1 flex flex-col gap-2 border-t border-slate-200/80 pt-3 dark:border-slate-700/60">
+      {rows.map((item, i) => {
+        const dateLabel = item.dateYmd
+          ? formatDisplayYmd(item.dateYmd) || item.dateYmd
+          : "—";
+        return (
+          <li
+            key={`pt-bd-${i}-${item.dateYmd}-${item.pt}-${item.customerName}`}
+            className="rounded-lg bg-slate-50/90 px-3 py-2.5 text-[12px] dark:bg-slate-950/50"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <p className="min-w-0 font-semibold text-slate-800 dark:text-slate-100">
+                {item.customerName.trim() || "（お客様名なし）"}
+              </p>
+              <p className={`shrink-0 ${ptValueClass()}`}>
+                {formatPt(item.pt)}
+                <span className="ml-0.5 text-[11px] font-bold">PT</span>
+              </p>
+            </div>
+            <p className="mt-1 text-slate-500 dark:text-slate-400">
+              AP: {item.apPerson.trim() || "—"}
+              <span className="mx-1.5 text-slate-300 dark:text-slate-600">·</span>
+              CL: {item.clPerson.trim() || "—"}
+            </p>
+            <p className="mt-0.5 text-slate-500 dark:text-slate-400">
+              {dateLabel}
+            </p>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function PtPodiumCard({
+  row,
+  breakdown,
+  expanded,
+  onToggle,
+}: {
+  row: RankingRow;
+  breakdown: PtBreakdownRow[];
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   return (
     <div
       className={`${podiumCardShell(row.rank)} ${
         row.isSelf ? "ring-2 ring-inset ring-cyan-300/80 dark:ring-cyan-400/35" : ""
       }`}
     >
-      <div className="flex items-start gap-3">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="flex w-full items-start gap-3 text-left"
+      >
         <span
           className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${rankBadgeClass(row.rank)}`}
         >
@@ -206,21 +279,40 @@ function PtPodiumCard({ row }: { row: RankingRow }) {
           </p>
           <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
             {formatYen(row.salesAmount)}
+            <span className="ml-2 text-[11px] text-slate-400 dark:text-slate-500">
+              {expanded ? "▲ 明細を閉じる" : "▼ PT明細"}
+            </span>
           </p>
         </div>
-      </div>
+      </button>
+      {expanded ? <PtBreakdownPanel rows={breakdown} /> : null}
     </div>
   );
 }
 
-function PtListRow({ row }: { row: RankingRow }) {
+function PtListRow({
+  row,
+  breakdown,
+  expanded,
+  onToggle,
+}: {
+  row: RankingRow;
+  breakdown: PtBreakdownRow[];
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   return (
     <div
       className={`rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm dark:border-emerald-500/15 dark:bg-slate-900/50 ${
         row.isSelf ? "ring-2 ring-inset ring-cyan-300/70 dark:ring-cyan-400/30" : ""
       }`}
     >
-      <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-3 text-left"
+      >
         <span
           className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${rankBadgeClass(row.rank)}`}
         >
@@ -237,6 +329,9 @@ function PtListRow({ row }: { row: RankingRow }) {
           </p>
           <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">
             {formatYen(row.salesAmount)}
+            <span className="ml-2 text-[11px] text-slate-400 dark:text-slate-500">
+              {expanded ? "▲ 明細を閉じる" : "▼ PT明細"}
+            </span>
           </p>
         </div>
         <div className="shrink-0 text-right">
@@ -245,12 +340,21 @@ function PtListRow({ row }: { row: RankingRow }) {
             <span className="ml-0.5 text-[12px] font-bold">PT</span>
           </p>
         </div>
-      </div>
+      </button>
+      {expanded ? <PtBreakdownPanel rows={breakdown} /> : null}
     </div>
   );
 }
 
-function PtRankingSection({ rows }: { rows: RankingRow[] }) {
+function PtRankingSection({
+  rows,
+  breakdownByStaff,
+}: {
+  rows: RankingRow[];
+  breakdownByStaff: Record<string, PtBreakdownRow[]>;
+}) {
+  const [expandedName, setExpandedName] = useState<string | null>(null);
+
   if (rows.length === 0) {
     return (
       <LiffCard>
@@ -262,19 +366,36 @@ function PtRankingSection({ rows }: { rows: RankingRow[] }) {
   }
   const podium = rows.filter((r) => r.rank <= 3);
   const rest = rows.filter((r) => r.rank > 3);
+
+  const toggle = (staffName: string) => {
+    setExpandedName((cur) => (cur === staffName ? null : staffName));
+  };
+
   return (
     <div className="flex flex-col gap-3">
       {podium.length > 0 ? (
         <div className="flex flex-col gap-2">
           {podium.map((row) => (
-            <PtPodiumCard key={`podium-${row.rank}-${row.staffName}`} row={row} />
+            <PtPodiumCard
+              key={`podium-${row.rank}-${row.staffName}`}
+              row={row}
+              breakdown={breakdownByStaff[row.staffName] ?? []}
+              expanded={expandedName === row.staffName}
+              onToggle={() => toggle(row.staffName)}
+            />
           ))}
         </div>
       ) : null}
       {rest.length > 0 ? (
         <div className="flex flex-col gap-2">
           {rest.map((row) => (
-            <PtListRow key={`${row.rank}-${row.staffName}`} row={row} />
+            <PtListRow
+              key={`${row.rank}-${row.staffName}`}
+              row={row}
+              breakdown={breakdownByStaff[row.staffName] ?? []}
+              expanded={expandedName === row.staffName}
+              onToggle={() => toggle(row.staffName)}
+            />
           ))}
         </div>
       ) : null}
@@ -512,7 +633,10 @@ export function SalesDashboardCyberView({
         ) : department === "sales" ? (
           <SalesRankingSection rows={data.ranking} />
         ) : (
-          <PtRankingSection rows={data.ranking} />
+          <PtRankingSection
+            rows={data.ranking}
+            breakdownByStaff={data.ptBreakdownByStaff ?? {}}
+          />
         )}
       </section>
     </div>

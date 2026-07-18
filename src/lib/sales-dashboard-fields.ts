@@ -49,6 +49,8 @@ export type PtDashboardFieldMap = {
   pt: string | null;
   sales: string | null;
   date: string;
+  /** PT集計表の「登録番号」（お客様情報の APPT/CLPT 登録番号と突合・任意） */
+  registrationNumber: string | null;
 };
 
 export function resolvePtDashboardFieldMap(
@@ -76,8 +78,14 @@ export function resolvePtDashboardFieldMap(
     fields,
     ["売上", "金額", "受注金額", "契約金額", "税込", "税抜", "販売単価"],
   );
+  const registrationNumber = pickByEnvOrKeywords(
+    "SALES_DASHBOARD_PT_REGISTRATION_NUMBER_FIELD_ID",
+    fields,
+    ["登録番号"],
+    ["登録番号"],
+  );
 
-  return { salesperson, pt, sales, date };
+  return { salesperson, pt, sales, date, registrationNumber };
 }
 
 export type ContractCountFieldMap = {
