@@ -29,10 +29,6 @@ import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
 import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
 import {
-  consumeOneConstructionEmptySlotOnDate,
-  resolveConsumeEmptySlotDayKey,
-} from "@/lib/calendar-consume-empty-slot";
-import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
@@ -299,28 +295,6 @@ export async function POST(request: Request) {
     constructionUpdated = true;
     invalidateAllCalendarPayloadCache();
 
-    const slotDayKey = resolveConsumeEmptySlotDayKey(
-      recObj,
-      constructionFields,
-      [
-        body.slotDayKey,
-        body.shigumiDate,
-        body.panelWorkDate,
-        body.electricWorkDate,
-        body.appSettingsDayDate,
-      ],
-    );
-
-    const emptySlotCleanup = await consumeOneConstructionEmptySlotOnDate({
-      calAppId,
-      dayKey: slotDayKey,
-      excludeRecordId: recordId,
-      customerFieldUniqueId: resolvedCustomer,
-      constructionFields,
-      readAuth,
-      writeAuth,
-    });
-
     return finalizeConstructionCalendarSave({
       calAppId,
       constructionRecordId: recordId,
@@ -332,7 +306,6 @@ export async function POST(request: Request) {
       viewYear: body.viewYear,
       viewMonth: body.viewMonth,
       savedVerb: "更新",
-      extraResponse: { emptySlotCleanup },
     });
   } catch (e) {
     console.error("[api/calendar/fill-empty-slot]", e);

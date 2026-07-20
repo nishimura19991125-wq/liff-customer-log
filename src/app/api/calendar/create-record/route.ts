@@ -14,10 +14,6 @@ import {
   uniqueFieldsCsv,
 } from "@/lib/calendar-construction-pocket-common";
 import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
-import {
-  consumeOneConstructionEmptySlotOnDate,
-  resolveConsumeEmptySlotDayKey,
-} from "@/lib/calendar-consume-empty-slot";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import { isValidEmptyFillHousingStatus } from "@/lib/calendar-empty-fill-options";
@@ -334,29 +330,6 @@ export async function POST(request: Request) {
       });
     }
 
-    const consumeDayKey = resolveConsumeEmptySlotDayKey(
-      {},
-      constructionFields,
-      [
-        scheduledStartDate,
-        body.shigumiDate,
-        body.panelWorkDate,
-        body.electricWorkDate,
-        body.appSettingsDayDate,
-      ],
-    );
-    const emptySlotCleanup = consumeDayKey
-      ? await consumeOneConstructionEmptySlotOnDate({
-          calAppId,
-          dayKey: consumeDayKey,
-          excludeRecordId: recordId,
-          customerFieldUniqueId: resolvedCustomer,
-          constructionFields,
-          readAuth,
-          writeAuth,
-        })
-      : { deleted: false as const, reason: "no_daykey" as const };
-
     return finalizeConstructionCalendarSave({
       calAppId,
       constructionRecordId: recordId,
@@ -369,7 +342,6 @@ export async function POST(request: Request) {
       viewYear: body.viewYear,
       viewMonth: body.viewMonth,
       savedVerb: "登録",
-      extraResponse: { emptySlotCleanup },
     });
   } catch (e) {
     console.error("[api/calendar/create-record]", e);
