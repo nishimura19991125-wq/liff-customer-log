@@ -1,7 +1,11 @@
 import "server-only";
 
 import type { AtPocketFetchAuth, AtPocketRecordRow } from "@/lib/atpocket";
-import { fetchRecordById } from "@/lib/atpocket";
+import {
+  fetchRecordById,
+  isPocketHttpRateLimitError,
+  listAuthsForAppList,
+} from "@/lib/atpocket";
 import {
   pollConstructionTNumberByRecordId,
 } from "@/lib/atpocket-record-id";
@@ -49,25 +53,45 @@ function coerceTNumberDisplay(raw: unknown): string {
   return String(raw).trim();
 }
 
-/** 空枠登録と同様: レコード GET（fields 指定失敗時は全フィールド） */
+function calendarRecordReadOptions(preferred?: AtPocketFetchAuth) {
+  const listAuths = listAuthsForAppList("CALENDAR");
+  const preferredKey = preferred?.apiKey?.trim();
+  const authKeys =
+    preferredKey && !listAuths.some((a) => a.apiKey === preferredKey)
+      ? [{ apiKey: preferredKey }, ...listAuths]
+      : listAuths.length > 0
+        ? listAuths
+        : preferred
+          ? [preferred]
+          : undefined;
+  return {
+    maxRetries: 1,
+    ...(authKeys && authKeys.length >= 2 ? { authKeys } : {}),
+  };
+}
+
+/** 空枠登録と同様: レコード GET（fields 指定失敗時は全フィールド。429 は再試行しない） */
 export async function fetchConstructionRecordRow(
   calAppId: string,
   recordId: string,
   pocketAuth: AtPocketFetchAuth,
   fieldsCsv: string,
 ): Promise<AtPocketRecordRow | null> {
+  const options = calendarRecordReadOptions(pocketAuth);
   try {
     const row = await fetchRecordById(
       calAppId,
       recordId,
       pocketAuth,
       fieldsCsv,
+      options,
     );
     if (row?.record) return row;
-  } catch {
-    /* fall through */
+  } catch (e) {
+    if (isPocketHttpRateLimitError(e)) throw e;
+    /* fall through: fields CSV が拒否された場合のみ全フィールド GET */
   }
-  return fetchRecordById(calAppId, recordId, pocketAuth);
+  return fetchRecordById(calAppId, recordId, pocketAuth, undefined, options);
 }
 
 export function readConstructionTNumberFromRecord(

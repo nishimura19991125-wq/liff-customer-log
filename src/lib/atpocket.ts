@@ -1283,13 +1283,14 @@ export async function fetchRecordById(
   recordId: string,
   auth?: AtPocketFetchAuth,
   fieldsCsv?: string,
+  options?: PocketListFetchOptions,
 ): Promise<AtPocketRecordRow | null> {
   let path = `/api/apps/${appsId}/records/${encodeURIComponent(recordId)}`;
   const csv = fieldsCsv?.trim();
   if (csv) {
     path += `?fields=${encodeURIComponent(csv)}`;
   }
-  const res = await fetchWithMethodOverrideWithRetry(path, auth);
+  const res = await fetchWithMethodOverrideWithRetry(path, auth, options);
   const text = await res.text();
   if (res.status === 404) return null;
   if (!res.ok) {

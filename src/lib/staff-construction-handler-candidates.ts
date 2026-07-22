@@ -4,7 +4,6 @@ import type { AtPocketFieldRow, AtPocketRequestContext } from "@/lib/atpocket";
 import {
   apiKeyForStaffPocketReadApClList,
   fetchAppFields,
-  fetchRecordById,
 } from "@/lib/atpocket";
 import {
   pickRecordValueByFieldAliases,
@@ -173,19 +172,6 @@ function isAlwaysIncludedHandlerName(name: string): boolean {
   return constructionHandlerAlwaysIncludeNames().has(key);
 }
 
-function uniqueFieldsCsv(...uids: (string | undefined)[]): string {
-  const seen = new Set<string>();
-  const parts: string[] = [];
-  for (const u of uids) {
-    const t = u?.trim();
-    if (t && !seen.has(t)) {
-      seen.add(t);
-      parts.push(t);
-    }
-  }
-  return parts.join(",");
-}
-
 function readAvailabilityRaw(
   ro: Record<string, unknown>,
   availabilityFieldId: string,
@@ -276,15 +262,16 @@ export async function resolveConstructionHandlerNameForActiveStaff(
   const resolved = await resolveConstructionHandlerStaffConfig();
   if (!resolved.ok) return { ok: false, reason: "not_configured" };
   const cfg = resolved.cfg;
+  const wantId = staffRecordId.trim();
+  if (!wantId) return { ok: false, reason: "not_found" };
 
-  const csv = uniqueFieldsCsv(cfg.nameFieldId, cfg.availabilityFieldId);
-  const staffAuth = { apiKey: apiKeyForStaffPocketReadApClList() };
-  const row = await fetchRecordById(
-    cfg.staffAppId,
-    staffRecordId,
-    staffAuth,
-    csv,
-  );
+  // 名簿キャッシュから解決（単体 GET を避けて 429 を抑える）
+  const rows = await fetchStaffRosterRowsCached();
+  const row = rows.find((r) => {
+    const id =
+      r.recordId != null ? String(r.recordId) : r.uniqueId?.trim() ?? "";
+    return id === wantId;
+  });
   if (!row?.record || typeof row.record !== "object") {
     return { ok: false, reason: "not_found" };
   }

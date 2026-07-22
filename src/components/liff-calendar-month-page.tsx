@@ -35,7 +35,7 @@ import {
   isExactStaffName,
   mergeStaffNameOptions,
 } from "@/lib/staff-name-options";
-import { applyCalendarRecordPatch } from "@/lib/calendar-apply-patch";
+import { applyCalendarRecordPatch, applyConstructionHandlerNameLocal } from "@/lib/calendar-apply-patch";
 import type {
   CalendarApiPayload,
   CalendarAttachmentMeta,
@@ -349,7 +349,14 @@ function CaseConstructionHandlerEditor({
   handlerListStatus: "idle" | "loading" | "ok" | "err";
   handlerListError: string;
   handlerRows: HandlerStaffRow[];
-  onSaved: (patch?: CalendarRecordMonthPatch | null) => Promise<void>;
+  onSaved: (
+    patch?: CalendarRecordMonthPatch | null,
+    meta?: {
+      skipForceRefresh?: boolean;
+      recordId?: string;
+      constructionHandlerName?: string;
+    },
+  ) => Promise<void>;
   onSessionExpired?: () => void;
 }) {
   const recordId = item.recordId?.trim() ?? "";
@@ -428,6 +435,8 @@ function CaseConstructionHandlerEditor({
         error?: string;
         calendarPatch?: CalendarRecordMonthPatch;
         constructionHandlerName?: string;
+        rosterMessage?: string;
+        calendarPatchSkipped?: boolean;
       } = {};
       if (rawBody.trim()) {
         try {
@@ -445,12 +454,20 @@ function CaseConstructionHandlerEditor({
       }
       if (data.calendarPatch) {
         await onSaved(data.calendarPatch);
+      } else if (data.calendarPatchSkipped) {
+        await onSaved(null, {
+          skipForceRefresh: true,
+          recordId,
+          constructionHandlerName: data.constructionHandlerName,
+        });
       } else {
         await onSaved(null);
       }
       setFeedback({
         kind: "ok",
-        text: `工事対応者を更新しました（${data.constructionHandlerName ?? "保存済"}）`,
+        text:
+          data.rosterMessage ??
+          `工事対応者を更新しました（${data.constructionHandlerName ?? "保存済"}）`,
       });
       setEditing(false);
     } catch (e) {
@@ -2337,7 +2354,14 @@ export function LiffCalendarMonthPage({
   }, [idToken, calendarPath, mutateCalendar]);
 
   const applyCalendarSaveToView = useCallback(
-    async (patch?: CalendarRecordMonthPatch | null) => {
+    async (
+      patch?: CalendarRecordMonthPatch | null,
+      meta?: {
+        skipForceRefresh?: boolean;
+        recordId?: string;
+        constructionHandlerName?: string;
+      },
+    ) => {
       const t = idToken;
       if (!t) return;
       if (patch) {
@@ -2347,7 +2371,25 @@ export function LiffCalendarMonthPage({
         );
         const primaryDay = patch.dayKeys[0];
         if (primaryDay) setSelectedDayKey(primaryDay);
+      } else if (
+        meta?.skipForceRefresh &&
+        meta.recordId &&
+        meta.constructionHandlerName
+      ) {
+        void mutateCalendar(
+          (prev) =>
+            prev
+              ? applyConstructionHandlerNameLocal(
+                  prev,
+                  meta.recordId!,
+                  meta.constructionHandlerName!,
+                )
+              : prev,
+          { revalidate: false },
+        );
+        return;
       }
+      if (meta?.skipForceRefresh) return;
       await forceRefreshCalendar();
     },
     [idToken, forceRefreshCalendar, mutateCalendar],

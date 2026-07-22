@@ -18,6 +18,7 @@ import {
   apiKeyForCalendarPocket1,
   apiKeyForCalendarWrite,
   fetchAppFields,
+  isPocketHttpRateLimitError,
   updateRecord,
 } from "@/lib/atpocket";
 import {
@@ -178,21 +179,48 @@ export async function POST(request: Request) {
     );
     invalidateAllCalendarPayloadCache();
 
-    const calendarPatch = await buildCalendarPatchAfterConstructionSave(
-      calAppId,
-      recordId,
-      { apiKey: apiKeyForCalendarPocket() },
-      body.viewYear,
-      body.viewMonth,
-    );
+    // 保存自体は完了済み。画面差分の再取得が 429 でも成功扱いにする
+    let calendarPatch = null;
+    try {
+      calendarPatch = await buildCalendarPatchAfterConstructionSave(
+        calAppId,
+        recordId,
+        { apiKey: apiKeyForCalendarPocket() },
+        body.viewYear,
+        body.viewMonth,
+        { constructionFields },
+      );
+    } catch (patchErr) {
+      if (!isPocketHttpRateLimitError(patchErr)) throw patchErr;
+      console.warn(
+        "[api/calendar/update-construction-handler] calendar patch skipped after 429",
+      );
+    }
 
     return NextResponse.json({
       ok: true,
       constructionHandlerName: resolvedName.name,
       calendarPatch,
+      ...(calendarPatch
+        ? {}
+        : {
+            calendarPatchSkipped: true,
+            rosterMessage:
+              "工事対応者は更新しました。カレンダー表示の再読込はしばらくお待ちください。",
+          }),
     });
   } catch (e) {
     console.error("[api/calendar/update-construction-handler]", e);
+    if (isPocketHttpRateLimitError(e)) {
+      return NextResponse.json(
+        {
+          error:
+            "いま @pocket のリクエスト上限に達しています。100秒ほど待ってからもう一度保存してください。",
+          rateLimited: true,
+        },
+        { status: 429, headers: { "Retry-After": "100" } },
+      );
+    }
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json(
       {
