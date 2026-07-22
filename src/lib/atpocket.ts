@@ -1021,7 +1021,13 @@ export async function fetchRecordsList(
 
 /** アプリのフィールド定義一覧 GET /api/apps/{appsId}/fields（短時間キャッシュで一覧連打を抑制） */
 const APP_FIELDS_TTL_MS = 5 * 60 * 1000;
-type FieldsCacheEntry = { expiresAt: number; fields: AtPocketFieldRow[] };
+/** 429 時は期限切れでも返す猶予 */
+const APP_FIELDS_STALE_SERVE_MS = 6 * 60 * 60 * 1000;
+type FieldsCacheEntry = {
+  expiresAt: number;
+  staleUntil: number;
+  fields: AtPocketFieldRow[];
+};
 const appFieldsStore = new Map<string, FieldsCacheEntry>();
 const appFieldsInflight = new Map<string, Promise<AtPocketFieldRow[]>>();
 
@@ -1029,12 +1035,13 @@ async function fetchAppFieldsOnce(
   appsId: string,
   auth?: AtPocketFetchAuth,
   ctx?: AtPocketRequestContext,
+  options?: PocketListFetchOptions,
 ): Promise<AtPocketFieldRow[]> {
   const params = new URLSearchParams();
   params.set("limit", "1000");
   params.set("page", "1");
   const path = `/api/apps/${appsId}/fields?${params.toString()}`;
-  const res = await fetchWithMethodOverrideWithRetry(path, auth);
+  const res = await fetchWithMethodOverrideWithRetry(path, auth, options);
   const text = await res.text();
   if (!res.ok) {
     throw new Error(
@@ -1057,23 +1064,49 @@ export async function fetchAppFields(
   appsId: string,
   auth?: AtPocketFetchAuth,
   ctx?: AtPocketRequestContext,
+  options?: PocketListFetchOptions,
 ): Promise<AtPocketFieldRow[]> {
   const key = appsId.trim();
   const now = Date.now();
   const hit = appFieldsStore.get(key);
   if (hit && hit.expiresAt > now) return hit.fields;
 
+  if (
+    hit &&
+    hit.staleUntil > now &&
+    (isPocketApiRateLimited(auth) ||
+      options?.authKeys?.some((a) => isPocketApiRateLimited(a)))
+  ) {
+    return hit.fields;
+  }
+
   const pending = appFieldsInflight.get(key);
   if (pending) return pending;
 
   const promise = (async () => {
     try {
-      const fields = await fetchAppFieldsOnce(appsId, auth, ctx);
+      const fields = await fetchAppFieldsOnce(appsId, auth, ctx, options);
+      const ttl = APP_FIELDS_TTL_MS;
       appFieldsStore.set(key, {
-        expiresAt: Date.now() + APP_FIELDS_TTL_MS,
+        expiresAt: Date.now() + ttl,
+        staleUntil: Date.now() + ttl + APP_FIELDS_STALE_SERVE_MS,
         fields,
       });
       return fields;
+    } catch (e) {
+      if (
+        hit &&
+        hit.staleUntil > Date.now() &&
+        isPocketHttpRateLimitError(e)
+      ) {
+        console.warn(
+          "[atpocket] serving stale app fields after 429",
+          key,
+          ctx?.operation ?? "",
+        );
+        return hit.fields;
+      }
+      throw e;
     } finally {
       appFieldsInflight.delete(key);
     }

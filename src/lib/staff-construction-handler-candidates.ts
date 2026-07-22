@@ -1,14 +1,6 @@
 import "server-only";
 
-import type { AtPocketFieldRow, AtPocketRequestContext } from "@/lib/atpocket";
-import {
-  apiKeyForStaffPocketReadApClList,
-  fetchAppFields,
-} from "@/lib/atpocket";
-import {
-  pickRecordValueByFieldAliases,
-  resolveConfiguredFieldToSchemaUniqueId,
-} from "@/lib/calendar-kojo";
+import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
 import { fetchStaffRosterRowsCached } from "@/lib/staff-roster-cache";
 import {
   readStaffImportKeyFromRawRecord,
@@ -43,52 +35,6 @@ export function constructionHandlerStaffConfigReady(): boolean {
   return Boolean(staffAppId && nameFieldId && availabilityFieldId);
 }
 
-function nfkc(s: string): string {
-  return s.normalize("NFKC").trim();
-}
-
-function pickFieldUniqueIdByExactCaption(
-  fields: AtPocketFieldRow[],
-  caption: string,
-): string | null {
-  const target = nfkc(caption).toLowerCase();
-  for (const f of fields) {
-    const cap = f.caption ? nfkc(String(f.caption)).toLowerCase() : "";
-    if (cap && cap === target) {
-      const id = f.uniqueId?.trim();
-      return id || null;
-    }
-  }
-  return null;
-}
-
-function pickFieldUniqueIdByCaptions(
-  fields: AtPocketFieldRow[],
-  captions: string[],
-): string | null {
-  for (const caption of captions) {
-    const id = pickFieldUniqueIdByExactCaption(fields, caption);
-    if (id) return id;
-  }
-  return null;
-}
-
-/** 環境変数の uniqueId を優先し、解決できなければ見出し名で探す */
-function resolveSchemaFieldIdWithCaptionFallback(
-  configuredId: string | undefined,
-  fields: AtPocketFieldRow[],
-  captionAlts: string[],
-): string | null {
-  const fromEnv = configuredId?.trim();
-  if (fromEnv) {
-    const resolved = resolveConfiguredFieldToSchemaUniqueId(fromEnv, fields);
-    if (resolved) return resolved;
-  }
-  const picked = pickFieldUniqueIdByCaptions(fields, captionAlts);
-  if (!picked) return null;
-  return resolveConfiguredFieldToSchemaUniqueId(picked, fields) ?? picked;
-}
-
 async function resolveConstructionHandlerStaffConfig(): Promise<
   | { ok: true; cfg: ConstructionHandlerStaffConfig }
   | { ok: false; error: string }
@@ -105,48 +51,16 @@ async function resolveConstructionHandlerStaffConfig(): Promise<
     };
   }
 
-  const auth = { apiKey: apiKeyForStaffPocketReadApClList() };
-  const fieldsCtx: AtPocketRequestContext = {
-    operation: "calendar:工事対応者(列定義)",
-    appEnv: "STAFF_APP_ID",
-  };
-  const appFields = await fetchAppFields(staffAppId, auth, fieldsCtx);
-
-  const nameFieldId = resolveSchemaFieldIdWithCaptionFallback(
-    nameFieldIdEnv,
-    appFields,
-    ["社員名", "氏名", "担当者名", "スタッフ名", "名前"],
-  );
-  const availabilityFieldId = resolveSchemaFieldIdWithCaptionFallback(
-    availabilityFieldIdEnv,
-    appFields,
-    [
-      "工事対応稼働状況",
-      "工事対応 稼働状況",
-      "工事対応稼働",
-      "工事稼働状況",
-    ],
-  );
-
-  if (!nameFieldId || !availabilityFieldId) {
-    return {
-      ok: false,
-      error:
-        "スタッフ名簿の氏名列または工事対応稼働状況列を解決できません。環境変数と @pocket の列見出しを確認してください。",
-    };
-  }
-
-  const activeLabel =
-    process.env.STAFF_CONSTRUCTION_AVAILABILITY_ACTIVE_LABEL?.trim() ||
-    "稼働";
-
+  // env の uniqueId をそのまま使う（list fields を避けて 429 を抑える）
   return {
     ok: true,
     cfg: {
       staffAppId,
-      nameFieldId,
-      availabilityFieldId,
-      activeLabel,
+      nameFieldId: nameFieldIdEnv,
+      availabilityFieldId: availabilityFieldIdEnv,
+      activeLabel:
+        process.env.STAFF_CONSTRUCTION_AVAILABILITY_ACTIVE_LABEL?.trim() ||
+        "稼働",
     },
   };
 }

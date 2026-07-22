@@ -89,10 +89,16 @@ export async function GET(request: Request) {
       ReturnType<typeof resolveStaffGeneralAvailabilityConfig>
     > | null = null;
     let availabilityConfigError: string | undefined;
+    let availabilityRateLimited = false;
     if (lineBindingOn) {
       availabilityCfg = await resolveStaffGeneralAvailabilityConfig();
       if (!availabilityCfg.ok) {
-        availabilityConfigError = availabilityCfg.error;
+        if (availabilityCfg.rateLimited) {
+          availabilityRateLimited = true;
+          rateLimited = true;
+        } else {
+          availabilityConfigError = availabilityCfg.error;
+        }
       }
     }
 
@@ -120,7 +126,8 @@ export async function GET(request: Request) {
       .filter((s) => {
         if (!s.id || !s.name) return false;
         if (!lineBindingOn) return true;
-        if (!availabilityCfg?.ok) return false;
+        // 設定ミス時は紐付け候補を出さない。429 時はフィルターを外して候補を残す
+        if (!availabilityCfg?.ok) return availabilityRateLimited;
         if (!s.rec || typeof s.rec !== "object") return false;
         return staffRowGeneralAvailabilityIsActive(
           s.rec as Record<string, unknown>,
@@ -160,8 +167,9 @@ export async function GET(request: Request) {
       ...(rateLimited
         ? {
             rateLimited: true,
-            rosterMessage:
-              "担当者一覧の取得が混み合っています。しばらくしてから再度お試しください。",
+            rosterMessage: availabilityRateLimited
+              ? "いまアクセスが混み合っています。100秒ほど待ってから画面を更新してください。"
+              : "担当者一覧の取得が混み合っています。しばらくしてから再度お試しください。",
           }
         : {}),
       ...(lineConfigError && !lineBindingOn

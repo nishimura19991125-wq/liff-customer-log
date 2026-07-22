@@ -327,7 +327,7 @@ export function LiffAccountBar({
   );
 }
 
-/** LINE 紐付け用の環境変数が未設定のとき */
+/** LINE 紐付け用の環境変数が未設定のとき／一時的な API 上限 */
 export function LiffStaffBindingConfigNotice({
   message,
 }: {
@@ -335,10 +335,29 @@ export function LiffStaffBindingConfigNotice({
 }) {
   const text = message?.trim();
   if (!text) return null;
+  const isRateLimit =
+    text.includes("429") ||
+    text.includes("Too Many Request") ||
+    text.includes("リクエスト上限") ||
+    text.includes("混み合って");
   return (
-    <div className="mb-3 rounded-2xl border border-red-200/90 bg-red-50/95 px-4 py-3 text-[12px] leading-relaxed text-red-900 shadow-sm ring-1 ring-red-100/80 transition-all duration-300 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200 dark:ring-red-900/40">
-      <p className="font-bold">LINE 紐付けの設定が不足しています</p>
-      <p className="mt-1">{text}</p>
+    <div
+      className={`mb-3 rounded-2xl border px-4 py-3 text-[12px] leading-relaxed shadow-sm ring-1 transition-all duration-300 ${
+        isRateLimit
+          ? "border-amber-200/90 bg-amber-50/95 text-amber-950 ring-amber-100/80 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100 dark:ring-amber-900/40"
+          : "border-red-200/90 bg-red-50/95 text-red-900 ring-red-100/80 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200 dark:ring-red-900/40"
+      }`}
+    >
+      <p className="font-bold">
+        {isRateLimit
+          ? "一時的にアクセスが混み合っています"
+          : "LINE 紐付けの設定が不足しています"}
+      </p>
+      <p className="mt-1">
+        {isRateLimit
+          ? "100秒ほど待ってから画面を更新してください。設定不足ではありません。"
+          : text}
+      </p>
     </div>
   );
 }

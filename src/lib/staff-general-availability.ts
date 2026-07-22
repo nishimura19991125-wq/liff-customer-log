@@ -2,8 +2,9 @@ import "server-only";
 
 import type { AtPocketFieldRow } from "@/lib/atpocket";
 import {
-  apiKeyForStaffPocketRead1,
   fetchAppFields,
+  isPocketHttpRateLimitError,
+  staffReadListAuths,
 } from "@/lib/atpocket";
 import {
   pickRecordValueByFieldAliases,
@@ -17,7 +18,8 @@ export type StaffGeneralAvailabilityConfig = {
 };
 
 let resolvedCfg: StaffGeneralAvailabilityConfig | null | undefined;
-let resolveError: string | null = null;
+/** 恒久的な設定ミスのみキャッシュ（429 はキャッシュしない） */
+let permanentResolveError: string | null = null;
 
 function nfkc(s: string): string {
   return s.normalize("NFKC").trim();
@@ -74,22 +76,39 @@ export function staffGeneralAvailabilityActiveLabel(): string {
 /** LINE 紐付け名簿リスト用：稼働状況列の uniqueId（メモリキャッシュ） */
 export async function resolveStaffGeneralAvailabilityConfig(): Promise<
   | { ok: true; cfg: StaffGeneralAvailabilityConfig }
-  | { ok: false; error: string }
+  | { ok: false; error: string; rateLimited?: boolean }
 > {
   if (resolvedCfg) return { ok: true, cfg: resolvedCfg };
-  if (resolveError) return { ok: false, error: resolveError };
+  if (permanentResolveError) {
+    return { ok: false, error: permanentResolveError };
+  }
 
   const staffAppId = process.env.STAFF_APP_ID?.trim();
   if (!staffAppId) {
-    resolveError = "STAFF_APP_ID が未設定です";
-    return { ok: false, error: resolveError };
+    permanentResolveError = "STAFF_APP_ID が未設定です";
+    return { ok: false, error: permanentResolveError };
+  }
+
+  // env に uniqueId があれば list fields 不要（429 回避）
+  const envFieldId = process.env.STAFF_AVAILABILITY_FIELD_ID?.trim();
+  if (envFieldId) {
+    resolvedCfg = {
+      fieldId: envFieldId,
+      activeLabel: staffGeneralAvailabilityActiveLabel(),
+    };
+    return { ok: true, cfg: resolvedCfg };
   }
 
   try {
+    const listAuths = staffReadListAuths();
     const appFields = await fetchAppFields(
       staffAppId,
-      { apiKey: apiKeyForStaffPocketRead1() },
+      listAuths[0],
       { operation: "staff:稼働状況(列定義)", appEnv: "STAFF_APP_ID" },
+      {
+        maxRetries: 1,
+        ...(listAuths.length >= 2 ? { authKeys: listAuths } : {}),
+      },
     );
 
     const fieldId = resolveSchemaFieldId(
@@ -98,9 +117,9 @@ export async function resolveStaffGeneralAvailabilityConfig(): Promise<
       ["稼働状況", "稼働 状況"],
     );
     if (!fieldId) {
-      resolveError =
+      permanentResolveError =
         "スタッフ名簿に「稼働状況」列が見つかりません。見出し名を確認するか STAFF_AVAILABILITY_FIELD_ID を設定してください。";
-      return { ok: false, error: resolveError };
+      return { ok: false, error: permanentResolveError };
     }
 
     resolvedCfg = {
@@ -110,8 +129,19 @@ export async function resolveStaffGeneralAvailabilityConfig(): Promise<
     return { ok: true, cfg: resolvedCfg };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    resolveError = `稼働状況列の取得に失敗しました: ${msg}`;
-    return { ok: false, error: resolveError };
+    if (isPocketHttpRateLimitError(e)) {
+      return {
+        ok: false,
+        rateLimited: true,
+        error:
+          "いま @pocket のリクエスト上限に達しています。100秒ほど待ってから画面を更新してください。",
+      };
+    }
+    // 一時障害は固定キャッシュしない
+    return {
+      ok: false,
+      error: `稼働状況列の取得に失敗しました: ${msg}`,
+    };
   }
 }
 
