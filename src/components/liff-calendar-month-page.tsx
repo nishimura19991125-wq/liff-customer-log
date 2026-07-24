@@ -1028,10 +1028,14 @@ function EmptySlotCard({
   const [undatedCases, setUndatedCases] = useState<UndatedConstructionCase[]>(
     [],
   );
+  const [myUndatedCases, setMyUndatedCases] = useState<
+    UndatedConstructionCase[]
+  >([]);
   const [undatedListStatus, setUndatedListStatus] = useState<
     "idle" | "loading" | "ok" | "err"
   >("idle");
   const [undatedListError, setUndatedListError] = useState("");
+  const [undatedNeedsStaffBind, setUndatedNeedsStaffBind] = useState(false);
   const [selectedCaseRecordId, setSelectedCaseRecordId] = useState("");
   const [caseSearchInput, setCaseSearchInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -1070,8 +1074,10 @@ function EmptySlotCard({
         setSelectedCaseRecordId("");
         setCaseSearchInput("");
         setUndatedCases([]);
+        setMyUndatedCases([]);
         setUndatedListStatus("idle");
         setUndatedListError("");
+        setUndatedNeedsStaffBind(false);
       }
       return;
     }
@@ -1082,6 +1088,8 @@ function EmptySlotCard({
       setSelectedCaseRecordId("");
       setCaseSearchInput("");
       setUndatedCases([]);
+      setMyUndatedCases([]);
+      setUndatedNeedsStaffBind(false);
       setUndatedListStatus("loading");
       setUndatedListError("");
       try {
@@ -1109,7 +1117,12 @@ function EmptySlotCard({
           );
           return;
         }
-        setUndatedCases(data.items ?? []);
+        const items = data.items ?? [];
+        setUndatedCases(items);
+        setMyUndatedCases(
+          data.myItems ?? items.filter((c) => c.isMyApCl),
+        );
+        setUndatedNeedsStaffBind(Boolean(data.needsStaffBind));
         setUndatedListStatus("ok");
       } catch {
         if (!cancelled) {
@@ -1138,6 +1151,40 @@ function EmptySlotCard({
     }
     return matched;
   }, [undatedCases, caseSearchInput, selectedCaseRecordId]);
+
+  function selectUndatedCase(c: UndatedConstructionCase) {
+    setSelectedCaseRecordId(c.recordId);
+    setCaseSearchInput(undatedCaseOptionLabel(c));
+  }
+
+  function renderUndatedCaseButton(c: UndatedConstructionCase) {
+    return (
+      <button
+        type="button"
+        className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition hover:bg-emerald-50 active:bg-emerald-100"
+        disabled={submitting}
+        onClick={() => selectUndatedCase(c)}
+      >
+        <span className="flex items-center gap-1.5 text-[14px] font-semibold text-slate-900">
+          {c.customerName}
+          {c.isMyApCl ? (
+            <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-800">
+              AP/CL担当
+            </span>
+          ) : null}
+        </span>
+        <span className="text-[11px] text-slate-500">
+          {[
+            c.housingShort,
+            c.contractorName,
+            c.tNumber ? `T:${c.tNumber}` : "",
+          ]
+            .filter(Boolean)
+            .join(" / ") || "詳細なし"}
+        </span>
+      </button>
+    );
+  }
 
   useEffect(() => {
     if (!open || !idToken || !handlerFromStaff) {
@@ -1577,9 +1624,11 @@ function EmptySlotCard({
           {fillMode === "assign" ? (
             <>
               <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
-                工事日未定の案件を
-                <span className="font-semibold text-slate-800">お客様名で検索</span>
-                して選び、この空き枠の日付（
+                下の
+                <span className="font-semibold text-slate-800">
+                  AP/CL担当候補
+                </span>
+                から選ぶか、お客様名で検索して選び、この空き枠の日付（
                 {slotDayKey?.trim()
                   ? formatDisplayYmd(slotDayKey.trim())
                   : "未選択"}
@@ -1637,33 +1686,39 @@ function EmptySlotCard({
                       </li>
                     ) : (
                       filteredUndatedCases.map((c) => (
-                        <li key={c.recordId}>
-                          <button
-                            type="button"
-                            className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition hover:bg-emerald-50 active:bg-emerald-100"
-                            disabled={submitting}
-                            onClick={() => {
-                              setSelectedCaseRecordId(c.recordId);
-                              setCaseSearchInput(undatedCaseOptionLabel(c));
-                            }}
-                          >
-                            <span className="text-[14px] font-semibold text-slate-900">
-                              {c.customerName}
-                            </span>
-                            <span className="text-[11px] text-slate-500">
-                              {[
-                                c.housingShort,
-                                c.contractorName,
-                                c.tNumber ? `T:${c.tNumber}` : "",
-                              ]
-                                .filter(Boolean)
-                                .join(" / ") || "詳細なし"}
-                            </span>
-                          </button>
-                        </li>
+                        <li key={c.recordId}>{renderUndatedCaseButton(c)}</li>
                       ))
                     )}
                   </ul>
+                ) : null}
+                {undatedListStatus === "ok" &&
+                !caseSearchInput.trim() &&
+                !selectedCaseRecordId ? (
+                  <div className="mt-3">
+                    <p className="mb-1.5 text-[12px] font-bold text-slate-700">
+                      あなたのAP/CL担当候補
+                      <span className="ml-1 font-normal text-slate-500">
+                        （{myUndatedCases.length}件）
+                      </span>
+                    </p>
+                    {undatedNeedsStaffBind ? (
+                      <p className="rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-amber-900 ring-1 ring-amber-100">
+                        スタッフ紐付け後に、あなたのAP/CL担当の未定案件がここに表示されます。全案件は上の名前検索で選べます。
+                      </p>
+                    ) : myUndatedCases.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-500">
+                        担当の未定案件はありません。上の検索から他の案件を選べます。
+                      </p>
+                    ) : (
+                      <ul className="max-h-56 overflow-y-auto rounded-xl border border-sky-200 bg-sky-50/40 py-1 shadow-sm">
+                        {myUndatedCases.map((c) => (
+                          <li key={c.recordId}>
+                            {renderUndatedCaseButton(c)}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 ) : null}
               </div>
               {selectedCaseRecordId ? (

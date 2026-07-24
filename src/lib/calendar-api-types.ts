@@ -89,11 +89,15 @@ export type UndatedConstructionCase = {
   housingShort: string;
   contractorName: string;
   tNumber: string;
+  /** ログイン者が AP または CL 担当の案件 */
+  isMyApCl?: boolean;
 };
 
 export type UndatedConstructionCasesPayload = {
   configured: boolean;
   items: UndatedConstructionCase[];
+  /** ログイン者のAP/CL担当の未定案件（検索欄下の候補一覧用） */
+  myItems?: UndatedConstructionCase[];
   /** ログイン者のAP/CL担当名（表示用） */
   staffName?: string;
   needsStaffBind?: boolean;
