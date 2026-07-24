@@ -978,6 +978,17 @@ function CalendarEmptySlotReadOnly({
   );
 }
 
+function undatedCaseOptionLabel(c: UndatedConstructionCase): string {
+  const meta = [
+    c.housingShort,
+    c.contractorName,
+    c.tNumber ? `T:${c.tNumber}` : "",
+  ]
+    .filter(Boolean)
+    .join(" / ");
+  return meta ? `${c.customerName}（${meta}）` : c.customerName;
+}
+
 function EmptySlotCard({
   item,
   idToken,
@@ -1021,8 +1032,8 @@ function EmptySlotCard({
     "idle" | "loading" | "ok" | "err"
   >("idle");
   const [undatedListError, setUndatedListError] = useState("");
-  const [undatedNeedsStaffBind, setUndatedNeedsStaffBind] = useState(false);
   const [selectedCaseRecordId, setSelectedCaseRecordId] = useState("");
+  const [caseSearchInput, setCaseSearchInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
     kind: "ok" | "err";
@@ -1057,10 +1068,10 @@ function EmptySlotCard({
     if (!open || !idToken || fillMode !== "assign") {
       if (!open || fillMode !== "assign") {
         setSelectedCaseRecordId("");
+        setCaseSearchInput("");
         setUndatedCases([]);
         setUndatedListStatus("idle");
         setUndatedListError("");
-        setUndatedNeedsStaffBind(false);
       }
       return;
     }
@@ -1069,8 +1080,8 @@ function EmptySlotCard({
 
     (async () => {
       setSelectedCaseRecordId("");
+      setCaseSearchInput("");
       setUndatedCases([]);
-      setUndatedNeedsStaffBind(false);
       setUndatedListStatus("loading");
       setUndatedListError("");
       try {
@@ -1098,12 +1109,6 @@ function EmptySlotCard({
           );
           return;
         }
-        if (data.needsStaffBind) {
-          setUndatedNeedsStaffBind(true);
-          setUndatedCases([]);
-          setUndatedListStatus("ok");
-          return;
-        }
         setUndatedCases(data.items ?? []);
         setUndatedListStatus("ok");
       } catch {
@@ -1118,6 +1123,21 @@ function EmptySlotCard({
       cancelled = true;
     };
   }, [open, idToken, fillMode, onSessionExpired]);
+
+  const filteredUndatedCases = useMemo(() => {
+    const q = caseSearchInput.trim().normalize("NFKC").toLowerCase();
+    if (!q || selectedCaseRecordId) return [];
+    const matched: UndatedConstructionCase[] = [];
+    for (const c of undatedCases) {
+      const name = c.customerName.normalize("NFKC").toLowerCase();
+      const t = c.tNumber.normalize("NFKC").toLowerCase();
+      if (name.includes(q) || t.includes(q)) {
+        matched.push(c);
+        if (matched.length >= 40) break;
+      }
+    }
+    return matched;
+  }, [undatedCases, caseSearchInput, selectedCaseRecordId]);
 
   useEffect(() => {
     if (!open || !idToken || !handlerFromStaff) {
@@ -1557,7 +1577,9 @@ function EmptySlotCard({
           {fillMode === "assign" ? (
             <>
               <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
-                あなたがAP/CL担当の工事日未定案件を選び、この空き枠の日付（
+                工事日未定の案件を
+                <span className="font-semibold text-slate-800">お客様名で検索</span>
+                して選び、この空き枠の日付（
                 {slotDayKey?.trim()
                   ? formatDisplayYmd(slotDayKey.trim())
                   : "未選択"}
@@ -1568,56 +1590,98 @@ function EmptySlotCard({
                   カレンダー上の日付が特定できないため、割り当てできません。日付を選び直してください。
                 </p>
               ) : null}
-              {undatedNeedsStaffBind ? (
-                <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-amber-900 ring-1 ring-amber-100">
-                  スタッフ紐付けが必要です。LINEアカウントとスタッフ名簿（AP/CL稼働）の紐付け後に、担当の未定案件が表示されます。
-                </p>
-              ) : null}
-              <label className="block">
+              <div className="block">
                 <span className="mb-1 block text-[12px] font-bold text-slate-700">
-                  工事日未定案件{" "}
+                  工事日未定案件（名前検索）{" "}
                   <span className="font-semibold text-red-600">必須</span>
+                  <span className="mt-0.5 block text-[11px] font-normal leading-snug text-slate-500">
+                    お客様名（またはT番号）の一部を入力して候補から選んでください
+                    {undatedListStatus === "ok"
+                      ? `（未定 ${undatedCases.length}件）`
+                      : ""}
+                  </span>
                 </span>
-                <select
+                <input
+                  type="search"
+                  inputMode="search"
+                  autoComplete="off"
                   className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
-                  value={selectedCaseRecordId}
-                  onChange={(e) => setSelectedCaseRecordId(e.target.value)}
+                  value={caseSearchInput}
                   disabled={
                     submitting ||
                     !canSubmit ||
-                    undatedNeedsStaffBind ||
                     undatedListStatus === "loading" ||
                     undatedListStatus === "err"
                   }
-                >
-                  <option value="">
-                    {undatedListStatus === "loading"
-                      ? "読み込み中…"
+                  placeholder={
+                    undatedListStatus === "loading"
+                      ? "未定案件を読み込み中…"
                       : undatedListStatus === "err"
                         ? "取得に失敗しました"
-                        : undatedNeedsStaffBind
-                          ? "スタッフ紐付けが必要です"
-                          : undatedCases.length === 0
-                            ? "割り当て可能な未定案件がありません"
-                            : "選択してください"}
-                  </option>
-                  {undatedCases.map((c) => {
-                    const meta = [
-                      c.housingShort,
-                      c.contractorName,
-                      c.tNumber ? `T:${c.tNumber}` : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" / ");
-                    return (
-                      <option key={c.recordId} value={c.recordId}>
-                        {c.customerName}
-                        {meta ? `（${meta}）` : ""}
-                      </option>
-                    );
-                  })}
-                </select>
-              </label>
+                        : undatedCases.length === 0
+                          ? "割り当て可能な未定案件がありません"
+                          : "例: 山田 / T番号"
+                  }
+                  onChange={(e) => {
+                    setCaseSearchInput(e.target.value);
+                    setSelectedCaseRecordId("");
+                  }}
+                />
+                {undatedListStatus === "ok" &&
+                caseSearchInput.trim() &&
+                !selectedCaseRecordId ? (
+                  <ul className="mt-2 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-sm">
+                    {filteredUndatedCases.length === 0 ? (
+                      <li className="px-3 py-2 text-[12px] text-slate-500">
+                        一致する案件がありません
+                      </li>
+                    ) : (
+                      filteredUndatedCases.map((c) => (
+                        <li key={c.recordId}>
+                          <button
+                            type="button"
+                            className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition hover:bg-emerald-50 active:bg-emerald-100"
+                            disabled={submitting}
+                            onClick={() => {
+                              setSelectedCaseRecordId(c.recordId);
+                              setCaseSearchInput(undatedCaseOptionLabel(c));
+                            }}
+                          >
+                            <span className="text-[14px] font-semibold text-slate-900">
+                              {c.customerName}
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              {[
+                                c.housingShort,
+                                c.contractorName,
+                                c.tNumber ? `T:${c.tNumber}` : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" / ") || "詳細なし"}
+                            </span>
+                          </button>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                ) : null}
+              </div>
+              {selectedCaseRecordId ? (
+                <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-[12px] font-semibold text-emerald-900 ring-1 ring-emerald-100">
+                  選択中: {caseSearchInput}
+                  <button
+                    type="button"
+                    className="ml-2 text-[11px] font-bold text-emerald-700 underline"
+                    disabled={submitting}
+                    onClick={() => {
+                      setSelectedCaseRecordId("");
+                      setCaseSearchInput("");
+                    }}
+                  >
+                    選び直す
+                  </button>
+                </p>
+              ) : null}
               {undatedListStatus === "err" && undatedListError ? (
                 <p className="mt-2 text-[12px] font-semibold text-red-700">
                   {undatedListError}
@@ -1629,7 +1693,6 @@ function EmptySlotCard({
                 disabled={
                   submitting ||
                   !canSubmit ||
-                  undatedNeedsStaffBind ||
                   !selectedCaseRecordId.trim() ||
                   !slotDayKey?.trim() ||
                   undatedListStatus !== "ok"

@@ -95,7 +95,7 @@ function housingStatusRawToShort(raw: string): string {
 
 /**
  * お客様名あり・工事日未定の案件だけ抽出（メモリ内フィルタ）。
- * allowedTNumbers を渡すと担当顧客一覧と同じ T番号集合で絞り込む。
+ * allowedTNumbers を渡すと T番号集合で絞り込む（任意）。
  */
 export function buildUndatedConstructionCases(
   records: AtPocketRecordRow[],

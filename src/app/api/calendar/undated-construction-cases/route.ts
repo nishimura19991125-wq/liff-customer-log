@@ -11,8 +11,6 @@ import {
   resolveConstructionFieldIds,
 } from "@/lib/calendar-kojo";
 import { buildUndatedConstructionCases } from "@/lib/calendar-undated-cases";
-import { listCustomerCrmRecords } from "@/lib/customer-crm-list";
-import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import {
   lineAuthUnauthorizedResponse,
@@ -22,7 +20,7 @@ import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
 export const dynamic = "force-dynamic";
 
-/** 工事日未定の既存案件一覧（担当顧客一覧と同じ担当・工事日未定条件） */
+/** 工事日未定の既存案件一覧（全件・お客様名で検索して割り当て） */
 export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
@@ -38,42 +36,11 @@ export async function GET(request: Request) {
     return NextResponse.json(payload, { status: 503 });
   }
 
-  const customerCfg = customerInfoConfigReady();
-  if (!customerCfg.ok) {
-    const payload: UndatedConstructionCasesPayload = {
-      configured: false,
-      items: [],
-      error: customerCfg.error,
-    };
-    return NextResponse.json(payload, { status: 503 });
-  }
-
   try {
     const boundStaffName = await resolveBoundStaffNameForLineUser(
       auth.lineUserId,
     );
     const staffName = normApClStaffName(boundStaffName ?? "");
-
-    if (!staffName) {
-      const payload: UndatedConstructionCasesPayload = {
-        configured: true,
-        staffName: "",
-        items: [],
-        needsStaffBind: true,
-      };
-      return NextResponse.json(payload);
-    }
-
-    const crmCustomers = await listCustomerCrmRecords(
-      staffName,
-      "no_construction_date",
-      { maxResults: null },
-    );
-    const allowedTNumbers = new Set(
-      crmCustomers
-        .map((c) => normApClStaffName(c.tNumber ?? ""))
-        .filter(Boolean),
-    );
 
     const calAuth = { apiKey: apiKeyForCalendarPocket() };
     const constructionFields = await fetchAppFields(calAppId, calAuth, {
@@ -102,7 +69,6 @@ export async function GET(request: Request) {
     const items = buildUndatedConstructionCases(
       constructionRecords,
       constructionFields,
-      { allowedTNumbers },
     );
 
     const payload: UndatedConstructionCasesPayload = {

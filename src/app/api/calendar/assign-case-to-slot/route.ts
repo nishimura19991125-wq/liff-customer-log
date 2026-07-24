@@ -33,13 +33,10 @@ import {
 import {
   constructionRecordHasAnyWorkDate,
 } from "@/lib/calendar-undated-cases";
-import { staffOwnsCustomerByTNumber } from "@/lib/customer-crm-list";
-import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
-import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 26;
@@ -290,35 +287,6 @@ export async function POST(request: Request) {
         },
         { status: 400 },
       );
-    }
-
-    // ログイン者が担当の案件か（担当顧客一覧と同じ AP/CL/作成者判定）
-    const customerCfg = customerInfoConfigReady();
-    if (customerCfg.ok) {
-      const boundStaffName = await resolveBoundStaffNameForLineUser(
-        auth.lineUserId,
-      );
-      if (!boundStaffName) {
-        return NextResponse.json(
-          {
-            error:
-              "スタッフ紐付けが必要です。LINEアカウントとスタッフ名簿の紐付け後に割り当ててください。",
-            needsStaffBind: true,
-          },
-          { status: 403 },
-        );
-      }
-
-      const owns = await staffOwnsCustomerByTNumber(boundStaffName, existingT);
-      if (!owns) {
-        return NextResponse.json(
-          {
-            error:
-              "この案件はあなたの担当ではありません。担当の未定案件のみ割り当てできます。",
-          },
-          { status: 403 },
-        );
-      }
     }
 
     // 書き込み直前に空き枠を再確認

@@ -82,7 +82,7 @@ export type ConstructionHandlerHomePayload = {
   error?: string;
 };
 
-/** 工事日未定の既存案件（空き枠への割り当て候補） */
+/** 工事日未定の既存案件（空き枠への割り当て候補・全件） */
 export type UndatedConstructionCase = {
   recordId: string;
   customerName: string;
