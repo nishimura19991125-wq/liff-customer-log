@@ -1595,7 +1595,7 @@ function EmptySlotCard({
                   工事日未定案件（名前検索）{" "}
                   <span className="font-semibold text-red-600">必須</span>
                   <span className="mt-0.5 block text-[11px] font-normal leading-snug text-slate-500">
-                    お客様名（またはT番号）の一部を入力して候補から選んでください
+                    お客様名（またはT番号）の一部を入力して候補から選んでください（キャンセル案件は除外）
                     {undatedListStatus === "ok"
                       ? `（未定 ${undatedCases.length}件）`
                       : ""}

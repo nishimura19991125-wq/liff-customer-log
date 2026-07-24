@@ -11,6 +11,7 @@ import {
   resolveConstructionFieldIds,
 } from "@/lib/calendar-kojo";
 import { buildUndatedConstructionCases } from "@/lib/calendar-undated-cases";
+import { fetchCancelledCustomerTNumbersCached } from "@/lib/customer-cancelled-t-numbers";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import {
   lineAuthUnauthorizedResponse,
@@ -20,7 +21,7 @@ import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
 export const dynamic = "force-dynamic";
 
-/** 工事日未定の既存案件一覧（全件・お客様名で検索して割り当て） */
+/** 工事日未定の既存案件一覧（全件・キャンセル除外・お客様名で検索） */
 export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
@@ -43,10 +44,19 @@ export async function GET(request: Request) {
     const staffName = normApClStaffName(boundStaffName ?? "");
 
     const calAuth = { apiKey: apiKeyForCalendarPocket() };
-    const constructionFields = await fetchAppFields(calAppId, calAuth, {
-      operation: "calendar:工事日未定案件fields",
-      appEnv: "CALENDAR_APP_ID",
-    });
+    const [constructionFields, cancelledTNumbers] = await Promise.all([
+      fetchAppFields(calAppId, calAuth, {
+        operation: "calendar:工事日未定案件fields",
+        appEnv: "CALENDAR_APP_ID",
+      }),
+      fetchCancelledCustomerTNumbersCached().catch((e) => {
+        console.warn(
+          "[api/calendar/undated-construction-cases] cancelled T lookup failed",
+          e,
+        );
+        return new Set<string>();
+      }),
+    ]);
 
     const fids = resolveConstructionFieldIds(constructionFields);
     if (!fids.title?.trim()) {
@@ -69,6 +79,10 @@ export async function GET(request: Request) {
     const items = buildUndatedConstructionCases(
       constructionRecords,
       constructionFields,
+      {
+        excludedTNumbers:
+          cancelledTNumbers.size > 0 ? cancelledTNumbers : undefined,
+      },
     );
 
     const payload: UndatedConstructionCasesPayload = {

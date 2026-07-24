@@ -33,6 +33,7 @@ import {
 import {
   constructionRecordHasAnyWorkDate,
 } from "@/lib/calendar-undated-cases";
+import { isCustomerTNumberCancelled } from "@/lib/customer-cancelled-t-numbers";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -284,6 +285,16 @@ export async function POST(request: Request) {
         {
           error:
             "案件の T番号 を取得できません。@pocket で T番号 が入っているか、フィールド設定を確認してください。",
+        },
+        { status: 400 },
+      );
+    }
+
+    if (await isCustomerTNumberCancelled(existingT)) {
+      return NextResponse.json(
+        {
+          error:
+            "顧客ステータスが「キャンセル」の案件は割り当てできません。別の未定案件を選んでください。",
         },
         { status: 400 },
       );

@@ -96,11 +96,15 @@ function housingStatusRawToShort(raw: string): string {
 /**
  * お客様名あり・工事日未定の案件だけ抽出（メモリ内フィルタ）。
  * allowedTNumbers を渡すと T番号集合で絞り込む（任意）。
+ * excludedTNumbers を渡すと該当 T番号を除外（キャンセル等）。
  */
 export function buildUndatedConstructionCases(
   records: AtPocketRecordRow[],
   constructionFields: AtPocketFieldRow[],
-  options?: { allowedTNumbers?: Set<string> },
+  options?: {
+    allowedTNumbers?: Set<string>;
+    excludedTNumbers?: Set<string>;
+  },
 ): UndatedConstructionCase[] {
   const fids = resolveConstructionFieldIds(constructionFields);
   const titleId = fids.title?.trim();
@@ -108,6 +112,7 @@ export function buildUndatedConstructionCases(
 
   const allowedTNumbers = options?.allowedTNumbers;
   if (allowedTNumbers && allowedTNumbers.size === 0) return [];
+  const excludedTNumbers = options?.excludedTNumbers;
 
   const tNumberId = resolveConstructionTNumberFieldId(constructionFields);
   const items: UndatedConstructionCase[] = [];
@@ -131,9 +136,12 @@ export function buildUndatedConstructionCases(
     const tNumber = tNumberId
       ? coercePlainString(pickRecordValueByFieldAliases(recObj, tNumberId))
       : "";
+    const normT = normApClStaffName(tNumber);
     if (allowedTNumbers) {
-      const normT = normApClStaffName(tNumber);
       if (!normT || !allowedTNumbers.has(normT)) continue;
+    }
+    if (excludedTNumbers && normT && excludedTNumbers.has(normT)) {
+      continue;
     }
 
     const housingRaw = fids.housingStatus
