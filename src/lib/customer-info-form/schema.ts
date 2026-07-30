@@ -1,6 +1,7 @@
 import {
   COLLECTION_STATUS_TWO_OPTIONS,
   COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS,
+  CUSTOMER_STATUS_OPTIONS,
   DOCUMENT_RADIO_HIDDEN_VALUE,
   FIT_TYPE_OPTIONS,
   INDOOR_SURVEY_STATUS_OPTIONS,
@@ -67,7 +68,12 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     type: "select",
     options: [...INPUT_STATUS_OPTIONS],
   },
-  { key: "customerStatus", caption: "顧客ステータス", type: "text" },
+  {
+    key: "customerStatus",
+    caption: "顧客ステータス",
+    type: "select",
+    options: [...CUSTOMER_STATUS_OPTIONS],
+  },
   {
     key: "pt",
     caption: "",

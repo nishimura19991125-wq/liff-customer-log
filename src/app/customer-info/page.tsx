@@ -51,6 +51,7 @@ import {
   splitJapaneseFullName,
   syncCombinedNameFields,
 } from "@/lib/customer-info-form/name-parts";
+import { customerStatusWithDefault } from "@/lib/customer-info-form/options";
 import { inferPanelComboFromValues } from "@/lib/customer-info-form/panel-combo";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 import {
@@ -311,6 +312,9 @@ function CustomerInfoPageContent() {
             }
           }
           initial.panelCombo = inferPanelComboFromValues(initial);
+          initial.customerStatus = customerStatusWithDefault(
+            initial.customerStatus,
+          );
           setEditValues(initial);
           setFormFields(data.formFields);
           setMissingCaptions(data.missingCaptions);

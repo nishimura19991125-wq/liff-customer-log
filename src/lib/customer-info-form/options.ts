@@ -24,6 +24,20 @@ export const INDOOR_SURVEY_STATUS_OPTIONS = ["未実施", "実施済み"] as con
 /** お客様情報の入力ステータス（@pocket リスト式） */
 export const INPUT_STATUS_OPTIONS = ["未入力", "入力完了"] as const;
 
+/** 顧客ステータス（@pocket リスト式） */
+export const CUSTOMER_STATUS_OPTIONS = ["工事待ち", "キャンセル"] as const;
+
+/** 顧客ステータスの初期値（未設定のレコードを開いたときの既定選択） */
+export const CUSTOMER_STATUS_DEFAULT = "工事待ち" as const;
+
+/** 未設定なら初期値（工事待ち）を返す */
+export function customerStatusWithDefault(
+  value: string | null | undefined,
+): string {
+  const t = (value ?? "").trim();
+  return t || CUSTOMER_STATUS_DEFAULT;
+}
+
 /** 導入経緯（@pocket リスト式） */
 export const INTRODUCTION_ROUTE_OPTIONS = [
   "ダイレクト",
