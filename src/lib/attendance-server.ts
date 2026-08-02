@@ -4,15 +4,14 @@ import {
   apiKeyForAttendancePocket,
   apiKeyForAttendancePocket1,
   apiKeyForAttendanceWrite,
-  createRecord,
   fetchAllRecordsPages,
   fetchAppFields,
   fetchRecordsList,
   isPocketApiRateLimited,
   isPocketHttpRateLimitError,
   markPocketApiRateLimited,
+  type AtPocketFieldRow,
   type AtPocketRecordRow,
-  updateRecord,
 } from "@/lib/atpocket";
 import {
   blockAttendanceFetchAfterRateLimit,
@@ -28,6 +27,7 @@ import {
   statusCacheKey,
 } from "@/lib/attendance-cache";
 import {
+  applyAttendanceAutoNumberOnCreate,
   attendanceFieldsConfigured,
   attendanceFieldsCsv,
   resolveAttendanceFieldIds,
@@ -36,6 +36,7 @@ import {
   type AttendancePublicStatus,
   type AttendanceTodayAttendee,
 } from "@/lib/attendance-fields";
+import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
 import { enrichStaffNamesWithDepartments } from "@/lib/staff-department-lookup";
 import { pickRecordValueByFieldAliases, ymdKey } from "@/lib/calendar-kojo";
 import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
@@ -50,11 +51,23 @@ export type { AttendancePublicStatus } from "@/lib/attendance-fields";
 const ATTENDANCE_RATE_LIMIT_MESSAGE =
   "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。";
 
+function formatAttendanceWriteError(msg: string): string {
+  if (msg.includes("取込設定") && msg.includes("キー項目")) {
+    return [
+      "勤怠の自動採番（取込キー）が @pocket の取込設定に含まれていないため打刻できません。",
+      "アプリ管理 → 勤怠 → 取込 で「自動採番」をキー項目として追加して保存してください。",
+      "（番号の手入力は不要です）",
+    ].join("");
+  }
+  return msg;
+}
+
 /** 列定義は滅多に変わらないためメモリに保持（@pocket fields API の連打を防ぐ） */
 const ATTENDANCE_FIELDS_CACHE_MS = 3_600_000;
 let attendanceFieldsCache: {
   appId: string;
   ids: AttendanceFieldIds;
+  appFields: AtPocketFieldRow[];
   expiresAt: number;
 } | null = null;
 
@@ -69,13 +82,23 @@ function cachedAttendanceFieldIds(appId: string): AttendanceFieldIds | null {
   return attendanceFieldsCache.ids;
 }
 
+function cachedAttendanceAppFields(appId: string): AtPocketFieldRow[] | null {
+  if (!attendanceFieldsCache || attendanceFieldsCache.appId !== appId) {
+    return null;
+  }
+  if (attendanceFieldsCache.expiresAt <= Date.now()) return null;
+  return attendanceFieldsCache.appFields;
+}
+
 function rememberAttendanceFieldIds(
   appId: string,
   ids: AttendanceFieldIds,
+  appFields: AtPocketFieldRow[],
 ): void {
   attendanceFieldsCache = {
     appId,
     ids,
+    appFields,
     expiresAt: Date.now() + ATTENDANCE_FIELDS_CACHE_MS,
   };
 }
@@ -264,7 +287,7 @@ async function finalizeTodayAttendees(
 }
 
 async function loadAttendanceFieldIds(): Promise<
-  | { ok: true; appId: string; ids: AttendanceFieldIds }
+  | { ok: true; appId: string; ids: AttendanceFieldIds; appFields: AtPocketFieldRow[] }
   | {
       ok: false;
       status: number;
@@ -284,19 +307,21 @@ async function loadAttendanceFieldIds(): Promise<
   }
 
   const memIds = cachedAttendanceFieldIds(appId);
+  const memFields = cachedAttendanceAppFields(appId);
   if (
     memIds &&
+    memFields &&
     attendanceFieldsConfigured(memIds) &&
     attendanceFieldsCache &&
     attendanceFieldsCache.expiresAt > Date.now()
   ) {
-    return { ok: true, appId, ids: memIds };
+    return { ok: true, appId, ids: memIds, appFields: memFields };
   }
 
   const readAuth = { apiKey: apiKeyForAttendancePocket() };
   if (isPocketApiRateLimited(readAuth) && isAttendanceFetchBlocked()) {
-    if (memIds && attendanceFieldsConfigured(memIds)) {
-      return { ok: true, appId, ids: memIds };
+    if (memIds && memFields && attendanceFieldsConfigured(memIds)) {
+      return { ok: true, appId, ids: memIds, appFields: memFields };
     }
     return {
       ok: false,
@@ -313,8 +338,8 @@ async function loadAttendanceFieldIds(): Promise<
     if (isPocketHttpRateLimitError(e)) {
       markPocketApiRateLimited(readAuth);
       blockAttendanceFetchAfterRateLimit();
-      if (memIds && attendanceFieldsConfigured(memIds)) {
-        return { ok: true, appId, ids: memIds };
+      if (memIds && memFields && attendanceFieldsConfigured(memIds)) {
+        return { ok: true, appId, ids: memIds, appFields: memFields };
       }
       return {
         ok: false,
@@ -338,8 +363,8 @@ async function loadAttendanceFieldIds(): Promise<
     };
   }
 
-  rememberAttendanceFieldIds(appId, fieldIds);
-  return { ok: true, appId, ids: fieldIds };
+  rememberAttendanceFieldIds(appId, fieldIds, appFields);
+  return { ok: true, appId, ids: fieldIds, appFields };
 }
 
 /** 勤怠日で本日分を取得（出勤者一覧・個人ステータス兼用・1〜2ページ） */
@@ -711,10 +736,11 @@ export async function punchAttendanceForLineUser(
     };
   }
 
-  const { appId, ids } = loaded;
+  const { appId, ids, appFields } = loaded;
   const today = todayYmdJst();
   const now = nowDateTimeJst();
   const writeAuth = { apiKey: apiKeyForAttendanceWrite() };
+  const readAuth = { apiKey: apiKeyForAttendancePocket() };
 
   const cached = getCachedAttendanceStatus(staffName, today);
   let existing: AtPocketRecordRow | null = null;
@@ -790,56 +816,89 @@ export async function punchAttendanceForLineUser(
       };
     }
 
-    const patch: Record<string, unknown> = {
+    const basePatch: Record<string, unknown> = {
       [ids.staffName!]: staffName,
       [ids.workDate!]: today,
       [ids.clockIn!]: now,
     };
 
-    if (existing) {
-      const recordId =
-        atPocketRecordIdFromRow(existing) ??
-        cached?.recordId?.trim() ??
-        null;
-      if (!recordId) {
-        return {
-          ok: false,
-          status: 502,
-          error: "勤怠レコード ID を取得できませんでした",
-        };
+    try {
+      if (existing) {
+        const recordId =
+          atPocketRecordIdFromRow(existing) ??
+          cached?.recordId?.trim() ??
+          null;
+        if (!recordId) {
+          return {
+            ok: false,
+            status: 502,
+            error: "勤怠レコード ID を取得できませんでした",
+          };
+        }
+        await writePocketRecordWithImportKey({
+          appId,
+          recordId,
+          payload: basePatch,
+          importKeyFieldId: ids.importKey ?? undefined,
+          existingRecord:
+            existing.record && typeof existing.record === "object"
+              ? (existing.record as Record<string, unknown>)
+              : undefined,
+          readAuth,
+          writeAuth,
+        });
+        const punchedRow = syntheticRowAfterPunch(
+          existing,
+          ids,
+          staffName,
+          today,
+          "in",
+          now,
+          recordId,
+        );
+        const rosterRows = rows.map((r) =>
+          atPocketRecordIdFromRow(r) === recordId ? punchedRow : r,
+        );
+        const status = await publishPunchStatus(punchedRow, rosterRows);
+        return { ok: true, status };
       }
-      await updateRecord(appId, recordId, patch, writeAuth);
+
+      const createPayload = applyAttendanceAutoNumberOnCreate(
+        basePatch,
+        appFields,
+      );
+      const created = await writePocketRecordWithImportKey({
+        appId,
+        payload: createPayload,
+        importKeyFieldId: ids.importKey ?? undefined,
+        writeAuth,
+      });
+      const newId =
+        created && "row" in created
+          ? (atPocketRecordIdFromRow(created.row) ??
+            created.recordIdHint ??
+            null)
+          : null;
       const punchedRow = syntheticRowAfterPunch(
-        existing,
+        null,
         ids,
         staffName,
         today,
         "in",
         now,
-        recordId,
+        newId,
       );
-      const rosterRows = rows.map((r) =>
-        atPocketRecordIdFromRow(r) === recordId ? punchedRow : r,
-      );
+      const rosterRows = [...rows, punchedRow];
       const status = await publishPunchStatus(punchedRow, rosterRows);
       return { ok: true, status };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return {
+        ok: false,
+        status: 502,
+        error: formatAttendanceWriteError(msg),
+      };
     }
-
-    const created = await createRecord(appId, patch, writeAuth);
-    const newId =
-      atPocketRecordIdFromRow(created.row) ?? created.recordIdHint ?? null;
-    const punchedRow = syntheticRowAfterPunch(
-      null,
-      ids,
-      staffName,
-      today,
-      "in",
-      now,
-      newId,
-    );
-    const rosterRows = [...rows, punchedRow];
-    const status = await publishPunchStatus(punchedRow, rosterRows);
-    return { ok: true, status };
   }
 
   if (!clockIn) {
@@ -867,12 +926,27 @@ export async function punchAttendanceForLineUser(
     };
   }
 
-  await updateRecord(
-    appId,
-    recordId,
-    { [ids.clockOut!]: now },
-    writeAuth,
-  );
+  try {
+    await writePocketRecordWithImportKey({
+      appId,
+      recordId,
+      payload: { [ids.clockOut!]: now },
+      importKeyFieldId: ids.importKey ?? undefined,
+      existingRecord:
+        existing?.record && typeof existing.record === "object"
+          ? (existing.record as Record<string, unknown>)
+          : undefined,
+      readAuth,
+      writeAuth,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      ok: false,
+      status: 502,
+      error: formatAttendanceWriteError(msg),
+    };
+  }
   const punchedRow = syntheticRowAfterPunch(
     existing,
     ids,
