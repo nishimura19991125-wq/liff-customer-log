@@ -5,10 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { WorkEndReportFormFields } from "@/components/work-end-report-form-fields";
-import {
-  clearClockOutReminderSnooze,
-  snoozeClockOutReminderForSession,
-} from "@/lib/attendance-clock-out-reminder-client";
+import { clearPendingClockOutReminder } from "@/lib/attendance-clock-out-reminder-client";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { liffAuthedJsonFetch } from "@/lib/liff-swr";
 import {
@@ -87,14 +84,9 @@ export function AttendanceClockOutReminderAlert({
       isWorkEndReportEligibleDepartment(workEndStatus?.department),
   );
 
-  const handleClose = useCallback(() => {
-    snoozeClockOutReminderForSession();
-    onClose();
-  }, [onClose]);
-
   const finishAfterPunch = useCallback(
     (clockOut: string | null | undefined, message: string) => {
-      clearClockOutReminderSnooze();
+      clearPendingClockOutReminder();
       setFeedback(
         clockOut ? `${message}（${formatDisplayTime(clockOut)}）` : message,
       );
@@ -219,7 +211,7 @@ export function AttendanceClockOutReminderAlert({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
         <p className="text-[15px] leading-relaxed text-slate-700 dark:text-slate-200">
-          18:30を過ぎていますが、本日の退勤打刻がまだされていません。退勤打刻を行ってください。
+          18:30を過ぎていますが、本日の退勤打刻がまだされていません。退勤打刻を行ってください。未打刻の場合、翌日の出勤打刻表示（07:00）までこの画面を表示します。
         </p>
 
         {showWorkEndForm ? (
@@ -295,22 +287,10 @@ export function AttendanceClockOutReminderAlert({
         )}
         <Link
           href="/attendance"
-          onClick={() => {
-            snoozeClockOutReminderForSession();
-            onClose();
-          }}
           className="w-full rounded-xl border border-amber-300 bg-white py-3.5 text-center text-[15px] font-semibold text-slate-800 transition-colors active:bg-amber-50 dark:border-amber-700 dark:bg-slate-800 dark:text-slate-100 dark:active:bg-slate-700"
         >
           勤怠画面で打刻
         </Link>
-        <button
-          type="button"
-          disabled={submitting !== null}
-          onClick={handleClose}
-          className="w-full rounded-xl border border-slate-200 bg-white py-3.5 text-[15px] font-semibold text-slate-700 transition-colors active:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:active:bg-slate-700"
-        >
-          閉じる
-        </button>
       </div>
     </div>,
     document.body,

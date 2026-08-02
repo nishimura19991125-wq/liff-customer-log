@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { DailyOmikujiFlow } from "@/components/daily-omikuji-flow";
+import { AttendanceAfternoonClockInGate } from "@/components/attendance-afternoon-clock-in-gate";
 import { AttendanceClockOutReminderGate } from "@/components/attendance-clock-out-reminder-gate";
+import { DailyOmikujiFlow } from "@/components/daily-omikuji-flow";
 import { LockScreen } from "@/components/lock-screen";
 import { MeetingSetCreatedAlertGate } from "@/components/meeting-set-created-alert-gate";
 import {
+  DAILY_OMIKUJI_FROM_JST,
+  isAfterDailyOmikujiTimeJst,
   markDailyOmikujiShown,
   shouldShowDailyOmikuji,
 } from "@/lib/daily-omikuji-shown";
@@ -15,6 +18,7 @@ import {
   type DailyFortuneBuildContext,
   type DailyFortuneView,
 } from "@/lib/home-business-fortune";
+import { msUntilJstHmToday } from "@/lib/jst-hm";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 import {
   beginPinAppBoot,
@@ -54,11 +58,13 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
     staffName: string;
   } | null>(null);
   const [clockOutReminderVisible, setClockOutReminderVisible] = useState(false);
+  const [afternoonClockInVisible, setAfternoonClockInVisible] = useState(false);
 
   const openDailyOmikujiIfNeeded = useCallback(
     (staffName: string, fortuneCtx: DailyFortuneBuildContext = {}) => {
       const staffKey = staffName.normalize("NFKC").trim();
       if (!staffKey || !shouldShowDailyOmikuji(staffKey)) return;
+      if (!isAfterDailyOmikujiTimeJst()) return;
       setOmikuji((current) => {
         if (current) return current;
         return {
@@ -198,6 +204,20 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
   }, [phase, boundStaffName, boundStaffFortuneCtx, openDailyOmikujiIfNeeded]);
 
   useEffect(() => {
+    if (phase !== "unlocked" && phase !== "skip") return;
+    if (!boundStaffName) return;
+    if (!shouldShowDailyOmikuji(boundStaffName)) return;
+    if (isAfterDailyOmikujiTimeJst()) return;
+
+    const wait = msUntilJstHmToday(DAILY_OMIKUJI_FROM_JST);
+    if (wait == null) return;
+    const id = window.setTimeout(() => {
+      openDailyOmikujiIfNeeded(boundStaffName, boundStaffFortuneCtx);
+    }, wait + 50);
+    return () => window.clearTimeout(id);
+  }, [phase, boundStaffName, boundStaffFortuneCtx, openDailyOmikujiIfNeeded]);
+
+  useEffect(() => {
     const onPageShow = (event: PageTransitionEvent) => {
       if (!event.persisted) return;
       invalidatePinUnlockOnAppHide();
@@ -251,6 +271,9 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const overlayBlocking =
+    Boolean(omikuji) || clockOutReminderVisible || afternoonClockInVisible;
+
   return (
     <>
       {children}
@@ -258,14 +281,23 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
         <MeetingSetCreatedAlertGate
           idToken={idToken}
           active
+          suppressed={overlayBlocking}
+        />
+      ) : null}
+      {idToken && boundStaffName && (phase === "unlocked" || phase === "skip") ? (
+        <AttendanceAfternoonClockInGate
+          idToken={idToken}
+          staffName={boundStaffName}
+          active
           suppressed={Boolean(omikuji) || clockOutReminderVisible}
+          onVisibleChange={setAfternoonClockInVisible}
         />
       ) : null}
       {idToken && (phase === "unlocked" || phase === "skip") ? (
         <AttendanceClockOutReminderGate
           idToken={idToken}
           active
-          suppressed={Boolean(omikuji)}
+          suppressed={Boolean(omikuji) || afternoonClockInVisible}
           onVisibleChange={setClockOutReminderVisible}
         />
       ) : null}

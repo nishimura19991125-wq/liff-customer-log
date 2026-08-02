@@ -1,9 +1,17 @@
 /** 暗証番号解除後の「今日のおみくじ」表示済みフラグ（1日1回・JST） */
 
+import { isAtOrAfterJstHm } from "@/lib/jst-hm";
 import { jstDateKey } from "@/lib/missing-documents-cache";
 
 const STORAGE_KEY = "liff-daily-omikuji-shown-v1";
 export const DAILY_OMIKUJI_SHOWN_EVENT = "liff-daily-omikuji-shown";
+
+/** おみくじ＋出勤選択の表示開始時刻（JST） */
+export const DAILY_OMIKUJI_FROM_JST = "07:00";
+
+export function isAfterDailyOmikujiTimeJst(now = new Date()): boolean {
+  return isAtOrAfterJstHm(DAILY_OMIKUJI_FROM_JST, now);
+}
 
 function storageValue(staffKey: string): string {
   return `${jstDateKey()}|${staffKey.normalize("NFKC").trim()}`;

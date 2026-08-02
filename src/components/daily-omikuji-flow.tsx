@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { DailyOmikujiModal } from "@/components/daily-omikuji-modal";
+import {
+  clearMorningLeaveForToday,
+  markMorningLeaveForToday,
+} from "@/lib/attendance-morning-leave-client";
 import type { DailyFortuneView } from "@/lib/home-business-fortune";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { requestMeetingScheduleAlertCheckAfterPunch } from "@/lib/meeting-schedule-pending-set-created-client";
@@ -92,6 +96,7 @@ export function DailyOmikujiFlow({
       }
       if (!res.ok) {
         if (res.status === 409 && data.clockIn) {
+          clearMorningLeaveForToday(staffName);
           requestMeetingScheduleAlertCheckAfterPunch();
           setFeedback(`本日は出勤済みです（${formatDisplayTime(data.clockIn)}）`);
           window.setTimeout(onComplete, 900);
@@ -105,6 +110,7 @@ export function DailyOmikujiFlow({
         );
         return;
       }
+      clearMorningLeaveForToday(staffName);
       requestMeetingScheduleAlertCheckAfterPunch();
       setFeedback(`出勤を登録しました（${formatDisplayTime(data.clockIn)}）`);
       window.setTimeout(onComplete, 900);
@@ -113,7 +119,18 @@ export function DailyOmikujiFlow({
     } finally {
       setSubmitting(false);
     }
-  }, [idToken, onComplete, submitting]);
+  }, [idToken, onComplete, staffName, submitting]);
+
+  const chooseDayOff = useCallback(() => {
+    clearMorningLeaveForToday(staffName);
+    onComplete();
+  }, [onComplete, staffName]);
+
+  const chooseMorningLeave = useCallback(() => {
+    markMorningLeaveForToday(staffName);
+    setFeedback("午前休を記録しました。12:00以降に出勤打刻を表示します");
+    window.setTimeout(onComplete, 900);
+  }, [onComplete, staffName]);
 
   const attendanceUnavailable =
     preview &&
@@ -181,7 +198,7 @@ export function DailyOmikujiFlow({
         ) : (
           <>
             <p className="text-center text-[14px] font-semibold text-amber-950/90 dark:text-amber-100">
-              本日は出勤ですか？休みですか？
+              本日は出勤・休み・午前休のどれですか？
             </p>
             <div className="flex flex-col gap-2.5">
               <button
@@ -195,10 +212,18 @@ export function DailyOmikujiFlow({
               <button
                 type="button"
                 disabled={submitting}
-                onClick={onComplete}
+                onClick={chooseDayOff}
                 className="w-full rounded-xl border-2 border-amber-700/25 bg-white py-3.5 text-[15px] font-bold text-slate-800 shadow-sm transition-colors active:bg-amber-50 disabled:opacity-50 dark:border-amber-600/30 dark:bg-slate-800 dark:text-slate-100 dark:active:bg-slate-700"
               >
                 休みにする
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={chooseMorningLeave}
+                className="w-full rounded-xl border-2 border-sky-600/30 bg-sky-50 py-3.5 text-[15px] font-bold text-sky-900 shadow-sm transition-colors active:bg-sky-100 disabled:opacity-50 dark:border-sky-500/40 dark:bg-sky-950/50 dark:text-sky-100 dark:active:bg-sky-900/60"
+              >
+                午前休にする
               </button>
             </div>
           </>

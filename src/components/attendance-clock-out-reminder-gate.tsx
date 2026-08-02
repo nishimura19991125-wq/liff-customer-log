@@ -5,10 +5,12 @@ import { useCallback, useEffect, useState } from "react";
 
 import { AttendanceClockOutReminderAlert } from "@/components/attendance-clock-out-reminder-alert";
 import {
-  clearClockOutReminderSnooze,
-  isClockOutReminderSnoozed,
-  needsClockOutReminder,
+  clearPendingClockOutReminder,
+  getActivePendingClockOutReminder,
+  msUntilPendingClockOutExpires,
+  resolveClockOutReminderToShow,
   type ClockOutReminderPreview,
+  type PendingClockOutReminder,
 } from "@/lib/attendance-clock-out-reminder-client";
 
 type Props = {
@@ -25,60 +27,67 @@ export function AttendanceClockOutReminderGate({
   onVisibleChange,
 }: Props) {
   const pathname = usePathname();
-  const [preview, setPreview] = useState<ClockOutReminderPreview | null>(null);
-  const [dismissed, setDismissed] = useState(false);
+  const [pending, setPending] = useState<PendingClockOutReminder | null>(null);
+  const [tick, setTick] = useState(0);
 
   const check = useCallback(async () => {
     if (!active || suppressed) return;
     if (pathname === "/attendance") return;
-    if (dismissed || isClockOutReminderSnoozed()) return;
     try {
       const res = await fetch("/api/attendance", {
         headers: { Authorization: `Bearer ${idToken}` },
       });
-      if (!res.ok) return;
-      const data = (await res.json()) as ClockOutReminderPreview;
-      if (needsClockOutReminder(data)) {
-        setPreview(data);
+      if (!res.ok) {
+        setPending(getActivePendingClockOutReminder());
         return;
       }
-      clearClockOutReminderSnooze();
-      setPreview(null);
+      const data = (await res.json()) as ClockOutReminderPreview;
+      setPending(resolveClockOutReminderToShow(data));
     } catch {
-      // ignore
+      setPending(getActivePendingClockOutReminder());
     }
-  }, [active, dismissed, idToken, pathname, suppressed]);
+  }, [active, idToken, pathname, suppressed]);
 
   useEffect(() => {
     if (suppressed) return;
     if (pathname === "/attendance") {
-      setDismissed(true);
-      setPreview(null);
+      setPending(null);
       return;
     }
     void check();
-  }, [check, pathname, suppressed]);
+  }, [check, pathname, suppressed, tick]);
 
-  const visible = Boolean(
-    preview?.clockIn && !preview.clockOut && !dismissed && !suppressed,
-  );
+  useEffect(() => {
+    if (!active || suppressed) return;
+    const current = pending ?? getActivePendingClockOutReminder();
+    if (!current) return;
+    const wait = msUntilPendingClockOutExpires(current);
+    if (wait == null) return;
+    const id = window.setTimeout(() => {
+      clearPendingClockOutReminder();
+      setPending(null);
+      setTick((n) => n + 1);
+    }, wait + 50);
+    return () => window.clearTimeout(id);
+  }, [active, pending, suppressed, tick]);
+
+  const visible = Boolean(pending && !suppressed && pathname !== "/attendance");
 
   useEffect(() => {
     onVisibleChange?.(visible);
   }, [onVisibleChange, visible]);
 
   if (suppressed || pathname === "/attendance") return null;
-  if (!visible || !preview?.clockIn) return null;
+  if (!visible || !pending) return null;
 
   return (
     <AttendanceClockOutReminderAlert
       idToken={idToken}
-      staffName={preview.staffName}
-      workDate={preview.workDate}
-      clockIn={preview.clockIn}
+      staffName={pending.staffName}
+      workDate={pending.workDate}
+      clockIn={pending.clockIn}
       onClose={() => {
-        setDismissed(true);
-        setPreview(null);
+        setPending(getActivePendingClockOutReminder());
       }}
     />
   );
