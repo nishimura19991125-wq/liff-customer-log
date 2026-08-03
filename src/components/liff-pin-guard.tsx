@@ -28,6 +28,7 @@ import {
   markPinUnlockSession,
   touchPinUnlockSession,
 } from "@/lib/pin-lock-session";
+import { clearClockOutReminderSkipped } from "@/lib/attendance-clock-out-reminder-client";
 import { fetchStaffApiWithSessionCache } from "@/lib/staff-api-session-cache";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
@@ -84,6 +85,8 @@ export function LiffPinGuard({ children }: { children: React.ReactNode }) {
   const unlockApp = useCallback(
     (staffName: string) => {
       markPinUnlockSession();
+      // 「打刻しない」は解除前までの抑制。再解除したら退勤リマインドを出す
+      clearClockOutReminderSkipped();
       setBoundStaffName(staffName.normalize("NFKC").trim() || null);
       openDailyOmikujiIfNeeded(staffName, boundStaffFortuneCtx);
       setPhase("unlocked");
