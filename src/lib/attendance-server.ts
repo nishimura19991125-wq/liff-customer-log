@@ -745,7 +745,6 @@ export async function punchAttendanceForLineUser(
 
   const { appId, ids, appFields } = loaded;
   const today = todayYmdJst();
-  const clockOutType = fieldTypeOf(appFields, ids.clockOut);
   const workDateType = fieldTypeOf(appFields, ids.workDate);
   const nowIn = nowForAttendanceField(appFields, ids.clockIn);
   const nowOut = nowForAttendanceField(appFields, ids.clockOut);
