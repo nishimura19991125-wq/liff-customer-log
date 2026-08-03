@@ -745,7 +745,6 @@ export async function punchAttendanceForLineUser(
 
   const { appId, ids, appFields } = loaded;
   const today = todayYmdJst();
-  const clockInType = fieldTypeOf(appFields, ids.clockIn);
   const clockOutType = fieldTypeOf(appFields, ids.clockOut);
   const workDateType = fieldTypeOf(appFields, ids.workDate);
   const nowIn = nowForAttendanceField(appFields, ids.clockIn);
@@ -832,10 +831,17 @@ export async function punchAttendanceForLineUser(
       workDateType ?? "Date",
     );
     const basePatch: Record<string, unknown> = {
-      [ids.staffName!]: staffName,
-      [ids.workDate!]: workDateForPocket,
       [ids.clockIn!]: nowIn,
     };
+    const existingStaff = readFieldText(recObj, ids.staffName);
+    const existingWorkDate = readFieldText(recObj, ids.workDate);
+    // 既存レコード更新時は空白項目だけ埋める
+    if (!existingStaff) {
+      basePatch[ids.staffName!] = staffName;
+    }
+    if (!existingWorkDate) {
+      basePatch[ids.workDate!] = workDateForPocket;
+    }
 
     try {
       if (existing) {
@@ -879,7 +885,11 @@ export async function punchAttendanceForLineUser(
       }
 
       const createPayload = applyAttendanceAutoNumberOnCreate(
-        basePatch,
+        {
+          [ids.staffName!]: staffName,
+          [ids.workDate!]: workDateForPocket,
+          [ids.clockIn!]: nowIn,
+        },
         appFields,
       );
       const created = await writePocketRecordWithImportKey({
@@ -941,24 +951,12 @@ export async function punchAttendanceForLineUser(
     };
   }
 
-  const workDateForPocket = normalizeDateTimeForPocketField(
-    today,
-    workDateType ?? "Date",
-  );
-  const clockInForPocket = normalizeDateTimeForPocketField(
-    clockIn,
-    clockInType,
-  );
-
   try {
+    // 退勤時刻が空白のときだけ埋める（出勤時刻など既存値は上書きしない）
     await writePocketRecordWithImportKey({
       appId,
       recordId,
-      // 退勤のみだと日時列が壊れることがあるため、出勤・日付も正規化して同送する
       payload: {
-        [ids.staffName!]: staffName,
-        [ids.workDate!]: workDateForPocket,
-        [ids.clockIn!]: clockInForPocket,
         [ids.clockOut!]: nowOut,
       },
       importKeyFieldId: ids.importKey ?? undefined,
