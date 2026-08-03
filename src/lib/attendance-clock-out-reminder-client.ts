@@ -5,6 +5,7 @@ import { jstDateKey } from "@/lib/missing-documents-cache";
 export const CLOCK_OUT_REMINDER_FROM_JST = "18:30";
 
 const PENDING_STORAGE_KEY = "attendance-clock-out-pending-v1";
+const SKIPPED_STORAGE_KEY = "attendance-clock-out-skipped-v1";
 
 export type ClockOutReminderPreview = {
   configured?: boolean;
@@ -112,11 +113,67 @@ export function clearPendingClockOutReminder(): void {
   }
 }
 
+function readSkippedWorkDate(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const workDate = localStorage.getItem(SKIPPED_STORAGE_KEY)?.trim() ?? "";
+    return workDate || null;
+  } catch {
+    return null;
+  }
+}
+
+/** 「打刻しない」選択。当該勤怠日のリマインドを出さない（翌日出勤表示まで） */
+export function markClockOutReminderSkipped(workDate: string): void {
+  if (typeof window === "undefined") return;
+  const ymd = workDate.trim();
+  if (!ymd) return;
+  try {
+    localStorage.setItem(SKIPPED_STORAGE_KEY, ymd);
+    localStorage.removeItem(PENDING_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearClockOutReminderSkipped(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(SKIPPED_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function isClockOutReminderSkippedForWorkDate(
+  workDate: string,
+  now = new Date(),
+): boolean {
+  const skipped = readSkippedWorkDate();
+  if (!skipped) return false;
+  if (skipped !== workDate.trim()) {
+    // 別日のスキップが残っている場合は掃除
+    if (!isBeforeNextDayClockInDisplay(skipped, now)) {
+      clearClockOutReminderSkipped();
+    }
+    return false;
+  }
+  if (!isBeforeNextDayClockInDisplay(skipped, now)) {
+    clearClockOutReminderSkipped();
+    return false;
+  }
+  return true;
+}
+
 export function getActivePendingClockOutReminder(
   now = new Date(),
 ): PendingClockOutReminder | null {
   const pending = readPendingRaw();
   if (!pending) return null;
+  if (isClockOutReminderSkippedForWorkDate(pending.workDate, now)) {
+    clearPendingClockOutReminder();
+    return null;
+  }
   if (!isBeforeNextDayClockInDisplay(pending.workDate, now)) {
     clearPendingClockOutReminder();
     return null;
@@ -127,6 +184,7 @@ export function getActivePendingClockOutReminder(
 /**
  * API の当日ステータスと pending を合成して、表示すべき退勤リマインダーを返す。
  * 翌日 07:00（出勤打刻表示開始）以降は自動で消える。
+ * 「打刻しない」選択済みの勤怠日は出さない。
  */
 export function resolveClockOutReminderToShow(
   status: ClockOutReminderPreview,
@@ -150,9 +208,17 @@ export function resolveClockOutReminderToShow(
     statusWorkDate !== pending.workDate
   ) {
     clearPendingClockOutReminder();
+    clearClockOutReminderSkipped();
   }
 
   if (status.clockIn && status.clockOut) {
+    clearPendingClockOutReminder();
+    clearClockOutReminderSkipped();
+    return null;
+  }
+
+  const skipDate = statusWorkDate || pending?.workDate || "";
+  if (skipDate && isClockOutReminderSkippedForWorkDate(skipDate, now)) {
     clearPendingClockOutReminder();
     return null;
   }

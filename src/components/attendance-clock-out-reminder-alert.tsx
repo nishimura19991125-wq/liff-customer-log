@@ -1,11 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { WorkEndReportFormFields } from "@/components/work-end-report-form-fields";
-import { clearPendingClockOutReminder } from "@/lib/attendance-clock-out-reminder-client";
+import {
+  clearPendingClockOutReminder,
+  markClockOutReminderSkipped,
+} from "@/lib/attendance-clock-out-reminder-client";
 import { formatAttendanceDisplayTime } from "@/lib/attendance-calendar-types";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { liffAuthedJsonFetch } from "@/lib/liff-swr";
@@ -279,12 +281,18 @@ export function AttendanceClockOutReminderAlert({
             {submitting === "out" ? "打刻中…" : "退勤打刻する"}
           </button>
         )}
-        <Link
-          href="/attendance"
-          className="w-full rounded-xl border border-amber-300 bg-white py-3.5 text-center text-[15px] font-semibold text-slate-800 transition-colors active:bg-amber-50 dark:border-amber-700 dark:bg-slate-800 dark:text-slate-100 dark:active:bg-slate-700"
+        <button
+          type="button"
+          disabled={submitting !== null || Boolean(feedback)}
+          onClick={() => {
+            markClockOutReminderSkipped(workDate ?? "");
+            clearPendingClockOutReminder();
+            onClose();
+          }}
+          className="w-full rounded-xl border border-slate-200 bg-white py-3.5 text-[15px] font-semibold text-slate-700 transition-colors active:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:active:bg-slate-700"
         >
-          勤怠画面で打刻
-        </Link>
+          打刻しない
+        </button>
       </div>
     </div>,
     document.body,

@@ -87,7 +87,7 @@ export function AttendanceClockOutReminderGate({
       workDate={pending.workDate}
       clockIn={pending.clockIn}
       onClose={() => {
-        setPending(getActivePendingClockOutReminder());
+        setPending(null);
       }}
     />
   );
