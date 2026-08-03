@@ -35,6 +35,7 @@ import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { requestMeetingScheduleAlertCheckAfterPunch } from "@/lib/meeting-schedule-pending-set-created-client";
+import { formatAttendanceDisplayTime } from "@/lib/attendance-calendar-types";
 import { isWorkEndReportEligibleDepartment } from "@/lib/work-end-report-eligibility";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
@@ -89,13 +90,6 @@ function ClockGlyph() {
       />
     </svg>
   );
-}
-
-function formatDisplayTime(raw: string | null | undefined): string {
-  if (!raw?.trim()) return "—";
-  const s = raw.trim().replace("T", " ");
-  const m = /(\d{1,2}:\d{2})/.exec(s);
-  return m ? m[1] : s;
 }
 
 export default function AttendancePage() {
@@ -437,7 +431,7 @@ export default function AttendancePage() {
                     出勤
                   </dt>
                   <dd className="mt-1 text-[20px] font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
-                    {loading ? "…" : formatDisplayTime(status?.clockIn)}
+                    {loading ? "…" : formatAttendanceDisplayTime(status?.clockIn)}
                   </dd>
                 </div>
                 <div className="bg-white px-5 py-4 dark:bg-slate-800">
@@ -445,7 +439,7 @@ export default function AttendancePage() {
                     退勤
                   </dt>
                   <dd className="mt-1 text-[20px] font-bold tabular-nums text-slate-800 dark:text-slate-100">
-                    {loading ? "…" : formatDisplayTime(status?.clockOut)}
+                    {loading ? "…" : formatAttendanceDisplayTime(status?.clockOut)}
                   </dd>
                 </div>
               </dl>
@@ -499,9 +493,9 @@ export default function AttendancePage() {
                                   ) : null}
                                 </span>
                                 <span className="shrink-0 tabular-nums text-slate-600 dark:text-slate-300">
-                                  {formatDisplayTime(person.clockIn)}
+                                  {formatAttendanceDisplayTime(person.clockIn)}
                                   {person.clockOut
-                                    ? ` 〜 ${formatDisplayTime(person.clockOut)}`
+                                    ? ` 〜 ${formatAttendanceDisplayTime(person.clockOut)}`
                                     : ""}
                                 </span>
                               </li>

@@ -38,8 +38,13 @@ import {
 } from "@/lib/attendance-fields";
 import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
 import { enrichStaffNamesWithDepartments } from "@/lib/staff-department-lookup";
-import { pickRecordValueByFieldAliases, ymdKey } from "@/lib/calendar-kojo";
+import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
 import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
+import {
+  formatJstForPocketField,
+  jstYmd,
+  normalizeDateTimeForPocketField,
+} from "@/lib/jst-hm";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 import {
   extractDisplayHHmm,
@@ -104,23 +109,25 @@ function rememberAttendanceFieldIds(
 }
 
 function todayYmdJst(): string {
-  const d = new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }),
-  );
-  return ymdKey(d);
+  return jstYmd();
 }
 
-function nowDateTimeJst(): string {
-  const d = new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }),
-  );
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  const sec = String(d.getSeconds()).padStart(2, "0");
-  return `${y}-${m}-${day} ${h}:${min}:${sec}`;
+function fieldTypeOf(
+  appFields: AtPocketFieldRow[],
+  fieldId: string | null | undefined,
+): string | null {
+  const id = fieldId?.trim();
+  if (!id) return null;
+  const field = appFields.find((f) => f.uniqueId?.trim() === id);
+  return field?.fieldType?.trim() || null;
+}
+
+/** 出勤/退勤フィールド型に合わせた現在時刻（JST・@pocket 形式） */
+function nowForAttendanceField(
+  appFields: AtPocketFieldRow[],
+  fieldId: string | null | undefined,
+): string {
+  return formatJstForPocketField(fieldTypeOf(appFields, fieldId));
 }
 
 function nfkcName(s: string): string {
@@ -738,7 +745,11 @@ export async function punchAttendanceForLineUser(
 
   const { appId, ids, appFields } = loaded;
   const today = todayYmdJst();
-  const now = nowDateTimeJst();
+  const clockInType = fieldTypeOf(appFields, ids.clockIn);
+  const clockOutType = fieldTypeOf(appFields, ids.clockOut);
+  const workDateType = fieldTypeOf(appFields, ids.workDate);
+  const nowIn = nowForAttendanceField(appFields, ids.clockIn);
+  const nowOut = nowForAttendanceField(appFields, ids.clockOut);
   const writeAuth = { apiKey: apiKeyForAttendanceWrite() };
   const readAuth = { apiKey: apiKeyForAttendancePocket() };
 
@@ -816,10 +827,14 @@ export async function punchAttendanceForLineUser(
       };
     }
 
+    const workDateForPocket = normalizeDateTimeForPocketField(
+      today,
+      workDateType ?? "Date",
+    );
     const basePatch: Record<string, unknown> = {
       [ids.staffName!]: staffName,
-      [ids.workDate!]: today,
-      [ids.clockIn!]: now,
+      [ids.workDate!]: workDateForPocket,
+      [ids.clockIn!]: nowIn,
     };
 
     try {
@@ -853,7 +868,7 @@ export async function punchAttendanceForLineUser(
           staffName,
           today,
           "in",
-          now,
+          nowIn,
           recordId,
         );
         const rosterRows = rows.map((r) =>
@@ -885,7 +900,7 @@ export async function punchAttendanceForLineUser(
         staffName,
         today,
         "in",
-        now,
+        nowIn,
         newId,
       );
       const rosterRows = [...rows, punchedRow];
@@ -926,11 +941,26 @@ export async function punchAttendanceForLineUser(
     };
   }
 
+  const workDateForPocket = normalizeDateTimeForPocketField(
+    today,
+    workDateType ?? "Date",
+  );
+  const clockInForPocket = normalizeDateTimeForPocketField(
+    clockIn,
+    clockInType,
+  );
+
   try {
     await writePocketRecordWithImportKey({
       appId,
       recordId,
-      payload: { [ids.clockOut!]: now },
+      // 退勤のみだと日時列が壊れることがあるため、出勤・日付も正規化して同送する
+      payload: {
+        [ids.staffName!]: staffName,
+        [ids.workDate!]: workDateForPocket,
+        [ids.clockIn!]: clockInForPocket,
+        [ids.clockOut!]: nowOut,
+      },
       importKeyFieldId: ids.importKey ?? undefined,
       existingRecord:
         existing?.record && typeof existing.record === "object"
@@ -953,7 +983,7 @@ export async function punchAttendanceForLineUser(
     staffName,
     today,
     "out",
-    now,
+    nowOut,
     recordId,
   );
   const rosterRows = rows.map((r) =>

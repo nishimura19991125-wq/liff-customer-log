@@ -7,6 +7,7 @@ import {
   clearMorningLeaveForToday,
   markMorningLeaveForToday,
 } from "@/lib/attendance-morning-leave-client";
+import { formatAttendanceDisplayTime } from "@/lib/attendance-calendar-types";
 import type { DailyFortuneView } from "@/lib/home-business-fortune";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { requestMeetingScheduleAlertCheckAfterPunch } from "@/lib/meeting-schedule-pending-set-created-client";
@@ -25,13 +26,6 @@ type DailyOmikujiFlowProps = {
   idToken: string;
   onComplete: () => void;
 };
-
-function formatDisplayTime(raw: string | null | undefined): string {
-  if (!raw?.trim()) return "—";
-  const s = raw.trim().replace("T", " ");
-  const m = /(\d{1,2}:\d{2})/.exec(s);
-  return m ? m[1]! : s;
-}
 
 export function DailyOmikujiFlow({
   fortune,
@@ -98,7 +92,7 @@ export function DailyOmikujiFlow({
         if (res.status === 409 && data.clockIn) {
           clearMorningLeaveForToday(staffName);
           requestMeetingScheduleAlertCheckAfterPunch();
-          setFeedback(`本日は出勤済みです（${formatDisplayTime(data.clockIn)}）`);
+          setFeedback(`本日は出勤済みです（${formatAttendanceDisplayTime(data.clockIn)}）`);
           window.setTimeout(onComplete, 900);
           return;
         }
@@ -112,7 +106,7 @@ export function DailyOmikujiFlow({
       }
       clearMorningLeaveForToday(staffName);
       requestMeetingScheduleAlertCheckAfterPunch();
-      setFeedback(`出勤を登録しました（${formatDisplayTime(data.clockIn)}）`);
+      setFeedback(`出勤を登録しました（${formatAttendanceDisplayTime(data.clockIn)}）`);
       window.setTimeout(onComplete, 900);
     } catch {
       setError("出勤登録に失敗しました");
@@ -170,7 +164,7 @@ export function DailyOmikujiFlow({
       return (
         <div className="space-y-3">
           <p className="text-center text-[14px] font-semibold text-slate-800 dark:text-slate-100">
-            本日は出勤済みです（{formatDisplayTime(preview?.clockIn)}）
+            本日は出勤済みです（{formatAttendanceDisplayTime(preview?.clockIn)}）
           </p>
           <button
             type="button"

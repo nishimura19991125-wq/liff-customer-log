@@ -10,6 +10,7 @@ import {
   clearMorningLeaveForToday,
   snoozeAfternoonClockInForSession,
 } from "@/lib/attendance-morning-leave-client";
+import { formatAttendanceDisplayTime } from "@/lib/attendance-calendar-types";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { requestMeetingScheduleAlertCheckAfterPunch } from "@/lib/meeting-schedule-pending-set-created-client";
 
@@ -20,13 +21,6 @@ type Props = {
   onClose: () => void;
   zIndexClass?: string;
 };
-
-function formatDisplayTime(raw: string | null | undefined): string {
-  if (!raw?.trim()) return "—";
-  const s = raw.trim().replace("T", " ");
-  const m = /(\d{1,2}:\d{2})/.exec(s);
-  return m ? m[1]! : s;
-}
 
 export function AttendanceAfternoonClockInAlert({
   idToken,
@@ -83,7 +77,7 @@ export function AttendanceAfternoonClockInAlert({
           clearAfternoonClockInSnooze(staffName);
           requestMeetingScheduleAlertCheckAfterPunch();
           setFeedback(
-            `本日は出勤済みです（${formatDisplayTime(data.clockIn)}）`,
+            `本日は出勤済みです（${formatAttendanceDisplayTime(data.clockIn)}）`,
           );
           window.setTimeout(onClose, 900);
           return;
@@ -99,7 +93,7 @@ export function AttendanceAfternoonClockInAlert({
       clearMorningLeaveForToday(staffName);
       clearAfternoonClockInSnooze(staffName);
       requestMeetingScheduleAlertCheckAfterPunch();
-      setFeedback(`出勤を登録しました（${formatDisplayTime(data.clockIn)}）`);
+      setFeedback(`出勤を登録しました（${formatAttendanceDisplayTime(data.clockIn)}）`);
       window.setTimeout(onClose, 900);
     } catch {
       setError("出勤登録に失敗しました");

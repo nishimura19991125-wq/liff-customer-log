@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 
 import { WorkEndReportFormFields } from "@/components/work-end-report-form-fields";
 import { clearPendingClockOutReminder } from "@/lib/attendance-clock-out-reminder-client";
+import { formatAttendanceDisplayTime } from "@/lib/attendance-calendar-types";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { liffAuthedJsonFetch } from "@/lib/liff-swr";
 import {
@@ -24,13 +25,6 @@ type Props = {
   onClose: () => void;
   zIndexClass?: string;
 };
-
-function formatDisplayTime(raw: string | null | undefined): string {
-  if (!raw?.trim()) return "—";
-  const s = raw.trim().replace("T", " ");
-  const m = /(\d{1,2}:\d{2})/.exec(s);
-  return m ? m[1]! : s;
-}
 
 export function AttendanceClockOutReminderAlert({
   idToken,
@@ -88,7 +82,7 @@ export function AttendanceClockOutReminderAlert({
     (clockOut: string | null | undefined, message: string) => {
       clearPendingClockOutReminder();
       setFeedback(
-        clockOut ? `${message}（${formatDisplayTime(clockOut)}）` : message,
+        clockOut ? `${message}（${formatAttendanceDisplayTime(clockOut)}）` : message,
       );
       window.setTimeout(onClose, 900);
     },
@@ -205,7 +199,7 @@ export function AttendanceClockOutReminderAlert({
         <p className="mt-1 text-[14px] text-amber-900/80 dark:text-amber-200/80">
           {workDate ? `${workDate} · ` : ""}
           {staffName ? `${staffName} · ` : ""}
-          出勤 {formatDisplayTime(clockIn)}
+          出勤 {formatAttendanceDisplayTime(clockIn)}
         </p>
       </div>
 
