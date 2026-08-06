@@ -591,6 +591,19 @@ export async function createApoAcquisitionRecord(
     const created = await createRecord(apoAppId, createPayload, writeAuth);
     const recordId = atPocketRecordIdFromCreateResult(created);
     if (!recordId) {
+      // レコードは作成済みだが recordId が無いため監査ログを書けない。
+      // 発生に気づけるよう、後から @pocket 上で該当レコードを探せる情報を残す。
+      console.error(
+        "[apo-acquisition:create] 登録は完了しましたが recordId を解決できず、監査ログが記録されませんでした",
+        {
+          appsId: apoAppId,
+          customerName: values.customerName ?? "",
+          apStaffName,
+          scheduledYmd,
+          location: created.location ?? null,
+          hasRawBody: Boolean(created.rawBody),
+        },
+      );
       return {
         ok: false,
         status: 502,

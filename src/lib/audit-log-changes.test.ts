@@ -163,6 +163,107 @@ describe("computeAuditChanges", () => {
   });
 });
 
+describe("偽差分の防止（比較用の正規化）", () => {
+  const diff = (before: unknown, after: unknown) =>
+    computeAuditChanges({ f: before }, { f: after });
+
+  it("2026-03-01 と 2026/03/01 が差分にならない（報告された不具合）", () => {
+    expect(diff("2026-03-01", "2026/03/01")).toEqual([]);
+    expect(diff("2026/03/01", "2026-03-01")).toEqual([]);
+  });
+
+  it("実際に報告された3項目がいずれも差分にならない", () => {
+    expect(
+      computeAuditChanges(
+        {
+          keiyaku: "2026-03-01",
+          sekou: "2026-03-16",
+          shokai: "2026-03-01",
+        },
+        {
+          keiyaku: "2026/03/01",
+          sekou: "2026/03/16",
+          shokai: "2026/03/01",
+        },
+      ),
+    ).toEqual([]);
+  });
+
+  it("ゼロ埋めの有無・年月日区切りも同一とみなす", () => {
+    expect(diff("2026-3-1", "2026/03/01")).toEqual([]);
+    expect(diff("2026年3月1日", "2026/03/01")).toEqual([]);
+    expect(diff("2026.03.01", "2026-03-01")).toEqual([]);
+  });
+
+  it("null と \"\" が差分にならない", () => {
+    expect(diff(null, "")).toEqual([]);
+    expect(diff(undefined, "")).toEqual([]);
+    expect(diff(null, undefined)).toEqual([]);
+    expect(diff("", "-")).toEqual([]);
+  });
+
+  it("全角数字と半角数字が差分にならない", () => {
+    expect(diff("１２３", "123")).toEqual([]);
+    expect(diff("２０２６／０３／０１", "2026-03-01")).toEqual([]);
+  });
+
+  it("数値の桁区切り・小数末尾ゼロを同一とみなす", () => {
+    expect(diff("1,200", "1200")).toEqual([]);
+    expect(diff("12", "12.0")).toEqual([]);
+    expect(diff("12.50", "12.5")).toEqual([]);
+  });
+
+  it("前後の空白差は差分にならない", () => {
+    expect(diff("  値  ", "値")).toEqual([]);
+  });
+
+  // ── 正規化しすぎていないこと ──────────────────────
+  it("2026-03-01 と 2026-03-02 は差分になる", () => {
+    const changes = diff("2026-03-01", "2026-03-02");
+    expect(changes).toHaveLength(1);
+    expect(formatChangeLine(changes[0])).toBe("f: 2026-03-01 → 2026-03-02");
+  });
+
+  it("年や月が違えば差分になる", () => {
+    expect(diff("2026-03-01", "2027-03-01")).toHaveLength(1);
+    expect(diff("2026-03-01", "2026-04-01")).toHaveLength(1);
+  });
+
+  it("先行ゼロのコード値は潰さない（007 と 7 は別物）", () => {
+    expect(diff("007", "7")).toHaveLength(1);
+  });
+
+  it("数値が実際に変われば差分になる", () => {
+    expect(diff("1200", "1300")).toHaveLength(1);
+    expect(diff("12", "12.5")).toHaveLength(1);
+  });
+
+  it("日付でない数字列を日付として潰さない", () => {
+    // 月・日として不正なので日付扱いしない
+    expect(diff("1234-56-78", "1234-56-79")).toHaveLength(1);
+  });
+
+  it("空 → 値ありは差分になる", () => {
+    const changes = diff(null, "2026-03-01");
+    expect(changes).toHaveLength(1);
+    expect(formatChangeLine(changes[0])).toBe("f: （空） → 2026-03-01");
+  });
+
+  it("表示は正規化前の元の値のまま（比較だけ正規化する）", () => {
+    const changes = diff("2026-03-01", "2026/03/02");
+    expect(formatChangeLine(changes[0])).toBe("f: 2026-03-01 → 2026/03/02");
+  });
+
+  it("変更なしの保存では空配列を返す（1レコードも書かせない）", () => {
+    expect(
+      computeAuditChanges(
+        { a: "2026-03-01", b: "1,200", c: null, d: "値" },
+        { a: "2026/03/01", b: "1200", d: "値" },
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe("formatDeletionContent（A-4: 削除は全項目を1レコード）", () => {
   it("各行が「<ラベル>: <値> → （削除）」で改行区切り", () => {
     const out = formatDeletionContent(
@@ -175,20 +276,44 @@ describe("formatDeletionContent（A-4: 削除は全項目を1レコード）", (
     ]);
   });
 
-  it("空の項目も省かず全項目を並べる（不可逆なので完全性を優先）", () => {
+  it("空欄の項目は出力に含めない（可読性・復元に寄与しないため）", () => {
     const out = formatDeletionContent({
       "field-1": "値あり",
       "field-2": "",
       "field-3": "-",
     });
+    expect(out).not.toContain("（空）");
     expect(out.split("\n")).toEqual([
       "field-1: 値あり → （削除）",
-      "field-2: （空） → （削除）",
-      "field-3: （空） → （削除）",
+      "（他2項目は空欄）",
     ]);
   });
 
-  it("項目が1つも無ければ空文字", () => {
+  it("値のある項目は1つも省かない（削除に行数上限を適用しない）", () => {
+    const record: Record<string, unknown> = {};
+    for (let i = 0; i < 40; i++) record[`v${i}`] = `値${i}`;
+    for (let i = 0; i < 15; i++) record[`e${i}`] = "";
+    const lines = formatDeletionContent(record).split("\n");
+    expect(lines).toHaveLength(41);
+    for (let i = 0; i < 40; i++) {
+      expect(lines).toContain(`v${i}: 値${i} → （削除）`);
+    }
+    expect(lines[lines.length - 1]).toBe("（他15項目は空欄）");
+  });
+
+  it("空欄が無ければ集計行を付けない", () => {
+    const out = formatDeletionContent({ a: "1", b: "2" });
+    expect(out.split("\n")).toEqual(["a: 1 → （削除）", "b: 2 → （削除）"]);
+    expect(out).not.toContain("項目は空欄");
+  });
+
+  it("全項目が空でも集計行だけは返す（0件を失敗にしない）", () => {
+    const out = formatDeletionContent({ a: "", b: "-", c: "－" });
+    expect(out).toBe("（他3項目は空欄）");
+    expect(out).not.toBe("");
+  });
+
+  it("項目が1つも無ければ空文字（レコードを読めていないケース）", () => {
     expect(formatDeletionContent({})).toBe("");
   });
 });

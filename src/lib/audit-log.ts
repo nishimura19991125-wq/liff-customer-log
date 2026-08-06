@@ -340,6 +340,21 @@ export async function recordAuditLog(
 ): Promise<AuditLogWriteResult> {
   const target = `${entry.targetAppId}/${entry.targetRecordId}`;
 
+  const contents = buildChangeContents(entry);
+
+  if (contents.length === 0) {
+    // 削除だけは別扱い。項目を1つも取れていない状態でログ無しの削除を許すと
+    // 復元手段が消えるので、呼び出し側に失敗を返して削除を止めさせる（A-4）。
+    if (entry.operation === "delete") {
+      const message =
+        "削除対象の項目を取得できなかったため、削除ログを作成できません";
+      noteFailure(target, message);
+      return { ok: false, error: message };
+    }
+    // 変更なしの保存では1レコードも書かない（@pocket も呼ばない）
+    return { ok: true, written: 0 };
+  }
+
   const appId = process.env.AUDIT_LOG_APP_ID?.trim();
   const apiKey = auditLogApiKey();
   if (!appId || !apiKey) {
@@ -349,9 +364,6 @@ export async function recordAuditLog(
     noteFailure(target, message);
     return { ok: false, error: message };
   }
-
-  const contents = buildChangeContents(entry);
-  if (contents.length === 0) return { ok: true, written: 0 };
 
   stats.attempted += contents.length;
 

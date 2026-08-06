@@ -70,11 +70,61 @@ function foldWhitespace(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
-/** 「値なし」を表す表記のゆれ（"" / "-" / "－"）を同一視する比較キー */
+/**
+ * 日付の表記ゆれを吸収する。
+ *
+ * 内部キーは YYYY-MM-DD、画面表示は formatDisplayYmd が yyyy/mm/dd、
+ * @pocket へは dateValueForPocket が YYYY/MM/DD を書く。
+ * 同じ日を指す値が「変更」として記録されるのを防ぐため、区切りを除いた数字列で比較する。
+ *
+ * 一致しなければ null（＝日付として扱わない）。
+ */
+function normalizeDateForComparison(t: string): string | null {
+  const m = /^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?(.*)$/.exec(t);
+  if (!m) return null;
+  const [, y, mo, d, rest] = m;
+  const month = Number(mo);
+  const day = Number(d);
+  // 「1234-56-78」のような日付でない数字列を巻き込まない
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+
+  const ymd = `${y}${mo.padStart(2, "0")}${d.padStart(2, "0")}`;
+  // 時刻が続く場合は落とさずに残す（日付部分だけを正規化する）
+  const tail = rest.trim().replace(/\s+/g, " ");
+  return tail ? `${ymd} ${tail}` : ymd;
+}
+
+/**
+ * 数値の表記ゆれを吸収する（"1,200" と "1200"、"12" と "12.0"）。
+ *
+ * 先行ゼロは**落とさない**。「007」のようなコード値を「7」と同一視すると
+ * 意味のある変更を握り潰してしまうため。
+ *
+ * 一致しなければ null（＝数値として扱わない）。
+ */
+function normalizeNumberForComparison(t: string): string | null {
+  if (!/^[+-]?[\d,]+(\.\d+)?$/.test(t)) return null;
+  const noComma = t.replace(/,/g, "");
+  if (!/^[+-]?\d+(\.\d+)?$/.test(noComma)) return null;
+  if (!noComma.includes(".")) return noComma;
+  // 小数部の末尾ゼロのみ除去
+  return noComma.replace(/\.?0+$/, "") || "0";
+}
+
+/**
+ * 差分判定にのみ使う比較キー。**表示にはこの値を使わない**（元の文字列をそのまま出す）。
+ *
+ * 吸収するのは次の5つだけ。これ以外を足すと意味のある変更を握り潰す恐れがある。
+ *   1. 日付の区切り（YYYY-MM-DD ⇔ yyyy/mm/dd）
+ *   2. 前後の空白
+ *   3. NFKC（全角・半角）
+ *   4. null / undefined / "" / "-" / "－" をすべて「空」
+ *   5. 数値（"1,200" ⇔ "1200"、"12" ⇔ "12.0"）
+ */
 function comparisonKey(s: string): string {
   const t = s.normalize("NFKC").replace(/\s+/g, " ").trim();
-  if (t === "-" || t === "－") return "";
-  return t;
+  if (t === "" || t === "-" || t === "－") return "";
+  return normalizeDateForComparison(t) ?? normalizeNumberForComparison(t) ?? t;
 }
 
 /** 表示用。空値は「（空）」、長すぎる値は切り詰めて「…」を付ける */
@@ -149,20 +199,35 @@ export function formatDeletionContent(
   const maxLength = options.maxLength ?? AUDIT_DEFAULT_VALUE_MAX_LENGTH;
   const redact = options.redactFieldIds;
 
-  // 物理削除は不可逆でログが唯一の復元手段なので、空の項目も省かず全項目を並べる（A-4 完全性優先）
+  const fieldIds = Object.keys(record);
+  // 1項目も無い＝レコードを読めていない。ここで空文字を返すと呼び出し側が
+  // 「削除ログを作れなかった」と判断して削除を止める（A-4 の安全側）。
+  if (fieldIds.length === 0) return "";
+
+  // 値のある項目だけを並べる。空欄まで並べるとログが読めなくなるうえ復元にも寄与しない。
+  // 省いた件数は末尾に1行だけ残して完全性を担保する。
   const lines: string[] = [];
-  for (const fieldId of Object.keys(record)) {
+  let emptyCount = 0;
+
+  for (const fieldId of fieldIds) {
     const value = auditValueToString(record[fieldId]);
+    // 伏せる項目でも「元が空だったか」は生値で判定する
+    if (comparisonKey(value) === "") {
+      emptyCount++;
+      continue;
+    }
     const label = options.labelOf?.(fieldId)?.trim() || fieldId;
-    const shown = redact?.has(fieldId) === true
-      ? AUDIT_REDACTED
-      : formatAuditValue(value, maxLength);
+    const shown =
+      redact?.has(fieldId) === true
+        ? AUDIT_REDACTED
+        : formatAuditValue(value, maxLength);
     lines.push(
       `${label}${AUDIT_LABEL_SEPARATOR}${shown}${AUDIT_ARROW}${AUDIT_DELETED}`,
     );
   }
 
   lines.sort((a, b) => a.localeCompare(b, "ja"));
+  if (emptyCount > 0) lines.push(`（他${emptyCount}項目は空欄）`);
   return lines.join("\n");
 }
 

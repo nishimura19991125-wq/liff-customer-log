@@ -279,6 +279,15 @@ export async function POST(request: Request) {
     const recordId = constructionMatch.recordId;
     let uniqueKey = constructionMatch.uniqueKey;
 
+    if (!recordId && uniqueKey) {
+      // この経路では監査ログを残せない（recordId が無いため）。
+      // 実際に発生するかを観測するために記録する。
+      console.error(
+        "[api/calendar/create-record] recordId を解決できず監査ログを記録できません",
+        { uniqueKey, customerName },
+      );
+    }
+
     if (!recordId && !uniqueKey) {
       return NextResponse.json(
         {

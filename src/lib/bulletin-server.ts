@@ -8,7 +8,10 @@ import {
   updateRecord,
   type AtPocketRecordRow,
 } from "@/lib/atpocket";
-import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
+import {
+  atPocketRecordIdFromCreateResult,
+  atPocketRecordIdFromRow,
+} from "@/lib/atpocket-record-id";
 import {
   bulletinConfigReady,
   bulletinFieldAuth,
@@ -213,10 +216,19 @@ export async function createBulletinPost(input: {
   let recordId = "";
   try {
     const created = await createRecord(appId, record, writeAuth);
-    recordId = atPocketRecordIdFromRow(created.row) || created.recordIdHint || "";
+    // Location ヘッダ・records[]・accessUrl まで見る正規のヘルパーを使う。
+    // atPocketRecordIdFromRow 単体だと @pocket が本文に id を返さない場合に取り逃す。
+    recordId = atPocketRecordIdFromCreateResult(created) ?? "";
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, status: 502, error: formatBulletinCreateError(msg) };
+  }
+
+  if (!recordId) {
+    // 掲示板には T番号が無いため、recordId が無いと監査ログから投稿を特定できない
+    console.error(
+      "[bulletin] 投稿は成功しましたが recordId を取得できませんでした（監査ログの対象レコードIDが空になります）",
+    );
   }
 
   return {
