@@ -323,6 +323,21 @@ export async function setStaffInitialPin(
   }
 
   const staffAppId = process.env.STAFF_APP_ID!.trim();
+
+  // 多層防御: 呼び出し側でも分岐しているが、ここでも既存 PIN の有無を確認する。
+  // これが無いと「初期設定」を名乗るだけで承認フローを迂回して上書きできる。
+  const current = await fetchStaffRecordForPinUpdate(
+    staffAppId,
+    ctx.staffId,
+    ctx.fieldIds,
+  );
+  const storedPin = readStaffPinFieldValue(current, ctx.fieldIds.pinCodeFieldId);
+  if (!isStaffPinUnset(storedPin)) {
+    return {
+      ok: false,
+      error: "暗証番号はすでに登録されています。事務所の承認を受けてください",
+    };
+  }
   const patch: Record<string, unknown> = {
     [ctx.fieldIds.pinCodeFieldId!]: newPin,
     [ctx.fieldIds.resetCodeFieldId!]: "",

@@ -4,6 +4,7 @@ import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
+import { isResetApprovalApproved } from "@/lib/staff-pin-fields";
 import {
   readStaffPinPublicState,
   resolveBoundStaffPinContext,
@@ -32,13 +33,9 @@ export async function POST(request: Request) {
       ? (body as { pin: string }).pin.trim()
       : "";
 
-  const mode =
-    typeof body === "object" &&
-    body !== null &&
-    "mode" in body &&
-    typeof (body as { mode?: unknown }).mode === "string"
-      ? (body as { mode: string }).mode.trim()
-      : "after-approval";
+  // body.mode は後方互換のため受け取るが、**分岐には一切使わない**。
+  // クライアントの申告で初期設定に分岐できると、承認フローを迂回して
+  // 既存 PIN を上書きできてしまう。
 
   if (!pin) {
     return NextResponse.json({ error: "暗証番号が必要です" }, { status: 400 });
@@ -50,20 +47,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: ctx.error }, { status: ctx.status });
     }
 
+    // 分岐の判断材料はサーバ側で読んだ状態のみ
     const state = await readStaffPinPublicState(ctx);
-    const result =
-      mode === "initial" || state.needsInitialSetup
-        ? await setStaffInitialPin(ctx, pin)
-        : await setStaffPinAfterApproval(ctx, pin);
 
+    if (state.needsInitialSetup) {
+      const result = await setStaffInitialPin(ctx, pin);
+      if (!result.ok) {
+        return NextResponse.json({ error: result.error }, { status: 400 });
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    if (!isResetApprovalApproved(state.resetApproval)) {
+      // 内部状態を推測させないよう固定文言にする
+      return NextResponse.json(
+        {
+          error:
+            "暗証番号の再設定には事務所の承認が必要です。事務所へ連絡してください。",
+        },
+        { status: 409 },
+      );
+    }
+
+    const result = await setStaffPinAfterApproval(ctx, pin);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
-
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("[api/staff/pin/set]", e);
-    const msg = e instanceof Error ? e.message : "暗証番号の登録に失敗しました";
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return NextResponse.json(
+      { error: "暗証番号の登録に失敗しました" },
+      { status: 502 },
+    );
   }
 }
