@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import { punchAttendanceForLineUser } from "@/lib/attendance-server";
 import {
   lineAuthUnauthorizedResponse,
@@ -48,9 +50,9 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ ok: true, ...result.status });
   } catch (e) {
-    console.error("[api/attendance/punch]", e);
-    const msg =
-      e instanceof Error ? e.message : "打刻に失敗しました";
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return pocketErrorResponse(e, {
+      scope: "api/attendance/punch",
+      message: "打刻に失敗しました",
+    });
   }
 }

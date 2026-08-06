@@ -427,11 +427,10 @@ export async function POST(request: Request) {
         delErr,
       );
       invalidateAllCalendarPayloadCache();
-      const detail =
-        delErr instanceof Error ? delErr.message : String(delErr);
       return NextResponse.json(
         {
-          error: `${detail}（案件への工事日の反映は完了していますが、空き枠の削除に失敗しました。カレンダーを確認してください）`,
+          error:
+            "案件への工事日の反映は完了していますが、空き枠の削除に失敗しました。カレンダーを確認してください。",
           constructionSaved: true,
         },
         { status: 502 },

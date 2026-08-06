@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import {
   buildBulletinList,
   createBulletinPost,
@@ -80,12 +82,11 @@ export async function GET(request: Request) {
     const payload = await buildBulletinList();
     return NextResponse.json(payload);
   } catch (e) {
-    console.error("[api/bulletin] GET", e);
-    const msg = e instanceof Error ? e.message : "お知らせの取得に失敗しました";
-    return NextResponse.json(
-      { configured: true, error: msg },
-      { status: 502 },
-    );
+    return pocketErrorResponse(e, {
+      scope: "api/bulletin GET",
+      message: "お知らせの取得に失敗しました",
+      extra: { configured: true },
+    });
   }
 }
 
@@ -115,9 +116,10 @@ export async function POST(request: Request) {
     const list = await buildBulletinList();
     return NextResponse.json({ ok: true, ...list });
   } catch (e) {
-    console.error("[api/bulletin] POST", e);
-    const msg = e instanceof Error ? e.message : "投稿に失敗しました";
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return pocketErrorResponse(e, {
+      scope: "api/bulletin POST",
+      message: "投稿に失敗しました",
+    });
   }
 }
 
@@ -156,8 +158,9 @@ export async function PUT(request: Request) {
     const list = await buildBulletinList();
     return NextResponse.json({ ok: true, ...list });
   } catch (e) {
-    console.error("[api/bulletin] PUT", e);
-    const msg = e instanceof Error ? e.message : "更新に失敗しました";
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return pocketErrorResponse(e, {
+      scope: "api/bulletin PUT",
+      message: "更新に失敗しました",
+    });
   }
 }

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -19,10 +21,10 @@ export async function GET(request: Request) {
     const status = await getWorkEndReportStatusForLineUser(auth.lineUserId);
     return NextResponse.json(status);
   } catch (e) {
-    console.error("[api/work-end-report GET]", e);
-    const msg =
-      e instanceof Error ? e.message : "稼働終了報告の取得に失敗しました";
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return pocketErrorResponse(e, {
+      scope: "api/work-end-report GET",
+      message: "稼働終了報告の取得に失敗しました",
+    });
   }
 }
 
@@ -62,9 +64,9 @@ export async function POST(request: Request) {
     }
     return NextResponse.json(result.status);
   } catch (e) {
-    console.error("[api/work-end-report POST]", e);
-    const msg =
-      e instanceof Error ? e.message : "稼働終了報告の送信に失敗しました";
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return pocketErrorResponse(e, {
+      scope: "api/work-end-report POST",
+      message: "稼働終了報告の送信に失敗しました",
+    });
   }
 }

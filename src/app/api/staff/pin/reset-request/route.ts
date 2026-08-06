@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -24,9 +26,9 @@ export async function POST(request: Request) {
     const { resetCode } = await requestStaffPinReset(ctx);
     return NextResponse.json({ ok: true, resetCode });
   } catch (e) {
-    console.error("[api/staff/pin/reset-request]", e);
-    const msg =
-      e instanceof Error ? e.message : "リセットコードの発行に失敗しました";
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return pocketErrorResponse(e, {
+      scope: "api/staff/pin/reset-request",
+      message: "リセットコードの発行に失敗しました",
+    });
   }
 }

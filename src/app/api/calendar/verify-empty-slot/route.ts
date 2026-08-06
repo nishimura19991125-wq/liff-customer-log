@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import {
   resolveConfiguredFieldToSchemaUniqueId,
 } from "@/lib/calendar-kojo";
@@ -86,11 +88,9 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ available: true, recordId });
   } catch (e) {
-    console.error("[api/calendar/verify-empty-slot]", e);
-    const msg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json(
-      { error: msg || "空枠の確認に失敗しました" },
-      { status: 502 },
-    );
+    return pocketErrorResponse(e, {
+      scope: "api/calendar/verify-empty-slot",
+      message: "空枠の確認に失敗しました",
+    });
   }
 }

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import { fetchCustomerCrmDetail } from "@/lib/customer-crm-detail";
 import {
@@ -51,9 +53,9 @@ export async function GET(request: Request, ctx: RouteCtx) {
 
     return NextResponse.json(result.detail);
   } catch (e) {
-    console.error("[api/customers/[recordId]]", e);
-    const msg =
-      e instanceof Error ? e.message : "顧客詳細の取得に失敗しました";
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return pocketErrorResponse(e, {
+      scope: "api/customers/[recordId]",
+      message: "顧客詳細の取得に失敗しました",
+    });
   }
 }

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -30,8 +32,10 @@ export async function GET(request: Request) {
       staffName: ctx.staffName,
     });
   } catch (e) {
-    console.error("[api/staff/pin/status]", e);
-    const msg = e instanceof Error ? e.message : "PIN状態の取得に失敗しました";
-    return NextResponse.json({ error: msg, enabled: false }, { status: 502 });
+    return pocketErrorResponse(e, {
+      scope: "api/staff/pin/status",
+      message: "PIN状態の取得に失敗しました",
+      extra: { enabled: false },
+    });
   }
 }

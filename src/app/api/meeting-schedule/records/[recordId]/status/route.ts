@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import { updateMeetingScheduleStatusForStaff } from "@/lib/meeting-schedule";
 import {
@@ -79,9 +81,9 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
       estimateStatus: result.estimateStatus,
     });
   } catch (e) {
-    console.error("[api/meeting-schedule/status]", e);
-    const msg =
-      e instanceof Error ? e.message : "見積ステータスの更新に失敗しました";
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return pocketErrorResponse(e, {
+      scope: "api/meeting-schedule/status",
+      message: "見積ステータスの更新に失敗しました",
+    });
   }
 }

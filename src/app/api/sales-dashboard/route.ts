@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import {
   apiKeyForSalesDashboardPtPocket,
   isPocketHttpRateLimitError,
@@ -98,8 +100,9 @@ export async function GET(request: Request) {
         { status: 429, headers: { "Retry-After": String(retrySec) } },
       );
     }
-    const msg =
-      e instanceof Error ? e.message : "営業ダッシュボードの取得に失敗しました";
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return pocketErrorResponse(e, {
+      scope: "api/sales-dashboard",
+      message: "営業ダッシュボードの取得に失敗しました",
+    });
   }
 }

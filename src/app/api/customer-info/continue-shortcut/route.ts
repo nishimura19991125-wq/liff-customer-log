@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import { findCustomerInfoPendingRecordsCached } from "@/lib/customer-info-pending-cache";
 import {
@@ -33,9 +35,10 @@ export async function GET(request: Request) {
     const shortcuts = await findCustomerInfoPendingRecordsCached(boundStaffName);
     return NextResponse.json({ shortcuts });
   } catch (e) {
-    console.error("[api/customer-info/continue-shortcut]", e);
-    const msg =
-      e instanceof Error ? e.message : "続き入力の確認に失敗しました";
-    return NextResponse.json({ error: msg, shortcuts: [] }, { status: 502 });
+    return pocketErrorResponse(e, {
+      scope: "api/customer-info/continue-shortcut",
+      message: "続き入力の確認に失敗しました",
+      extra: { shortcuts: [] },
+    });
   }
 }

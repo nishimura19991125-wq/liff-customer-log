@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import { getAttendanceStatusForLineUser } from "@/lib/attendance-server";
 import {
   lineAuthUnauthorizedResponse,
@@ -21,9 +23,9 @@ export async function GET(request: Request) {
     });
     return NextResponse.json(status);
   } catch (e) {
-    console.error("[api/attendance]", e);
-    const msg =
-      e instanceof Error ? e.message : "勤怠情報の取得に失敗しました";
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return pocketErrorResponse(e, {
+      scope: "api/attendance",
+      message: "勤怠情報の取得に失敗しました",
+    });
   }
 }

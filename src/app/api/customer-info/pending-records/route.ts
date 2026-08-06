@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import { findCustomerInfoPendingRecordsCached } from "@/lib/customer-info-pending-cache";
 import {
@@ -34,9 +36,10 @@ export async function GET(request: Request) {
     const records = await findCustomerInfoPendingRecordsCached(boundStaffName);
     return NextResponse.json({ records });
   } catch (e) {
-    console.error("[api/customer-info/pending-records]", e);
-    const msg =
-      e instanceof Error ? e.message : "未入力案件の取得に失敗しました";
-    return NextResponse.json({ error: msg, records: [] }, { status: 502 });
+    return pocketErrorResponse(e, {
+      scope: "api/customer-info/pending-records",
+      message: "未入力案件の取得に失敗しました",
+      extra: { records: [] },
+    });
   }
 }

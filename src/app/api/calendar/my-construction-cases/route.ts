@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import {
   apiKeyForCalendarPocket,
   fetchAppFields,
@@ -102,18 +104,10 @@ export async function GET(request: Request) {
     return NextResponse.json(payload);
   } catch (e) {
     console.error("[api/calendar/my-construction-cases]", e);
-    const msg =
-      e instanceof Error
-        ? e.message
-        : "工事対応案件の取得に失敗しました";
-    return NextResponse.json(
-      {
-        configured: true,
-        staffName: "",
-        items: [],
-        error: msg,
-      } satisfies ConstructionHandlerHomePayload,
-      { status: 502 },
-    );
+    return pocketErrorResponse(e, {
+      scope: "api/calendar/my-construction-cases",
+      message: "工事対応案件の取得に失敗しました",
+      extra: { configured: true, staffName: "", items: [] },
+    });
   }
 }

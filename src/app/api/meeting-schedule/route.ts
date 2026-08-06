@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import {
   buildMeetingScheduleForStaff,
@@ -44,9 +46,9 @@ export async function GET(request: Request) {
         : await buildMeetingScheduleForStaff(boundStaffName, date);
     return NextResponse.json(payload);
   } catch (e) {
-    console.error("[api/meeting-schedule]", e);
-    const msg =
-      e instanceof Error ? e.message : "商談進捗情報の取得に失敗しました";
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return pocketErrorResponse(e, {
+      scope: "api/meeting-schedule",
+      message: "商談進捗情報の取得に失敗しました",
+    });
   }
 }

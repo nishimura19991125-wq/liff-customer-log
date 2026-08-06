@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import { getAttendanceMonthCalendarForLineUser } from "@/lib/attendance-server";
 import {
   lineAuthUnauthorizedResponse,
@@ -35,9 +37,9 @@ export async function GET(request: Request) {
     );
     return NextResponse.json(data);
   } catch (e) {
-    console.error("[api/attendance/calendar]", e);
-    const msg =
-      e instanceof Error ? e.message : "勤怠カレンダーの取得に失敗しました";
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return pocketErrorResponse(e, {
+      scope: "api/attendance/calendar",
+      message: "勤怠カレンダーの取得に失敗しました",
+    });
   }
 }

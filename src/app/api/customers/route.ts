@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import {
   listCustomerCrmRecords,
@@ -54,16 +56,10 @@ export async function GET(request: Request) {
     const customers = await listCustomerCrmRecords(boundStaffName, filter);
     return NextResponse.json({ customers, filter });
   } catch (e) {
-    console.error("[api/customers]", e);
-    const raw =
-      e instanceof Error ? e.message : "担当顧客一覧の取得に失敗しました";
-    const isRateLimited = raw.includes("429");
-    const msg = isRateLimited
-      ? "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。"
-      : raw;
-    return NextResponse.json(
-      { error: msg, customers: [] },
-      { status: isRateLimited ? 429 : 502 },
-    );
+    return pocketErrorResponse(e, {
+      scope: "api/customers",
+      message: "担当顧客一覧の取得に失敗しました",
+      extra: { customers: [] },
+    });
   }
 }

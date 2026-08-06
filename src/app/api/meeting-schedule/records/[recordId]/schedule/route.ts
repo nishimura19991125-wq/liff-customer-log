@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import { updateMeetingScheduleScheduledForStaff } from "@/lib/meeting-schedule";
 import {
@@ -72,11 +74,9 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
       estimateStatus: result.estimateStatus,
     });
   } catch (e) {
-    console.error("[api/meeting-schedule/schedule]", e);
-    const msg =
-      e instanceof Error
-        ? e.message
-        : "商談・資料送付予定日時の更新に失敗しました";
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return pocketErrorResponse(e, {
+      scope: "api/meeting-schedule/schedule",
+      message: "商談・資料送付予定日時の更新に失敗しました",
+    });
   }
 }

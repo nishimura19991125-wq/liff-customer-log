@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { pocketErrorResponse } from "@/lib/api-error-response";
+
 import { buildApoAcquisitionFormPayload } from "@/lib/apo-acquisition-server";
 import {
   lineAuthUnauthorizedResponse,
@@ -29,11 +31,10 @@ export async function GET(request: Request) {
     );
     return NextResponse.json(payload);
   } catch (e) {
-    console.error("[api/apo-acquisition/form]", e);
-    const msg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json(
-      { configured: false, error: msg || "フォーム情報の取得に失敗しました" },
-      { status: 502 },
-    );
+    return pocketErrorResponse(e, {
+      scope: "api/apo-acquisition/form",
+      message: "フォーム情報の取得に失敗しました",
+      extra: { configured: false },
+    });
   }
 }
