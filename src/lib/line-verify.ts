@@ -1,5 +1,9 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
+import { resolveVerifyCacheExpiry } from "@/lib/line-verify-cache-expiry";
+
 /** LINE の verify が IdToken 期限切れを返したとき */
 export class LineIdTokenExpiredError extends Error {
   constructor() {
@@ -34,8 +38,14 @@ function lineVerifyCacheTtlMs(): number {
   return seconds * 1000;
 }
 
+/**
+ * キャッシュキー。**生の ID トークンをキーに使わない**。
+ * そのまま使うと有効な Bearer トークンが最大 2000 本プロセスメモリに平文常駐し、
+ * ヒープダンプから全ユーザーになりすませてしまう。
+ * この関数は export しない（キーの作り方を外へ広げないため）。
+ */
 function verifyCacheKey(channelId: string, idToken: string): string {
-  return `${channelId}\n${idToken}`;
+  return createHash("sha256").update(`${channelId}\n${idToken}`).digest("hex");
 }
 
 function pruneExpiredVerifyCache(now: number): void {
@@ -57,11 +67,10 @@ function enforceVerifyCacheSizeLimit(): void {
 function setVerifyCacheEntry(
   key: string,
   sub: string,
-  ttlMs: number,
+  expiresAt: number,
 ): void {
-  const now = Date.now();
-  pruneExpiredVerifyCache(now);
-  verifyCache.set(key, { sub, expiresAt: now + ttlMs });
+  pruneExpiredVerifyCache(Date.now());
+  verifyCache.set(key, { sub, expiresAt });
   enforceVerifyCacheSizeLimit();
 }
 
@@ -78,7 +87,7 @@ function lineVerifyResponseLooksExpired(bodyText: string): boolean {
 export async function verifyLineIdToken(
   idToken: string,
   channelId: string,
-): Promise<{ sub: string }> {
+): Promise<{ sub: string; exp?: number }> {
   const body = new URLSearchParams({
     id_token: idToken,
     client_id: channelId,
@@ -99,17 +108,24 @@ export async function verifyLineIdToken(
     throw new Error(`LINE token verification failed (${res.status})`);
   }
 
-  const json = (await res.json()) as { sub?: string };
+  const json = (await res.json()) as { sub?: string; exp?: unknown };
   if (!json.sub || typeof json.sub !== "string") {
     throw new Error("LINE token response missing sub");
   }
 
-  return { sub: json.sub };
+  return {
+    sub: json.sub,
+    ...(typeof json.exp === "number" && Number.isFinite(json.exp)
+      ? { exp: json.exp }
+      : {}),
+  };
 }
 
 /**
  * verifyLineIdToken の短時間キャッシュ付きラッパー。
  * 成功結果のみキャッシュ（期限切れ・検証失敗はキャッシュしない）。
+ * キャッシュキーは sha256 で、生の ID トークンはメモリに残さない。
+ * 有効期限は min(TTL, トークンの exp) にクランプする。
  * LINE_VERIFY_CACHE_SECONDS=0 のときは毎回ネットワーク検証する。
  */
 export async function verifyLineIdTokenCached(
@@ -118,7 +134,8 @@ export async function verifyLineIdTokenCached(
 ): Promise<{ sub: string }> {
   const ttlMs = lineVerifyCacheTtlMs();
   if (ttlMs <= 0) {
-    return verifyLineIdToken(idToken, channelId);
+    const { sub } = await verifyLineIdToken(idToken, channelId);
+    return { sub };
   }
 
   const key = verifyCacheKey(channelId, idToken);
@@ -134,8 +151,13 @@ export async function verifyLineIdTokenCached(
   const promise = (async () => {
     try {
       const result = await verifyLineIdToken(idToken, channelId);
-      setVerifyCacheEntry(key, result.sub, ttlMs);
-      return result;
+      // トークンの exp を超えてキャッシュを生かさない。
+      // exp が取れないときはキャッシュせず毎回検証する。
+      const expiresAt = resolveVerifyCacheExpiry(Date.now(), ttlMs, result.exp);
+      if (expiresAt !== null) {
+        setVerifyCacheEntry(key, result.sub, expiresAt);
+      }
+      return { sub: result.sub };
     } finally {
       verifyInflight.delete(key);
     }
