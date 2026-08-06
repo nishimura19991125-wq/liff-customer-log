@@ -1,6 +1,7 @@
 import type { AtPocketCreateRecordResult, AtPocketFetchAuth, AtPocketRecordRow } from "@/lib/atpocket";
 import { fetchRecordById, fetchRecordsList } from "@/lib/atpocket";
 import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
+import { escapePocketQueryValue } from "@/lib/atpocket-query-escape";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -89,11 +90,6 @@ function nameAppearsInRecordObject(
     if (s && nameMatchesLoose(s, wantName)) return true;
   }
   return false;
-}
-
-/** @pocket 一覧の query はフィールド式のみ（自由テキスト不可） */
-function escapePocketQueryValue(val: string): string {
-  return val.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 function buildFieldEqualsQuery(fieldId: string, value: string): string {

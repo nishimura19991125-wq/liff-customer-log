@@ -1,4 +1,5 @@
 import "server-only";
+import { escapePocketQueryValue } from "@/lib/atpocket-query-escape";
 
 import {
   apiKeyForAttendancePocket,
@@ -1016,10 +1017,6 @@ function monthDateBounds(year: number, month: number): {
   };
 }
 
-function escapePocketQueryValue(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
 function ymdInRange(ymd: string, start: string, end: string): boolean {
   return ymd >= start && ymd <= end;
 }
@@ -1093,7 +1090,8 @@ async function fetchMonthAttendanceRows(
   const staffId = ids.staffName!.trim();
   const dateId = ids.workDate!.trim();
   const staffQ = `${staffId}="${escapePocketQueryValue(staffName)}"`;
-  const rangeQ = `${dateId} >= "${start}" and ${dateId} <= "${end}"`;
+  // 値は年月から生成しており安全だが、一貫性のためエスケープ関数を通す
+  const rangeQ = `${dateId} >= "${escapePocketQueryValue(start)}" and ${dateId} <= "${escapePocketQueryValue(end)}"`;
   const queries = [`${staffQ} and ${rangeQ}`, staffQ];
 
   if (
