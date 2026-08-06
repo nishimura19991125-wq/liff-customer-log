@@ -8,6 +8,11 @@ import {
   fetchRecordById,
 } from "@/lib/atpocket";
 import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
+import { recordAuditLog } from "@/lib/audit-log";
+import {
+  computeAuditChanges,
+  formatDeletionContent,
+} from "@/lib/audit-log-changes";
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
 import {
   buildConstructionFillPatch,
@@ -33,6 +38,7 @@ import {
 import {
   constructionRecordHasAnyWorkDate,
 } from "@/lib/calendar-undated-cases";
+import { fieldCaptionByUniqueId } from "@/lib/customer-info-record";
 import { isCustomerTNumberCancelled } from "@/lib/customer-cancelled-t-numbers";
 import {
   lineAuthUnauthorizedResponse,
@@ -359,6 +365,58 @@ export async function POST(request: Request) {
       writeAuth,
     });
     constructionUpdated = true;
+
+    // 案件側の日程更新（ベストエフォート。失敗しても更新は確定済み）
+    await recordAuditLog({
+      lineUserId: auth.lineUserId,
+      operation: "update",
+      targetAppId: calAppId,
+      targetRecordId: caseRecordId,
+      targetTNumber: existingT,
+      changes: computeAuditChanges(caseRec, patch, {
+        labelOf: (fieldId) => fieldCaptionByUniqueId(constructionFields, fieldId),
+      }),
+    });
+
+    // A-4: 物理削除はログが唯一の復元手段なので、
+    // 削除前に全項目を記録し、書き込みに成功したときだけ deleteRecord を実行する。
+    const slotFullRow = await fetchRecordById(calAppId, slotRecordId, readAuth);
+    const slotFullRecord =
+      slotFullRow?.record && typeof slotFullRow.record === "object"
+        ? (slotFullRow.record as Record<string, unknown>)
+        : null;
+    if (!slotFullRecord) {
+      invalidateAllCalendarPayloadCache();
+      return NextResponse.json(
+        {
+          error:
+            "空き枠レコードを取得できなかったため、削除前の記録を残せません。案件への工事日の反映は完了しています。カレンダーを確認してください。",
+          constructionSaved: true,
+        },
+        { status: 502 },
+      );
+    }
+
+    const deletionLog = await recordAuditLog({
+      lineUserId: auth.lineUserId,
+      operation: "delete",
+      targetAppId: calAppId,
+      targetRecordId: slotRecordId,
+      targetTNumber: existingT,
+      deletionContent: formatDeletionContent(slotFullRecord, {
+        labelOf: (fieldId) => fieldCaptionByUniqueId(constructionFields, fieldId),
+      }),
+    });
+    if (!deletionLog.ok) {
+      invalidateAllCalendarPayloadCache();
+      return NextResponse.json(
+        {
+          error: `空き枠の削除記録を残せなかったため、削除を中止しました（${deletionLog.error}）。案件への工事日の反映は完了しています。時間をおいて再度お試しください。`,
+          constructionSaved: true,
+        },
+        { status: 502 },
+      );
+    }
 
     try {
       await deleteRecord(calAppId, slotRecordId, writeAuth);

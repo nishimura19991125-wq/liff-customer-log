@@ -607,7 +607,18 @@ export async function createApoAcquisitionRecord(
       writeAuth,
     );
 
-    return { ok: true, recordId };
+    const labels: Record<string, string> = {};
+    for (const f of apoFields) {
+      const id = f.uniqueId?.trim();
+      const caption = f.caption?.trim();
+      if (id && caption) labels[id] = caption;
+    }
+
+    return {
+      ok: true,
+      recordId,
+      audit: { appId: apoAppId, record: createPayload, labels },
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[apo-acquisition:create]", e);

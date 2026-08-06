@@ -6,6 +6,9 @@ import {
   fetchAppFields,
 } from "@/lib/atpocket";
 import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
+import { recordAuditLog } from "@/lib/audit-log";
+import { computeAuditChanges } from "@/lib/audit-log-changes";
+import { fieldCaptionByUniqueId } from "@/lib/customer-info-record";
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
 import {
   buildConstructionFillPatch,
@@ -327,6 +330,19 @@ export async function POST(request: Request) {
         importKeyFieldId: resolvedTNumber,
         readAuth,
         writeAuth,
+      });
+
+      // 新規登録（ベストエフォート。登録は確定済み）
+      await recordAuditLog({
+        lineUserId: auth.lineUserId,
+        operation: "create",
+        targetAppId: calAppId,
+        targetRecordId: recordId,
+        targetTNumber: uniqueKey,
+        changes: computeAuditChanges(null, patch, {
+          labelOf: (fieldId) =>
+            fieldCaptionByUniqueId(constructionFields, fieldId),
+        }),
       });
     }
 

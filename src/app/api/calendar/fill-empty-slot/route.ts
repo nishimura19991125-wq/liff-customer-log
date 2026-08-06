@@ -20,6 +20,9 @@ import {
   fetchAppFields,
 } from "@/lib/atpocket";
 import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
+import { recordAuditLog } from "@/lib/audit-log";
+import { computeAuditChanges } from "@/lib/audit-log-changes";
+import { fieldCaptionByUniqueId } from "@/lib/customer-info-record";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import {
   calendarSlotConflictResponse,
@@ -293,6 +296,19 @@ export async function POST(request: Request) {
       writeAuth,
     });
     constructionUpdated = true;
+
+    // 空き枠への入力（ベストエフォート。書き込みは確定済み）
+    await recordAuditLog({
+      lineUserId: auth.lineUserId,
+      operation: "update",
+      targetAppId: calAppId,
+      targetRecordId: recordId,
+      targetTNumber: existingT,
+      changes: computeAuditChanges(recObj, patch, {
+        labelOf: (fieldId) => fieldCaptionByUniqueId(constructionFields, fieldId),
+      }),
+    });
+
     invalidateAllCalendarPayloadCache();
 
     return finalizeConstructionCalendarSave({

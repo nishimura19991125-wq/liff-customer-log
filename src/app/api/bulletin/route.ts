@@ -6,6 +6,9 @@ import {
   updateBulletinPost,
 } from "@/lib/bulletin-server";
 import { isBulletinCategory, isBulletinTag } from "@/lib/bulletin-types";
+import { recordAuditLog } from "@/lib/audit-log";
+import { computeAuditChanges } from "@/lib/audit-log-changes";
+import type { BulletinWriteAudit } from "@/lib/bulletin-server";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -51,6 +54,23 @@ function parseBulletinInput(
   return { ok: true, data: { category, tags, title, body: bodyText } };
 }
 
+/** 掲示板の書き込みを監査ログへ（ベストエフォート・戻り値は見ない） */
+async function logBulletinWrite(
+  lineUserId: string,
+  operation: "create" | "update",
+  audit: BulletinWriteAudit,
+): Promise<void> {
+  await recordAuditLog({
+    lineUserId,
+    operation,
+    targetAppId: audit.appId,
+    targetRecordId: audit.recordId,
+    changes: computeAuditChanges(audit.before, audit.after, {
+      labelOf: (fieldId) => audit.labels[fieldId],
+    }),
+  });
+}
+
 /** お知らせ一覧 */
 export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);
@@ -91,6 +111,7 @@ export async function POST(request: Request) {
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
+    await logBulletinWrite(auth.lineUserId, "create", result.audit);
     const list = await buildBulletinList();
     return NextResponse.json({ ok: true, ...list });
   } catch (e) {
@@ -131,6 +152,7 @@ export async function PUT(request: Request) {
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
+    await logBulletinWrite(auth.lineUserId, "update", result.audit);
     const list = await buildBulletinList();
     return NextResponse.json({ ok: true, ...list });
   } catch (e) {

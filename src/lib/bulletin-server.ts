@@ -3,6 +3,7 @@ import "server-only";
 import {
   createRecord,
   fetchAppFields,
+  fetchRecordById,
   fetchRecordsList,
   updateRecord,
   type AtPocketRecordRow,
@@ -24,6 +25,22 @@ import type { BulletinListResponse, BulletinPost } from "@/lib/bulletin-types";
 import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
 import { checkboxGroupValueFromPocket } from "@/lib/customer-info-form/checkbox-pocket";
 import { coerceCustomerInfoDisplayString } from "@/lib/customer-info-record";
+
+/** 監査ログ用に、書き込んだ内容と（更新時は）更新前の値を呼び出し元へ返す */
+export type BulletinWriteAudit = {
+  appId: string;
+  recordId: string;
+  /** 更新前の値。新規作成時は null */
+  before: Record<string, unknown> | null;
+  /** 書き込んだ内容 */
+  after: Record<string, unknown>;
+  /** fieldId → 表示ラベル */
+  labels: Record<string, string>;
+};
+
+export type BulletinWriteResult =
+  | { ok: true; audit: BulletinWriteAudit }
+  | { ok: false; status: number; error: string };
 
 const FIELDS_CACHE_MS = 3_600_000;
 let fieldsCache: {
@@ -64,6 +81,15 @@ async function loadFieldIds(): Promise<
 
   fieldsCache = { appId, ids, expiresAt: Date.now() + FIELDS_CACHE_MS };
   return { ok: true, appId, ids };
+}
+
+function bulletinFieldLabels(ids: BulletinFieldIds): Record<string, string> {
+  const labels: Record<string, string> = {};
+  if (ids.title) labels[ids.title] = "タイトル";
+  if (ids.body) labels[ids.body] = "詳細";
+  if (ids.category) labels[ids.category] = "カテゴリー";
+  if (ids.tags) labels[ids.tags] = "タグ";
+  return labels;
 }
 
 function readText(
@@ -160,7 +186,7 @@ export async function createBulletinPost(input: {
   tags: string[];
   title: string;
   body: string;
-}): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+}): Promise<BulletinWriteResult> {
   const loaded = await loadFieldIds();
   if (!loaded.ok) {
     return { ok: false, status: 503, error: loaded.error };
@@ -184,14 +210,25 @@ export async function createBulletinPost(input: {
   // タグはチェックボックス列なので配列で送る
   if (ids.tags && input.tags.length > 0) record[ids.tags] = input.tags;
 
+  let recordId = "";
   try {
-    await createRecord(appId, record, writeAuth);
+    const created = await createRecord(appId, record, writeAuth);
+    recordId = atPocketRecordIdFromRow(created.row) || created.recordIdHint || "";
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, status: 502, error: formatBulletinCreateError(msg) };
   }
 
-  return { ok: true };
+  return {
+    ok: true,
+    audit: {
+      appId,
+      recordId,
+      before: null,
+      after: record,
+      labels: bulletinFieldLabels(ids),
+    },
+  };
 }
 
 export async function updateBulletinPost(
@@ -202,7 +239,7 @@ export async function updateBulletinPost(
     title: string;
     body: string;
   },
-): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+): Promise<BulletinWriteResult> {
   const loaded = await loadFieldIds();
   if (!loaded.ok) {
     return { ok: false, status: 503, error: loaded.error };
@@ -226,6 +263,17 @@ export async function updateBulletinPost(
   // タグはチェックボックス列（空配列で全解除できるよう常に送る）
   if (ids.tags) record[ids.tags] = input.tags;
 
+  // 監査ログ用の更新前の値。取得に失敗しても更新は続行する（A-5 ベストエフォート）
+  let before: Record<string, unknown> | null = null;
+  try {
+    const row = await fetchRecordById(appId, recordId, bulletinFieldAuth());
+    if (row?.record && typeof row.record === "object") {
+      before = row.record as Record<string, unknown>;
+    }
+  } catch (e) {
+    console.warn("[bulletin] 監査ログ用の更新前レコード取得に失敗", e);
+  }
+
   try {
     await updateRecord(appId, recordId, record, writeAuth);
   } catch (e) {
@@ -233,7 +281,16 @@ export async function updateBulletinPost(
     return { ok: false, status: 502, error: formatBulletinUpdateError(msg) };
   }
 
-  return { ok: true };
+  return {
+    ok: true,
+    audit: {
+      appId,
+      recordId,
+      before,
+      after: record,
+      labels: bulletinFieldLabels(ids),
+    },
+  };
 }
 
 /** @pocket 更新失敗メッセージをユーザー向けに整形 */

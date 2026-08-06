@@ -5,6 +5,10 @@ import {
   isPocketApiRateLimited,
   pocketApiRateLimitRemainingMs,
 } from "@/lib/atpocket";
+import type {
+  AssertNoStaffSecrets,
+  StaffApiSummary,
+} from "@/lib/staff-api-types";
 import { resolveStaffApClRoleByName } from "@/lib/staff-ap-cl-candidates";
 import { lookupStaffDepartmentByStaffName } from "@/lib/staff-department-lookup";
 import {
@@ -134,7 +138,9 @@ export async function GET(request: Request) {
           availabilityCfg.cfg,
         );
       })
-      .map(({ id, name, importKey }) => ({
+      // 名簿の生レコード（rec）はメールアドレス等を含むので、ここで安全な項目だけに絞る。
+      // 型注釈は「応答型に機密項目が混入したらコンパイルエラーにする」ための担保。
+      .map(({ id, name, importKey }): AssertNoStaffSecrets<StaffApiSummary> => ({
         id,
         name,
         ...(importKey !== undefined ? { importKey } : {}),

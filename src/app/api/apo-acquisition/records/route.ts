@@ -6,6 +6,8 @@ import type {
   ApoAcquisitionFileAttachment,
   ApoAcquisitionValues,
 } from "@/lib/apo-acquisition-types";
+import { recordAuditLog } from "@/lib/audit-log";
+import { computeAuditChanges } from "@/lib/audit-log-changes";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -50,6 +52,17 @@ export async function POST(request: Request) {
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
+
+  // ベストエフォート。登録は確定済みなので戻り値は見ない
+  await recordAuditLog({
+    lineUserId: auth.lineUserId,
+    operation: "create",
+    targetAppId: result.audit.appId,
+    targetRecordId: result.recordId,
+    changes: computeAuditChanges(null, result.audit.record, {
+      labelOf: (fieldId) => result.audit.labels[fieldId],
+    }),
+  });
 
   return NextResponse.json({ ok: true, recordId: result.recordId });
 }

@@ -91,6 +91,13 @@ export type ApoAcquisitionCreateInput = {
   files?: Partial<Record<ApoAcquisitionFieldKey, ApoAcquisitionFileAttachment[]>>;
 };
 
+/** 監査ログ用。書き込んだ内容と表示ラベル */
+export type ApoAcquisitionCreateAudit = {
+  appId: string;
+  record: Record<string, unknown>;
+  labels: Record<string, string>;
+};
+
 export type ApoAcquisitionCreateResult =
-  | { ok: true; recordId: string }
+  | { ok: true; recordId: string; audit: ApoAcquisitionCreateAudit }
   | { ok: false; status: number; error: string };

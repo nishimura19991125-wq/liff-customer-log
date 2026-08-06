@@ -44,3 +44,7 @@ next-env.d.ts
 # standalone @pocket / LINE bot scripts (managed outside this repo)
 /ranking_pt_dashboard.js
 /ranking_pt_dashboard.config.js
+
+# 調査スクリプトの出力（個人情報を含むためコミットしない）
+/audit-output/
+/phase1b-audit/

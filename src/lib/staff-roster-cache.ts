@@ -6,7 +6,10 @@ import {
   isPocketApiRateLimited,
   staffReadListAuths,
 } from "@/lib/atpocket";
-import { staffImportKeyFieldIdResolved } from "@/lib/staff-import-key";
+import {
+  readStaffImportKeyFromRawRecord,
+  staffImportKeyFieldIdResolved,
+} from "@/lib/staff-import-key";
 import { staffRecordMatchesLineUser } from "@/lib/staff-line-binding";
 import { resolveStaffGeneralAvailabilityConfig } from "@/lib/staff-general-availability";
 import {
@@ -14,6 +17,10 @@ import {
   staffLineUserIdFieldIdsFromEnv,
   staffLineUserIdFieldsCsv,
 } from "@/lib/staff-line-field-config";
+import {
+  staffEmailFieldId,
+  staffEmailFieldIdConfigured,
+} from "@/lib/staff-email-field-config";
 import { staffPhoneFieldIdConfigured } from "@/lib/staff-phone-field-config";
 
 type RosterCacheEntry = {
@@ -63,7 +70,8 @@ function staffRosterMinRefetchMs(): number {
 const STAFF_LIST_FETCH_OPTIONS = { maxRetries: 0 } as const;
 
 /** 名簿 fields CSV の版（列追加時にキャッシュを無効化） */
-const STAFF_ROSTER_FIELDS_CSV_VERSION = "4";
+/** v5: 監査ログの「実行者」用にメールアドレス列を追加（STAFF_EMAIL_FIELD_ID） */
+const STAFF_ROSTER_FIELDS_CSV_VERSION = "5";
 
 function appendFieldIdsToCsv(
   fields: string,
@@ -102,7 +110,8 @@ function rosterCacheKey(): string | null {
   const lineIds = staffLineUserIdFieldIdsFromEnv();
   const lineOn = staffLineBindingEnabled(lineIds);
   const phoneEnv = staffPhoneFieldIdConfigured();
-  return `${staffAppId}\u0000${staffNameFieldId}\u0000${lineOn ? "line" : "name"}\u0000${phoneEnv}\u0000${STAFF_ROSTER_FIELDS_CSV_VERSION}`;
+  const emailEnv = staffEmailFieldIdConfigured();
+  return `${staffAppId}\u0000${staffNameFieldId}\u0000${lineOn ? "line" : "name"}\u0000${phoneEnv}\u0000${emailEnv}\u0000${STAFF_ROSTER_FIELDS_CSV_VERSION}`;
 }
 
 function isRateLimited(now: number): boolean {
@@ -172,6 +181,8 @@ function staffRosterListFieldsCsv(): string {
   }
 
   parts.push(staffPhoneFieldIdConfigured());
+  // 監査ログの「実行者」用。クライアントへは返さない（staff-api-types.ts で型担保）
+  parts.push(staffEmailFieldIdConfigured());
 
   return [...new Set(parts.map((p) => p.trim()).filter(Boolean))].join(",");
 }
@@ -180,6 +191,7 @@ function staffRosterListFieldsCsv(): string {
 function staffRosterUseExtendedFieldsCsv(): boolean {
   const lineIds = staffLineUserIdFieldIdsFromEnv();
   if (lineIds.lineField1 || lineIds.lineField2) return true;
+  if (staffEmailFieldIdConfigured()) return true;
   for (const envKey of [
     "STAFF_AP_AVAILABILITY_FIELD_ID",
     "STAFF_CL_AVAILABILITY_FIELD_ID",
@@ -367,6 +379,70 @@ export function patchStaffRosterAfterLineBind(opts: {
     rosterCache.freshUntil = Date.now() + staffRosterCacheTtlMs();
     return;
   }
+}
+
+/**
+ * 名簿1件の内部表現。**メールアドレスを含むためクライアントへ返してはならない。**
+ * API 応答は StaffApiSummary（src/lib/staff-api-types.ts）を使うこと。
+ */
+export type StaffRosterEntry = {
+  id: string;
+  name: string;
+  /** 社員ID（STAFF_IMPORT_KEY_FIELD_ID）。未設定なら空文字 */
+  staffCode: string;
+  /** メールアドレス（STAFF_EMAIL_FIELD_ID）。未登録なら空文字 */
+  email: string;
+};
+
+/**
+ * 監査ログの「実行者」を解決するための内部用ルックアップ。
+ * boundStaffFromRosterRows と違いメールアドレスと社員IDを含む。
+ */
+export function boundStaffEntryFromRosterRows(
+  rows: AtPocketRecordRow[],
+  lineUserId: string,
+): StaffRosterEntry | null {
+  const staffNameFieldId = process.env.STAFF_NAME_FIELD_ID?.trim();
+  if (!staffNameFieldId) return null;
+
+  const lineIds = staffLineUserIdFieldIdsFromEnv();
+  if (!staffLineBindingEnabled(lineIds)) return null;
+
+  const emailFieldId = staffEmailFieldId();
+
+  for (const row of rows) {
+    const rec = row.record;
+    if (!rec || typeof rec !== "object") continue;
+    const recObj = rec as Record<string, unknown>;
+    const id =
+      row.recordId != null ? String(row.recordId) : row.uniqueId ?? "";
+    if (!id) continue;
+    if (
+      !staffRecordMatchesLineUser(
+        recObj,
+        lineIds.lineField1,
+        lineIds.lineField2,
+        lineUserId,
+      )
+    ) {
+      continue;
+    }
+
+    const rawName = recObj[staffNameFieldId];
+    const name =
+      rawName === undefined || rawName === null ? "" : String(rawName).trim();
+    const rawEmail = emailFieldId ? recObj[emailFieldId] : undefined;
+    const email =
+      rawEmail === undefined || rawEmail === null ? "" : String(rawEmail).trim();
+
+    return {
+      id,
+      name,
+      staffCode: readStaffImportKeyFromRawRecord(recObj),
+      email,
+    };
+  }
+  return null;
 }
 
 export function boundStaffFromRosterRows(

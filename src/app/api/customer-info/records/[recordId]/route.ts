@@ -38,6 +38,8 @@ import {
   fetchRecordById,
   updateRecord,
 } from "@/lib/atpocket";
+import { computeAuditChanges } from "@/lib/audit-log-changes";
+import { auditLogEnabled, recordAuditLog } from "@/lib/audit-log";
 import { invalidateCustomerInfoKeyLookupCache } from "@/lib/customer-info-key-lookup-cache";
 import { invalidateCustomerInfoPendingCache } from "@/lib/customer-info-pending-cache";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
@@ -52,12 +54,26 @@ export const dynamic = "force-dynamic";
 
 type RouteCtx = { params: Promise<{ recordId: string }> };
 
+/** 監査ログの「対象T番」に入れる値（取れなければ空文字） */
+function readTargetTNumber(
+  recObj: Record<string, unknown> | null,
+  appFields: Awaited<ReturnType<typeof fetchAppFields>>,
+): string {
+  if (!recObj) return "";
+  const tNumberId = appFields.find(
+    (f) => f.caption?.trim() === "T番号",
+  )?.uniqueId;
+  if (!tNumberId) return "";
+  return readCustomerInfoFieldValue(recObj, tNumberId);
+}
+
 async function attachImportKeyAndUpdate(
   appId: string,
   recordId: string,
   pocketAuth: AtPocketFetchAuth,
   appFields: Awaited<ReturnType<typeof fetchAppFields>>,
   payload: Record<string, unknown>,
+  lineUserId: string,
 ): Promise<NextResponse | null> {
   const keyResult = await attachCustomerInfoImportKeyToPayload(
     appId,
@@ -76,7 +92,37 @@ async function attachImportKeyAndUpdate(
   for (const [k, v] of Object.entries(payload)) {
     normalized[k] = customerInfoPutValue(v);
   }
+
+  // 監査ログ用に更新前の値を取っておく。取得に失敗しても保存は続行する（B-1-3 案 b）
+  let before: Record<string, unknown> | null = null;
+  if (auditLogEnabled()) {
+    try {
+      const row = await fetchRecordById(appId, recordId, pocketAuth);
+      if (row?.record && typeof row.record === "object") {
+        before = row.record as Record<string, unknown>;
+      }
+    } catch (e) {
+      console.warn(
+        "[api/customer-info/records/[recordId]] 監査ログ用の更新前レコード取得に失敗",
+        e,
+      );
+    }
+  }
+
   await updateRecord(appId, recordId, normalized, pocketAuth);
+
+  // 記録に失敗しても保存は確定済み。戻り値は見ない（A-5 ベストエフォート）
+  await recordAuditLog({
+    lineUserId,
+    operation: "update",
+    targetAppId: appId,
+    targetRecordId: recordId,
+    targetTNumber: readTargetTNumber(before, appFields),
+    changes: computeAuditChanges(before, normalized, {
+      labelOf: (fieldId) => fieldCaptionByUniqueId(appFields, fieldId),
+    }),
+  });
+
   return null;
 }
 
@@ -369,6 +415,7 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         writeAuth,
         appFields,
         payload,
+        auth.lineUserId,
       );
       if (keyErr) return keyErr;
 
@@ -415,6 +462,7 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       writeAuth,
       appFields,
       patch,
+      auth.lineUserId,
     );
     if (keyErr) return keyErr;
     invalidateCustomerInfoPendingCache();

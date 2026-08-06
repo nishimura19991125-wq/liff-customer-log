@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { buildCalendarPatchAfterConstructionSave } from "@/lib/calendar-record-patch-server";
+import { recordAuditLog } from "@/lib/audit-log";
+import { computeAuditChanges } from "@/lib/audit-log-changes";
+import { fieldCaptionByUniqueId } from "@/lib/customer-info-record";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
@@ -168,15 +171,29 @@ export async function POST(request: Request) {
     }
 
     const writeAuth = { apiKey: apiKeyForCalendarWrite() };
-    await updateRecord(
-      calAppId,
-      recordId,
-      {
-        [resolvedTNumber]: existingT,
-        [resolvedHandlerField]: resolvedName.name,
-      },
-      writeAuth,
-    );
+    const handlerPatch = {
+      [resolvedTNumber]: existingT,
+      [resolvedHandlerField]: resolvedName.name,
+    };
+    await updateRecord(calAppId, recordId, handlerPatch, writeAuth);
+
+    // 工事対応者の差し替え（ベストエフォート。更新は確定済み）
+    await recordAuditLog({
+      lineUserId: auth.lineUserId,
+      operation: "update",
+      targetAppId: calAppId,
+      targetRecordId: recordId,
+      targetTNumber: existingT,
+      changes: computeAuditChanges(
+        recRow.record as Record<string, unknown>,
+        handlerPatch,
+        {
+          labelOf: (fieldId) =>
+            fieldCaptionByUniqueId(constructionFields, fieldId),
+        },
+      ),
+    });
+
     invalidateAllCalendarPayloadCache();
 
     // 保存自体は完了済み。画面差分の再取得が 429 でも成功扱いにする
