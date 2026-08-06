@@ -1,3 +1,5 @@
+import "server-only";
+
 import type { AtPocketRecordRow } from "@/lib/atpocket";
 import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
 

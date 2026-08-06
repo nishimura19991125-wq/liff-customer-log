@@ -1,3 +1,5 @@
+import "server-only";
+
 import type { AtPocketFieldRow } from "@/lib/atpocket";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
 import type { CustomerInfoFormFieldResolved } from "@/lib/customer-info-form/types";

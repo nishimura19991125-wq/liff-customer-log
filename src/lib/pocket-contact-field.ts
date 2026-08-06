@@ -1,3 +1,5 @@
+import "server-only";
+
 import { parseAtPocketFileField } from "@/lib/at-pocket-file-field";
 import { formatPhoneNumberInput, parsePhoneDigits } from "@/lib/customer-info-form/phone-number";
 import { pocketTableCellToPlainString } from "@/lib/staff-construction-availability";

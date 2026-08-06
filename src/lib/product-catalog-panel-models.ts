@@ -1,3 +1,5 @@
+import "server-only";
+
 /** @deprecated 互換のため残置。新規コードは product-catalog-models を直接 import */
 export {
   fetchPanelModelsForManufacturer,
