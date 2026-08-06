@@ -1,5 +1,7 @@
 import "server-only";
 
+import { randomInt } from "node:crypto";
+
 import type { AtPocketFieldRow } from "@/lib/atpocket";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
 
@@ -95,8 +97,9 @@ export function isStaffPinConfigured(raw: string): boolean {
 }
 
 export function generateStaffResetCode(): string {
-  const n = Math.floor(Math.random() * 10_000);
-  return String(n).padStart(4, "0");
+  // 暗号論的乱数を使う（Math.random は予測可能）。
+  // 桁数・フォーマットは @pocket の列と事務所の運用に合わせて 4 桁ゼロ埋めのまま。
+  return String(randomInt(0, 10_000)).padStart(4, "0");
 }
 
 export function isResetApprovalApproved(value: string): boolean {
