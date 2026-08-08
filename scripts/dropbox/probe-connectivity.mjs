@@ -153,7 +153,7 @@ function pathRootHeaderValue(rootNamespaceId) {
   return JSON.stringify({ ".tag": "root", root: String(rootNamespaceId) });
 }
 
-/** 「/BY/1.顧客情報/2.お客様書類」→ ["/BY", "/BY/1.顧客情報", "/BY/1.顧客情報/2.お客様書類"] */
+/** 「/A/B/C」→ ["/A", "/A/B", "/A/B/C"] */
 function ancestorPaths(fullPath) {
   const segments = fullPath.split("/").filter(Boolean);
   const out = [];

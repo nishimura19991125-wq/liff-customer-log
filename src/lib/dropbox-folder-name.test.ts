@@ -55,7 +55,8 @@ describe("sanitizeDropboxName", () => {
   });
 
   it("先頭・中間のピリオドは残す", () => {
-    expect(sanitizeDropboxName("1.顧客情報")).toBe("1.顧客情報");
+    expect(sanitizeDropboxName("1.abc")).toBe("1.abc");
+    expect(sanitizeDropboxName("A.B.C")).toBe("A.B.C");
   });
 
   it("空文字・空白のみは空文字になる", () => {
@@ -93,23 +94,29 @@ describe("buildCustomerFolderName", () => {
   });
 });
 
+// パスは実際のチームフォルダ構成に依存させない。
+// 実パスを書くと Netlify のシークレットスキャンがビルドを止めるため。
+// ここで確かめたいのは「多段パスの連結」と「末尾スラッシュの正規化」なので
+// 中身が何であるかは問わない。
 describe("joinDropboxPath", () => {
   it("ルートとフォルダ名を連結する", () => {
-    expect(joinDropboxPath("/BY/1.顧客情報/2.お客様書類", "T1_山田様")).toBe(
-      "/BY/1.顧客情報/2.お客様書類/T1_山田様",
+    expect(joinDropboxPath("/A/B/C", "T1_山田様")).toBe("/A/B/C/T1_山田様");
+  });
+
+  it("日本語・ピリオドを含む多段パスでも連結できる", () => {
+    expect(joinDropboxPath("/親/1.子/2.孫", "T1_山田様")).toBe(
+      "/親/1.子/2.孫/T1_山田様",
     );
   });
 
   it("ルートの末尾スラッシュを落とす", () => {
-    expect(joinDropboxPath("/BY/", "T1_山田様")).toBe("/BY/T1_山田様");
+    expect(joinDropboxPath("/A/", "T1_山田様")).toBe("/A/T1_山田様");
   });
 });
 
 describe("dropboxParentPath", () => {
   it("親ディレクトリを返す", () => {
-    expect(dropboxParentPath("/BY/1.顧客情報/T1_山田様")).toBe(
-      "/BY/1.顧客情報",
-    );
+    expect(dropboxParentPath("/A/B/T1_山田様")).toBe("/A/B");
   });
 
   it("直下は空文字を返す", () => {
