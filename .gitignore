@@ -48,3 +48,6 @@ next-env.d.ts
 # 調査スクリプトの出力（個人情報を含むためコミットしない）
 /audit-output/
 /phase1b-audit/
+
+# Local Netlify folder
+.netlify
