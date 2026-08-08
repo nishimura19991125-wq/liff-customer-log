@@ -553,6 +553,26 @@ function CaseConstructionHandlerEditor({
   );
 }
 
+/**
+ * 保存そのものは成功したが、付随処理（Dropbox フォルダ作成）が失敗したときの警告。
+ *
+ * 成功メッセージ（緑）とは別枠・別色で出す。緑のメッセージに紛れ込ませると
+ * 気づかれず、警告の意味がなくなるため。
+ * Phase 0 §8-G4 のとおり、コードベース全体で aria-live は2箇所しかない。
+ * 新規実装分から role="alert" / aria-live="assertive" を付けて改善する。
+ */
+function SaveWarningBanner({ text }: { text: string }) {
+  return (
+    <div
+      role="alert"
+      aria-live="assertive"
+      className="mt-3 rounded-xl border-2 border-amber-400 bg-amber-50 px-3 py-2.5 text-[13px] font-bold leading-relaxed text-amber-900"
+    >
+      ⚠ {text}
+    </div>
+  );
+}
+
 const WEEK_LABELS = ["日", "月", "火", "水", "木", "金", "土"] as const;
 const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -1043,6 +1063,8 @@ function EmptySlotCard({
     kind: "ok" | "err";
     text: string;
   } | null>(null);
+  /** 保存は成功したが Dropbox フォルダを用意できなかったときの警告（E-5） */
+  const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const [shigumiDate, setShigumiDate] = useState("");
   const [panelWorkDate, setPanelWorkDate] = useState("");
   const [electricWorkDate, setElectricWorkDate] = useState("");
@@ -1265,6 +1287,7 @@ function EmptySlotCard({
     if (handlerMisconfigured) return;
     setSubmitting(true);
     setFeedback(null);
+    setSaveWarning(null);
     try {
       const token = await idTokenForConstructionSubmit(idToken, onSessionExpired);
       if (!token) return;
@@ -1327,6 +1350,8 @@ function EmptySlotCard({
         customerInfoSynced?: boolean;
         constructionSaved?: boolean;
         calendarPatch?: CalendarRecordMonthPatch;
+        /** Dropbox フォルダを用意できなかったときの警告（E-5） */
+        warning?: string;
       } = {};
       if (rawBody.trim()) {
         try {
@@ -1399,6 +1424,7 @@ function EmptySlotCard({
             ? "保存しました。@pocket に反映し、お客様情報アプリにも連携しました。"
             : "保存しました。@pocket にも反映済みです。"),
       });
+      setSaveWarning(data.warning?.trim() || null);
     } catch (e) {
       setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
     } finally {
@@ -1917,6 +1943,7 @@ function EmptySlotCard({
           {feedback.text}
         </p>
       ) : null}
+      {saveWarning ? <SaveWarningBanner text={saveWarning} /> : null}
     </div>
   );
 }
@@ -1946,6 +1973,8 @@ function NewConstructionRecordPanel({
     kind: "ok" | "err";
     text: string;
   } | null>(null);
+  /** 登録は成功したが Dropbox フォルダを用意できなかったときの警告（E-5） */
+  const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const [shigumiDate, setShigumiDate] = useState("");
   const [panelWorkDate, setPanelWorkDate] = useState("");
   const [electricWorkDate, setElectricWorkDate] = useState("");
@@ -2024,6 +2053,7 @@ function NewConstructionRecordPanel({
     if (!name || !hs) return;
     setSubmitting(true);
     setFeedback(null);
+    setSaveWarning(null);
     try {
       const token = await idTokenForConstructionSubmit(idToken, onSessionExpired);
       if (!token) return;
@@ -2066,6 +2096,8 @@ function NewConstructionRecordPanel({
         customerInfoSynced?: boolean;
         constructionSaved?: boolean;
         calendarPatch?: CalendarRecordMonthPatch;
+        /** Dropbox フォルダを用意できなかったときの警告（E-5） */
+        warning?: string;
       } = {};
       if (rawBody.trim()) {
         try {
@@ -2128,6 +2160,7 @@ function NewConstructionRecordPanel({
             ? "登録しました。@pocket で T番号が採番され、お客様情報アプリにも連携しました。"
             : "登録しました。@pocket で T番号が採番されています。"),
       });
+      setSaveWarning(data.warning?.trim() || null);
     } catch (e) {
       setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
     } finally {
@@ -2143,6 +2176,7 @@ function NewConstructionRecordPanel({
         onClick={() => {
           onToggleOpen();
           setFeedback(null);
+          setSaveWarning(null);
         }}
       >
         {open ? "閉じる" : "新規登録"}
@@ -2332,6 +2366,7 @@ function NewConstructionRecordPanel({
           {feedback.text}
         </p>
       ) : null}
+      {saveWarning ? <SaveWarningBanner text={saveWarning} /> : null}
     </div>
   );
 }

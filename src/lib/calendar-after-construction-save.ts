@@ -73,11 +73,17 @@ export async function finalizeConstructionCalendarSave(opts: {
       )
     : null;
 
+  // Dropbox フォルダを用意できなくても登録・更新は成功として返す（E-5）。
+  // 画面側は warning を成功メッセージとは別に目立たせて出す。
+  const dropboxWarning =
+    customerSync.kind === "synced" ? customerSync.dropboxWarning : undefined;
+
   return NextResponse.json({
     ok: true,
     customerInfoSynced: customerSync.kind === "synced",
     ...(recordId ? { recordId } : {}),
     ...(calendarPatch ? { calendarPatch } : {}),
+    ...(dropboxWarning ? { warning: dropboxWarning } : {}),
     ...(opts.extraResponse ?? {}),
   });
 }
