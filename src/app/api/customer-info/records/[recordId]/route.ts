@@ -42,6 +42,8 @@ import {
 } from "@/lib/atpocket";
 import { computeAuditChanges } from "@/lib/audit-log-changes";
 import { auditLogEnabled, recordAuditLog } from "@/lib/audit-log";
+import { applyDropboxFolderRenameToPayload } from "@/lib/customer-info-dropbox-link";
+import { dropboxConfigured } from "@/lib/dropbox";
 import { invalidateCustomerInfoKeyLookupCache } from "@/lib/customer-info-key-lookup-cache";
 import { invalidateCustomerInfoPendingCache } from "@/lib/customer-info-pending-cache";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
@@ -95,9 +97,10 @@ async function attachImportKeyAndUpdate(
     normalized[k] = customerInfoPutValue(v);
   }
 
-  // 監査ログ用に更新前の値を取っておく。取得に失敗しても保存は続行する（B-1-3 案 b）
+  // 更新前の値は監査ログと Dropbox のフォルダ名追随（E-4）の両方が必要とする。
+  // 取得に失敗しても保存は続行する（B-1-3 案 b）
   let before: Record<string, unknown> | null = null;
-  if (auditLogEnabled()) {
+  if (auditLogEnabled() || dropboxConfigured()) {
     try {
       const row = await fetchRecordById(appId, recordId, pocketAuth);
       if (row?.record && typeof row.record === "object") {
@@ -111,18 +114,32 @@ async function attachImportKeyAndUpdate(
     }
   }
 
+  const labelOf = (fieldId: string) =>
+    fieldCaptionByUniqueId(appFields, fieldId);
+  const targetTNumber = readTargetTNumber(before, appFields);
+
+  // E-4: 顧客名が変わっていたら Dropbox フォルダをリネームし、新しいリンクを
+  // この payload に載せる。差分は監査ログ用の計算をそのまま渡して使い回す。
+  // 失敗しても顧客情報の更新は止めない（ヘルパ側で例外を握る）。
+  await applyDropboxFolderRenameToPayload({
+    changes: computeAuditChanges(before, normalized, { labelOf }),
+    payload: normalized,
+    appFields,
+    tNumber: targetTNumber,
+    scope: "api/customer-info/records/[recordId] PUT",
+  });
+
   await updateRecord(appId, recordId, normalized, pocketAuth);
 
   // 記録に失敗しても保存は確定済み。戻り値は見ない（A-5 ベストエフォート）
+  // Dropboxリンク列が更新されていれば、ここで通常の列変更として記録される。
   await recordAuditLog({
     lineUserId,
     operation: "update",
     targetAppId: appId,
     targetRecordId: recordId,
-    targetTNumber: readTargetTNumber(before, appFields),
-    changes: computeAuditChanges(before, normalized, {
-      labelOf: (fieldId) => fieldCaptionByUniqueId(appFields, fieldId),
-    }),
+    targetTNumber,
+    changes: computeAuditChanges(before, normalized, { labelOf }),
   });
 
   return null;
