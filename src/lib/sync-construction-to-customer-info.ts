@@ -15,6 +15,12 @@ import {
 } from "@/lib/atpocket";
 import { customerInfoPutValue } from "@/lib/customer-info-record";
 import {
+  DROPBOX_FOLDER_WARNING,
+  ensureCustomerFolderLink,
+  resolveCustomerInfoDropboxLinkFieldId,
+} from "@/lib/customer-info-dropbox-link";
+import { dropboxConfigured } from "@/lib/dropbox";
+import {
   pickRecordValueByFieldAliases,
   pocketFieldUniqueIdByCaption,
   resolveConfiguredFieldToSchemaUniqueId,
@@ -49,7 +55,12 @@ import {
 
 export type CustomerInfoSyncResult =
   | { kind: "skipped" }
-  | { kind: "synced"; customerInfoRecordId?: string }
+  | {
+      kind: "synced";
+      customerInfoRecordId?: string;
+      /** Dropbox フォルダを用意できなかったときの画面向け警告（E-5） */
+      dropboxWarning?: string;
+    }
   | { kind: "failed"; error: string };
 
 function customerInfoAppConfigured(): boolean {
@@ -501,6 +512,30 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     customerRecord[inputStatusFieldId] = INPUT_STATUS_PENDING;
   }
 
+  // ── E-2/E-3: Dropbox 顧客フォルダを用意し、共有リンクを同じ payload に載せる ──
+  // ここは「保存 → T番号を再取得」が終わって uniqueKey が確定した後。
+  // 採番ロジックには触れていない。失敗しても連携そのものは止めない。
+  let dropboxWarning: string | undefined;
+  if (dropboxConfigured()) {
+    const linkFieldId = resolveCustomerInfoDropboxLinkFieldId(customerFields);
+    const folder = await ensureCustomerFolderLink({
+      tNumber: uniqueKey,
+      customerName: opts.customerName,
+      scope: "sync-construction-to-customer-info",
+    });
+    if (folder.url && linkFieldId) {
+      customerRecord[linkFieldId] = folder.url;
+    } else if (folder.url && !linkFieldId) {
+      // フォルダは作れたがリンクの保存先が分からない。
+      // フォルダ作成は冪等なので、列を直せば次回の保存で書き込まれる。
+      console.error(
+        "[sync-construction-to-customer-info] 「Dropboxリンク」列を解決できません。CUSTOMER_INFO_DROPBOX_LINK_FIELD_ID か列見出しを確認してください",
+      );
+      dropboxWarning = DROPBOX_FOLDER_WARNING;
+    }
+    dropboxWarning = dropboxWarning ?? folder.warning ?? undefined;
+  }
+
   const pocketPayload: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(customerRecord)) {
     pocketPayload[k] = customerInfoPutValue(v);
@@ -543,7 +578,11 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       pocketPayload,
       customerAuth,
     );
-    return { kind: "synced", customerInfoRecordId: existingId };
+    return {
+      kind: "synced",
+      customerInfoRecordId: existingId,
+      ...(dropboxWarning ? { dropboxWarning } : {}),
+    };
   }
 
   const created = await createRecord(
@@ -554,5 +593,9 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   const customerInfoRecordId =
     atPocketRecordIdFromCreateResult(created) ?? undefined;
 
-  return { kind: "synced", customerInfoRecordId };
+  return {
+    kind: "synced",
+    customerInfoRecordId,
+    ...(dropboxWarning ? { dropboxWarning } : {}),
+  };
 }
