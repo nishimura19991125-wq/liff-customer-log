@@ -4,6 +4,7 @@ import {
   buildCustomerFolderName,
   dropboxParentPath,
   joinDropboxPath,
+  sanitizeCustomerNameForDropbox,
   sanitizeDropboxName,
 } from "@/lib/dropbox-folder-name";
 
@@ -95,6 +96,77 @@ describe("sanitizeDropboxName の全角スペース", () => {
     expect(buildCustomerFolderName("T00001691", `山田${FULL}太郎`)).toBe(
       `T00001691_山田${FULL}太郎様`,
     );
+  });
+});
+
+/**
+ * 顧客名の空白は**すべて全角スペース1つ**に統一する。
+ * @pocket の顧客名が全角スペース区切りで格納されているため、表記をそこへ揃える。
+ * 項目名には適用しない（将来 @pocket の見出しに半角が入っても勝手に変えない）。
+ */
+describe("sanitizeCustomerNameForDropbox", () => {
+  const FULL = String.fromCharCode(0x3000);
+  const TAB = String.fromCharCode(9);
+  const LF = String.fromCharCode(10);
+
+  it("半角スペースを全角へ統一する", () => {
+    const result = sanitizeCustomerNameForDropbox("山田 太郎");
+    expect(result).toBe(`山田${FULL}太郎`);
+    expect(result.charCodeAt(2)).toBe(0x3000);
+  });
+
+  it("全角スペースは維持する", () => {
+    const result = sanitizeCustomerNameForDropbox(`山田${FULL}太郎`);
+    expect(result).toBe(`山田${FULL}太郎`);
+    expect(result.charCodeAt(2)).toBe(0x3000);
+  });
+
+  it("連続する半角スペースは全角1つになる", () => {
+    const result = sanitizeCustomerNameForDropbox("山田   太郎");
+    expect(result).toBe(`山田${FULL}太郎`);
+    expect(result.charCodeAt(2)).toBe(0x3000);
+    expect(result).toHaveLength(5);
+  });
+
+  it("全角と半角が混在しても全角1つになる", () => {
+    const result = sanitizeCustomerNameForDropbox(`山田 ${FULL} 太郎`);
+    expect(result).toBe(`山田${FULL}太郎`);
+    expect(result.charCodeAt(2)).toBe(0x3000);
+  });
+
+  it("タブ・改行も全角スペースになる", () => {
+    expect(sanitizeCustomerNameForDropbox(`山田${TAB}太郎`)).toBe(
+      `山田${FULL}太郎`,
+    );
+    expect(sanitizeCustomerNameForDropbox(`山田${LF}太郎`)).toBe(
+      `山田${FULL}太郎`,
+    );
+    expect(
+      sanitizeCustomerNameForDropbox(`山田${TAB}${LF}太郎`).charCodeAt(2),
+    ).toBe(0x3000);
+  });
+
+  it("前後の空白はトリムする", () => {
+    expect(sanitizeCustomerNameForDropbox("  山田 太郎  ")).toBe(
+      `山田${FULL}太郎`,
+    );
+    expect(
+      sanitizeCustomerNameForDropbox(`${FULL}山田${FULL}太郎${FULL}`),
+    ).toBe(`山田${FULL}太郎`);
+  });
+
+  it("禁止文字の全角置換は従来どおり働く", () => {
+    expect(sanitizeCustomerNameForDropbox("山田/太郎")).toBe("山田／太郎");
+  });
+
+  it("空白が無い名前はそのまま", () => {
+    expect(sanitizeCustomerNameForDropbox("山田太郎")).toBe("山田太郎");
+  });
+
+  it("フォルダ名の顧客名部分が全角に統一される", () => {
+    const folder = buildCustomerFolderName("T00001691", "山田 太郎");
+    expect(folder).toBe(`T00001691_山田${FULL}太郎様`);
+    expect(folder?.charCodeAt(12)).toBe(0x3000);
   });
 
   it("末尾のピリオド・空白を落とす（Dropbox が末尾ピリオドを嫌う）", () => {

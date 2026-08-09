@@ -82,17 +82,37 @@ export function sanitizeDropboxName(raw: string): string {
 }
 
 /**
+ * **顧客名専用**のサニタイズ。
+ *
+ * sanitizeDropboxName に加えて、空白（半角・全角・タブ・改行）を
+ * **すべて全角スペース1つに統一**する。@pocket の顧客名が全角スペース区切りで
+ * 格納されているため、フォルダ名・ファイル名の表記をそこへ揃える。
+ *
+ * ⚠ 適用するのは顧客名だけ。書類の**項目名には適用しない**。
+ *   項目名（@pocket の列見出し）に現状は半角スペースが無いが、将来増えたときに
+ *   意図せず全角化されると、見出しとファイル名の表記がずれてしまう。
+ *   そのため sanitizeDropboxName とは別関数に分けている。
+ */
+export function sanitizeCustomerNameForDropbox(raw: string): string {
+  // sanitizeDropboxName の時点で空白の並びは1文字に畳まれている。
+  // 残った半角スペースを全角へ寄せれば、混在も含めて全角1つに揃う。
+  return sanitizeDropboxName(raw ?? "").replace(/\s+/g, IDEOGRAPHIC_SPACE);
+}
+
+/**
  * 顧客フォルダ名を作る。
  *
  * T番号・お客様名のどちらかが（サニタイズ後に）空なら null を返す。
  * 呼び出し側はフォルダを作らずサーバログに記録すること。
+ *
+ * お客様名だけ空白を全角へ統一する（T番号に空白は入らない想定）。
  */
 export function buildCustomerFolderName(
   tNumber: string,
   customerName: string,
 ): string | null {
   const t = sanitizeDropboxName(tNumber ?? "");
-  const name = sanitizeDropboxName(customerName ?? "");
+  const name = sanitizeCustomerNameForDropbox(customerName ?? "");
   if (!t || !name) return null;
   return `${t}_${name}様`;
 }

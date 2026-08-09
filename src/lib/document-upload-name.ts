@@ -10,7 +10,10 @@
  * 禁止文字（/ \ ? * : | " < >）だけが全角へ置換される。
  */
 
-import { sanitizeDropboxName } from "@/lib/dropbox-folder-name";
+import {
+  sanitizeCustomerNameForDropbox,
+  sanitizeDropboxName,
+} from "@/lib/dropbox-folder-name";
 import { jstWallParts } from "@/lib/jst-hm";
 
 /**
@@ -69,8 +72,11 @@ export function documentFileNamePrefix(opts: {
   ymd: string;
   hm: string;
 }): string | null {
+  // 項目名は素のサニタイズのみ。将来 @pocket の見出しに半角スペースが入っても
+  // 勝手に全角化せず、見出しどおりの表記を保つ
   const caption = sanitizeDropboxName(opts.caption);
-  const customerName = sanitizeDropboxName(opts.customerName);
+  // お客様名だけ空白を全角へ統一する（@pocket の顧客名の表記に揃える）
+  const customerName = sanitizeCustomerNameForDropbox(opts.customerName);
   if (!caption || !customerName) return null;
   return `${caption}_${customerName}_${opts.ymd}_${opts.hm}_`;
 }

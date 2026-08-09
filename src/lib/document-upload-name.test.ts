@@ -57,18 +57,44 @@ describe("documentFileNamePrefix", () => {
     ).toBe("委任状(ID・パスワード開示用)_山田太郎_20260809_1430_");
   });
 
-  it("お客様名の全角スペースは全角のまま維持される", () => {
-    // フォルダ名と同じ sanitizeDropboxName を通すため、ファイル名側にも
-    // 全角スペース維持の変更が及ぶ（@pocket の顧客名と表記を揃える）
+  it("お客様名の空白は全角スペースに統一される", () => {
     const FULL = String.fromCharCode(0x3000);
-    expect(
-      documentFileNamePrefix({
-        caption: "本人確認書類",
-        customerName: `山田${FULL}太郎`,
-        ymd: "20260809",
-        hm: "1430",
-      }),
-    ).toBe(`本人確認書類_山田${FULL}太郎_20260809_1430_`);
+    const TAB = String.fromCharCode(9);
+    for (const input of [
+      `山田${FULL}太郎`,
+      "山田 太郎",
+      "山田   太郎",
+      `山田 ${FULL} 太郎`,
+      `山田${TAB}太郎`,
+    ]) {
+      expect(
+        documentFileNamePrefix({
+          caption: "本人確認書類",
+          customerName: input,
+          ymd: "20260809",
+          hm: "1430",
+        }),
+      ).toBe(`本人確認書類_山田${FULL}太郎_20260809_1430_`);
+    }
+  });
+
+  it("項目名の半角スペースは全角化しない（顧客名だけが対象）", () => {
+    const FULL = String.fromCharCode(0x3000);
+    const prefix = documentFileNamePrefix({
+      caption: "テスト 項目",
+      customerName: "山田 太郎",
+      ymd: "20260809",
+      hm: "1430",
+    });
+    expect(prefix).toBe(`テスト 項目_山田${FULL}太郎_20260809_1430_`);
+
+    // 項目名の空白は半角のまま、顧客名の空白だけが全角であることを
+    // 位置ではなく区切りで取り出して確認する
+    const [captionPart, namePart] = (prefix ?? "").split("_");
+    expect(captionPart).toBe("テスト 項目");
+    expect(captionPart?.charCodeAt(3)).toBe(0x20);
+    expect(namePart).toBe(`山田${FULL}太郎`);
+    expect(namePart?.charCodeAt(2)).toBe(0x3000);
   });
 
   it("禁止文字はタスクEのサニタイズで全角へ置換される", () => {
