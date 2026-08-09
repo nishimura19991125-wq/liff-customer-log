@@ -35,6 +35,13 @@ const FORBIDDEN_CHAR_MAP: ReadonlyMap<string, string> = new Map([
  * 正規表現の文字クラスに生の制御文字を書くと編集・パッチ経由で壊れやすいため
  * コードポイントで判定する。
  */
+/**
+ * 全角スペース U+3000。
+ * ソース上に生の文字を書くと半角と見分けが付かず、編集で壊れても気付けないため
+ * コードポイントから作る。
+ */
+const IDEOGRAPHIC_SPACE = String.fromCharCode(0x3000);
+
 function normalizeControlChar(ch: string): string {
   const cp = ch.codePointAt(0) ?? 0;
   if (cp >= 0x09 && cp <= 0x0d) return " ";
@@ -47,16 +54,31 @@ function normalizeControlChar(ch: string): string {
  *
  * 1. 制御文字を除去（置換しても意味を持たないため）
  * 2. 禁止文字を全角へ置換
- * 3. 連続する空白を1つに畳む
+ * 3. 連続する空白を1つに畳む（**全角スペースは全角のまま維持**）
  * 4. 前後の空白をトリム
  * 5. 末尾のピリオド・空白を落とす（Dropbox が末尾ピリオドを嫌う）
+ *
+ * ⚠ 3 で全角スペース（U+3000）を維持するのが要点。
+ *   JavaScript の `\s` は U+3000 にマッチするため、素朴に
+ *   `.replace(/\s+/g, " ")` と書くと「山田　太郎」が「山田 太郎」になり、
+ *   @pocket の顧客名（全角スペース区切り）とフォルダ名がずれていた。
+ *   U+3000 は Dropbox の禁止文字ではないのでそのまま使える。
  */
 export function sanitizeDropboxName(raw: string): string {
   const mapped = [...(raw ?? "")]
     .map((ch) => normalizeControlChar(ch))
     .map((ch) => FORBIDDEN_CHAR_MAP.get(ch) ?? ch)
     .join("");
-  return mapped.replace(/\s+/g, " ").trim().replace(/[.\s]+$/, "");
+  return (
+    mapped
+      // 連続する空白は1つに畳む。全角スペースを含む並びは全角のまま残す
+      .replace(/\s+/g, (run) =>
+        run.includes(IDEOGRAPHIC_SPACE) ? IDEOGRAPHIC_SPACE : " ",
+      )
+      // trim は U+3000 も空白として落とす（前後の全角スペースは除去される）
+      .trim()
+      .replace(/[.\s]+$/, "")
+  );
 }
 
 /**

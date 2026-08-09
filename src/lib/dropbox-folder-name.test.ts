@@ -26,8 +26,8 @@ describe("sanitizeDropboxName", () => {
     );
   });
 
-  it("前後の空白をトリムし、連続する空白を1つに畳む", () => {
-    expect(sanitizeDropboxName("  山田　太郎  ")).toBe("山田 太郎");
+  it("前後の空白をトリムし、連続する半角空白を1つに畳む", () => {
+    expect(sanitizeDropboxName("  山田太郎  ")).toBe("山田太郎");
     expect(sanitizeDropboxName("山田    太郎")).toBe("山田 太郎");
   });
 
@@ -41,11 +41,60 @@ describe("sanitizeDropboxName", () => {
     expect(sanitizeDropboxName(`山田${DEL}太郎`)).toBe("山田太郎");
   });
 
-  it("改行・タブは空白として畳まれる", () => {
+  it("改行・タブは半角空白に寄せられる（既存挙動の維持）", () => {
     const LF = String.fromCharCode(10);
     const TAB = String.fromCharCode(9);
     expect(sanitizeDropboxName(`山田${LF}太郎`)).toBe("山田 太郎");
     expect(sanitizeDropboxName(`山田${TAB}太郎`)).toBe("山田 太郎");
+    expect(sanitizeDropboxName(`山田${TAB}${LF}太郎`)).toBe("山田 太郎");
+  });
+});
+
+/**
+ * @pocket の顧客名は全角スペース区切り（例「山田　太郎」）で格納されている。
+ * JavaScript の \s は U+3000 にマッチするため、素朴に畳み込むと半角へ化けて
+ * フォルダ名が @pocket とずれる。その退行を検知する。
+ */
+describe("sanitizeDropboxName の全角スペース", () => {
+  const FULL = String.fromCharCode(0x3000);
+
+  it("全角スペースは全角のまま維持される", () => {
+    const result = sanitizeDropboxName(`山田${FULL}太郎`);
+    expect(result).toBe(`山田${FULL}太郎`);
+    // 半角へ化けていないことを明示的に確認する
+    expect(result).not.toBe("山田 太郎");
+    expect(result.charCodeAt(2)).toBe(0x3000);
+  });
+
+  it("半角スペースは従来どおり畳み込まれる", () => {
+    expect(sanitizeDropboxName("山田 太郎")).toBe("山田 太郎");
+    expect(sanitizeDropboxName("山田   太郎")).toBe("山田 太郎");
+    expect(sanitizeDropboxName("山田   太郎").charCodeAt(2)).toBe(0x20);
+  });
+
+  it("全角スペースが連続する場合は1つに畳み込まれる", () => {
+    expect(sanitizeDropboxName(`山田${FULL}${FULL}太郎`)).toBe(
+      `山田${FULL}太郎`,
+    );
+    expect(sanitizeDropboxName(`山田${FULL}${FULL}${FULL}太郎`)).toBe(
+      `山田${FULL}太郎`,
+    );
+  });
+
+  it("全角と半角が混ざった並びは全角1つに寄せる", () => {
+    expect(sanitizeDropboxName(`山田 ${FULL} 太郎`)).toBe(`山田${FULL}太郎`);
+  });
+
+  it("前後の全角スペースはトリムされる", () => {
+    expect(sanitizeDropboxName(`${FULL}山田${FULL}太郎${FULL}`)).toBe(
+      `山田${FULL}太郎`,
+    );
+  });
+
+  it("フォルダ名でも全角スペースが維持される", () => {
+    expect(buildCustomerFolderName("T00001691", `山田${FULL}太郎`)).toBe(
+      `T00001691_山田${FULL}太郎様`,
+    );
   });
 
   it("末尾のピリオド・空白を落とす（Dropbox が末尾ピリオドを嫌う）", () => {

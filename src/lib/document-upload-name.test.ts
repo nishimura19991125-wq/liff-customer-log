@@ -57,6 +57,20 @@ describe("documentFileNamePrefix", () => {
     ).toBe("委任状(ID・パスワード開示用)_山田太郎_20260809_1430_");
   });
 
+  it("お客様名の全角スペースは全角のまま維持される", () => {
+    // フォルダ名と同じ sanitizeDropboxName を通すため、ファイル名側にも
+    // 全角スペース維持の変更が及ぶ（@pocket の顧客名と表記を揃える）
+    const FULL = String.fromCharCode(0x3000);
+    expect(
+      documentFileNamePrefix({
+        caption: "本人確認書類",
+        customerName: `山田${FULL}太郎`,
+        ymd: "20260809",
+        hm: "1430",
+      }),
+    ).toBe(`本人確認書類_山田${FULL}太郎_20260809_1430_`);
+  });
+
   it("禁止文字はタスクEのサニタイズで全角へ置換される", () => {
     expect(
       documentFileNamePrefix({
