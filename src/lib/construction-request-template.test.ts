@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildConstructionRequestTemplate,
+  CONSTRUCTION_DATE_UNDECIDED,
   CONSTRUCTION_REQUEST_STATUS_DONE,
   constructionWorkTypeLabel,
+  formatCustomerNameWithHonorific,
   formatBatteryCapacity,
   formatBatteryCapacityLine,
   formatConstructionRequestDate,
@@ -204,7 +206,38 @@ describe("値が空のとき", () => {
     expect(lineStartingWith(text, "・分電盤：")).toBe("・分電盤：");
     expect(lineStartingWith(text, "住所：")).toBe("住所：");
     expect(text).toContain("📍ピンポイント");
-    expect(text).toContain("ご確認よろしくお願いいたします。");
+    expect(text).toContain("ご確認よろしくお願いいたします🙇");
+  });
+
+  it("お客様名が空なら「様」も付けない", () => {
+    expect(formatCustomerNameWithHonorific("")).toBe("");
+    expect(formatCustomerNameWithHonorific("   ")).toBe("");
+    expect(formatCustomerNameWithHonorific("-")).toBe("");
+    expect(formatCustomerNameWithHonorific(undefined)).toBe("");
+    expect(
+      lineStartingWith(build({ customerName: "" }).text, "お客様名："),
+    ).toBe("お客様名：");
+  });
+
+  it("お客様名があれば「様」を付ける", () => {
+    expect(formatCustomerNameWithHonorific("山田　太郎")).toBe("山田　太郎様");
+    expect(lineStartingWith(build().text, "お客様名：")).toBe(
+      "お客様名：山田　太郎様",
+    );
+  });
+
+  it("施工予定日が空なら「工事未定」", () => {
+    const { text } = build({ constructionDate: "" });
+    expect(text.split("\n")[1]).toBe(
+      `【ネクストエナジー創蓄工事${FULL}${CONSTRUCTION_DATE_UNDECIDED}】`,
+    );
+  });
+
+  it("施工予定日が不正な値でも「工事未定」", () => {
+    const { text } = build({ constructionDate: "未定" });
+    expect(text.split("\n")[1]).toBe(
+      `【ネクストエナジー創蓄工事${FULL}工事未定】`,
+    );
   });
 
   it("@pocket の「-」は空として扱う", () => {
@@ -229,21 +262,23 @@ describe("住所・ピンポイント", () => {
 
 describe("テンプレート全文", () => {
   it("創蓄工事の実例", () => {
-    const { text } = build();
+    const { text } = build({ batteryCapacity2: "5.6" });
     expect(text).toBe(
       [
         "⭐️新規案件依頼",
         `【ネクストエナジー創蓄工事${FULL}2026/9/5(土)】`,
         "住所：東京都世田谷区",
-        "お客様名：山田　太郎",
+        "お客様名：山田　太郎様",
         "・メーカー：ネクストエナジー",
         "・パネル：5.775kW",
-        "・蓄電池：5.6kWh",
+        "・蓄電池：5.6kWh + 5.6kWh",
         "・屋根材：カラーベスト",
         "・分電盤：60A",
+        "",
         "📍ピンポイント",
         "https://maps.example.test/xyz",
-        "ご確認よろしくお願いいたします。",
+        "",
+        "ご確認よろしくお願いいたします🙇",
       ].join("\n"),
     );
   });
@@ -255,13 +290,15 @@ describe("テンプレート全文", () => {
         "⭐️新規案件依頼",
         `【ネクストエナジーパワコン取替工事${FULL}2026/9/5(土)】`,
         "住所：東京都世田谷区",
-        "お客様名：山田　太郎",
+        "お客様名：山田　太郎様",
         "・メーカー：ネクストエナジー",
         "・屋根材：カラーベスト",
         "・分電盤：60A",
+        "",
         "📍ピンポイント",
         "https://maps.example.test/xyz",
-        "ご確認よろしくお願いいたします。",
+        "",
+        "ご確認よろしくお願いいたします🙇",
       ].join("\n"),
     );
   });
@@ -282,6 +319,42 @@ describe("施工依頼ステータスによる表示条件", () => {
     expect(shouldShowConstructionRequestPanel(undefined)).toBe(true);
     expect(shouldShowConstructionRequestPanel("未")).toBe(true);
     expect(shouldShowConstructionRequestPanel("-")).toBe(true);
+  });
+});
+
+describe("空行の位置", () => {
+  it.each(INSTALLATION_TYPE_OPTIONS)(
+    "%s でも空行が「・分電盤：」の直後と URL の直後に入る",
+    (installationType) => {
+      const lines = build({ installationType }).text.split("\n");
+
+      const breakerIndex = lines.findIndex((l) => l.startsWith("・分電盤："));
+      expect(breakerIndex).toBeGreaterThanOrEqual(0);
+      // 分電盤の直後が空行、その次がピンポイントの見出し
+      expect(lines[breakerIndex + 1]).toBe("");
+      expect(lines[breakerIndex + 2]).toBe("📍ピンポイント");
+      // URL の次が空行、その次が結び
+      expect(lines[breakerIndex + 3]).toBe("https://maps.example.test/xyz");
+      expect(lines[breakerIndex + 4]).toBe("");
+      expect(lines[breakerIndex + 5]).toBe(
+        "ご確認よろしくお願いいたします🙇",
+      );
+      // 末尾は結びで終わる（余計な空行を足さない）
+      expect(lines).toHaveLength(breakerIndex + 6);
+      // 空行はちょうど2つ
+      expect(lines.filter((l) => l === "")).toHaveLength(2);
+    },
+  );
+
+  it("ピンポイント住所が空でも空行の数は変わらない", () => {
+    const lines = build({ pinpointAddress: "" }).text.split("\n");
+    const breakerIndex = lines.findIndex((l) => l.startsWith("・分電盤："));
+    expect(lines[breakerIndex + 1]).toBe("");
+    expect(lines[breakerIndex + 2]).toBe("📍ピンポイント");
+    // URL 行は空になるが行自体は残る
+    expect(lines[breakerIndex + 3]).toBe("");
+    expect(lines[breakerIndex + 4]).toBe("");
+    expect(lines[breakerIndex + 5]).toBe("ご確認よろしくお願いいたします🙇");
   });
 });
 

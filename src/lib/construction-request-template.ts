@@ -139,6 +139,17 @@ function plain(raw: string | undefined): string {
   return t === "-" ? "" : t;
 }
 
+/** 施工予定日が未設定のときに日付の代わりに入れる */
+export const CONSTRUCTION_DATE_UNDECIDED = "工事未定";
+
+/** お客様名に敬称を付ける。空のときは敬称も付けない */
+export function formatCustomerNameWithHonorific(
+  raw: string | undefined,
+): string {
+  const name = plain(raw);
+  return name ? `${name}様` : "";
+}
+
 export type ConstructionRequestTemplateResult =
   | { ok: true; text: string; workType: string }
   /** 設置種別が未選択・未知。推測で埋めずに呼び出し側へ返す */
@@ -164,7 +175,10 @@ export function buildConstructionRequestTemplate(
   }
 
   const manufacturer = plain(values.manufacturer);
-  const scheduledDate = formatConstructionRequestDate(values.constructionDate);
+  // 工事日が未設定でも【…】の中が空にならないようにする
+  const scheduledDate =
+    formatConstructionRequestDate(values.constructionDate) ||
+    CONSTRUCTION_DATE_UNDECIDED;
   const address = `${plain(values.prefecture)}${plain(values.city)}`;
 
   const showPanel = !installationTypeHidesPanelSection(installationType);
@@ -174,7 +188,7 @@ export function buildConstructionRequestTemplate(
     "⭐️新規案件依頼",
     `【${manufacturer}${workType}${IDEOGRAPHIC_SPACE}${scheduledDate}】`,
     `住所：${address}`,
-    `お客様名：${plain(values.customerName)}`,
+    `お客様名：${formatCustomerNameWithHonorific(values.customerName)}`,
     `・メーカー：${manufacturer}`,
   ];
 
@@ -193,10 +207,14 @@ export function buildConstructionRequestTemplate(
   lines.push(
     `・屋根材：${plain(values.roofMaterial)}`,
     `・分電盤：${plain(values.breakerAmps)}`,
+    // 空行は「・分電盤：」の直後。パネル行・蓄電池行が出ない設置種別でも
+    // 位置が崩れないよう、条件付きの行より後ろでまとめて積む
+    "",
     "📍ピンポイント",
     // URL が入る。加工しない
     plain(values.pinpointAddress),
-    "ご確認よろしくお願いいたします。",
+    "",
+    "ご確認よろしくお願いいたします🙇",
   );
 
   return { ok: true, text: lines.join("\n"), workType };
