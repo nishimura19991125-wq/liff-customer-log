@@ -16,6 +16,13 @@ export const DOCUMENT_STATUS_CREATED = "作成済み";
 /** 登記簿のみ */
 export const DOCUMENT_STATUS_CONFIRMED = "確認済み";
 
+/** 14項目の未回収値 */
+export const DOCUMENT_STATUS_UNCOLLECTED = "未回収";
+/** 付近見取り図のみ */
+export const DOCUMENT_STATUS_UNCREATED = "未作成";
+/** 登記簿のみ */
+export const DOCUMENT_STATUS_UNCONFIRMED = "未確認";
+
 export type CustomerDocumentSpec = {
   /** フォームの key */
   key: string;
@@ -23,86 +30,113 @@ export type CustomerDocumentSpec = {
   caption: string;
   /** アップロード成功時に書き込む値 */
   completedValue: string;
+  /**
+   * 未回収系の値（タスクG のリセット先）。
+   *
+   * 選択肢の先頭を機械的に取らず、明示的に持つ。選択肢の順序が変わっても
+   * リセット先が変わらないようにするため。
+   */
+  pendingValue: string;
 };
 
 export const CUSTOMER_DOCUMENT_SPECS: readonly CustomerDocumentSpec[] = [
-  { key: "loanPaper", caption: "ローン用紙", completedValue: DOCUMENT_STATUS_COLLECTED },
+  {
+    key: "loanPaper",
+    caption: "ローン用紙",
+    completedValue: DOCUMENT_STATUS_COLLECTED,
+    pendingValue: DOCUMENT_STATUS_UNCOLLECTED,
+  },
   {
     key: "groupCreditLifeInsurance",
     caption: "団体信用生命保険",
     completedValue: DOCUMENT_STATUS_COLLECTED,
+    pendingValue: DOCUMENT_STATUS_UNCOLLECTED,
   },
   {
     key: "salesConstructionContract",
     caption: "商品売買・工事請負契約書",
     completedValue: DOCUMENT_STATUS_COLLECTED,
+    pendingValue: DOCUMENT_STATUS_UNCOLLECTED,
   },
   {
     key: "powerCompanyForm",
     caption: "電力会社記入用紙",
     completedValue: DOCUMENT_STATUS_COLLECTED,
+    pendingValue: DOCUMENT_STATUS_UNCOLLECTED,
   },
   {
     key: "feedInBankAccountForm",
     caption: "売電先振込口座指定依頼書",
     completedValue: DOCUMENT_STATUS_COLLECTED,
+    pendingValue: DOCUMENT_STATUS_UNCOLLECTED,
   },
   // ここだけ「作成済み」
   {
     key: "vicinitySketchMap",
     caption: "付近見取り図",
     completedValue: DOCUMENT_STATUS_CREATED,
+    pendingValue: DOCUMENT_STATUS_UNCREATED,
   },
   {
     key: "powerOfAttorneyStorage",
     caption: "委任状(創蓄)",
     completedValue: DOCUMENT_STATUS_COLLECTED,
+    pendingValue: DOCUMENT_STATUS_UNCOLLECTED,
   },
   {
     key: "powerOfAttorneyChangeCert",
     caption: "委任状(変更認定用)",
     completedValue: DOCUMENT_STATUS_COLLECTED,
+    pendingValue: DOCUMENT_STATUS_UNCOLLECTED,
   },
   {
     key: "powerOfAttorneyIdPassword",
     caption: "委任状(ID・パスワード開示用)",
     completedValue: DOCUMENT_STATUS_COLLECTED,
+    pendingValue: DOCUMENT_STATUS_UNCOLLECTED,
   },
   {
     key: "equipmentCertConsent",
     caption: "設備認定に関する同意書",
     completedValue: DOCUMENT_STATUS_COLLECTED,
+    pendingValue: DOCUMENT_STATUS_UNCOLLECTED,
   },
   {
     key: "operatingCostReportConsent",
     caption: "運転費用年報提出に関する同意書",
     completedValue: DOCUMENT_STATUS_COLLECTED,
+    pendingValue: DOCUMENT_STATUS_UNCOLLECTED,
   },
   {
     key: "personalInfoConsent",
     caption: "個人情報の取扱に関する同意書",
     completedValue: DOCUMENT_STATUS_COLLECTED,
+    pendingValue: DOCUMENT_STATUS_UNCOLLECTED,
   },
   {
     key: "freeUseGenerationConsent",
     caption: "発電設備の無償使用に関する同意書",
     completedValue: DOCUMENT_STATUS_COLLECTED,
+    pendingValue: DOCUMENT_STATUS_UNCOLLECTED,
   },
   {
     key: "sealRegistrationCertificate",
     caption: "印鑑登録証明書",
     completedValue: DOCUMENT_STATUS_COLLECTED,
+    pendingValue: DOCUMENT_STATUS_UNCOLLECTED,
   },
   // ここだけ「確認済み」
   {
     key: "registryBook",
     caption: "登記簿",
     completedValue: DOCUMENT_STATUS_CONFIRMED,
+    pendingValue: DOCUMENT_STATUS_UNCONFIRMED,
   },
   {
     key: "subsidyPreApplicationDocs",
     caption: "補助金事前申請書類",
     completedValue: DOCUMENT_STATUS_COLLECTED,
+    pendingValue: DOCUMENT_STATUS_UNCOLLECTED,
   },
 ] as const;
 
