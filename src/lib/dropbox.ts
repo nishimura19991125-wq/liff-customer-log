@@ -530,3 +530,138 @@ export async function renameCustomerFolder(
 
   return sharedLinkUrlFor(to, cfg);
 }
+
+// ───────────────────────────────────── 書類アップロード（タスクF）
+
+/** 既存ファイルと衝突した。連番の計算に漏れがあったことを示す */
+export class DropboxUploadConflictError extends DropboxError {
+  constructor(message: string) {
+    super(message);
+    this.name = "DropboxUploadConflictError";
+  }
+}
+
+/** 顧客フォルダのフルパス（Dropbox 未設定なら null） */
+export function dropboxCustomerFolderPath(folderName: string): string | null {
+  const cfg = readDropboxConfig();
+  const name = folderName.trim();
+  if (!cfg || !name) return null;
+  return joinDropboxPath(cfg.rootPath, name);
+}
+
+function readEntryName(entry: unknown): string {
+  if (!entry || typeof entry !== "object") return "";
+  const o = entry as Record<string, unknown>;
+  return typeof o.name === "string" ? o.name.trim() : "";
+}
+
+/**
+ * フォルダ直下のファイル名一覧。連番の決定に使う。
+ * has_more のときは list_folder/continue で最後まで辿る。
+ */
+export async function listCustomerFolderFileNames(
+  folderPath: string,
+): Promise<string[]> {
+  const cfg = readDropboxConfig();
+  if (!cfg) throw new DropboxError("Dropbox の環境変数が未設定です");
+
+  const names: string[] = [];
+  let result = await dropboxRpc(
+    "/2/files/list_folder",
+    { path: folderPath, recursive: false, limit: 2000 },
+    cfg,
+  );
+  if (!result.ok) throw rpcFailure("files/list_folder", result);
+
+  // 連番が飛ぶ事故を避けるため全ページ辿る。上限は暴走防止のバックストップ
+  for (let page = 0; page < 20; page++) {
+    for (const entry of (result.json?.entries as unknown[]) ?? []) {
+      const name = readEntryName(entry);
+      if (name) names.push(name);
+    }
+    if (result.json?.has_more !== true) break;
+    const cursor = result.json?.cursor;
+    if (typeof cursor !== "string" || !cursor) break;
+    result = await dropboxRpc("/2/files/list_folder/continue", { cursor }, cfg);
+    if (!result.ok) throw rpcFailure("files/list_folder/continue", result);
+  }
+
+  return names;
+}
+
+/**
+ * Dropbox-API-Arg は HTTP ヘッダなので **ASCII でなければならない**。
+ * 日本語のファイル名をそのまま載せると送信時に壊れるため \uXXXX へ逃がす。
+ */
+function asciiSafeApiArg(args: Record<string, unknown>): string {
+  const json = JSON.stringify(args);
+  let out = "";
+  for (const ch of json) {
+    const cp = ch.codePointAt(0) ?? 0;
+    if (cp < 0x80) {
+      out += ch;
+      continue;
+    }
+    // サロゲートペアも1つずつ \uXXXX にする（Dropbox はこの形を受け付ける）
+    for (let i = 0; i < ch.length; i++) {
+      out += "\\u" + ch.charCodeAt(i).toString(16).padStart(4, "0");
+    }
+  }
+  return out;
+}
+
+/**
+ * ファイルを格納する。
+ *
+ * mode は "add"、autorename は false。**既存ファイルを上書きしない。**
+ * 取り消し機能が無いため、上書きは復旧不能な事故になる。
+ * strict_conflict を立てて、内容が同一でも衝突として扱わせる。
+ */
+export async function uploadCustomerFile(
+  filePath: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  const cfg = readDropboxConfig();
+  if (!cfg) throw new DropboxError("Dropbox の環境変数が未設定です");
+
+  const accessToken = await accessTokenCached(cfg);
+  const rootNamespaceId = await rootNamespaceIdCached(accessToken);
+
+  const res = await fetch("https://content.dropboxapi.com/2/files/upload", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/octet-stream",
+      "Dropbox-API-Path-Root": JSON.stringify({
+        ".tag": "root",
+        root: rootNamespaceId,
+      }),
+      "Dropbox-API-Arg": asciiSafeApiArg({
+        path: filePath,
+        mode: "add",
+        autorename: false,
+        mute: true,
+        strict_conflict: true,
+      }),
+    },
+    body: bytes as unknown as BodyInit,
+  });
+
+  if (res.ok) return;
+
+  const text = await res.text();
+  let summary = text.slice(0, 300);
+  try {
+    const j = JSON.parse(text) as { error_summary?: unknown };
+    if (typeof j.error_summary === "string") summary = j.error_summary;
+  } catch {
+    /* JSON でない応答はそのまま使う */
+  }
+
+  if (summary.includes("conflict")) {
+    throw new DropboxUploadConflictError(
+      `files/upload ${res.status}: ${summary}`,
+    );
+  }
+  throw new DropboxError(`files/upload ${res.status}: ${summary}`);
+}
