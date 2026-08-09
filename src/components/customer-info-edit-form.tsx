@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { CustomerDocumentUploadPanel } from "@/components/customer-document-upload-panel";
 import { KatakanaAwareTextInput } from "@/components/katakana-aware-text-input";
 import { StaffNameSuggestCombobox } from "@/components/staff-name-suggest-combobox";
+import { CUSTOMER_DOCUMENT_KEYS } from "@/lib/customer-documents-spec";
 import {
   applyCustomerInfoFormChange,
   isContractAmountDerived,
@@ -522,8 +524,12 @@ export function CustomerInfoEditForm({
   missingCaptions,
   requiredFieldErrors,
   idToken,
+  recordId,
+  dropboxFolderConfigured = false,
+  documentUploadMaxBytes = 5_000_000,
   onChange,
   onApClStaffOptionsChange,
+  onSessionExpired,
 }: {
   formFields: CustomerInfoFormFieldApi[];
   values: CustomerInfoFormValues;
@@ -531,12 +537,19 @@ export function CustomerInfoEditForm({
   missingCaptions?: string[];
   requiredFieldErrors?: ReadonlySet<string>;
   idToken: string | null;
+  /** 書類アップロードの送信先。未指定ならアップロード欄を出さない */
+  recordId?: string;
+  /** Dropboxリンクが入っている顧客だけアップロードできる（タスクF-6） */
+  dropboxFolderConfigured?: boolean;
+  /** 1ファイルの上限バイト数（サーバの DROPBOX_UPLOAD_MAX_BYTES 由来） */
+  documentUploadMaxBytes?: number;
   onChange: (key: string, value: string) => void;
   /** AP/CL候補名簿（保存時の完全一致チェック用） */
   onApClStaffOptionsChange?: (opts: {
     ap: string[];
     cl: string[];
   }) => void;
+  onSessionExpired?: () => void;
 }) {
   const [catalogOptions, setCatalogOptions] = useState<
     Record<CatalogModelKind, string[]>
@@ -1008,6 +1021,30 @@ export function CustomerInfoEditForm({
             <p className="mt-1 text-[11px] font-semibold text-red-600">
               入力してください
             </p>
+          ) : null}
+          {/* 書類項目のアップロード欄（タスクF）。表示条件は既存の visibleFields に従う */}
+          {CUSTOMER_DOCUMENT_KEYS.has(field.key) && recordId ? (
+            dropboxFolderConfigured ? (
+              <CustomerDocumentUploadPanel
+                recordId={recordId}
+                documentKey={field.key}
+                documentLabel={field.label}
+                idToken={idToken}
+                maxBytes={documentUploadMaxBytes}
+                disabled={saving}
+                onSessionExpired={onSessionExpired}
+                onUploaded={({ status, statusUpdated }) => {
+                  // 完了値へラジオを反映（更新に失敗した分は触らない）
+                  if (statusUpdated && status) {
+                    handleFieldChange(field.key, status);
+                  }
+                }}
+              />
+            ) : (
+              <p className="mt-2 rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] leading-relaxed text-slate-600">
+                Dropboxフォルダが未設定のため、書類のアップロードはできません。
+              </p>
+            )
           ) : null}
           {field.key === "pt" ? <PtTransferHint values={displayValues} /> : null}
           {field.key === "contractAmount" ? (

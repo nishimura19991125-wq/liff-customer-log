@@ -42,7 +42,11 @@ import {
 } from "@/lib/atpocket";
 import { computeAuditChanges } from "@/lib/audit-log-changes";
 import { auditLogEnabled, recordAuditLog } from "@/lib/audit-log";
-import { applyDropboxFolderRenameToPayload } from "@/lib/customer-info-dropbox-link";
+import {
+  applyDropboxFolderRenameToPayload,
+  resolveCustomerInfoDropboxLinkFieldId,
+} from "@/lib/customer-info-dropbox-link";
+import { documentUploadMaxBytes } from "@/lib/customer-document-upload";
 import { dropboxConfigured } from "@/lib/dropbox";
 import { invalidateCustomerInfoKeyLookupCache } from "@/lib/customer-info-key-lookup-cache";
 import { invalidateCustomerInfoPendingCache } from "@/lib/customer-info-pending-cache";
@@ -259,6 +263,17 @@ export async function GET(request: Request, ctx: RouteCtx) {
         value: readCustomerInfoFieldValue(recObj, schemaId),
       }));
 
+      // 書類アップロード欄の出し分け（タスクF-6）。
+      // Dropboxリンクが空の顧客は書類移行が済んでいないため欄を出さない。
+      // API 側でも 400 で防いでおり、ここは表示制御のためだけの情報。
+      const dropboxLinkFieldId =
+        resolveCustomerInfoDropboxLinkFieldId(fields);
+      const dropboxFolderConfigured = Boolean(
+        dropboxConfigured() &&
+          dropboxLinkFieldId &&
+          readCustomerInfoFieldValue(recObj, dropboxLinkFieldId).trim(),
+      );
+
       return NextResponse.json({
         recordId,
         usesFormSchema: true,
@@ -266,6 +281,8 @@ export async function GET(request: Request, ctx: RouteCtx) {
         formFields,
         formValues: values,
         missingCaptions: allMissing.length > 0 ? allMissing : undefined,
+        dropboxFolderConfigured,
+        documentUploadMaxBytes: documentUploadMaxBytes(),
       });
     }
 

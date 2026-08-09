@@ -81,6 +81,10 @@ type EditableField = {
 type RecordDetail = {
   recordId: string;
   usesFormSchema?: boolean;
+  /** 書類アップロードの可否（Dropboxリンクが入っているか・タスクF-6） */
+  dropboxFolderConfigured?: boolean;
+  /** 1ファイルの上限バイト数（サーバ設定） */
+  documentUploadMaxBytes?: number;
   display: Array<{ fieldId: string; label: string; value: string }>;
   formFields?: CustomerInfoFormFieldApi[];
   formValues?: CustomerInfoFormValues;
@@ -709,6 +713,10 @@ function CustomerInfoPageContent() {
                     missingCaptions={missingCaptions}
                     requiredFieldErrors={requiredFieldErrors}
                     idToken={idToken}
+                    recordId={detail.recordId}
+                    dropboxFolderConfigured={detail.dropboxFolderConfigured}
+                    documentUploadMaxBytes={detail.documentUploadMaxBytes}
+                    onSessionExpired={() => setPhase("session-expired")}
                     onApClStaffOptionsChange={setApClStaffOptions}
                     onChange={(key, value) => {
                       setRequiredFieldErrors((prev) => {
