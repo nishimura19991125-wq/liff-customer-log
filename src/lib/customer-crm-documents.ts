@@ -3,27 +3,14 @@ import "server-only";
 import type { AtPocketFieldRow } from "@/lib/atpocket";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
 import { readCustomerInfoFieldValue } from "@/lib/customer-info-record";
+import { CUSTOMER_DOCUMENT_SPECS } from "@/lib/customer-documents-spec";
 import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
 
-/** CRM で監視する16書類（フォーム key と @pocket 見出し） */
-export const CRM_DOCUMENT_FIELD_SPECS = [
-  { key: "loanPaper", caption: "ローン用紙" },
-  { key: "groupCreditLifeInsurance", caption: "団体信用生命保険" },
-  { key: "salesConstructionContract", caption: "商品売買・工事請負契約書" },
-  { key: "powerCompanyForm", caption: "電力会社記入用紙" },
-  { key: "feedInBankAccountForm", caption: "売電先振込口座指定依頼書" },
-  { key: "vicinitySketchMap", caption: "付近見取り図" },
-  { key: "powerOfAttorneyStorage", caption: "委任状(創蓄)" },
-  { key: "powerOfAttorneyChangeCert", caption: "委任状(変更認定用)" },
-  { key: "powerOfAttorneyIdPassword", caption: "委任状(ID・パスワード開示用)" },
-  { key: "equipmentCertConsent", caption: "設備認定に関する同意書" },
-  { key: "operatingCostReportConsent", caption: "運転費用年報提出に関する同意書" },
-  { key: "personalInfoConsent", caption: "個人情報の取扱に関する同意書" },
-  { key: "freeUseGenerationConsent", caption: "発電設備の無償使用に関する同意書" },
-  { key: "sealRegistrationCertificate", caption: "印鑑登録証明書" },
-  { key: "registryBook", caption: "登記簿" },
-  { key: "subsidyPreApplicationDocs", caption: "補助金事前申請書類" },
-] as const;
+/**
+ * CRM で監視する16書類（フォーム key と @pocket 見出し）。
+ * 一覧の出典は customer-documents-spec.ts に一本化している（二重管理を避けるため）。
+ */
+export const CRM_DOCUMENT_FIELD_SPECS = CUSTOMER_DOCUMENT_SPECS;
 
 const DOCUMENT_ALERT_STATUSES = new Set(
   ["未回収", "未作成", "未確認"].map((s) => s.normalize("NFKC")),
