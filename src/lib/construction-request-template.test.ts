@@ -7,9 +7,14 @@ import {
   formatBatteryCapacity,
   formatBatteryCapacityLine,
   formatConstructionRequestDate,
+  formatPanelCapacity,
   installationTypesWithoutWorkType,
   shouldShowConstructionRequestPanel,
 } from "@/lib/construction-request-template";
+import {
+  CONSTRUCTION_REQUEST_STATUS_OPTIONS,
+} from "@/lib/customer-info-form/options";
+import { CUSTOMER_INFO_FORM_FIELD_MAP } from "@/lib/customer-info-form/schema";
 import { INSTALLATION_TYPE_OPTIONS } from "@/lib/customer-info-form/schema";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 
@@ -132,6 +137,35 @@ describe("蓄電池の表記", () => {
   });
 });
 
+describe("パネル容量の表記", () => {
+  it("単位 kW を付ける（見出しは小文字だが表記は kW）", () => {
+    expect(formatPanelCapacity("5.775")).toBe("5.775kW");
+    expect(formatPanelCapacity("12")).toBe("12kW");
+  });
+
+  it("単位が既に入っていれば二重に付けない", () => {
+    expect(formatPanelCapacity("5.775kW")).toBe("5.775kW");
+    expect(formatPanelCapacity("5.775kw")).toBe("5.775kw");
+    expect(formatPanelCapacity("5.775KW")).toBe("5.775KW");
+  });
+
+  it("空・ダッシュは空文字（単位を付けない）", () => {
+    expect(formatPanelCapacity("")).toBe("");
+    expect(formatPanelCapacity("   ")).toBe("");
+    expect(formatPanelCapacity("-")).toBe("");
+    expect(formatPanelCapacity(undefined)).toBe("");
+  });
+
+  it("テンプレートの行に反映される", () => {
+    expect(lineStartingWith(build().text, "・パネル：")).toBe(
+      "・パネル：5.775kW",
+    );
+    expect(
+      lineStartingWith(build({ panelCapacityKw: "" }).text, "・パネル："),
+    ).toBe("・パネル：");
+  });
+});
+
 describe("施工予定日の整形", () => {
   it("ゼロ埋めせず曜日を付ける", () => {
     expect(formatConstructionRequestDate("2026-09-05")).toBe("2026/9/5(土)");
@@ -203,7 +237,7 @@ describe("テンプレート全文", () => {
         "住所：東京都世田谷区",
         "お客様名：山田　太郎",
         "・メーカー：ネクストエナジー",
-        "・パネル：5.775",
+        "・パネル：5.775kW",
         "・蓄電池：5.6kWh",
         "・屋根材：カラーベスト",
         "・分電盤：60A",
@@ -246,8 +280,34 @@ describe("施工依頼ステータスによる表示条件", () => {
   it("「済」以外・未設定のときは欄を出す", () => {
     expect(shouldShowConstructionRequestPanel("")).toBe(true);
     expect(shouldShowConstructionRequestPanel(undefined)).toBe(true);
-    expect(shouldShowConstructionRequestPanel("未依頼")).toBe(true);
-    expect(shouldShowConstructionRequestPanel("依頼中")).toBe(true);
+    expect(shouldShowConstructionRequestPanel("未")).toBe(true);
     expect(shouldShowConstructionRequestPanel("-")).toBe(true);
+  });
+});
+
+describe("施工依頼ステータスの項目定義", () => {
+  it("「未」「済」の2択のラジオとして描画される", () => {
+    const def = CUSTOMER_INFO_FORM_FIELD_MAP.get("constructionRequestStatus");
+    expect(def).toBeDefined();
+    expect(def?.type).toBe("radio");
+    expect(def?.options).toEqual(["未", "済"]);
+    expect(CONSTRUCTION_REQUEST_STATUS_OPTIONS).toEqual(["未", "済"]);
+  });
+
+  it("入力欄に出す（hiddenInForm ではない）", () => {
+    const def = CUSTOMER_INFO_FORM_FIELD_MAP.get("constructionRequestStatus");
+    expect(def?.hiddenInForm).toBeFalsy();
+    expect(def?.liffOnly).toBeFalsy();
+  });
+
+  it("未入力でも保存できる（required: false）", () => {
+    expect(
+      CUSTOMER_INFO_FORM_FIELD_MAP.get("constructionRequestStatus")?.required,
+    ).toBe(false);
+  });
+
+  it("完了値「済」が選択肢に含まれる", () => {
+    const def = CUSTOMER_INFO_FORM_FIELD_MAP.get("constructionRequestStatus");
+    expect(def?.options).toContain(CONSTRUCTION_REQUEST_STATUS_DONE);
   });
 });
