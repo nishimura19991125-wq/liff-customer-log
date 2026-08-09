@@ -172,6 +172,9 @@ export const SUBSIDY_PRE_APPLICATION_DOC_OPTIONS = [
 /** 書類ラジオ：非表示時の既定値 */
 export const DOCUMENT_RADIO_HIDDEN_VALUE = "不要";
 
+/** 施工依頼ステータス（タスクH）。書類16項目ではないので書類系の判定には関わらない */
+export const CONSTRUCTION_REQUEST_STATUS_OPTIONS = ["未", "済"] as const;
+
 export function preApplicationRequiresDocuments(
   preApplication: string | undefined,
 ): boolean {

@@ -1,5 +1,6 @@
 import {
   COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS,
+  CONSTRUCTION_REQUEST_STATUS_OPTIONS,
   CUSTOMER_STATUS_OPTIONS,
   DOCUMENT_RADIO_HIDDEN_VALUE,
   FIT_TYPE_OPTIONS,
@@ -477,17 +478,13 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   },
   /**
    * 新規施工依頼のテンプレートをコピーしたときに「済」へ更新する（タスクH）。
-   *
-   * hiddenInForm にしているのは、@pocket 側の選択肢一覧を把握できていないため。
-   * 選択肢を推測してラジオに出すと、選択肢に無い値が入って未選択に見える事故
-   * （タスクG の「不要」焼き付き）を繰り返す。書き込むのは「済」だけなので
-   * 入力欄は出さず、put-payload.ts で値があるときだけ転記する。
+   * 人が手で戻せるよう、通常のラジオとして画面にも出す。
    */
   {
     key: "constructionRequestStatus",
     caption: "施工依頼ステータス",
-    type: "text",
-    hiddenInForm: true,
+    type: "radio",
+    options: [...CONSTRUCTION_REQUEST_STATUS_OPTIONS],
     required: false,
   },
 ];
