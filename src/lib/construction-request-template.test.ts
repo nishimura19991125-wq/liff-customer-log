@@ -1,0 +1,253 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  buildConstructionRequestTemplate,
+  CONSTRUCTION_REQUEST_STATUS_DONE,
+  constructionWorkTypeLabel,
+  formatBatteryCapacity,
+  formatBatteryCapacityLine,
+  formatConstructionRequestDate,
+  installationTypesWithoutWorkType,
+  shouldShowConstructionRequestPanel,
+} from "@/lib/construction-request-template";
+import { INSTALLATION_TYPE_OPTIONS } from "@/lib/customer-info-form/schema";
+import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
+
+const FULL = String.fromCharCode(0x3000);
+
+const BASE: CustomerInfoFormValues = {
+  customerName: "山田　太郎",
+  manufacturer: "ネクストエナジー",
+  installationType: "太陽光パネル+蓄電池",
+  constructionDate: "2026-09-05",
+  prefecture: "東京都",
+  city: "世田谷区",
+  address: "その先の町名番地",
+  panelCapacityKw: "5.775",
+  batteryCapacity1: "5.6",
+  batteryCapacity2: "",
+  roofMaterial: "カラーベスト",
+  breakerAmps: "60A",
+  pinpointAddress: "https://maps.example.test/xyz",
+};
+
+function build(overrides: CustomerInfoFormValues = {}) {
+  const result = buildConstructionRequestTemplate({ ...BASE, ...overrides });
+  if (!result.ok) throw new Error(`unexpected: ${result.reason}`);
+  return result;
+}
+
+function lineStartingWith(text: string, prefix: string): string | undefined {
+  return text.split("\n").find((l) => l.startsWith(prefix));
+}
+
+describe("設置種別 → 工事種別", () => {
+  it("4種類すべてに対応がある（網羅漏れなし）", () => {
+    expect(installationTypesWithoutWorkType()).toEqual([]);
+    expect(INSTALLATION_TYPE_OPTIONS).toHaveLength(4);
+  });
+
+  it("それぞれ正しい工事種別になる", () => {
+    expect(constructionWorkTypeLabel("太陽光パネル+蓄電池")).toBe("創蓄工事");
+    expect(constructionWorkTypeLabel("蓄電池のみ")).toBe("蓄単工事");
+    expect(constructionWorkTypeLabel("太陽光パネルのみ")).toBe("太陽光単体工事");
+    expect(constructionWorkTypeLabel("パワコン取替のみ")).toBe(
+      "パワコン取替工事",
+    );
+  });
+
+  it("未知・未選択は null（推測で埋めない）", () => {
+    expect(constructionWorkTypeLabel("")).toBeNull();
+    expect(constructionWorkTypeLabel("エコキュートのみ")).toBeNull();
+  });
+
+  it("設置種別が未選択ならテンプレートを作らない", () => {
+    const result = buildConstructionRequestTemplate({
+      ...BASE,
+      installationType: "",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("unknown-installation-type");
+  });
+});
+
+describe("1行目の【…】", () => {
+  it("メーカーと工事種別の間に区切りを入れず、工事種別と日付は全角スペース", () => {
+    const { text } = build();
+    expect(text.split("\n")[1]).toBe(
+      `【ネクストエナジー創蓄工事${FULL}2026/9/5(土)】`,
+    );
+  });
+});
+
+describe("パネル行・蓄電池行の出し分け", () => {
+  it("創蓄工事は両方出す", () => {
+    const { text } = build({ installationType: "太陽光パネル+蓄電池" });
+    expect(lineStartingWith(text, "・パネル：")).toBeDefined();
+    expect(lineStartingWith(text, "・蓄電池：")).toBeDefined();
+  });
+
+  it("太陽光単体工事はパネルのみ", () => {
+    const { text } = build({ installationType: "太陽光パネルのみ" });
+    expect(lineStartingWith(text, "・パネル：")).toBeDefined();
+    expect(lineStartingWith(text, "・蓄電池：")).toBeUndefined();
+  });
+
+  it("蓄単工事は蓄電池のみ", () => {
+    const { text } = build({ installationType: "蓄電池のみ" });
+    expect(lineStartingWith(text, "・パネル：")).toBeUndefined();
+    expect(lineStartingWith(text, "・蓄電池：")).toBeDefined();
+  });
+
+  it("パワコン取替工事は両方出さない", () => {
+    const { text } = build({ installationType: "パワコン取替のみ" });
+    expect(lineStartingWith(text, "・パネル：")).toBeUndefined();
+    expect(lineStartingWith(text, "・蓄電池：")).toBeUndefined();
+  });
+});
+
+describe("蓄電池の表記", () => {
+  it("①のみなら1つ", () => {
+    expect(formatBatteryCapacityLine("5.6", "")).toBe("5.6kWh");
+  });
+
+  it("①と②なら + で連結", () => {
+    expect(formatBatteryCapacityLine("5.6", "5.6")).toBe("5.6kWh + 5.6kWh");
+  });
+
+  it("単位が既に入っていれば二重に付けない", () => {
+    expect(formatBatteryCapacity("5.6kWh")).toBe("5.6kWh");
+    expect(formatBatteryCapacity("5.6KWH")).toBe("5.6KWH");
+    expect(formatBatteryCapacity("5.6kwh")).toBe("5.6kwh");
+  });
+
+  it("空・ダッシュは空文字", () => {
+    expect(formatBatteryCapacity("")).toBe("");
+    expect(formatBatteryCapacity("-")).toBe("");
+    expect(formatBatteryCapacityLine("", "")).toBe("");
+  });
+
+  it("②だけ入っていても表示できる", () => {
+    expect(formatBatteryCapacityLine("", "5.6")).toBe("5.6kWh");
+  });
+});
+
+describe("施工予定日の整形", () => {
+  it("ゼロ埋めせず曜日を付ける", () => {
+    expect(formatConstructionRequestDate("2026-09-05")).toBe("2026/9/5(土)");
+    expect(formatConstructionRequestDate("2026-10-12")).toBe("2026/10/12(月)");
+    expect(formatConstructionRequestDate("2026-01-01")).toBe("2026/1/1(木)");
+  });
+
+  it("スラッシュ区切りでも受け付ける", () => {
+    expect(formatConstructionRequestDate("2026/09/05")).toBe("2026/9/5(土)");
+  });
+
+  it("空・不正な日付は空文字", () => {
+    expect(formatConstructionRequestDate("")).toBe("");
+    expect(formatConstructionRequestDate("未定")).toBe("");
+    expect(formatConstructionRequestDate("2026-02-30")).toBe("");
+  });
+});
+
+describe("値が空のとき", () => {
+  it("行は残して値だけ空にする", () => {
+    const { text } = build({
+      manufacturer: "",
+      panelCapacityKw: "",
+      batteryCapacity1: "",
+      batteryCapacity2: "",
+      roofMaterial: "",
+      breakerAmps: "",
+      prefecture: "",
+      city: "",
+      pinpointAddress: "",
+      constructionDate: "",
+    });
+    expect(lineStartingWith(text, "・パネル：")).toBe("・パネル：");
+    expect(lineStartingWith(text, "・蓄電池：")).toBe("・蓄電池：");
+    expect(lineStartingWith(text, "・屋根材：")).toBe("・屋根材：");
+    expect(lineStartingWith(text, "・分電盤：")).toBe("・分電盤：");
+    expect(lineStartingWith(text, "住所：")).toBe("住所：");
+    expect(text).toContain("📍ピンポイント");
+    expect(text).toContain("ご確認よろしくお願いいたします。");
+  });
+
+  it("@pocket の「-」は空として扱う", () => {
+    const { text } = build({ roofMaterial: "-", breakerAmps: "-" });
+    expect(lineStartingWith(text, "・屋根材：")).toBe("・屋根材：");
+    expect(lineStartingWith(text, "・分電盤：")).toBe("・分電盤：");
+  });
+});
+
+describe("住所・ピンポイント", () => {
+  it("都道府県＋市区郡だけを連結し、町名以降は含めない", () => {
+    const { text } = build();
+    expect(lineStartingWith(text, "住所：")).toBe("住所：東京都世田谷区");
+    expect(text).not.toContain("その先の町名番地");
+  });
+
+  it("ピンポイント住所の URL は加工しない", () => {
+    const { text } = build();
+    expect(text).toContain("https://maps.example.test/xyz");
+  });
+});
+
+describe("テンプレート全文", () => {
+  it("創蓄工事の実例", () => {
+    const { text } = build();
+    expect(text).toBe(
+      [
+        "⭐️新規案件依頼",
+        `【ネクストエナジー創蓄工事${FULL}2026/9/5(土)】`,
+        "住所：東京都世田谷区",
+        "お客様名：山田　太郎",
+        "・メーカー：ネクストエナジー",
+        "・パネル：5.775",
+        "・蓄電池：5.6kWh",
+        "・屋根材：カラーベスト",
+        "・分電盤：60A",
+        "📍ピンポイント",
+        "https://maps.example.test/xyz",
+        "ご確認よろしくお願いいたします。",
+      ].join("\n"),
+    );
+  });
+
+  it("パワコン取替工事の実例（パネル・蓄電池行なし）", () => {
+    const { text } = build({ installationType: "パワコン取替のみ" });
+    expect(text).toBe(
+      [
+        "⭐️新規案件依頼",
+        `【ネクストエナジーパワコン取替工事${FULL}2026/9/5(土)】`,
+        "住所：東京都世田谷区",
+        "お客様名：山田　太郎",
+        "・メーカー：ネクストエナジー",
+        "・屋根材：カラーベスト",
+        "・分電盤：60A",
+        "📍ピンポイント",
+        "https://maps.example.test/xyz",
+        "ご確認よろしくお願いいたします。",
+      ].join("\n"),
+    );
+  });
+});
+
+describe("施工依頼ステータスによる表示条件", () => {
+  it("完了値は「済」", () => {
+    expect(CONSTRUCTION_REQUEST_STATUS_DONE).toBe("済");
+  });
+
+  it("「済」のときは欄を出さない", () => {
+    expect(shouldShowConstructionRequestPanel("済")).toBe(false);
+    expect(shouldShowConstructionRequestPanel(" 済 ")).toBe(false);
+  });
+
+  it("「済」以外・未設定のときは欄を出す", () => {
+    expect(shouldShowConstructionRequestPanel("")).toBe(true);
+    expect(shouldShowConstructionRequestPanel(undefined)).toBe(true);
+    expect(shouldShowConstructionRequestPanel("未依頼")).toBe(true);
+    expect(shouldShowConstructionRequestPanel("依頼中")).toBe(true);
+    expect(shouldShowConstructionRequestPanel("-")).toBe(true);
+  });
+});
