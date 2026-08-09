@@ -990,25 +990,6 @@ export function CustomerInfoEditForm({
           （見出し名が一致するか CUSTOMER_INFO_FIELD_* を確認してください）
         </p>
       ) : null}
-      {/*
-        新規施工依頼（タスクH）。施工依頼ステータスが「済」のときは
-        選択欄ごと出さない。既に依頼済みの案件で再依頼させないため
-      */}
-      {recordId &&
-      shouldShowConstructionRequestPanel(
-        displayValues.constructionRequestStatus,
-      ) ? (
-        <ConstructionRequestCopyPanel
-          recordId={recordId}
-          values={displayValues}
-          idToken={idToken}
-          disabled={saving}
-          onSessionExpired={onSessionExpired}
-          onStatusUpdated={(status) =>
-            handleFieldChange("constructionRequestStatus", status)
-          }
-        />
-      ) : null}
       {visibleFields.map((field) => {
         if (NAME_SPLIT_GIVEN_KEYS.has(field.key)) return null;
 
@@ -1161,6 +1142,26 @@ export function CustomerInfoEditForm({
         </label>
         );
       })}
+      {/*
+        新規施工依頼（タスクH）。入力を終えてから使う欄なのでフォームの最下部に置く。
+        施工依頼ステータスが「済」のときは選択欄ごと出さない
+        （既に依頼済みの案件で再依頼させないため）
+      */}
+      {recordId &&
+      shouldShowConstructionRequestPanel(
+        displayValues.constructionRequestStatus,
+      ) ? (
+        <ConstructionRequestCopyPanel
+          recordId={recordId}
+          values={displayValues}
+          idToken={idToken}
+          disabled={saving}
+          onSessionExpired={onSessionExpired}
+          onStatusUpdated={(status) =>
+            handleFieldChange("constructionRequestStatus", status)
+          }
+        />
+      ) : null}
     </div>
   );
 }
