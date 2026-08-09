@@ -157,10 +157,14 @@ export const VICINITY_SKETCH_OPTIONS = [
 /** 登記簿 */
 export const REGISTRY_BOOK_OPTIONS = ["未確認", "確認済み", "不要"] as const;
 
-/** 補助金事前申請書類（この項目だけ「一部回収済み」がある） */
+/**
+ * 補助金事前申請書類。
+ * 「一部回収済み」は運用上廃止し、@pocket の列からも削除済み。
+ * 内容は COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS と同じだが、
+ * この項目だけ選択肢が変わる可能性があるため定数は分けたままにしている。
+ */
 export const SUBSIDY_PRE_APPLICATION_DOC_OPTIONS = [
   "未回収",
-  "一部回収済み",
   "回収済み",
   "不要",
 ] as const;

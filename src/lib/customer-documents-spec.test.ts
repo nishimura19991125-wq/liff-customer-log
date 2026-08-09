@@ -6,6 +6,7 @@ import {
   customerDocumentSpecByKey,
   isCustomerDocumentKey,
 } from "@/lib/customer-documents-spec";
+import { CUSTOMER_INFO_FORM_FIELD_MAP } from "@/lib/customer-info-form/schema";
 
 /**
  * 完了値は項目ごとに違う。一律で「回収済み」を書くと @pocket のラジオ選択肢に
@@ -61,6 +62,55 @@ describe("CUSTOMER_DOCUMENT_SPECS", () => {
       CUSTOMER_DOCUMENT_SPECS.map((s) => s.completedValue),
     );
     expect([...values].sort()).toEqual(["作成済み", "回収済み", "確認済み"].sort());
+  });
+});
+
+/**
+ * 完了値・未回収値は、その項目の選択肢に必ず含まれていなければならない。
+ * 含まれないと、画面のラジオが未選択に見えるのに値だけが入る状態になり、
+ * 「不要」焼き付き（タスクG）と同じ事故が再発する。
+ */
+describe("完了値・未回収値と選択肢の整合", () => {
+  it("16項目とも completedValue が選択肢に含まれる", () => {
+    for (const spec of CUSTOMER_DOCUMENT_SPECS) {
+      const options = CUSTOMER_INFO_FORM_FIELD_MAP.get(spec.key)?.options ?? [];
+      expect(options, `${spec.caption} の選択肢`).toContain(
+        spec.completedValue,
+      );
+    }
+  });
+
+  it("16項目とも pendingValue が選択肢に含まれる", () => {
+    for (const spec of CUSTOMER_DOCUMENT_SPECS) {
+      const options = CUSTOMER_INFO_FORM_FIELD_MAP.get(spec.key)?.options ?? [];
+      expect(options, `${spec.caption} の選択肢`).toContain(spec.pendingValue);
+    }
+  });
+
+  it("非表示時の既定値（不要）も選択肢に含まれる", () => {
+    for (const spec of CUSTOMER_DOCUMENT_SPECS) {
+      const def = CUSTOMER_INFO_FORM_FIELD_MAP.get(spec.key);
+      const hiddenValue = def?.hiddenValue;
+      if (!hiddenValue) continue;
+      expect(def?.options ?? [], `${spec.caption} の選択肢`).toContain(
+        hiddenValue,
+      );
+    }
+  });
+
+  it("補助金事前申請書類の選択肢は3つ（一部回収済みは廃止）", () => {
+    const options =
+      CUSTOMER_INFO_FORM_FIELD_MAP.get("subsidyPreApplicationDocs")?.options ??
+      [];
+    expect(options).toEqual(["未回収", "回収済み", "不要"]);
+    expect(options).not.toContain("一部回収済み");
+  });
+
+  it("どの項目にも「一部回収済み」が残っていない", () => {
+    for (const spec of CUSTOMER_DOCUMENT_SPECS) {
+      const options = CUSTOMER_INFO_FORM_FIELD_MAP.get(spec.key)?.options ?? [];
+      expect(options, `${spec.caption} の選択肢`).not.toContain("一部回収済み");
+    }
   });
 });
 
