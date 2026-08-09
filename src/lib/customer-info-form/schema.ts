@@ -475,6 +475,21 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     caption: "ピンポイント住所",
     type: "text",
   },
+  /**
+   * 新規施工依頼のテンプレートをコピーしたときに「済」へ更新する（タスクH）。
+   *
+   * hiddenInForm にしているのは、@pocket 側の選択肢一覧を把握できていないため。
+   * 選択肢を推測してラジオに出すと、選択肢に無い値が入って未選択に見える事故
+   * （タスクG の「不要」焼き付き）を繰り返す。書き込むのは「済」だけなので
+   * 入力欄は出さず、put-payload.ts で値があるときだけ転記する。
+   */
+  {
+    key: "constructionRequestStatus",
+    caption: "施工依頼ステータス",
+    type: "text",
+    hiddenInForm: true,
+    required: false,
+  },
 ];
 
 export const CUSTOMER_INFO_FORM_FIELD_MAP = new Map(

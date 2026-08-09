@@ -132,6 +132,24 @@ async function applyStaffBranchesToPayload(
   }
 }
 
+/**
+ * 施工依頼ステータス（フォーム非表示・タスクH）。
+ *
+ * 値があるときだけ転記する。空のまま送って既存値を消さないようにするため。
+ * 通常の保存では読み込んだ値がそのまま戻るだけで、内容は変わらない。
+ */
+function applyConstructionRequestStatusToPayload(
+  values: CustomerInfoFormValues,
+  resolved: CustomerInfoFormFieldResolved[],
+  payload: Record<string, unknown>,
+): void {
+  const field = resolved.find((f) => f.key === "constructionRequestStatus");
+  if (!field?.fieldId) return;
+  const value = (values.constructionRequestStatus ?? "").trim();
+  if (!value) return;
+  payload[field.fieldId] = value;
+}
+
 /** お客様名・フリガナ（フォームは苗字/名前分割・@pocket は単一列） */
 function applyCombinedNameFieldsToPayload(
   values: CustomerInfoFormValues,
@@ -198,6 +216,7 @@ export async function formPayloadFromValues(
   const { resolved: transferResolved } =
     resolveCustomerInfoPtTransferFields(appFields);
   applyCombinedNameFieldsToPayload(synced, resolved, stringPayload);
+  applyConstructionRequestStatusToPayload(synced, resolved, stringPayload);
   applyPtTransferToPayload(values, transferResolved, stringPayload);
   await applyStaffBranchesToPayload(values, resolved, stringPayload);
   await applyBatteryModelNumbersToPayload(values, resolved, stringPayload);
