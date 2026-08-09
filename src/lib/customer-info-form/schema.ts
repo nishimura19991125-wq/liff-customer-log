@@ -1,5 +1,4 @@
 import {
-  COLLECTION_STATUS_TWO_OPTIONS,
   COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS,
   CUSTOMER_STATUS_OPTIONS,
   DOCUMENT_RADIO_HIDDEN_VALUE,
@@ -310,7 +309,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     key: "loanPaper",
     caption: "ローン用紙",
     type: "radio",
-    options: [...COLLECTION_STATUS_TWO_OPTIONS],
+    options: [...COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS],
     hiddenValue: DOCUMENT_RADIO_HIDDEN_VALUE,
   },
   {
@@ -379,7 +378,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     key: "salesConstructionContract",
     caption: "商品売買・工事請負契約書",
     type: "radio",
-    options: [...COLLECTION_STATUS_TWO_OPTIONS],
+    options: [...COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS],
   },
   {
     key: "powerCompanyForm",
@@ -426,21 +425,21 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     key: "equipmentCertConsent",
     caption: "設備認定に関する同意書",
     type: "radio",
-    options: [...COLLECTION_STATUS_TWO_OPTIONS],
+    options: [...COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS],
     hiddenValue: DOCUMENT_RADIO_HIDDEN_VALUE,
   },
   {
     key: "operatingCostReportConsent",
     caption: "運転費用年報提出に関する同意書",
     type: "radio",
-    options: [...COLLECTION_STATUS_TWO_OPTIONS],
+    options: [...COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS],
     hiddenValue: DOCUMENT_RADIO_HIDDEN_VALUE,
   },
   {
     key: "personalInfoConsent",
     caption: "個人情報の取扱に関する同意書",
     type: "radio",
-    options: [...COLLECTION_STATUS_TWO_OPTIONS],
+    options: [...COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS],
     hiddenValue: DOCUMENT_RADIO_HIDDEN_VALUE,
   },
   {
@@ -454,7 +453,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     key: "sealRegistrationCertificate",
     caption: "印鑑登録証明書",
     type: "radio",
-    options: [...COLLECTION_STATUS_TWO_OPTIONS],
+    options: [...COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS],
     hiddenValue: DOCUMENT_RADIO_HIDDEN_VALUE,
   },
   {

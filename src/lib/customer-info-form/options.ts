@@ -93,10 +93,13 @@ export const PAYMENT_METHODS_WITH_CASH = new Set<string>([
   "現金一括",
 ]);
 
-/** 書類回収状況（2択ラジオ） */
-export const COLLECTION_STATUS_TWO_OPTIONS = ["未回収", "回収済み"] as const;
-
-/** 書類回収状況（無あり） */
+/**
+ * 書類回収状況（無あり）。
+ * ⚠ 2択の COLLECTION_STATUS_TWO_OPTIONS は廃止した。
+ *   @pocket の実物は書類16項目すべてに「不要」があり、2択の定義を当てていた
+ *   6項目では、hiddenValue の「不要」が自分の選択肢に無いという矛盾が起きていた。
+ *   その結果ラジオが未選択に見え、値だけが「不要」のまま保存され続けていた。
+ */
 export const COLLECTION_STATUS_WITH_NONE_OPTIONS = [
   "未回収",
   "回収済み",
@@ -152,11 +155,12 @@ export const VICINITY_SKETCH_OPTIONS = [
 ] as const;
 
 /** 登記簿 */
-export const REGISTRY_BOOK_OPTIONS = ["未確認", "確認済み"] as const;
+export const REGISTRY_BOOK_OPTIONS = ["未確認", "確認済み", "不要"] as const;
 
-/** 補助金事前申請書類 */
+/** 補助金事前申請書類（この項目だけ「一部回収済み」がある） */
 export const SUBSIDY_PRE_APPLICATION_DOC_OPTIONS = [
   "未回収",
+  "一部回収済み",
   "回収済み",
   "不要",
 ] as const;
