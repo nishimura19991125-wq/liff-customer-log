@@ -90,6 +90,7 @@ export function formatConstructionRequestDate(raw: string | undefined): string {
 }
 
 const BATTERY_UNIT = "kWh";
+const PANEL_UNIT = "kW";
 
 /**
  * 蓄電池容量に単位を付ける。
@@ -101,6 +102,23 @@ export function formatBatteryCapacity(raw: string | undefined): string {
   // kWh / kwh / KWh などの表記ゆれを許容する
   if (/kwh/i.test(t)) return t;
   return `${t}${BATTERY_UNIT}`;
+}
+
+/**
+ * 太陽光パネル容量に単位を付ける。
+ *
+ * @pocket の見出しは「太陽光パネル容量(kw)」と小文字だが、
+ * テンプレートの表記は kW（W が大文字）に揃える。
+ * 値に既に kW が入っている場合は二重に付けない。
+ * 値が空のときは単位も付けない（行だけ残して値は空にする）。
+ */
+export function formatPanelCapacity(raw: string | undefined): string {
+  const t = (raw ?? "").trim();
+  if (!t || t === "-") return "";
+  // kWh（蓄電池の単位）を先に弾かないと kW にマッチしてしまう
+  if (/kwh/i.test(t)) return t;
+  if (/kw/i.test(t)) return t;
+  return `${t}${PANEL_UNIT}`;
 }
 
 /** ①のみ → `5.6kWh` / ①と② → `5.6kWh + 5.6kWh` */
@@ -161,7 +179,7 @@ export function buildConstructionRequestTemplate(
   ];
 
   if (showPanel) {
-    lines.push(`・パネル：${plain(values.panelCapacityKw)}`);
+    lines.push(`・パネル：${formatPanelCapacity(values.panelCapacityKw)}`);
   }
   if (showBattery) {
     lines.push(
