@@ -1,11 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CustomerDocumentUploadPanel } from "@/components/customer-document-upload-panel";
 import { KatakanaAwareTextInput } from "@/components/katakana-aware-text-input";
 import { StaffNameSuggestCombobox } from "@/components/staff-name-suggest-combobox";
 import { CUSTOMER_DOCUMENT_KEYS } from "@/lib/customer-documents-spec";
+import {
+  DOCUMENT_VISIBILITY_TRIGGER_KEYS,
+  forgetDocumentAutoFilled,
+  reconcileDocumentHiddenDefaults,
+} from "@/lib/customer-info-form/document-hidden-tracking";
 import {
   applyCustomerInfoFormChange,
   isContractAmountDerived,
@@ -578,6 +583,21 @@ export function CustomerInfoEditForm({
   const [constructionContractorsConfigured, setConstructionContractorsConfigured] =
     useState(false);
 
+  /**
+   * この編集セッション中に、システムが hiddenValue（＝「不要」）を書いた書類項目。
+   *
+   * 画面内の状態としてだけ持つ（localStorage / sessionStorage は使わない）。
+   * 画面を開き直すと消えるため、**既に保存済みの「不要」は対象外**で、
+   * 自動では直らない（タスクG の確定方針）。
+   * 描画に使わないので state ではなく ref にしている（再描画も依存配列も不要）。
+   */
+  const autoFilledDocKeysRef = useRef<ReadonlySet<string>>(new Set());
+
+  // 別のレコードを開いたら追跡をやり直す
+  useEffect(() => {
+    autoFilledDocKeysRef.current = new Set();
+  }, [recordId]);
+
   const displayValues = useMemo(
     () => syncContractAmountFromPayment(values),
     [values],
@@ -917,7 +937,30 @@ export function CustomerInfoEditForm({
         key === "preApplication" ||
         key === "batteryMulti"
       ) {
-        next = applyCustomerInfoHiddenDefaultsToValues(next);
+        // 書類の表示条件は 支払方法・設置種別・事前申請有無 だけで決まる。
+        // それ以外の変更で書類に hiddenValue を書くと、条件が変わっていないのに
+        // 「不要」が焼き付く（タスクG-2）
+        const isDocumentTrigger = DOCUMENT_VISIBILITY_TRIGGER_KEYS.has(key);
+        const beforeHiddenDefaults = next;
+        next = applyCustomerInfoHiddenDefaultsToValues(next, {
+          includeDocumentFields: isDocumentTrigger,
+        });
+        if (isDocumentTrigger) {
+          const reconciled = reconcileDocumentHiddenDefaults({
+            before: beforeHiddenDefaults,
+            after: next,
+            autoFilled: autoFilledDocKeysRef.current,
+          });
+          next = reconciled.values;
+          autoFilledDocKeysRef.current = reconciled.autoFilled;
+        }
+      }
+      // 人がラジオを操作した項目は、以降その人の意図として扱う
+      if (CUSTOMER_DOCUMENT_KEYS.has(key)) {
+        autoFilledDocKeysRef.current = forgetDocumentAutoFilled(
+          autoFilledDocKeysRef.current,
+          key,
+        );
       }
       propagateValues(next);
     },
@@ -1034,7 +1077,8 @@ export function CustomerInfoEditForm({
                 disabled={saving}
                 onSessionExpired={onSessionExpired}
                 onUploaded={({ status, statusUpdated }) => {
-                  // 完了値へラジオを反映（更新に失敗した分は触らない）
+                  // 完了値へラジオを反映（更新に失敗した分は触らない）。
+                  // handleFieldChange 側で追跡記録も外れる（人の操作と同じ扱い）
                   if (statusUpdated && status) {
                     handleFieldChange(field.key, status);
                   }

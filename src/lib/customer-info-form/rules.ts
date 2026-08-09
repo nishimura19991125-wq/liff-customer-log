@@ -1,3 +1,4 @@
+import { CUSTOMER_DOCUMENT_KEYS } from "@/lib/customer-documents-spec";
 import { checkboxGroupValueToPocketArray } from "@/lib/customer-info-form/checkbox-pocket";
 import { contractAmountForPocket } from "@/lib/customer-info-form/form-change";
 import { commaIntegerForPocket } from "@/lib/customer-info-form/numeric-comma";
@@ -379,12 +380,29 @@ export function customerInfoRoofMaterialOptions(): readonly string[] {
   return ROOF_MATERIAL_OPTIONS;
 }
 
-/** 保存前に非表示項目を values 上でダッシュに揃える（UI プレビュー用） */
+/**
+ * 保存前に非表示項目を values 上でダッシュに揃える（UI プレビュー用）。
+ *
+ * includeDocumentFields=false のとき、書類16項目には触れない（タスクG-2）。
+ * 書類の表示条件は 支払方法・設置種別・事前申請有無 の3つだけで決まるため、
+ * それ以外（紹介ルート・室内現地調査実施状況・蓄電池複数台設置）の変更で
+ * 書類に hiddenValue を書くのは、条件が変わっていないのに値を壊す動作になる。
+ *
+ * 3キー以外でも呼び出しは続ける。それらは 紹介手数料・工務店名・
+ * 室内調査予定日・蓄電池容量② の hiddenValue 適用に必要で、
+ * とくに工務店名は shouldPreserveHiddenFieldOnPut の保護に掛かるため、
+ * ここで揃えないと @pocket に古い値が残り続ける。
+ */
 export function applyCustomerInfoHiddenDefaultsToValues(
   values: CustomerInfoFormValues,
+  options: { includeDocumentFields?: boolean } = {},
 ): CustomerInfoFormValues {
+  const includeDocumentFields = options.includeDocumentFields !== false;
   const next = { ...values };
   for (const def of CUSTOMER_INFO_FORM_FIELDS) {
+    if (!includeDocumentFields && CUSTOMER_DOCUMENT_KEYS.has(def.key)) {
+      continue;
+    }
     if (!isCustomerInfoFormFieldVisible(def.key, next)) {
       if (
         POCKET_ZERO_WHEN_HIDDEN_KEYS.has(def.key) &&
