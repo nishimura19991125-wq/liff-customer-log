@@ -36,6 +36,14 @@ import {
   mergeStaffNameOptions,
 } from "@/lib/staff-name-options";
 import { applyCalendarRecordPatch, applyConstructionHandlerNameLocal } from "@/lib/calendar-apply-patch";
+import { CalendarContractorFilterPanel } from "@/components/calendar-contractor-filter-panel";
+import type { CalendarDisplayMode } from "@/lib/calendar-contractor-filter";
+import {
+  collectCalendarContractors,
+  countCalendarItems,
+  filterCalendarByDay,
+  summarizeCalendarEmptySlots,
+} from "@/lib/calendar-contractor-filter";
 import type {
   CalendarApiPayload,
   CalendarAttachmentMeta,
@@ -2396,6 +2404,19 @@ export function LiffCalendarMonthPage({
   );
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
   const [newRecordOpen, setNewRecordOpen] = useState(false);
+  /**
+   * 施工店フィルタ・表示モード（タスクI）。画面内の状態としてのみ持つ
+   * （localStorage / sessionStorage は使わない）。
+   *
+   * signature は選択当時の施工会社の顔ぶれ。月を切り替えて顔ぶれが変わったら
+   * 一致しなくなり、全社選択に戻る。これが無いと、新しい月に増えた施工会社が
+   * 「選択集合に無い」という理由で黙って非表示になる。
+   */
+  const [contractorFilter, setContractorFilter] = useState<{
+    signature: string;
+    selected: Set<string>;
+  } | null>(null);
+  const [displayMode, setDisplayMode] = useState<CalendarDisplayMode>("all");
   const [idToken, setIdToken] = useState<string | null>(null);
   const [handlerRows, setHandlerRows] = useState<HandlerStaffRow[]>([]);
   const [handlerListStatus, setHandlerListStatus] = useState<
@@ -2608,10 +2629,65 @@ export function LiffCalendarMonthPage({
 
   const todayKey = ymdKey(today);
 
+  // ── 施工店フィルタ・表示モード（タスクI）──────────────────
+  // 表示中の月に実際に出ている施工会社だけを選択肢にする。
+  // マスタ全社を並べると、その月に1件もない会社まで並んで使いにくい。
+  const contractorKeys = useMemo(
+    () => collectCalendarContractors(data?.byDay),
+    [data?.byDay],
+  );
+
+  const contractorSignature = useMemo(
+    () => contractorKeys.join(" "),
+    [contractorKeys],
+  );
+
+  // 未初期化・月替わりで顔ぶれが変わったときは全社選択に戻す
+  const effectiveSelectedContractors = useMemo(() => {
+    if (contractorFilter?.signature === contractorSignature) {
+      return contractorFilter.selected;
+    }
+    return new Set(contractorKeys);
+  }, [contractorFilter, contractorSignature, contractorKeys]);
+
+  const filteredByDay = useMemo(
+    () =>
+      filterCalendarByDay(data?.byDay, {
+        selectedContractors: effectiveSelectedContractors,
+        mode: displayMode,
+      }),
+    [data?.byDay, effectiveSelectedContractors, displayMode],
+  );
+
+  // サマリは表示モード・フィルタに影響されない（空き枠の情報として独立）
+  const emptySlotSummaries = useMemo(
+    () =>
+      summarizeCalendarEmptySlots(data?.byDay, {
+        todayKey: ymdKey(today),
+        contractorKeys,
+      }),
+    [data?.byDay, contractorKeys, today],
+  );
+
+  const visibleItemCount = useMemo(
+    () => countCalendarItems(filteredByDay),
+    [filteredByDay],
+  );
+
+  const toggleContractor = useCallback(
+    (key: string) => {
+      const next = new Set(effectiveSelectedContractors);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      setContractorFilter({ signature: contractorSignature, selected: next });
+    },
+    [effectiveSelectedContractors, contractorSignature],
+  );
+
   const selectedItems: CalendarMonthApiItem[] = useMemo(() => {
-    if (!selectedDayKey || !data?.byDay) return [];
-    return data.byDay[selectedDayKey] ?? [];
-  }, [data, selectedDayKey]);
+    if (!selectedDayKey) return [];
+    return filteredByDay[selectedDayKey] ?? [];
+  }, [filteredByDay, selectedDayKey]);
 
   function shiftMonth(delta: number) {
     setYm((prev) => {
@@ -2743,6 +2819,33 @@ export function LiffCalendarMonthPage({
           onBind={account.bindStaff}
         />
 
+        {/* 施工店フィルタ・表示モード・空き枠サマリ（タスクI）。表示のみで書き込みはしない */}
+        {!needsStaffBind && contractorKeys.length > 0 ? (
+          <div className="mb-3">
+            <CalendarContractorFilterPanel
+              contractorKeys={contractorKeys}
+              selectedContractors={effectiveSelectedContractors}
+              summaries={emptySlotSummaries}
+              mode={displayMode}
+              visibleCount={visibleItemCount}
+              onToggleContractor={toggleContractor}
+              onSelectAll={() =>
+                setContractorFilter({
+                  signature: contractorSignature,
+                  selected: new Set(contractorKeys),
+                })
+              }
+              onClearAll={() =>
+                setContractorFilter({
+                  signature: contractorSignature,
+                  selected: new Set(),
+                })
+              }
+              onChangeMode={setDisplayMode}
+            />
+          </div>
+        ) : null}
+
         <div className="relative">
           {needsStaffBind ? (
             <div
@@ -2834,10 +2937,11 @@ export function LiffCalendarMonthPage({
                         ? "bg-sky-50/90 text-sky-800 dark:bg-sky-950/60 dark:text-sky-100"
                         : "bg-white text-slate-800 dark:bg-slate-800/95 dark:text-white";
 
-                const dayItems: CalendarMonthApiItem[] =
-                  cell.dayKey && data?.byDay
-                    ? (data.byDay[cell.dayKey] ?? [])
-                    : [];
+                // 施工店フィルタ・表示モード適用後（タスクI）。
+                // バッジ件数・空き枠の背景色もフィルタに追従する
+                const dayItems: CalendarMonthApiItem[] = cell.dayKey
+                  ? (filteredByDay[cell.dayKey] ?? [])
+                  : [];
 
                 const isToday = cell.dayKey === todayKey && cell.inMonth;
                 const isSelected =
