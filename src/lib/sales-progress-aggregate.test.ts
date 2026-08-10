@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  aggregateSalesProgressByGroup,
+  aggregateSalesProgressByBranch,
   buildCompanySalesProgress,
   computeAchievement,
   formatSalesProgressNumber,
@@ -12,33 +12,30 @@ import {
   type SalesActualRow,
   type SalesTargetRow,
 } from "@/lib/sales-progress-aggregate";
+import {
+  resolveSalesProgressBranch,
+  salesProgressBranchOrder,
+  SALES_PROGRESS_DEFAULT_OTHER_BRANCH_LABEL,
+  SALES_PROGRESS_DEFAULT_VISIBLE_BRANCHES,
+} from "@/lib/sales-progress-branch";
+
+const BRANCH_CONFIG = {
+  visibleBranches: [...SALES_PROGRESS_DEFAULT_VISIBLE_BRANCHES],
+  otherLabel: SALES_PROGRESS_DEFAULT_OTHER_BRANCH_LABEL,
+};
 
 function target(
   staffName: string,
   over: Partial<SalesTargetRow> = {},
 ): SalesTargetRow {
-  return {
-    staffName,
-    department: "営業部",
-    branch: "奈良本社",
-    apoCount: 10,
-    pt: 1_000_000,
-    contractCount: 5,
-    ...over,
-  };
+  return { staffName, branch: "奈良本社", apoCount: 10, pt: 1_000_000, ...over };
 }
 
 function actual(
   staffName: string,
   over: Partial<SalesActualRow> = {},
 ): SalesActualRow {
-  return {
-    staffName,
-    apoCount: 5,
-    pt: 500_000,
-    contractCount: 2,
-    ...over,
-  };
+  return { staffName, apoCount: 5, pt: 500_000, ...over };
 }
 
 describe("computeAchievement", () => {
@@ -61,7 +58,7 @@ describe("computeAchievement", () => {
   });
 
   it("100%超でもバーは振り切れず、数値はそのまま出す", () => {
-    const m = computeAchievement(1_369_000, 1_000_000);
+    const m = computeAchievement(1_848_155, 1_350_000);
     expect(m.ratePercent).toBe(136.9);
     expect(m.barPercent).toBe(100);
   });
@@ -76,8 +73,8 @@ describe("computeAchievement", () => {
 describe("pickSelfSalesProgress（本人分だけ）", () => {
   const targets = [target("山田太郎"), target("鈴木花子", { pt: 2_000_000 })];
   const actuals = [
-    actual("山田太郎", { pt: 500_000 }),
-    actual("鈴木花子", { pt: 9_999_999 }),
+    actual("山田太郎", { pt: 500_000, apoCount: 4 }),
+    actual("鈴木花子", { pt: 9_999_999, apoCount: 99 }),
   ];
 
   it("氏名で突合し、他人の数字が混ざらない", () => {
@@ -85,6 +82,8 @@ describe("pickSelfSalesProgress（本人分だけ）", () => {
     expect(self.metrics.pt.actual).toBe(500_000);
     expect(self.metrics.pt.target).toBe(1_000_000);
     expect(self.metrics.pt.ratePercent).toBe(50);
+    expect(self.metrics.apo.actual).toBe(4);
+    expect(self.metrics.apo.target).toBe(10);
     expect(self.targetMissing).toBe(false);
   });
 
@@ -100,9 +99,10 @@ describe("pickSelfSalesProgress（本人分だけ）", () => {
     const self = pickSelfSalesProgress(targets, actuals, "存在しない人");
     expect(self.metrics.pt.actual).toBe(0);
     expect(self.metrics.pt.target).toBe(0);
+    expect(self.metrics.apo.actual).toBe(0);
   });
 
-  it("同じ人の目標行が複数月ぶんあれば合算する", () => {
+  it("同じ人の目標行が複数あれば合算する", () => {
     const self = pickSelfSalesProgress(
       [target("山田太郎", { pt: 100 }), target("山田太郎", { pt: 200 })],
       [],
@@ -115,146 +115,169 @@ describe("pickSelfSalesProgress（本人分だけ）", () => {
 describe("buildCompanySalesProgress", () => {
   it("全社合計を出す", () => {
     const m = buildCompanySalesProgress(
-      [target("A", { pt: 1_000_000, apoCount: 10, contractCount: 5 })],
+      [target("A", { pt: 1_000_000, apoCount: 10 })],
       [
-        actual("A", { pt: 400_000, apoCount: 4, contractCount: 1 }),
-        actual("B", { pt: 100_000, apoCount: 1, contractCount: 1 }),
+        actual("A", { pt: 400_000, apoCount: 4 }),
+        actual("B", { pt: 100_000, apoCount: 1 }),
       ],
     );
     expect(m.pt.actual).toBe(500_000);
     expect(m.pt.target).toBe(1_000_000);
     expect(m.pt.ratePercent).toBe(50);
     expect(m.apo.actual).toBe(5);
-    expect(m.contract.actual).toBe(2);
   });
 });
 
-describe("aggregateSalesProgressByGroup", () => {
+describe("resolveSalesProgressBranch（支社の振り分け）", () => {
+  it("表示対象の支社はそのまま", () => {
+    expect(resolveSalesProgressBranch("奈良本社", BRANCH_CONFIG)).toBe("奈良本社");
+    expect(resolveSalesProgressBranch("京都支社", BRANCH_CONFIG)).toBe("京都支社");
+  });
+
+  it("未設定・空白はその他", () => {
+    expect(resolveSalesProgressBranch("", BRANCH_CONFIG)).toBe("その他");
+    expect(resolveSalesProgressBranch("   ", BRANCH_CONFIG)).toBe("その他");
+    expect(resolveSalesProgressBranch(undefined, BRANCH_CONFIG)).toBe("その他");
+  });
+
+  it("表示対象外の支社はその他", () => {
+    for (const v of ["業務委託", "トラーチ倶楽部", "卸案件", "大阪支社"]) {
+      expect(resolveSalesProgressBranch(v, BRANCH_CONFIG)).toBe("その他");
+    }
+  });
+
+  it("全角半角・空白のゆれを吸収し、設定側の表記で返す", () => {
+    expect(resolveSalesProgressBranch(" 奈良本社 ", BRANCH_CONFIG)).toBe("奈良本社");
+    expect(resolveSalesProgressBranch("奈良 本社", BRANCH_CONFIG)).toBe("奈良本社");
+  });
+
+  it("表示順はその他を最後にする", () => {
+    expect(salesProgressBranchOrder(BRANCH_CONFIG)).toEqual([
+      "埼玉支社",
+      "奈良本社",
+      "名古屋支社",
+      "京都支社",
+      "その他",
+    ]);
+  });
+});
+
+describe("aggregateSalesProgressByBranch", () => {
   const targets = [
-    target("A", { branch: "奈良本社", pt: 6_000_000 }),
-    target("B", { branch: "奈良本社", pt: 4_800_000 }),
-    target("C", { branch: "京都支社", pt: 3_000_000 }),
-    target("D", { branch: "京都支社", pt: 2_000_000 }),
+    target("A", { branch: "奈良本社", pt: 6_000_000, apoCount: 10 }),
+    target("B", { branch: "奈良本社", pt: 4_800_000, apoCount: 10 }),
+    target("C", { branch: "京都支社", pt: 3_000_000, apoCount: 5 }),
+    target("D", { branch: "埼玉支社", pt: 2_000_000, apoCount: 5 }),
   ];
   const actuals = [
-    actual("A", { pt: 1_000_000 }),
-    actual("B", { pt: 694_490 }),
-    actual("C", { pt: 900_000 }),
-    actual("D", { pt: 100_000 }),
+    actual("A", { pt: 1_000_000, apoCount: 3 }),
+    actual("B", { pt: 694_490, apoCount: 2 }),
+    actual("C", { pt: 900_000, apoCount: 1 }),
+    actual("D", { pt: 100_000, apoCount: 1 }),
   ];
+  const order = salesProgressBranchOrder(BRANCH_CONFIG);
 
   it("支社ごとに目標と実績を合算する", () => {
-    const rows = aggregateSalesProgressByGroup(targets, actuals, "branch");
+    const rows = aggregateSalesProgressByBranch(targets, actuals, {
+      fallbackLabel: "その他",
+      ensureLabels: order,
+    });
     const nara = rows.find((r) => r.label === "奈良本社");
-    expect(nara?.metrics?.pt.target).toBe(10_800_000);
-    expect(nara?.metrics?.pt.actual).toBe(1_694_490);
-    expect(nara?.metrics?.pt.ratePercent).toBe(15.7);
+    expect(nara?.metrics.pt.target).toBe(10_800_000);
+    expect(nara?.metrics.pt.actual).toBe(1_694_490);
+    expect(nara?.metrics.pt.ratePercent).toBe(15.7);
     expect(nara?.memberCount).toBe(2);
   });
 
-  it("目標の大きい順に並ぶ", () => {
-    const rows = aggregateSalesProgressByGroup(targets, actuals, "branch");
-    expect(rows.map((r) => r.label)).toEqual(["奈良本社", "京都支社"]);
-  });
-
-  it("部署別でも同じように集計できる", () => {
-    const rows = aggregateSalesProgressByGroup(
-      [
-        target("A", { department: "営業1課", pt: 100 }),
-        target("B", { department: "営業1課", pt: 200 }),
-        target("C", { department: "営業2課", pt: 50 }),
-        target("D", { department: "営業2課", pt: 50 }),
-      ],
-      [actual("A", { pt: 10 }), actual("C", { pt: 5 })],
-      "department",
-    );
-    expect(rows.find((r) => r.label === "営業1課")?.metrics?.pt).toMatchObject({
-      target: 300,
-      actual: 10,
+  it("データが無い支社も0の行として残り、並び順は固定される", () => {
+    const rows = aggregateSalesProgressByBranch(targets, actuals, {
+      fallbackLabel: "その他",
+      ensureLabels: order,
     });
-    expect(rows.find((r) => r.label === "営業2課")?.metrics?.pt).toMatchObject({
-      target: 100,
-      actual: 5,
-    });
+    expect(rows.map((r) => r.label)).toEqual(order);
+    const nagoya = rows.find((r) => r.label === "名古屋支社");
+    expect(nagoya?.metrics.pt.target).toBe(0);
+    expect(nagoya?.metrics.pt.ratePercent).toBeNull();
   });
 
-  it("1人しかいないグループは数値を伏せる（実質的に個人の数字になるため）", () => {
-    const rows = aggregateSalesProgressByGroup(
-      [target("A", { branch: "単独支社" }), ...targets],
-      [actual("A"), ...actuals],
-      "branch",
-    );
-    const solo = rows.find((r) => r.label === "単独支社");
-    expect(solo?.memberCount).toBe(1);
-    expect(solo?.suppressed).toBe(true);
-    expect(solo?.metrics).toBeNull();
-  });
-
-  it("しきい値は差し替えられる", () => {
-    const rows = aggregateSalesProgressByGroup(
-      [target("A", { branch: "単独支社" })],
-      [actual("A")],
-      "branch",
-      { minGroupMembers: 1 },
-    );
-    expect(rows[0]?.suppressed).toBe(false);
-    expect(rows[0]?.metrics).not.toBeNull();
-  });
-
-  it("目標の無い実績は目標未登録にまとめ、全社合計と食い違わせない", () => {
-    const rows = aggregateSalesProgressByGroup(
+  it("目標が無い担当者の実績はその他に入る", () => {
+    const rows = aggregateSalesProgressByBranch(
       targets,
-      [...actuals, actual("E", { pt: 777 }), actual("F", { pt: 111 })],
-      "branch",
-      { minGroupMembers: 1 },
+      [...actuals, actual("謎の人", { pt: 777, apoCount: 1 })],
+      { fallbackLabel: "その他", ensureLabels: order },
     );
-    const unassigned = rows.find(
-      (r) => r.label === SALES_PROGRESS_UNASSIGNED_GROUP,
-    );
-    expect(unassigned?.metrics?.pt.actual).toBe(888);
-    expect(unassigned?.metrics?.pt.target).toBe(0);
-    expect(unassigned?.metrics?.pt.ratePercent).toBeNull();
+    const other = rows.find((r) => r.label === "その他");
+    expect(other?.metrics.pt.actual).toBe(777);
+    expect(other?.metrics.pt.target).toBe(0);
+    expect(other?.metrics.pt.ratePercent).toBeNull();
+  });
 
-    // 部署別の実績合計＝全社の実績合計
-    const sum = rows.reduce((s, r) => s + (r.metrics?.pt.actual ?? 0), 0);
-    const company = buildCompanySalesProgress(targets, [
+  it("支社が空の目標行もその他に入れる（グループを捨てない）", () => {
+    const rows = aggregateSalesProgressByBranch(
+      [target("X", { branch: "", pt: 123 }), target("Y", { branch: "  ", pt: 1 })],
+      [],
+      { fallbackLabel: "その他", ensureLabels: order },
+    );
+    expect(rows.find((r) => r.label === "その他")?.metrics.pt.target).toBe(124);
+  });
+
+  it("★ 支社別の合計が全社合計と一致する（対象外・未設定を含む）", () => {
+    // 表示対象外の支社と未設定を混ぜたうえで、目標の無い実績も足す
+    const mixedTargets = [
+      ...targets,
+      target("E", { branch: resolveSalesProgressBranch("業務委託", BRANCH_CONFIG), pt: 500_000, apoCount: 2 }),
+      target("F", { branch: resolveSalesProgressBranch("", BRANCH_CONFIG), pt: 300_000, apoCount: 1 }),
+      target("G", { branch: resolveSalesProgressBranch("トラーチ倶楽部", BRANCH_CONFIG), pt: 200_000, apoCount: 1 }),
+    ];
+    const mixedActuals = [
       ...actuals,
-      actual("E", { pt: 777 }),
-      actual("F", { pt: 111 }),
-    ]);
-    expect(sum).toBe(company.pt.actual);
+      actual("E", { pt: 50_000, apoCount: 1 }),
+      actual("F", { pt: 20_000, apoCount: 1 }),
+      actual("目標の無い人", { pt: 9_000, apoCount: 3 }),
+    ];
+
+    const rows = aggregateSalesProgressByBranch(mixedTargets, mixedActuals, {
+      fallbackLabel: "その他",
+      ensureLabels: order,
+    });
+    const company = buildCompanySalesProgress(mixedTargets, mixedActuals);
+
+    const sumTargetPt = rows.reduce((s, r) => s + r.metrics.pt.target, 0);
+    const sumActualPt = rows.reduce((s, r) => s + r.metrics.pt.actual, 0);
+    const sumTargetApo = rows.reduce((s, r) => s + r.metrics.apo.target, 0);
+    const sumActualApo = rows.reduce((s, r) => s + r.metrics.apo.actual, 0);
+
+    expect(sumTargetPt).toBe(company.pt.target);
+    expect(sumActualPt).toBe(company.pt.actual);
+    expect(sumTargetApo).toBe(company.apo.target);
+    expect(sumActualApo).toBe(company.apo.actual);
+
+    // 寄せ先が実際に効いていること（その他が空なら上の一致は自明になる）
+    const other = rows.find((r) => r.label === "その他");
+    expect(other?.metrics.pt.target).toBe(1_000_000);
+    expect(other?.metrics.pt.actual).toBe(79_000);
   });
 
-  it("目標未登録は常に末尾に置く", () => {
-    const rows = aggregateSalesProgressByGroup(
-      targets,
-      [...actuals, actual("E", { pt: 99_999_999 }), actual("F")],
-      "branch",
-      { minGroupMembers: 1 },
-    );
-    expect(rows[rows.length - 1]?.label).toBe(SALES_PROGRESS_UNASSIGNED_GROUP);
-  });
-
-  it("突合できない行があっても他のグループの集計は壊れない", () => {
-    const rows = aggregateSalesProgressByGroup(
+  it("突合できない行があっても他の支社の集計は壊れない", () => {
+    const rows = aggregateSalesProgressByBranch(
       targets,
       [...actuals, actual("謎の人"), actual("", { pt: 500 })],
-      "branch",
+      { fallbackLabel: "その他", ensureLabels: order },
     );
     const nara = rows.find((r) => r.label === "奈良本社");
-    expect(nara?.metrics?.pt.actual).toBe(1_694_490);
-    expect(nara?.metrics?.pt.target).toBe(10_800_000);
+    expect(nara?.metrics.pt.actual).toBe(1_694_490);
+    expect(nara?.metrics.pt.target).toBe(10_800_000);
   });
 
-  it("支社が空の目標行は目標未登録に入れる（グループを捨てない）", () => {
-    const rows = aggregateSalesProgressByGroup(
-      [target("A", { branch: "  " , pt: 123 }), target("B", { branch: "", pt: 1 })],
-      [],
-      "branch",
-      { minGroupMembers: 1 },
-    );
-    expect(rows[0]?.label).toBe(SALES_PROGRESS_UNASSIGNED_GROUP);
-    expect(rows[0]?.metrics?.pt.target).toBe(124);
+  it("並びの指定が無ければ目標の大きい順、寄せ先は最後", () => {
+    const rows = aggregateSalesProgressByBranch(targets, actuals, {
+      fallbackLabel: SALES_PROGRESS_UNASSIGNED_GROUP,
+    });
+    expect(rows.map((r) => r.label)).toEqual([
+      "奈良本社",
+      "京都支社",
+      "埼玉支社",
+    ]);
   });
 });
 
