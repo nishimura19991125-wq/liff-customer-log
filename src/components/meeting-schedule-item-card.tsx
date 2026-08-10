@@ -42,6 +42,20 @@ function mergeSelectOptions(options: string[], current: string): string[] {
 const inputClass =
   "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[14px] text-slate-900 shadow-sm disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white";
 
+/**
+ * 保存ボタンの無効時の見た目。
+ *
+ * 以前は色付きの背景に opacity-50 を重ねるだけで、薄い緑のまま押せそうに見え、
+ * 押しても反応しないため「壊れている」と受け取られていた。
+ * 背景ごと灰色に落とし、カーソルでも押せないことを示す。
+ */
+const saveButtonClass =
+  "w-full rounded-xl px-4 py-2.5 text-[14px] font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:opacity-100 disabled:shadow-none dark:disabled:bg-slate-700 dark:disabled:text-slate-400";
+
+/** 無効な理由。押せる条件が分かるよう、ボタンの下に小さく出す */
+const saveHintClass =
+  "mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400";
+
 export function MeetingScheduleItemCard({
   item,
   staffName,
@@ -120,6 +134,14 @@ export function MeetingScheduleItemCard({
     !statusUpdating;
   const canSaveSchedule =
     canEditSchedule && scheduleDirty && scheduledYmd.trim() && !statusUpdating;
+
+  /** 「日時を保存」が押せない理由。保存中は出さない（ボタンの文言で分かる） */
+  const scheduleSaveHint = (() => {
+    if (canSaveSchedule || statusUpdating) return "";
+    if (!scheduledYmd.trim()) return "日付を入力すると保存できます";
+    if (!scheduleDirty) return "日付か時刻を変更すると保存できます";
+    return "";
+  })();
 
   const handleStatusSelect = (nextStatus: string) => {
     setDraftStatus(nextStatus);
@@ -246,14 +268,19 @@ export function MeetingScheduleItemCard({
                   onChange={(e) => setScheduledTime(e.target.value)}
                 />
               </label>
-              <button
-                type="button"
-                disabled={!canSaveSchedule}
-                onClick={handleSaveSchedule}
-                className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-[14px] font-semibold text-white disabled:opacity-50 dark:bg-emerald-500"
-              >
-                {statusUpdating ? "保存中…" : "日時を保存"}
-              </button>
+              <div>
+                <button
+                  type="button"
+                  disabled={!canSaveSchedule}
+                  onClick={handleSaveSchedule}
+                  className={`${saveButtonClass} bg-emerald-600 dark:bg-emerald-500`}
+                >
+                  {statusUpdating ? "保存中…" : "日時を保存"}
+                </button>
+                {scheduleSaveHint ? (
+                  <p className={saveHintClass}>{scheduleSaveHint}</p>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
@@ -314,7 +341,7 @@ export function MeetingScheduleItemCard({
                 type="button"
                 disabled={!canSaveSetCreated}
                 onClick={handleSaveSetCreated}
-                className="w-full rounded-xl bg-sky-600 px-4 py-2.5 text-[14px] font-semibold text-white disabled:opacity-50 dark:bg-sky-500"
+                className={`${saveButtonClass} bg-sky-600 dark:bg-sky-500`}
               >
                 {statusUpdating ? "保存中…" : "保存"}
               </button>
@@ -342,7 +369,7 @@ export function MeetingScheduleItemCard({
                 type="button"
                 disabled={!canSaveHenmachi}
                 onClick={handleSaveHenmachi}
-                className="w-full rounded-xl bg-violet-600 px-4 py-2.5 text-[14px] font-semibold text-white disabled:opacity-50 dark:bg-violet-500"
+                className={`${saveButtonClass} bg-violet-600 dark:bg-violet-500`}
               >
                 {statusUpdating ? "保存中…" : "保存"}
               </button>
