@@ -262,15 +262,12 @@ export default function CustomerDetailPage() {
                 <div className="border-b border-slate-100 px-4 py-3">
                   <h2 className="text-base font-bold text-slate-900">基本情報</h2>
                 </div>
+                {/*
+                  行の並びと値の組み立てはサーバ側（customer-crm-detail.ts）に
+                  一本化している。ここで固定行を足すと、以前の「補助金有無が
+                  2回出る」重複が再発するので追加しないこと
+                */}
                 <dl className="divide-y divide-slate-100 px-4">
-                  <div className="grid grid-cols-[minmax(7rem,38%)_1fr] gap-2 py-3 text-[15px]">
-                    <dt className="font-medium text-slate-500">工事日</dt>
-                    <dd className="text-slate-900">{detail.constructionDate}</dd>
-                  </div>
-                  <div className="grid grid-cols-[minmax(7rem,38%)_1fr] gap-2 py-3 text-[15px]">
-                    <dt className="font-medium text-slate-500">補助金有無</dt>
-                    <dd className="text-slate-900">{detail.subsidyPresence}</dd>
-                  </div>
                   {detail.summary.map((row) => (
                     <div
                       key={`${row.label}-${row.value}`}
@@ -289,7 +286,7 @@ export default function CustomerDetailPage() {
                     return (
                       <div className="grid grid-cols-[minmax(7rem,38%)_1fr] gap-2 py-3 text-[15px]">
                         <dt className="font-medium text-slate-500">
-                          Dropboxフォルダ
+                          書類フォルダ
                         </dt>
                         <dd className="break-words text-slate-900">
                           {href ? (
@@ -297,9 +294,9 @@ export default function CustomerDetailPage() {
                               href={href}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 rounded-xl bg-slate-900 px-3 py-2 text-[14px] font-bold text-white"
+                              className="inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-2.5 py-1 text-[13px] font-bold text-sky-900 transition active:scale-[0.98] active:bg-sky-100"
                             >
-                              Dropboxフォルダを開く
+                              Dropboxを開く
                             </a>
                           ) : (
                             <span className="text-slate-500">未設定</span>
