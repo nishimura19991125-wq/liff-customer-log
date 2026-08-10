@@ -3,6 +3,7 @@ import {
   installationTypeHidesPanelSection,
 } from "@/lib/customer-info-form/options";
 import { INSTALLATION_TYPE_OPTIONS } from "@/lib/customer-info-form/schema";
+import { formatYmdWithWeekday } from "@/lib/format-weekday-date";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 
 /**
@@ -57,36 +58,14 @@ export function constructionWorkTypeLabel(
   return WORK_TYPE_BY_INSTALLATION_TYPE.get((installationType ?? "").trim()) ?? null;
 }
 
-const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"] as const;
-
 /**
  * 施工予定日を `2026/9/5(土)` の形にする。
  *
- * ゼロ埋めしない点が formatDisplayYmd（yyyy/mm/dd）と異なるため専用に持つ。
- * 曜日はローカルタイムゾーンに影響されないよう UTC で計算する。
+ * 整形はタスクI（空き枠サマリ）と共通の format-weekday-date.ts に置いている。
+ * ゼロ埋めしない点が formatDisplayYmd（yyyy/mm/dd）と異なる。
  */
 export function formatConstructionRequestDate(raw: string | undefined): string {
-  const t = (raw ?? "").trim();
-  if (!t) return "";
-  const datePart =
-    t.replace(/\//g, "-").split("T")[0]?.split(" ")[0]?.trim() ?? "";
-  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(datePart);
-  if (!m) return "";
-
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  const utc = new Date(Date.UTC(y, mo - 1, d));
-  // 2026-02-30 のような実在しない日付を弾く
-  if (
-    utc.getUTCFullYear() !== y ||
-    utc.getUTCMonth() !== mo - 1 ||
-    utc.getUTCDate() !== d
-  ) {
-    return "";
-  }
-
-  return `${y}/${mo}/${d}(${WEEKDAY_LABELS[utc.getUTCDay()]})`;
+  return formatYmdWithWeekday(raw);
 }
 
 const BATTERY_UNIT = "kWh";
