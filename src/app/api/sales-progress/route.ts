@@ -24,15 +24,35 @@ import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 export const dynamic = "force-dynamic";
 
 /**
- * 営業進捗（目標に対する達成率・タスクK）。
+ * 営業進捗（目標に対する達成率・タスクK / L）。
  *
  * 既存の GET /api/sales-dashboard とは別のルート。既存側は変更していない。
  *
- * ■ 返すもの（K-3）
- * 本人の数字・全社の合計・支社別の集計値だけ。
- * **他人の氏名も、個人別の数値も返さない。** 本人分の抽出はここで行い、
- * クライアント側のフィルタには頼らない。
+ * ■ 返すもの（タスクL で方針変更）
+ * 本人の数字・全社の合計・支社別の集計値に加え、支社ごとの担当者別の内訳。
+ * タスクK では個人成績を本人以外に見せない方針だったが、利用者が全員社員で
+ * あることから、既存の /sales-dashboard と同じく全社員に公開する方針へ
+ * 変更した。認証と名簿への紐付けが必須である点は変わらない。
+ *
+ * ■ キャッシュとの関係
+ * 内訳は全員に見せる情報なので、ユーザー非依存キーのキャッシュに入れてよい。
+ * ただし **「本人かどうか」の判定はキャッシュに含めない**。isSelf は
+ * キャッシュから取り出した後、この場で付ける。
  */
+
+export type SalesProgressStaffPayload = {
+  staffName: string;
+  /** 呼び出し元本人か。キャッシュには入れず、ここで付ける */
+  isSelf: boolean;
+  metrics: SalesProgressMetrics;
+};
+
+export type SalesProgressBranchPayload = {
+  label: string;
+  memberCount: number;
+  metrics: SalesProgressMetrics;
+  members: SalesProgressStaffPayload[];
+};
 
 export type SalesProgressPayload = {
   staffName: string;
@@ -43,22 +63,26 @@ export type SalesProgressPayload = {
   /** 対象月の本人の目標が登録されていない */
   selfTargetMissing: boolean;
   company: SalesProgressMetrics;
-  branches: Array<{
-    label: string;
-    memberCount: number;
-    metrics: SalesProgressMetrics;
-  }>;
+  branches: SalesProgressBranchPayload[];
   /** 目標が1件も取れなかった月 */
   targetsAvailable: boolean;
   needsStaffBind?: boolean;
 };
 
-function toBranchPayload(rows: SalesProgressGroupRow[]) {
-  // 集計値と人数だけ。氏名は元から持っていない
+function toBranchPayload(
+  rows: SalesProgressGroupRow[],
+  selfName: string,
+): SalesProgressBranchPayload[] {
   return rows.map((r) => ({
     label: r.label,
     memberCount: r.memberCount,
     metrics: r.metrics,
+    members: r.members.map((m) => ({
+      staffName: m.staffName,
+      // 本人判定はキャッシュ済みの core には持たせない
+      isSelf: Boolean(selfName) && m.staffName === selfName,
+      metrics: m.metrics,
+    })),
   }));
 }
 
@@ -103,12 +127,8 @@ export async function GET(request: Request) {
       );
     }
 
-    // 本人分の抽出はここで行う。core（担当者別の行を含む）は外へ出さない
-    const self = pickSelfSalesProgress(
-      core.targets,
-      core.actuals,
-      normApClStaffName(boundStaffName),
-    );
+    const selfName = normApClStaffName(boundStaffName);
+    const self = pickSelfSalesProgress(core.targets, core.actuals, selfName);
 
     const payload: SalesProgressPayload = {
       staffName: boundStaffName,
@@ -118,7 +138,7 @@ export async function GET(request: Request) {
       self: self.metrics,
       selfTargetMissing: self.targetMissing,
       company: core.company,
-      branches: toBranchPayload(core.branches),
+      branches: toBranchPayload(core.branches, selfName),
       targetsAvailable: core.targetsAvailable,
     };
     return NextResponse.json(payload);

@@ -8,6 +8,7 @@ import {
   formatSalesProgressRate,
   pickSelfSalesProgress,
   SALES_PROGRESS_UNASSIGNED_GROUP,
+  sortSalesProgressStaffRows,
   summarizeSalesProgressMatching,
   type SalesActualRow,
   type SalesTargetRow,
@@ -36,6 +37,14 @@ function actual(
   over: Partial<SalesActualRow> = {},
 ): SalesActualRow {
   return { staffName, apoCount: 5, pt: 500_000, ...over };
+}
+
+/** 並び替えの検証用。PT だけ動かし、アポは固定にする */
+function buildMetrics(ptActual: number, ptTarget: number) {
+  return {
+    pt: computeAchievement(ptActual, ptTarget),
+    apo: computeAchievement(0, 0),
+  };
 }
 
 describe("computeAchievement", () => {
@@ -277,6 +286,133 @@ describe("aggregateSalesProgressByBranch", () => {
       "奈良本社",
       "京都支社",
       "埼玉支社",
+    ]);
+  });
+});
+
+describe("個人内訳（タスクL）", () => {
+  const order = salesProgressBranchOrder(BRANCH_CONFIG);
+  const targets = [
+    target("山田太郎", { branch: "埼玉支社", pt: 2_000_000, apoCount: 8 }),
+    target("佐藤花子", { branch: "埼玉支社", pt: 1_800_000, apoCount: 4 }),
+    target("鈴木一郎", { branch: "埼玉支社", pt: 1_500_000, apoCount: 6 }),
+  ];
+  const actuals = [
+    actual("山田太郎", { pt: 1_200_000, apoCount: 1 }),
+    actual("佐藤花子", { pt: 494_490, apoCount: 9 }),
+    // 鈴木一郎 は実績なし
+  ];
+
+  function saitama(t = targets, a = actuals) {
+    const rows = aggregateSalesProgressByBranch(t, a, {
+      fallbackLabel: "その他",
+      ensureLabels: order,
+    });
+    return rows.find((r) => r.label === "埼玉支社")!;
+  }
+
+  it("担当者ごとの内訳を持ち、支社の合計と一致する", () => {
+    const b = saitama();
+    expect(b.members.map((m) => m.staffName)).toHaveLength(3);
+    const sumActual = b.members.reduce((s, m) => s + m.metrics.pt.actual, 0);
+    const sumTarget = b.members.reduce((s, m) => s + m.metrics.pt.target, 0);
+    expect(sumActual).toBe(b.metrics.pt.actual);
+    expect(sumTarget).toBe(b.metrics.pt.target);
+  });
+
+  it("既定の並びは PT 実績の降順", () => {
+    expect(saitama().members.map((m) => m.staffName)).toEqual([
+      "山田太郎",
+      "佐藤花子",
+      "鈴木一郎",
+    ]);
+  });
+
+  it("実績が無い担当者も内訳に含まれ、達成率は数値で出る（目標があるため）", () => {
+    const suzuki = saitama().members.find((m) => m.staffName === "鈴木一郎");
+    expect(suzuki?.metrics.pt.actual).toBe(0);
+    expect(suzuki?.metrics.pt.target).toBe(1_500_000);
+    expect(suzuki?.metrics.pt.ratePercent).toBe(0);
+  });
+
+  it("目標未登録の担当者も内訳に含まれ、達成率は「—」", () => {
+    const b = saitama(targets, [
+      ...actuals,
+      // 目標が無い＝目標行が無い人。支社が引けないので寄せ先に入る
+      actual("高橋二郎", { pt: 300_000, apoCount: 2 }),
+    ]);
+    // 埼玉には入らない
+    expect(b.members.map((m) => m.staffName)).not.toContain("高橋二郎");
+
+    const rows = aggregateSalesProgressByBranch(
+      targets,
+      [...actuals, actual("高橋二郎", { pt: 300_000, apoCount: 2 })],
+      { fallbackLabel: "その他", ensureLabels: order },
+    );
+    const other = rows.find((r) => r.label === "その他");
+    const takahashi = other?.members.find((m) => m.staffName === "高橋二郎");
+    expect(takahashi).toBeDefined();
+    expect(takahashi?.metrics.pt.target).toBe(0);
+    expect(takahashi?.metrics.pt.ratePercent).toBeNull();
+    expect(formatSalesProgressRate(takahashi!.metrics.pt.ratePercent)).toBe("—");
+  });
+
+  it("同じ支社に目標だけの人と実績だけの人が混ざっても人数と一致する", () => {
+    const b = saitama();
+    expect(b.memberCount).toBe(b.members.length);
+  });
+});
+
+describe("sortSalesProgressStaffRows（PT/アポの切り替え）", () => {
+  const rows = aggregateSalesProgressByBranch(
+    [
+      target("山田太郎", { branch: "埼玉支社", pt: 2_000_000, apoCount: 8 }),
+      target("佐藤花子", { branch: "埼玉支社", pt: 1_800_000, apoCount: 4 }),
+    ],
+    [
+      actual("山田太郎", { pt: 1_200_000, apoCount: 1 }),
+      actual("佐藤花子", { pt: 494_490, apoCount: 9 }),
+    ],
+    { fallbackLabel: "その他" },
+  ).find((r) => r.label === "埼玉支社")!.members;
+
+  it("PT を選ぶと PT 実績の降順", () => {
+    expect(sortSalesProgressStaffRows(rows, "pt").map((m) => m.staffName)).toEqual([
+      "山田太郎",
+      "佐藤花子",
+    ]);
+  });
+
+  it("アポを選ぶとアポ実績の降順に並び替わる", () => {
+    expect(sortSalesProgressStaffRows(rows, "apo").map((m) => m.staffName)).toEqual([
+      "佐藤花子",
+      "山田太郎",
+    ]);
+  });
+
+  it("切り替えで参照する値そのものが変わる", () => {
+    const byApo = sortSalesProgressStaffRows(rows, "apo");
+    expect(byApo[0]?.metrics.apo.actual).toBe(9);
+    expect(byApo[0]?.metrics.pt.actual).toBe(494_490);
+  });
+
+  it("元の配列を書き換えない", () => {
+    const before = rows.map((m) => m.staffName);
+    sortSalesProgressStaffRows(rows, "apo");
+    expect(rows.map((m) => m.staffName)).toEqual(before);
+  });
+
+  it("実績が同じときは目標の大きい順、それも同じなら氏名順で安定する", () => {
+    // 漢字は照合順が環境で変わりうるので、順序が明確なカナで確かめる
+    const same = [
+      { staffName: "サトウ", metrics: buildMetrics(0, 100) },
+      { staffName: "アオキ", metrics: buildMetrics(0, 100) },
+      { staffName: "ヤマダ", metrics: buildMetrics(0, 300) },
+    ];
+    expect(sortSalesProgressStaffRows(same, "pt").map((m) => m.staffName)).toEqual([
+      "ヤマダ",
+      "アオキ",
+      "サトウ",
     ]);
   });
 });

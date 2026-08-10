@@ -12,8 +12,11 @@
  * 一本化しており、このファイルでは新しい正規化を定義しない。渡ってくる
  * staffName は正規化済みである前提。
  *
- * ■ プライバシー（K-3）
- * 本人以外の個人成績は返さない。支社別は集計値のみを扱う。
+ * ■ 個人成績の扱い（タスクL で方針変更）
+ * タスクK では本人以外の個人成績を返さない方針だったが、利用者が全員社員で
+ * あることから、既存の /sales-dashboard と同じく全社員に公開する方針へ
+ * 変更した。支社別の行は担当者ごとの内訳（members）を持つ。
+ * 認証と名簿への紐付けが必須である点は変わらない。
  */
 
 /** 所属が決まらない行の既定の寄せ先。支社別では「その他」を渡して使う */
@@ -51,11 +54,22 @@ export type SalesProgressMetrics = {
   apo: SalesProgressMetric;
 };
 
+/** 指標の切り替え。画面上部の PT / アポ に対応する */
+export type SalesProgressMetricKey = "pt" | "apo";
+
+/** 支社の内訳1人分（タスクL） */
+export type SalesProgressStaffRow = {
+  staffName: string;
+  metrics: SalesProgressMetrics;
+};
+
 export type SalesProgressGroupRow = {
   label: string;
   /** このグループに属する人数（目標または実績があった人） */
   memberCount: number;
   metrics: SalesProgressMetrics;
+  /** 担当者ごとの内訳。既定は PT 実績の降順 */
+  members: SalesProgressStaffRow[];
 };
 
 export type SalesProgressMatchSummary = {
@@ -206,17 +220,27 @@ export function aggregateSalesProgressByBranch(
     label: string;
     target: Totals;
     actual: Totals;
-    members: Set<string>;
+    /** 担当者名 → その人の目標・実績。内訳（members）の元になる */
+    members: Map<string, { target: Totals; actual: Totals }>;
   };
   const buckets = new Map<string, Bucket>();
 
   const bucketFor = (label: string): Bucket => {
     let b = buckets.get(label);
     if (!b) {
-      b = { label, target: { ...ZERO }, actual: { ...ZERO }, members: new Set() };
+      b = { label, target: { ...ZERO }, actual: { ...ZERO }, members: new Map() };
       buckets.set(label, b);
     }
     return b;
+  };
+
+  const memberOf = (b: Bucket, name: string) => {
+    let m = b.members.get(name);
+    if (!m) {
+      m = { target: { ...ZERO }, actual: { ...ZERO } };
+      b.members.set(name, m);
+    }
+    return m;
   };
 
   // 並び順を固定するため、先に枠だけ作る
@@ -226,20 +250,27 @@ export function aggregateSalesProgressByBranch(
     if (!row.staffName) continue;
     const b = bucketFor(row.branch.trim() || fallback);
     sumInto(b.target, row);
-    b.members.add(row.staffName);
+    sumInto(memberOf(b, row.staffName).target, row);
   }
 
   for (const row of actuals) {
     if (!row.staffName) continue;
     const b = bucketFor(groupByStaff.get(row.staffName) ?? fallback);
     sumInto(b.actual, row);
-    b.members.add(row.staffName);
+    sumInto(memberOf(b, row.staffName).actual, row);
   }
 
   const rows: SalesProgressGroupRow[] = [...buckets.values()].map((b) => ({
     label: b.label,
     memberCount: b.members.size,
     metrics: buildSalesProgressMetrics(b.actual, b.target),
+    members: sortSalesProgressStaffRows(
+      [...b.members.entries()].map(([staffName, v]) => ({
+        staffName,
+        metrics: buildSalesProgressMetrics(v.actual, v.target),
+      })),
+      "pt",
+    ),
   }));
 
   const order = opts?.ensureLabels;
@@ -262,6 +293,29 @@ export function aggregateSalesProgressByBranch(
       return b.metrics.pt.target - a.metrics.pt.target;
     }
     return a.label.localeCompare(b.label, "ja");
+  });
+}
+
+/**
+ * 内訳の並び替え（タスクL）。
+ *
+ * **選んでいる指標の実績の降順**にする。表示しているのがアポなのに PT 順で
+ * 並んでいると、読み手には順不同に見えるため。
+ * 実績が同じときは目標の大きい順、それも同じなら氏名順で安定させる。
+ *
+ * サーバは既定（PT 順）で返し、画面は選択中の指標でこの関数を掛け直す。
+ * 並び順をサーバの応答に持たせないので、切り替えで再取得しない。
+ */
+export function sortSalesProgressStaffRows<T extends SalesProgressStaffRow>(
+  rows: T[],
+  metric: SalesProgressMetricKey,
+): T[] {
+  return [...rows].sort((a, b) => {
+    const am = a.metrics[metric];
+    const bm = b.metrics[metric];
+    if (am.actual !== bm.actual) return bm.actual - am.actual;
+    if (am.target !== bm.target) return bm.target - am.target;
+    return a.staffName.localeCompare(b.staffName, "ja");
   });
 }
 
