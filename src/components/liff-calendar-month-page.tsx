@@ -453,7 +453,10 @@ function CaseConstructionHandlerEditor({
         return;
       }
       if (data.calendarPatch) {
-        await onSaved(data.calendarPatch);
+        await onSaved(data.calendarPatch, {
+          recordId,
+          constructionHandlerName: data.constructionHandlerName,
+        });
       } else if (data.calendarPatchSkipped) {
         await onSaved(null, {
           skipForceRefresh: true,
@@ -461,7 +464,10 @@ function CaseConstructionHandlerEditor({
           constructionHandlerName: data.constructionHandlerName,
         });
       } else {
-        await onSaved(null);
+        await onSaved(null, {
+          recordId,
+          constructionHandlerName: data.constructionHandlerName,
+        });
       }
       setFeedback({
         kind: "ok",
@@ -2489,6 +2495,19 @@ export function LiffCalendarMonthPage({
         );
         const primaryDay = patch.dayKeys[0];
         if (primaryDay) setSelectedDayKey(primaryDay);
+        if (meta?.recordId && meta.constructionHandlerName) {
+          void mutateCalendar(
+            (prev) =>
+              prev
+                ? applyConstructionHandlerNameLocal(
+                    prev,
+                    meta.recordId!,
+                    meta.constructionHandlerName!,
+                  )
+                : prev,
+            { revalidate: false },
+          );
+        }
       } else if (
         meta?.skipForceRefresh &&
         meta.recordId &&
@@ -2506,6 +2525,18 @@ export function LiffCalendarMonthPage({
           { revalidate: false },
         );
         return;
+      } else if (meta?.recordId && meta.constructionHandlerName) {
+        void mutateCalendar(
+          (prev) =>
+            prev
+              ? applyConstructionHandlerNameLocal(
+                  prev,
+                  meta.recordId!,
+                  meta.constructionHandlerName!,
+                )
+              : prev,
+          { revalidate: false },
+        );
       }
       if (meta?.skipForceRefresh) return;
       await forceRefreshCalendar();

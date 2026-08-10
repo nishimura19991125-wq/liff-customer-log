@@ -5,7 +5,9 @@ import { recordAuditLog } from "@/lib/audit-log";
 import { computeAuditChanges } from "@/lib/audit-log-changes";
 import { fieldCaptionByUniqueId } from "@/lib/customer-info-record";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
+import { getCachedConstructionRecordsBestEffort } from "@/lib/calendar-construction-records-cache";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
+import { resolveConstructionHandlerWriteValue } from "@/lib/calendar-construction-handler-select";
 import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
 import {
   fetchConstructionRecordRow,
@@ -170,10 +172,30 @@ export async function POST(request: Request) {
       );
     }
 
+    const cachedRows = getCachedConstructionRecordsBestEffort();
+    const sampleRows = cachedRows.length > 0 ? cachedRows : [recRow];
+    const writeResolved = resolveConstructionHandlerWriteValue({
+      staffName: resolvedName.name,
+      handlerFieldId: resolvedHandlerField,
+      constructionFields,
+      sampleRows,
+    });
+    if (!writeResolved.ok) {
+      return NextResponse.json(
+        {
+          error:
+            writeResolved.reason === "not_in_options"
+              ? `「${resolvedName.name}」は @pocket 工事アプリの工事対応者選択肢にありません。選択肢に氏名を追加してから再度お試しください。`
+              : "工事対応者を書き込めませんでした。",
+        },
+        { status: 400 },
+      );
+    }
+
     const writeAuth = { apiKey: apiKeyForCalendarWrite() };
     const handlerPatch = {
       [resolvedTNumber]: existingT,
-      [resolvedHandlerField]: resolvedName.name,
+      [resolvedHandlerField]: writeResolved.writeValue,
     };
     await updateRecord(calAppId, recordId, handlerPatch, writeAuth);
 
@@ -216,7 +238,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ok: true,
-      constructionHandlerName: resolvedName.name,
+      constructionHandlerName: writeResolved.displayName,
       calendarPatch,
       ...(calendarPatch
         ? {}

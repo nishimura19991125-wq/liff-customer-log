@@ -22,7 +22,7 @@ import {
   resolveConstructionMapAddressFieldIds,
   type MapAddressFieldIds,
 } from "@/lib/map-address-fields";
-import { pocketTableCellToPlainString } from "@/lib/staff-construction-availability";
+import { pocketSelectCellDisplayString } from "@/lib/staff-construction-availability";
 
 export type {
   CalendarApiPayload,
@@ -832,7 +832,7 @@ function recordToEvent(
 
   let constructionHandlerName = "";
   if (category === "list" && fids.constructionHandler) {
-    constructionHandlerName = pocketTableCellToPlainString(
+    constructionHandlerName = pocketSelectCellDisplayString(
       pickRecordValueByFieldAliases(recObj, fids.constructionHandler),
     );
   }

@@ -19,6 +19,8 @@ import {
 import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
+import { resolveConstructionHandlerWriteValue } from "@/lib/calendar-construction-handler-select";
+import { getCachedConstructionRecordsBestEffort } from "@/lib/calendar-construction-records-cache";
 import { isValidEmptyFillHousingStatus } from "@/lib/calendar-empty-fill-options";
 import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
 import {
@@ -206,7 +208,24 @@ export async function POST(request: Request) {
                 : "工事対応者を検証できませんでした。";
         return NextResponse.json({ error: msg }, { status: 400 });
       }
-      handlerValueToPut = resolvedName.name;
+      const writeResolved = resolveConstructionHandlerWriteValue({
+        staffName: resolvedName.name,
+        handlerFieldId: resolved,
+        constructionFields,
+        sampleRows: getCachedConstructionRecordsBestEffort(),
+      });
+      if (!writeResolved.ok) {
+        return NextResponse.json(
+          {
+            error:
+              writeResolved.reason === "not_in_options"
+                ? `「${resolvedName.name}」は @pocket 工事アプリの工事対応者選択肢にありません。選択肢に氏名を追加してから再度お試しください。`
+                : "工事対応者を書き込めませんでした。",
+          },
+          { status: 400 },
+        );
+      }
+      handlerValueToPut = writeResolved.writeValue;
     }
 
     const fids = resolveConstructionFieldIds(constructionFields);

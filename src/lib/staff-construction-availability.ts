@@ -35,6 +35,47 @@ export function pocketTableCellToPlainString(raw: unknown): string {
   return String(raw).trim();
 }
 
+/**
+ * 単一選択セルの表示用文字列。
+ * value が選択肢 ID のことがあるため、label / text / displayValue を優先する。
+ */
+export function pocketSelectCellDisplayString(raw: unknown): string {
+  if (raw === undefined || raw === null) return "";
+  if (typeof raw === "string") return raw.trim();
+  if (typeof raw === "number" || typeof raw === "boolean") {
+    return String(raw).trim();
+  }
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item) => pocketSelectCellDisplayString(item))
+      .filter(Boolean)
+      .join(" ");
+  }
+  if (typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    for (const key of [
+      "label",
+      "text",
+      "displayValue",
+      "caption",
+      "name",
+    ] as const) {
+      const v = o[key];
+      if (typeof v === "string" && v.trim()) return v.trim();
+      if (typeof v === "number" || typeof v === "boolean") {
+        return String(v).trim();
+      }
+    }
+    const value = o.value;
+    if (typeof value === "string") return value.trim();
+    if (typeof value === "number" || typeof value === "boolean") {
+      return String(value).trim();
+    }
+    if (Array.isArray(value)) return pocketSelectCellDisplayString(value);
+  }
+  return String(raw).trim();
+}
+
 export function nfkcNormalize(input: string): string {
   return input.normalize("NFKC").trim();
 }

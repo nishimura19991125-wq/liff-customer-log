@@ -122,3 +122,8 @@ export function invalidateCalendarConstructionRecordsCache(): void {
   constructionCache = null;
   constructionInflight = null;
 }
+
+/** 取得済みなら工事一覧を返す（無ければ空。追加の @pocket 呼び出しなし） */
+export function getCachedConstructionRecordsBestEffort(): AtPocketRecordRow[] {
+  return constructionCache?.rows ?? [];
+}

@@ -25,6 +25,11 @@ export type AtPocketListResponse = {
   records?: AtPocketRecordRow[];
 };
 
+export type AtPocketFieldOption = {
+  value: string;
+  label: string;
+};
+
 export type AtPocketFieldRow = {
   uniqueId?: string;
   /** GET /fields の fieldId（管理画面の列番号と一致しない場合あり） */
@@ -36,6 +41,8 @@ export type AtPocketFieldRow = {
   relationId?: number;
   /** キー項目（API: is_primary_key） */
   primaryKey?: boolean;
+  /** 単一選択・ラジオ等の選択肢（API が返す場合） */
+  options?: AtPocketFieldOption[];
 };
 
 function readAtPocketFieldProp(
@@ -87,6 +94,8 @@ export function normalizeAtPocketFieldRow(raw: unknown): AtPocketFieldRow {
         ? Number(fieldIdRaw)
         : undefined;
 
+  const options = extractAtPocketFieldOptions(o);
+
   return {
     ...(typeof uniqueId === "string" && uniqueId.trim()
       ? { uniqueId: uniqueId.trim() }
@@ -102,7 +111,62 @@ export function normalizeAtPocketFieldRow(raw: unknown): AtPocketFieldRow {
       ? { relationId }
       : {}),
     ...(primaryKey ? { primaryKey: true } : {}),
+    ...(options.length > 0 ? { options } : {}),
   };
+}
+
+function extractAtPocketFieldOptions(
+  row: Record<string, unknown>,
+): AtPocketFieldOption[] {
+  const candidates =
+    row.choices ??
+    row.options ??
+    row.selectOptions ??
+    row.select_options ??
+    row.items ??
+    null;
+  if (!Array.isArray(candidates)) return [];
+  const out: AtPocketFieldOption[] = [];
+  const seen = new Set<string>();
+  for (const c of candidates) {
+    if (typeof c === "string") {
+      const t = c.trim();
+      if (!t || seen.has(t)) continue;
+      seen.add(t);
+      out.push({ value: t, label: t });
+      continue;
+    }
+    if (!c || typeof c !== "object") continue;
+    const obj = c as Record<string, unknown>;
+    const valueRaw =
+      obj.value ?? obj.id ?? obj.uniqueId ?? obj.optionId ?? obj.key;
+    const labelRaw =
+      obj.label ?? obj.name ?? obj.text ?? obj.displayValue ?? obj.caption ?? valueRaw;
+    const value =
+      valueRaw == null
+        ? ""
+        : typeof valueRaw === "string" ||
+            typeof valueRaw === "number" ||
+            typeof valueRaw === "boolean"
+          ? String(valueRaw).trim()
+          : "";
+    const label =
+      labelRaw == null
+        ? ""
+        : typeof labelRaw === "string" ||
+            typeof labelRaw === "number" ||
+            typeof labelRaw === "boolean"
+          ? String(labelRaw).trim()
+          : "";
+    if (!value && !label) continue;
+    const v = value || label;
+    const l = label || value;
+    const dedupe = `${v}\u0000${l}`;
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+    out.push({ value: v, label: l });
+  }
+  return out;
 }
 
 function baseUrl(): string {
