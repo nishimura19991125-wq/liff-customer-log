@@ -163,6 +163,48 @@ body {
     opacity: 1;
     cursor: pointer;
   }
+
+  /**
+   * 枠の中に置く `type="date"` / `type="time"`（商談進捗など）。
+   *
+   * UA 既定の日時入力は内容量から最小幅を決めるため、width:100% を指定しても
+   * それ以上には縮まず、親（枠）の内側からはみ出す。iOS ではさらに
+   * padding が幅に足されるので box-sizing も明示する。
+   * 上の .construction-schedule-date-field 用とは別に、見た目を変えずに
+   * 幅だけを収めたい箇所へ付ける。
+   */
+  .datetime-input-fit {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .datetime-input-fit::-webkit-datetime-edit {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .datetime-input-fit::-webkit-datetime-edit-fields-wrapper {
+    min-width: 0;
+    padding: 0;
+  }
+
+  .datetime-input-fit::-webkit-date-and-time-value {
+    min-width: 0;
+    text-align: left;
+  }
+
+  .datetime-input-fit::-webkit-calendar-picker-indicator {
+    flex-shrink: 0;
+    margin: 0;
+    padding: 0;
+  }
 }
 
 ::selection {
