@@ -209,10 +209,19 @@ export function LiffNavPill({
 }
 
 /**
- * ログイン中ユーザー表示：@pocket スタッフ名簿の名前とアイコンのみ（見出し行と同じ高さに載せる想定）。
+ * ログイン中ユーザー表示：**プロフィールアイコンのみ**（見出し行と同じ高さに載せる想定）。
  * アイコンは LIFF プロフィール画像（名簿側に写真が無いため）。
- * fortuneRank があるときは名前の直下に運勢バッジ、その下に「もっと見る」を表示できる。
+ *
+ * 以前は氏名も並べていたが、氏名の長さで見出しの折返しが画面ごとに変わり
+ * 分かりにくかったため、全画面でアイコンだけに揃えた。
+ * 誰のアカウントかは alt / aria-label で伝える。
+ *
+ * fortuneRank があるとき（ホームのみ）は運勢バッジと「もっと見る」を横に並べる。
+ * ここが唯一のタップ操作で、それ以外の画面ではアイコンは押せない。
  */
+
+/** タップ領域の目安 44px 四方 */
+const ACCOUNT_AVATAR_SIZE = "size-11";
 export function LiffAccountBar({
   loading,
   pictureUrl,
@@ -234,12 +243,9 @@ export function LiffAccountBar({
   if (loading) {
     return (
       <div
-        className="flex items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-3 shadow-sm transition-all duration-300 dark:border-slate-700 dark:bg-slate-800"
+        className={`${ACCOUNT_AVATAR_SIZE} shrink-0 animate-pulse rounded-full bg-slate-200/80 dark:bg-slate-600`}
         aria-busy
-      >
-        <div className="size-10 shrink-0 animate-pulse rounded-full bg-slate-200/80 dark:bg-slate-600" />
-        <div className="h-4 w-24 animate-pulse rounded bg-slate-200/75 dark:bg-slate-600" />
-      </div>
+      />
     );
   }
 
@@ -254,51 +260,55 @@ export function LiffAccountBar({
       ? "?"
       : "—";
 
-  const label = staffName
-    ? staffName
+  /** 誰のアカウントかを画像・図形の代わりに伝える */
+  const accountLabel = staffName
+    ? `${staffName} のアカウント`
     : showBindHint
-      ? "名前を選択…"
-      : "未登録";
+      ? "アカウント未紐付け。名前を選択してください"
+      : "アカウント未登録";
 
-  return (
+  const avatar = pictureUrl ? (
+    // eslint-disable-next-line @next/next/no-img-element -- LIFF の外部プロフィール画像
+    <img
+      src={pictureUrl}
+      alt={accountLabel}
+      className={`${ACCOUNT_AVATAR_SIZE} shrink-0 rounded-full object-cover ring-1 ring-slate-200/80 dark:ring-slate-600`}
+    />
+  ) : (
+    // 画像を取得できないときは頭文字。空白にはしない
     <div
-      className={`flex max-w-[min(100%,14rem)] items-center gap-2 border border-slate-200 bg-white pl-1 pr-3 shadow-sm backdrop-blur-sm transition-all duration-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white ${
-        rank ? "rounded-2xl py-1.5" : "rounded-full py-1"
+      role="img"
+      aria-label={accountLabel}
+      title={accountLabel}
+      className={`${ACCOUNT_AVATAR_SIZE} flex shrink-0 items-center justify-center rounded-full text-[15px] font-bold ring-1 ring-slate-200/80 dark:ring-slate-600 ${
+        showBindHint
+          ? "bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200"
+          : "bg-gradient-to-br from-emerald-100 to-emerald-200 text-emerald-800 dark:from-emerald-900 dark:to-emerald-800 dark:text-emerald-200"
       }`}
     >
-      {pictureUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element -- LIFF の外部プロフィール画像
-        <img
-          src={pictureUrl}
-          alt=""
-          className="size-10 shrink-0 rounded-full object-cover ring-1 ring-slate-200/80 dark:ring-slate-600"
-        />
-      ) : (
-        <div
-          className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ring-1 ring-slate-200/80 dark:ring-slate-600 ${
-            showBindHint
-              ? "bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200"
-              : "bg-gradient-to-br from-emerald-100 to-emerald-200 text-emerald-800 dark:from-emerald-900 dark:to-emerald-800 dark:text-emerald-200"
-          }`}
-        >
-          {avatarLetter}
-        </div>
-      )}
-      <div className="min-w-0 flex flex-col items-end gap-0.5">
-        <p
-          className={`truncate text-right text-[15px] font-bold leading-tight tracking-tight ${
-            showBindHint
-              ? "text-amber-950 dark:text-amber-100"
-              : "text-slate-800 dark:text-white"
-          }`}
-        >
-          {label}
-        </p>
-        {rank ? <FortuneRankBadge rank={rank} size="sm" /> : null}
+      {avatarLetter}
+    </div>
+  );
+
+  // 運勢が無い画面ではアイコン単体。押せる操作は無いのでボタンにしない
+  if (!rank) {
+    return (
+      <div className="shrink-0" title={accountLabel}>
+        {avatar}
+      </div>
+    );
+  }
+
+  // ホームのみ：運勢バッジと開閉。アイコンの横に並べる
+  return (
+    <div className="flex shrink-0 items-center gap-1.5">
+      <div title={accountLabel}>{avatar}</div>
+      <div className="flex min-w-0 flex-col items-start gap-0.5">
+        <FortuneRankBadge rank={rank} size="sm" />
         {showFortuneMore ? (
           <button
             type="button"
-            className="mt-0.5 inline-flex items-center gap-0.5 rounded-md px-0.5 py-0.5 text-[10px] font-semibold leading-none tracking-wide text-amber-700/90 transition hover:bg-amber-50 hover:text-amber-900 active:scale-[0.98] dark:text-amber-300/90 dark:hover:bg-amber-950/40 dark:hover:text-amber-200"
+            className="inline-flex items-center gap-0.5 rounded-md px-0.5 py-0.5 text-[10px] font-semibold leading-none tracking-wide text-amber-700/90 transition hover:bg-amber-50 hover:text-amber-900 active:scale-[0.98] dark:text-amber-300/90 dark:hover:bg-amber-950/40 dark:hover:text-amber-200"
             aria-expanded={fortuneExpanded}
             aria-controls="home-daily-omikuji"
             onClick={onFortuneToggle}
