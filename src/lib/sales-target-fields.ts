@@ -92,7 +92,6 @@ export function resolveSalesTargetFieldMap(
   return { month, branch, staffName, apoCount, pt, department };
 }
 
-/** 調査ルート（/api/_probe/sales-target）で設定済みの変数をそのまま使う */
 export function salesTargetAppId(): string | null {
   return process.env.SALES_TARGET_APP_ID?.trim() || null;
 }
