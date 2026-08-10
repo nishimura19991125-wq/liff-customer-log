@@ -13,7 +13,10 @@ import {
   LiffStaffBindPanel,
   LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
-import { SalesProgressBar } from "@/components/sales-progress-bar";
+import {
+  SalesProgressHeadline,
+  SalesProgressRow,
+} from "@/components/sales-progress-bar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
@@ -23,20 +26,34 @@ import {
   isLiffSwrSessionExpired,
 } from "@/lib/liff-swr";
 import {
-  formatSalesProgressNumber,
-  formatSalesProgressRate,
+  sortSalesProgressStaffRows,
+  type SalesProgressMetricKey,
 } from "@/lib/sales-progress-aggregate";
 import type { SalesProgressPayload } from "@/app/api/sales-progress/route";
 
 /**
- * 営業進捗（目標に対する達成率・タスクK）。
+ * 営業進捗（目標に対する達成率・タスクK / L）。
  *
  * 既存の /sales-dashboard とは別の画面。既存側は変更していない。
- * 表示するのは本人の数字・全社の合計・支社別の集計値だけで、
- * 他人の氏名も個人別の数値も受け取らない（サーバ側で落としている）。
+ * 計算はこの画面に書かない。整形も並び替えも sales-progress-aggregate.ts の
+ * 純粋関数を呼ぶだけにしている。
+ *
+ * タスクL の変更:
+ *   - 支社をタップすると担当者ごとの内訳が開く
+ *   - PT / アポ の切り替えを画面上部に置き、全体・支社別・内訳へ連動させる
+ *   - 支社別を表形式に寄せ、1支社あたり2行に収めた
  */
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
+
+const METRIC_TABS: Array<{ id: SalesProgressMetricKey; label: string }> = [
+  { id: "pt", label: "PT" },
+  { id: "apo", label: "アポ" },
+];
+
+function metricUnit(metric: SalesProgressMetricKey): string | undefined {
+  return metric === "apo" ? "件" : undefined;
+}
 
 export default function SalesProgressPage() {
   const [phase, setPhase] = useState<
@@ -47,8 +64,14 @@ export default function SalesProgressPage() {
   );
   const [idToken, setIdToken] = useState<string | null>(null);
   const [ym, setYm] = useState("");
+  const [metric, setMetric] = useState<SalesProgressMetricKey>("pt");
   const [branchOpen, setBranchOpen] = useState(false);
+  /** 内訳を開いている支社。同時に複数開ける */
+  const [openBranches, setOpenBranches] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const branchListId = useId();
+  const metricGroupId = useId();
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -143,6 +166,17 @@ export default function SalesProgressPage() {
   }
 
   const monthOptions = data?.monthOptions ?? [];
+  /**
+   * 選んでいる指標の実績順に並べ替える。並び順は応答に持たせないので、
+   * 切り替えでの再取得が起きない。支社5件×十数名なので毎描画で回して問題ない
+   */
+  const branches = (data?.branches ?? []).map((b) => ({
+    ...b,
+    members: sortSalesProgressStaffRows(b.members, metric),
+  }));
+  const unit = metricUnit(metric);
+  const metricLabel = metric === "apo" ? "アポ" : "PT";
+  const otherLabel = data?.branches[data.branches.length - 1]?.label ?? "その他";
 
   return (
     <LiffScreen>
@@ -160,10 +194,7 @@ export default function SalesProgressPage() {
       </header>
 
       <main className="liff-page-main mx-auto w-full max-w-lg flex-1 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-        <LiffPageHeader
-          title="営業進捗"
-          subtitle={data?.monthLabel ? `${data.monthLabel}の目標に対する進捗` : undefined}
-        />
+        <LiffPageHeader title="営業進捗" />
 
         <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
 
@@ -177,13 +208,11 @@ export default function SalesProgressPage() {
           />
         ) : (
           <>
-            {/* 対象月。当月＋過去6ヶ月 */}
-            <label className="mb-4 block">
-              <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
-                対象月
-              </span>
+            {/* 対象月と指標。指標は全体・支社別・内訳へ連動する */}
+            <div className="mb-3 flex items-center gap-2">
               <select
-                className="w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] font-bold text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                aria-label="対象月"
+                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[14px] font-bold text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 value={ym || data?.ym || ""}
                 disabled={monthOptions.length === 0}
                 onChange={(e) => setYm(e.target.value)}
@@ -197,7 +226,31 @@ export default function SalesProgressPage() {
                   </option>
                 ))}
               </select>
-            </label>
+
+              <div
+                role="radiogroup"
+                aria-label="表示する指標"
+                id={metricGroupId}
+                className="flex shrink-0 gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900"
+              >
+                {METRIC_TABS.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={metric === t.id}
+                    onClick={() => setMetric(t.id)}
+                    className={`rounded-lg px-3 py-1.5 text-[13px] font-bold transition-colors ${
+                      metric === t.id
+                        ? "bg-sky-600 text-white dark:bg-sky-500"
+                        : "text-slate-600 active:bg-slate-100 dark:text-slate-300 dark:active:bg-slate-800"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {isLoading && !data ? (
               <LiffLoadingBlock message="営業進捗を読み込み中…" />
@@ -214,61 +267,69 @@ export default function SalesProgressPage() {
                 </p>
               </LiffCard>
             ) : (
-              <div className="flex flex-col gap-3">
-                {!data.targetsAvailable ? (
-                  <p
-                    role="status"
-                    aria-live="polite"
-                    className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] font-bold leading-relaxed text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200"
-                  >
-                    {data.monthLabel}の目標が登録されていません。達成率は「—」になります。
-                  </p>
-                ) : null}
-
-                {/* ── 自分の数字（本人のみ） ── */}
+              <div className="flex flex-col gap-2">
+                {/* ── 自分の数字（PT・アポの両方を常に出す） ── */}
                 <LiffCard>
-                  <div className="px-4 py-4">
-                    <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <h2 className="text-[13px] font-bold text-slate-700 dark:text-slate-200">
+                  <div className="px-4 py-3">
+                    <div className="flex flex-wrap items-baseline gap-2">
+                      <h2 className="text-[12px] font-bold text-slate-500 dark:text-slate-400">
                         自分の数字
                       </h2>
-                      <span className="text-[12px] text-slate-500 dark:text-slate-400">
+                      <span className="text-[13px] font-bold text-slate-800 dark:text-slate-100">
                         {data.staffName}
                       </span>
                     </div>
                     {data.selfTargetMissing ? (
-                      <p className="mb-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-                        この月のあなたの目標は登録されていません。
+                      // 0 / 0 と「—」を並べても意味が無いので実績だけ大きく出す
+                      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                        {data.monthLabel}の目標は未登録です
                       </p>
                     ) : null}
-                    <SalesProgressBar label="PT" metric={data.self.pt} tone="self" />
-                    <SalesProgressBar
-                      label="アポ"
-                      metric={data.self.apo}
-                      unit="件"
-                      tone="self"
-                    />
+                    <div className="mt-1 divide-y divide-slate-100 dark:divide-slate-700/60">
+                      <SalesProgressHeadline
+                        label="PT"
+                        metric={data.self.pt}
+                        tone="self"
+                        targetKnown={!data.selfTargetMissing}
+                      />
+                      <SalesProgressHeadline
+                        label="アポ"
+                        metric={data.self.apo}
+                        unit="件"
+                        tone="self"
+                        targetKnown={!data.selfTargetMissing}
+                      />
+                    </div>
                   </div>
                 </LiffCard>
 
-                {/* ── 全体の進捗 ── */}
+                {/* ── 全体の進捗（選んだ指標） ── */}
                 <LiffCard>
-                  <div className="px-4 py-4">
-                    <h2 className="mb-2 text-[13px] font-bold text-slate-700 dark:text-slate-200">
+                  <div className="px-4 py-3">
+                    <h2 className="text-[12px] font-bold text-slate-500 dark:text-slate-400">
                       全体の進捗
                     </h2>
-                    <SalesProgressBar label="PT" metric={data.company.pt} />
-                    <SalesProgressBar
-                      label="アポ"
-                      metric={data.company.apo}
-                      unit="件"
+                    <SalesProgressHeadline
+                      label={metricLabel}
+                      metric={data.company[metric]}
+                      unit={unit}
+                      targetKnown={data.company[metric].target > 0}
                     />
+                    {!data.targetsAvailable ? (
+                      <p
+                        role="status"
+                        aria-live="polite"
+                        className="mt-1 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300"
+                      >
+                        {data.monthLabel}の目標が登録されていません。達成率は「—」になります。
+                      </p>
+                    ) : null}
                   </div>
                 </LiffCard>
 
-                {/* ── 支社別（既定は閉じる） ── */}
+                {/* ── 支社別（表形式・タップで内訳） ── */}
                 <LiffCard>
-                  <div className="px-4 py-4">
+                  <div className="px-4 py-3">
                     <button
                       type="button"
                       aria-expanded={branchOpen}
@@ -276,8 +337,8 @@ export default function SalesProgressPage() {
                       onClick={() => setBranchOpen((v) => !v)}
                       className="flex w-full items-center justify-between gap-2 text-left"
                     >
-                      <span className="text-[13px] font-bold text-slate-700 dark:text-slate-200">
-                        支社別
+                      <span className="text-[12px] font-bold text-slate-500 dark:text-slate-400">
+                        支社別（{metricLabel}）
                       </span>
                       <span
                         className={`text-slate-400 transition-transform ${
@@ -289,50 +350,76 @@ export default function SalesProgressPage() {
                       </span>
                     </button>
 
-                    {branchOpen ? (
-                      <div id={branchListId} className="mt-3 flex flex-col gap-4">
-                        {data.branches.map((b) => (
-                          <div key={b.label}>
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-[13px] font-bold text-slate-800 dark:text-slate-100">
-                                {b.label}
-                              </span>
-                              <span className="text-[11px] text-slate-400">
-                                {b.memberCount}名
-                              </span>
-                            </div>
-                            <SalesProgressBar
-                              label="PT"
-                              metric={b.metrics.pt}
-                              tone="branch"
-                            />
-                            <SalesProgressBar
-                              label="アポ"
-                              metric={b.metrics.apo}
-                              unit="件"
-                              tone="branch"
-                            />
+                    <div id={branchListId}>
+                      {branchOpen ? (
+                        <>
+                          <div className="mt-1 divide-y divide-slate-100 dark:divide-slate-700/60">
+                            {branches.map((b) => {
+                              const open = openBranches.has(b.label);
+                              const memberListId = `${branchListId}-${b.label}`;
+                              return (
+                                <div key={b.label}>
+                                  <button
+                                    type="button"
+                                    aria-expanded={open}
+                                    aria-controls={memberListId}
+                                    onClick={() =>
+                                      setOpenBranches((prev) => {
+                                        const next = new Set(prev);
+                                        if (next.has(b.label)) next.delete(b.label);
+                                        else next.add(b.label);
+                                        return next;
+                                      })
+                                    }
+                                    className="w-full text-left"
+                                  >
+                                    <SalesProgressRow
+                                      label={`${open ? "▾" : "▸"} ${b.label}`}
+                                      sub={`${b.memberCount}名`}
+                                      metric={b.metrics[metric]}
+                                      unit={unit}
+                                    />
+                                  </button>
+
+                                  <div id={memberListId}>
+                                    {open ? (
+                                      <div className="mb-2 ml-3 border-l border-slate-200 pl-3 dark:border-slate-700">
+                                        {b.members.length === 0 ? (
+                                          <p className="py-2 text-[12px] text-slate-500 dark:text-slate-400">
+                                            この支社の担当者はいません
+                                          </p>
+                                        ) : (
+                                          <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                                            {b.members.map((m) => (
+                                              <SalesProgressRow
+                                                key={m.staffName}
+                                                label={m.staffName}
+                                                metric={m.metrics[metric]}
+                                                unit={unit}
+                                                tone={m.isSelf ? "self" : "branch"}
+                                                emphasis={m.isSelf}
+                                              />
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
-                        ))}
-                        <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-                          支社が未設定の方と、上記以外の支社の方は「
-                          {data.branches[data.branches.length - 1]?.label ?? "その他"}
-                          」に含めています。合計は全社の数字と一致します。
+                          <p className="mt-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                            支社が未設定の方と、上記以外の支社の方は「{otherLabel}
+                            」に含めています。合計は全社の数字と一致します。
+                          </p>
+                        </>
+                      ) : (
+                        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          {branches.length}支社・タップで担当者ごとの内訳を表示
                         </p>
-                      </div>
-                    ) : (
-                      <p id={branchListId} className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                        {data.branches.length}件（
-                        {formatSalesProgressNumber(
-                          data.branches.reduce(
-                            (s, b) => s + b.metrics.pt.actual,
-                            0,
-                          ),
-                        )}
-                        {" / "}
-                        {formatSalesProgressRate(data.company.pt.ratePercent)}）
-                      </p>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </LiffCard>
               </div>
