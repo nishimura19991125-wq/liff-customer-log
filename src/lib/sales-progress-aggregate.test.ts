@@ -14,6 +14,7 @@ import {
   type SalesTargetRow,
 } from "@/lib/sales-progress-aggregate";
 import {
+  parseSalesProgressVisibleBranches,
   resolveSalesProgressBranch,
   salesProgressBranchOrder,
   SALES_PROGRESS_DEFAULT_OTHER_BRANCH_LABEL,
@@ -160,12 +161,96 @@ describe("resolveSalesProgressBranch（支社の振り分け）", () => {
     expect(resolveSalesProgressBranch("奈良 本社", BRANCH_CONFIG)).toBe("奈良本社");
   });
 
-  it("表示順はその他を最後にする", () => {
+});
+
+describe("支社の表示順", () => {
+  it("既定は 奈良本社 → 京都支社 → 名古屋支社 → 埼玉支社 → その他", () => {
     expect(salesProgressBranchOrder(BRANCH_CONFIG)).toEqual([
+      "奈良本社",
+      "京都支社",
+      "名古屋支社",
+      "埼玉支社",
+      "その他",
+    ]);
+  });
+
+  it("環境変数の並び順がそのまま表示順になる", () => {
+    const config = {
+      visibleBranches: parseSalesProgressVisibleBranches(
+        "名古屋支社,埼玉支社,奈良本社,京都支社",
+      ),
+      otherLabel: SALES_PROGRESS_DEFAULT_OTHER_BRANCH_LABEL,
+    };
+    expect(salesProgressBranchOrder(config)).toEqual([
+      "名古屋支社",
       "埼玉支社",
       "奈良本社",
-      "名古屋支社",
       "京都支社",
+      "その他",
+    ]);
+  });
+
+  it("環境変数が未設定なら既定の並び順を使う", () => {
+    expect(parseSalesProgressVisibleBranches(undefined)).toEqual([
+      "奈良本社",
+      "京都支社",
+      "名古屋支社",
+      "埼玉支社",
+    ]);
+    expect(parseSalesProgressVisibleBranches("")).toEqual([
+      ...SALES_PROGRESS_DEFAULT_VISIBLE_BRANCHES,
+    ]);
+  });
+
+  it("寄せ先は常に末尾。設定の途中に書かれていても動かさない", () => {
+    const config = {
+      visibleBranches: ["奈良本社", "その他", "京都支社"],
+      otherLabel: "その他",
+    };
+    expect(salesProgressBranchOrder(config)).toEqual([
+      "奈良本社",
+      "京都支社",
+      "その他",
+    ]);
+  });
+
+  it("寄せ先の名前を変えても末尾に置く", () => {
+    const config = { visibleBranches: ["奈良本社"], otherLabel: "他" };
+    expect(salesProgressBranchOrder(config)).toEqual(["奈良本社", "他"]);
+  });
+
+  it("重複と空白だけの項目は取り除く", () => {
+    const config = {
+      visibleBranches: parseSalesProgressVisibleBranches(
+        "奈良本社, 京都支社 ,奈良本社,  ,京都支社",
+      ),
+      otherLabel: "その他",
+    };
+    expect(salesProgressBranchOrder(config)).toEqual([
+      "奈良本社",
+      "京都支社",
+      "その他",
+    ]);
+  });
+
+  it("集計の行もこの順で並ぶ（実績の大小で並べ替えない）", () => {
+    const order = salesProgressBranchOrder(BRANCH_CONFIG);
+    const rows = aggregateSalesProgressByBranch(
+      [
+        // 実績・目標とも埼玉が最大。実績順なら先頭に来てしまう組み合わせ
+        target("A", { branch: "埼玉支社", pt: 9_000_000 }),
+        target("B", { branch: "奈良本社", pt: 1_000_000 }),
+        target("C", { branch: "京都支社", pt: 2_000_000 }),
+        target("D", { branch: "名古屋支社", pt: 3_000_000 }),
+      ],
+      [actual("A", { pt: 8_000_000 }), actual("B", { pt: 10 })],
+      { fallbackLabel: "その他", ensureLabels: order },
+    );
+    expect(rows.map((r) => r.label)).toEqual([
+      "奈良本社",
+      "京都支社",
+      "名古屋支社",
+      "埼玉支社",
       "その他",
     ]);
   });

@@ -9,12 +9,18 @@
  * 表示対象に含めていない値の行。
  */
 
-/** 表示する支社（環境変数が未設定でも動くよう既定値を持つ） */
+/**
+ * 表示する支社（環境変数が未設定でも動くよう既定値を持つ）。
+ *
+ * **この配列の順序が画面の表示順になる。** 環境変数
+ * SALES_PROGRESS_VISIBLE_BRANCHES を設定した場合も、その並び順を
+ * そのまま表示順として使う。実績の大小では並べ替えない。
+ */
 export const SALES_PROGRESS_DEFAULT_VISIBLE_BRANCHES: readonly string[] = [
-  "埼玉支社",
   "奈良本社",
-  "名古屋支社",
   "京都支社",
+  "名古屋支社",
+  "埼玉支社",
 ];
 
 export const SALES_PROGRESS_DEFAULT_OTHER_BRANCH_LABEL = "その他";
@@ -35,7 +41,7 @@ export function parseSalesProgressVisibleBranches(
 }
 
 export type SalesProgressBranchConfig = {
-  /** 表示する支社。並び順もこのとおりにする */
+  /** 表示する支社。**この並び順がそのまま画面の表示順になる** */
   visibleBranches: string[];
   otherLabel: string;
 };
@@ -58,9 +64,30 @@ export function resolveSalesProgressBranch(
   return config.otherLabel;
 }
 
-/** 表示順（表示する支社 → その他）。データが無い支社も行として残す */
+/**
+ * 表示順。設定に並んでいる順 → 最後に「その他」。
+ * データが無い支社も行として残すため、ここで全部の見出しを列挙する。
+ *
+ * 設定側に「その他」や重複が紛れていても、寄せ先が途中に現れたり
+ * 同じ見出しが二度出たりしないよう取り除く。
+ */
 export function salesProgressBranchOrder(
   config: SalesProgressBranchConfig,
 ): string[] {
-  return [...config.visibleBranches, config.otherLabel];
+  const otherKey = nfkc(config.otherLabel);
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  for (const raw of config.visibleBranches) {
+    const label = raw.trim();
+    if (!label) continue;
+    const key = nfkc(label);
+    // 寄せ先は必ず末尾に置くので、途中に出てきたら飛ばす
+    if (key === otherKey || seen.has(key)) continue;
+    seen.add(key);
+    out.push(label);
+  }
+
+  out.push(config.otherLabel);
+  return out;
 }
