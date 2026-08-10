@@ -20,6 +20,7 @@ import { resetLiffScroll } from "@/components/liff-scroll-reset";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
+import { safeHttpsUrl } from "@/lib/safe-external-url";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -45,6 +46,8 @@ type DetailPayload = {
   summary: Array<{ label: string; value: string }>;
   pinpointAddress: string;
   normalAddress: string;
+  /** Dropbox 顧客フォルダの共有リンク。未設定・不正な値のときは空文字 */
+  dropboxLink?: string;
 };
 
 export default function CustomerDetailPage() {
@@ -277,6 +280,34 @@ export default function CustomerDetailPage() {
                       <dd className="break-words text-slate-900">{row.value}</dd>
                     </div>
                   ))}
+                  {/*
+                    Dropbox フォルダ。サーバ側でも https:// のみ通しているが、
+                    href に置く直前でもう一度確かめる（同じ判定関数を使う）
+                  */}
+                  {(() => {
+                    const href = safeHttpsUrl(detail.dropboxLink);
+                    return (
+                      <div className="grid grid-cols-[minmax(7rem,38%)_1fr] gap-2 py-3 text-[15px]">
+                        <dt className="font-medium text-slate-500">
+                          Dropboxフォルダ
+                        </dt>
+                        <dd className="break-words text-slate-900">
+                          {href ? (
+                            <a
+                              href={href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 rounded-xl bg-slate-900 px-3 py-2 text-[14px] font-bold text-white"
+                            >
+                              Dropboxフォルダを開く
+                            </a>
+                          ) : (
+                            <span className="text-slate-500">未設定</span>
+                          )}
+                        </dd>
+                      </div>
+                    );
+                  })()}
                 </dl>
               </LiffCard>
 

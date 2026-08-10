@@ -24,7 +24,9 @@ import {
   recordIsCustomerStatusCancelled,
   resolveCrmCustomerStatusFieldId,
 } from "@/lib/customer-crm-status";
+import { resolveCustomerInfoDropboxLinkFieldId } from "@/lib/customer-info-dropbox-link";
 import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
+import { safeHttpsUrl } from "@/lib/safe-external-url";
 import {
   readCustomerInfoFieldValue,
 } from "@/lib/customer-info-record";
@@ -52,6 +54,13 @@ export type CustomerCrmDetail = {
   summary: Array<{ label: string; value: string }>;
   pinpointAddress: string;
   normalAddress: string;
+  /**
+   * Dropbox 顧客フォルダの共有リンク（タスクE の「Dropboxリンク」列）。
+   *
+   * 値は人が入力しうる列なので、https:// のものだけを通してから返す。
+   * 通らなかった場合は空文字（画面では「未設定」）。
+   */
+  dropboxLink: string;
 };
 
 const SUMMARY_CAPTIONS = [
@@ -122,6 +131,8 @@ export async function fetchCustomerCrmDetail(
   const subsidyFieldIds = resolveCrmSubsidyFieldIds(appFields);
   const mapAddressIds = resolveCustomerInfoMapAddressFieldIds(appFields);
   const customerStatusFieldId = resolveCrmCustomerStatusFieldId(appFields);
+  // 列の解決はタスクE と同じ関数を使う（環境変数 → 見出し完全一致）
+  const dropboxLinkFieldId = resolveCustomerInfoDropboxLinkFieldId(appFields);
 
   const row = await fetchRecordById(appId, recordId, auth);
   if (!row?.record || typeof row.record !== "object") {
@@ -207,6 +218,11 @@ export async function fetchCustomerCrmDetail(
       summary,
       pinpointAddress,
       normalAddress,
+      dropboxLink: dropboxLinkFieldId
+        ? (safeHttpsUrl(
+            readCustomerInfoFieldValue(recObj, dropboxLinkFieldId),
+          ) ?? "")
+        : "",
     },
   };
 }
