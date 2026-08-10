@@ -7,7 +7,10 @@ import { CustomerDocumentUploadPanel } from "@/components/customer-document-uplo
 import { shouldShowConstructionRequestPanel } from "@/lib/construction-request-template";
 import { KatakanaAwareTextInput } from "@/components/katakana-aware-text-input";
 import { StaffNameSuggestCombobox } from "@/components/staff-name-suggest-combobox";
-import { CUSTOMER_DOCUMENT_KEYS } from "@/lib/customer-documents-spec";
+import {
+  CUSTOMER_DOCUMENT_KEYS,
+  isUploadableCustomerDocumentKey,
+} from "@/lib/customer-documents-spec";
 import {
   DOCUMENT_VISIBILITY_TRIGGER_KEYS,
   forgetDocumentAutoFilled,
@@ -1067,8 +1070,12 @@ export function CustomerInfoEditForm({
               入力してください
             </p>
           ) : null}
-          {/* 書類項目のアップロード欄（タスクF）。表示条件は既存の visibleFields に従う */}
-          {CUSTOMER_DOCUMENT_KEYS.has(field.key) && recordId ? (
+          {/*
+            書類のアップロード欄（タスクF）。表示条件は既存の visibleFields に従う。
+            対象は customer-documents-spec.ts の uploadable が true の項目のみ。
+            ステータスのラジオは16項目すべてに出る（上の FieldControl）
+          */}
+          {isUploadableCustomerDocumentKey(field.key) && recordId ? (
             dropboxFolderConfigured ? (
               <CustomerDocumentUploadPanel
                 recordId={recordId}

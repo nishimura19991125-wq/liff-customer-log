@@ -5,6 +5,8 @@ import {
   CUSTOMER_DOCUMENT_SPECS,
   customerDocumentSpecByKey,
   isCustomerDocumentKey,
+  isUploadableCustomerDocumentKey,
+  UPLOADABLE_CUSTOMER_DOCUMENT_KEYS,
 } from "@/lib/customer-documents-spec";
 import { CUSTOMER_INFO_FORM_FIELD_MAP } from "@/lib/customer-info-form/schema";
 
@@ -110,6 +112,82 @@ describe("完了値・未回収値と選択肢の整合", () => {
     for (const spec of CUSTOMER_DOCUMENT_SPECS) {
       const options = CUSTOMER_INFO_FORM_FIELD_MAP.get(spec.key)?.options ?? [];
       expect(options, `${spec.caption} の選択肢`).not.toContain("一部回収済み");
+    }
+  });
+});
+
+/**
+ * アップロード対象は6項目のみ。ステータスのラジオは16項目すべてに残す。
+ * 定義は customer-documents-spec.ts の uploadable 1箇所だけで、
+ * 画面側とサーバ側の両方がそこを参照する。
+ */
+describe("アップロード対象の限定", () => {
+  const UPLOADABLE = [
+    "powerOfAttorneyStorage",
+    "powerOfAttorneyChangeCert",
+    "powerOfAttorneyIdPassword",
+    "vicinitySketchMap",
+    "sealRegistrationCertificate",
+    "registryBook",
+  ];
+
+  it("アップロードできるのは6項目だけ", () => {
+    expect([...UPLOADABLE_CUSTOMER_DOCUMENT_KEYS].sort()).toEqual(
+      [...UPLOADABLE].sort(),
+    );
+    expect(UPLOADABLE_CUSTOMER_DOCUMENT_KEYS.size).toBe(6);
+  });
+
+  it("6項目は uploadable", () => {
+    for (const key of UPLOADABLE) {
+      expect(isUploadableCustomerDocumentKey(key), key).toBe(true);
+      expect(customerDocumentSpecByKey(key)?.uploadable, key).toBe(true);
+    }
+  });
+
+  it("残り10項目は uploadable ではない", () => {
+    const others = CUSTOMER_DOCUMENT_SPECS.filter(
+      (s) => !UPLOADABLE.includes(s.key),
+    );
+    expect(others).toHaveLength(10);
+    for (const spec of others) {
+      expect(isUploadableCustomerDocumentKey(spec.key), spec.caption).toBe(
+        false,
+      );
+    }
+  });
+
+  it("見出しでも対象を確認できる", () => {
+    const captions = CUSTOMER_DOCUMENT_SPECS.filter((s) => s.uploadable).map(
+      (s) => s.caption,
+    );
+    expect(captions.sort()).toEqual(
+      [
+        "委任状(創蓄)",
+        "委任状(変更認定用)",
+        "委任状(ID・パスワード開示用)",
+        "付近見取り図",
+        "印鑑登録証明書",
+        "登記簿",
+      ].sort(),
+    );
+  });
+
+  it("書類項目以外・未知のキーは uploadable ではない", () => {
+    expect(isUploadableCustomerDocumentKey("customerName")).toBe(false);
+    expect(isUploadableCustomerDocumentKey("")).toBe(false);
+    expect(isUploadableCustomerDocumentKey("__proto__")).toBe(false);
+  });
+
+  it("ステータスのラジオは16項目すべてに残る", () => {
+    // 画面は CUSTOMER_DOCUMENT_KEYS ではなくフォーム定義から描画するが、
+    // アップロード対象の限定が16項目の定義を削っていないことを固定する
+    expect(CUSTOMER_DOCUMENT_KEYS.size).toBe(16);
+    for (const spec of CUSTOMER_DOCUMENT_SPECS) {
+      const def = CUSTOMER_INFO_FORM_FIELD_MAP.get(spec.key);
+      expect(def?.type, spec.caption).toBe("radio");
+      expect(def?.options?.length ?? 0, spec.caption).toBeGreaterThan(0);
+      expect(def?.hiddenInForm, spec.caption).toBeFalsy();
     }
   });
 });

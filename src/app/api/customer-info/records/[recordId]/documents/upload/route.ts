@@ -10,7 +10,10 @@ import {
   documentUploadMaxBytes,
   storeCustomerDocumentFile,
 } from "@/lib/customer-document-upload";
-import { customerDocumentSpecByKey } from "@/lib/customer-documents-spec";
+import {
+  customerDocumentSpecByKey,
+  isUploadableCustomerDocumentKey,
+} from "@/lib/customer-documents-spec";
 import {
   customerInfoConfigReady,
   customerInfoImportKeyFieldId,
@@ -116,6 +119,15 @@ export async function POST(request: Request, ctx: RouteCtx) {
   if (!spec) {
     return NextResponse.json(
       { error: "書類の項目が不正です" },
+      { status: 400 },
+    );
+  }
+  // アップロード対象外の項目は受け付けない。
+  // 画面側も同じ customer-documents-spec.ts の uploadable を見て欄を出し分けるが、
+  // 表示制御だけに頼らずサーバでも弾く
+  if (!isUploadableCustomerDocumentKey(documentKey)) {
+    return NextResponse.json(
+      { error: `「${spec.caption}」はアップロードの対象外です` },
       { status: 400 },
     );
   }
