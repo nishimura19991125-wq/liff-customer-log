@@ -216,6 +216,7 @@ export async function fetchCustomerCrmDetail(
   if (addressPrefCity) summary.push({ label: "住所", value: addressPrefCity });
   pushByCaption("設置種別");
   pushValue("工事日", constructionDate);
+  pushByCaption("お支払方法");
   pushValue("補助金有無", subsidyPresence ?? "");
   pushByCaption("導入経緯");
   pushByCaption("AP担当者");
