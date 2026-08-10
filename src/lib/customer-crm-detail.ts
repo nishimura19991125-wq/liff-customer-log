@@ -34,6 +34,7 @@ import type { CrmDocumentCheckItem } from "@/lib/customer-crm-documents";
 import { fetchAppFields, fetchRecordById } from "@/lib/atpocket";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
 import {
+  buildCombinedNormalAddress,
   readMapAddressesFromRecord,
   resolveCustomerInfoMapAddressFieldIds,
 } from "@/lib/map-address-fields";
@@ -63,20 +64,17 @@ export type CustomerCrmDetail = {
   dropboxLink: string;
 };
 
-const SUMMARY_CAPTIONS = [
-  "AP担当者",
-  "CL担当者",
-  "案件作成者",
-  "入力ステータス",
-  "補助金有無",
-  "補助金利用",
-  "工事日",
-  "施工予定日",
-  "お客様名",
-  "T番号",
-  "設置種別",
-  "お支払方法",
-] as const;
+/**
+ * 「基本情報」の並び。**ここが唯一の定義**。
+ *
+ * 以前は画面が「工事日・補助金有無を固定行で描画」＋「summary をそのまま列挙」
+ * という二本立てで、補助金有無が両方に現れて重複していた。
+ * 並びも値の組み立ても、この関数の中で1本にまとめている。
+ *
+ * 住所・工事日・補助金有無は単純な列読みではないため、caption 検索とは別に積む。
+ * 書類フォルダ（Dropboxリンク）は summary ではなく dropboxLink として返し、
+ * 画面が最後の行に描く。
+ */
 
 export async function fetchCustomerCrmDetail(
   recordId: string,
@@ -178,23 +176,52 @@ export async function fetchCustomerCrmDetail(
   );
 
   const summary: Array<{ label: string; value: string }> = [];
-  const seen = new Set<string>();
-  for (const cap of SUMMARY_CAPTIONS) {
-    const lower = cap.toLowerCase();
-    if (seen.has(lower)) continue;
+  const seenFieldIds = new Set<string>();
+
+  /** 見出し一致で1列読む。空・「-」の行は出さない（従来どおり） */
+  const pushByCaption = (caption: string): void => {
+    const lower = caption.toLowerCase();
     for (const f of appFields) {
       const fCap = f.caption ? String(f.caption).trim() : "";
       if (!fCap || fCap.toLowerCase() !== lower) continue;
       const id = f.uniqueId?.trim();
-      if (!id || seen.has(id)) continue;
+      if (!id || seenFieldIds.has(id)) return;
       const value = readCustomerInfoFieldValue(recObj, id);
       if (value && value !== "-") {
         summary.push({ label: fCap, value });
-        seen.add(id);
+        seenFieldIds.add(id);
       }
-      break;
+      return;
     }
-  }
+  };
+
+  /** 組み立て済みの値。空でも行は残す（従来の固定行と同じ挙動） */
+  const pushValue = (label: string, value: string): void => {
+    summary.push({ label, value: value || "—" });
+  };
+
+  // 都道府県＋市区郡まで。番地以降は出さない。
+  // 列の解決は map-address-fields.ts（タスクH のフォームと同じ prefecture / city）を再利用する
+  const addressPrefCity = buildCombinedNormalAddress({
+    prefecture: mapAddressIds.prefectureFieldId
+      ? readCustomerInfoFieldValue(recObj, mapAddressIds.prefectureFieldId)
+      : "",
+    city: mapAddressIds.cityFieldId
+      ? readCustomerInfoFieldValue(recObj, mapAddressIds.cityFieldId)
+      : "",
+    street: "",
+  });
+
+  pushByCaption("T番号");
+  if (addressPrefCity) summary.push({ label: "住所", value: addressPrefCity });
+  pushByCaption("設置種別");
+  pushValue("工事日", constructionDate);
+  pushValue("補助金有無", subsidyPresence ?? "");
+  pushByCaption("導入経緯");
+  pushByCaption("AP担当者");
+  pushByCaption("CL担当者");
+  pushByCaption("案件作成者");
+  pushByCaption("入力ステータス");
 
   return {
     ok: true,
