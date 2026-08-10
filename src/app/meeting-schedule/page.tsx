@@ -13,7 +13,10 @@ import {
   LiffStaffBindPanel,
   LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
-import { MeetingScheduleItemCard } from "@/components/meeting-schedule-item-card";
+import {
+  MeetingScheduleItemCard,
+  type MeetingScheduleCardSaveResult,
+} from "@/components/meeting-schedule-item-card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
@@ -22,8 +25,7 @@ import {
   LIFF_SWR_DEFAULT_OPTIONS,
   isLiffSwrSessionExpired,
 } from "@/lib/liff-swr";
-import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
-import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
+import type { MeetingScheduleCardPatch } from "@/lib/meeting-schedule-card-save";
 import type {
   MeetingScheduleItem,
   MeetingSchedulePayload,
@@ -43,6 +45,42 @@ function todayYmdJst(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo" }).format(
     new Date(),
   );
+}
+
+/**
+ * 更新系 API の呼び出し。本文が空でも落ちないように text で受けてから解釈する。
+ * エラー本文はサーバが用意した文言だけを使い、例外の内容は画面に出さない。
+ */
+async function patchMeetingSchedule(
+  path: string,
+  idToken: string,
+  body: unknown,
+): Promise<{
+  ok: boolean;
+  error?: string;
+  body?: { estimateStatus?: string };
+}> {
+  try {
+    const res = await fetch(path, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    const raw = await res.text();
+    let parsed: { error?: string; estimateStatus?: string } = {};
+    try {
+      parsed = raw.trim() ? (JSON.parse(raw) as typeof parsed) : {};
+    } catch {
+      parsed = {};
+    }
+    if (!res.ok) return { ok: false, error: parsed.error };
+    return { ok: true, body: parsed };
+  } catch {
+    return { ok: false, error: "通信に失敗しました。電波状況をご確認ください" };
+  }
 }
 
 function groupItemsByDate(items: MeetingScheduleItem[]) {
@@ -76,7 +114,6 @@ export default function MeetingSchedulePage() {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [viewDate, setViewDate] = useState(() => todayYmdJst());
   const [updatingRecordId, setUpdatingRecordId] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -150,81 +187,65 @@ export default function MeetingSchedulePage() {
     void mutate();
   }, [mutate]);
 
-  const handleStatusChange = useCallback(
-    async (recordId: string, update: MeetingScheduleStatusUpdateInput) => {
-      if (!idToken || !update.status.trim()) return;
-      setUpdatingRecordId(recordId);
-      setFeedback(null);
-      try {
-        const res = await fetch(
-          `/api/meeting-schedule/records/${encodeURIComponent(recordId)}/status`,
-          {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${idToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(update),
-          },
-        );
-        const body = (await res.json()) as { error?: string };
-        if (!res.ok) {
-          throw new Error(body.error ?? "見積ステータスの更新に失敗しました");
-        }
-        setFeedback("商談進捗情報を更新しました");
-        await mutate();
-      } catch (e) {
-        const msg =
-          e instanceof Error ? e.message : "見積ステータスの更新に失敗しました";
-        setFeedback(msg);
-      } finally {
-        setUpdatingRecordId(null);
-      }
-    },
-    [idToken, mutate],
-  );
-
-  const handleScheduleChange = useCallback(
-    async (recordId: string, update: MeetingScheduleScheduledUpdateInput) => {
-      if (!idToken || !update.scheduledYmd.trim()) return;
-      setUpdatingRecordId(recordId);
-      setFeedback(null);
-      try {
-        const res = await fetch(
-          `/api/meeting-schedule/records/${encodeURIComponent(recordId)}/schedule`,
-          {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${idToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(update),
-          },
-        );
-        const body = (await res.json()) as {
-          error?: string;
-          estimateStatus?: string;
+  /**
+   * カードの「保存」。変更があった分だけ、既存の 2 本の API へ順に送る。
+   *
+   * 順番は **日時 → ステータス** で固定する。日時の更新は @pocket 上の
+   * その時点のステータスを見て「商談セット作成済み」を「見積依頼済み」へ
+   * 戻すことがあり、逆順だと利用者が選んだステータスが上書きされてしまう。
+   *
+   * 片方が失敗しても成功した分はそのまま残す。最後に一度だけ再取得するので、
+   * 失敗した側だけが「未保存」として残り、もう一度「保存」を押せば再送できる。
+   */
+  const handleSave = useCallback(
+    async (
+      recordId: string,
+      patch: MeetingScheduleCardPatch,
+    ): Promise<MeetingScheduleCardSaveResult> => {
+      if (!idToken) {
+        return {
+          errors: ["ログイン情報を取得できませんでした。画面を開き直してください"],
         };
-        if (!res.ok) {
-          throw new Error(
-            body.error ?? "商談・資料送付予定日時の更新に失敗しました",
+      }
+
+      const result: MeetingScheduleCardSaveResult = { errors: [] };
+      setUpdatingRecordId(recordId);
+      try {
+        if (patch.schedule) {
+          const res = await patchMeetingSchedule(
+            `/api/meeting-schedule/records/${encodeURIComponent(recordId)}/schedule`,
+            idToken,
+            patch.schedule,
           );
+          result.scheduleOk = res.ok;
+          if (!res.ok) {
+            result.errors.push(
+              res.error ?? "商談・資料送付予定日時の更新に失敗しました",
+            );
+          } else if (!patch.status && res.body?.estimateStatus) {
+            // ステータスも同時に送るときは後勝ちになるので通知しない
+            result.autoEstimateStatus = res.body.estimateStatus;
+          }
         }
-        setFeedback(
-          body.estimateStatus
-            ? "商談・資料送付予定日時を更新し、見積ステータスを見積依頼済みに変更しました"
-            : "商談・資料送付予定日時を更新しました",
-        );
+
+        if (patch.status) {
+          const res = await patchMeetingSchedule(
+            `/api/meeting-schedule/records/${encodeURIComponent(recordId)}/status`,
+            idToken,
+            patch.status,
+          );
+          result.statusOk = res.ok;
+          if (!res.ok) {
+            result.errors.push(res.error ?? "見積ステータスの更新に失敗しました");
+          }
+        }
+
         await mutate();
-      } catch (e) {
-        const msg =
-          e instanceof Error
-            ? e.message
-            : "商談・資料送付予定日時の更新に失敗しました";
-        setFeedback(msg);
       } finally {
         setUpdatingRecordId(null);
       }
+
+      return result;
     },
     [idToken, mutate],
   );
@@ -300,11 +321,7 @@ export default function MeetingSchedulePage() {
 
         <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
 
-        {feedback ? (
-          <p className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-            {feedback}
-          </p>
-        ) : null}
+        {/* 保存の成否は案件カードごとに出す。どの案件の結果か分かるようにするため */}
 
         {needsStaffBind ? (
           <LiffStaffBindPanel
@@ -425,9 +442,8 @@ export default function MeetingSchedulePage() {
                             scheduleEditable={data.scheduleEditable}
                             closeTypeOptions={data.closeTypeOptions}
                             meetingPlaceOptions={data.meetingPlaceOptions}
-                            statusUpdating={updatingRecordId === item.recordId}
-                            onStatusChange={handleStatusChange}
-                            onScheduleChange={handleScheduleChange}
+                            saving={updatingRecordId === item.recordId}
+                            onSave={handleSave}
                           />
                         </li>
                       ))}
@@ -447,9 +463,8 @@ export default function MeetingSchedulePage() {
                       scheduleEditable={data.scheduleEditable}
                       closeTypeOptions={data.closeTypeOptions}
                       meetingPlaceOptions={data.meetingPlaceOptions}
-                      statusUpdating={updatingRecordId === item.recordId}
-                      onStatusChange={handleStatusChange}
-                      onScheduleChange={handleScheduleChange}
+                      saving={updatingRecordId === item.recordId}
+                      onSave={handleSave}
                     />
                   </li>
                 ))}

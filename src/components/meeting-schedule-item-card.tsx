@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { LiffCard } from "@/components/liff-chrome";
 import { MapNavigationButton } from "@/components/map-navigation-button";
@@ -9,10 +9,24 @@ import {
   isMeetingScheduleHenmachiStatus,
   isMeetingScheduleSetCreatedStatus,
 } from "@/lib/meeting-schedule-shared";
-import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
-import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
+import {
+  planMeetingScheduleCardSave,
+  type MeetingScheduleCardPatch,
+  type MeetingScheduleCardValues,
+} from "@/lib/meeting-schedule-card-save";
 import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
 import { buildMapNavigation } from "@/lib/map-navigation";
+
+/** 保存の結果。片方だけ失敗したときは errors にその分だけ入る */
+export type MeetingScheduleCardSaveResult = {
+  /** 日時を保存したか。送っていないときは undefined */
+  scheduleOk?: boolean;
+  /** 見積ステータスを保存したか。送っていないときは undefined */
+  statusOk?: boolean;
+  errors: string[];
+  /** 日時の更新に伴い @pocket 側で見積ステータスが変わったときの値 */
+  autoEstimateStatus?: string;
+};
 
 type Props = {
   item: MeetingScheduleItem;
@@ -22,15 +36,12 @@ type Props = {
   scheduleEditable?: boolean;
   closeTypeOptions?: string[];
   meetingPlaceOptions?: string[];
-  statusUpdating?: boolean;
-  onStatusChange?: (
+  /** この案件を保存中か */
+  saving?: boolean;
+  onSave?: (
     recordId: string,
-    update: MeetingScheduleStatusUpdateInput,
-  ) => void;
-  onScheduleChange?: (
-    recordId: string,
-    update: MeetingScheduleScheduledUpdateInput,
-  ) => void;
+    patch: MeetingScheduleCardPatch,
+  ) => Promise<MeetingScheduleCardSaveResult>;
 };
 
 function mergeSelectOptions(options: string[], current: string): string[] {
@@ -39,8 +50,15 @@ function mergeSelectOptions(options: string[], current: string): string[] {
   return [...options, trimmed];
 }
 
+/** 入力欄。min-w-0 / max-w-full は親（緑枠など）からのはみ出し防止 */
 const inputClass =
-  "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[14px] text-slate-900 shadow-sm disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white";
+  "w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[14px] text-slate-900 shadow-sm disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white";
+
+/**
+ * `type="date"` / `type="time"` は UA 既定の最小幅で width:100% を無視し
+ * 親からはみ出す。globals.css の .datetime-input-fit で抑える。
+ */
+const dateTimeInputClass = `${inputClass} datetime-input-fit`;
 
 /**
  * 保存ボタンの無効時の見た目。
@@ -50,7 +68,7 @@ const inputClass =
  * 背景ごと灰色に落とし、カーソルでも押せないことを示す。
  */
 const saveButtonClass =
-  "w-full rounded-xl px-4 py-2.5 text-[14px] font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:opacity-100 disabled:shadow-none dark:disabled:bg-slate-700 dark:disabled:text-slate-400";
+  "w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-[14px] font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:opacity-100 disabled:shadow-none dark:bg-emerald-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400";
 
 /** 無効な理由。押せる条件が分かるよう、ボタンの下に小さく出す */
 const saveHintClass =
@@ -64,36 +82,84 @@ export function MeetingScheduleItemCard({
   scheduleEditable = false,
   closeTypeOptions = [],
   meetingPlaceOptions = [],
-  statusUpdating = false,
-  onStatusChange,
-  onScheduleChange,
+  saving = false,
+  onSave,
 }: Props) {
-  const [draftStatus, setDraftStatus] = useState(item.estimateStatus);
-  const [scheduledYmd, setScheduledYmd] = useState(item.scheduledYmd);
-  const [scheduledTime, setScheduledTime] = useState(item.scheduledTime);
-  const [meetingDate, setMeetingDate] = useState(item.firstMeetingDateYmd);
-  const [closeType, setCloseType] = useState(item.closeType);
-  const [meetingPlace, setMeetingPlace] = useState(item.meetingPlace);
-  const [responseDate, setResponseDate] = useState(item.responseDateYmd);
+  /** @pocket 側の現在値。差分判定の基準 */
+  const server: MeetingScheduleCardValues = useMemo(
+    () => ({
+      estimateStatus: item.estimateStatus,
+      scheduledYmd: item.scheduledYmd,
+      scheduledTime: item.scheduledTime,
+      meetingDate: item.firstMeetingDateYmd,
+      closeType: item.closeType,
+      meetingPlace: item.meetingPlace,
+      responseDate: item.responseDateYmd,
+    }),
+    [
+      item.estimateStatus,
+      item.scheduledYmd,
+      item.scheduledTime,
+      item.firstMeetingDateYmd,
+      item.closeType,
+      item.meetingPlace,
+      item.responseDateYmd,
+    ],
+  );
+
+  const [draftStatus, setDraftStatus] = useState(server.estimateStatus);
+  const [scheduledYmd, setScheduledYmd] = useState(server.scheduledYmd);
+  const [scheduledTime, setScheduledTime] = useState(server.scheduledTime);
+  const [meetingDate, setMeetingDate] = useState(server.meetingDate);
+  const [closeType, setCloseType] = useState(server.closeType);
+  const [meetingPlace, setMeetingPlace] = useState(server.meetingPlace);
+  const [responseDate, setResponseDate] = useState(server.responseDate);
+  const [feedback, setFeedback] = useState<
+    { kind: "ok"; message: string } | { kind: "error"; messages: string[] } | null
+  >(null);
+
+  const recordIdRef = useRef(item.recordId);
+  const prevServerRef = useRef(server);
 
   useEffect(() => {
-    setDraftStatus(item.estimateStatus);
-    setScheduledYmd(item.scheduledYmd);
-    setScheduledTime(item.scheduledTime);
-    setMeetingDate(item.firstMeetingDateYmd);
-    setCloseType(item.closeType);
-    setMeetingPlace(item.meetingPlace);
-    setResponseDate(item.responseDateYmd);
-  }, [
-    item.estimateStatus,
-    item.scheduledYmd,
-    item.scheduledTime,
-    item.firstMeetingDateYmd,
-    item.closeType,
-    item.meetingPlace,
-    item.responseDateYmd,
-    item.recordId,
-  ]);
+    const prev = prevServerRef.current;
+    prevServerRef.current = server;
+
+    // 別のレコードに差し替わったときだけ全部入れ替える
+    if (recordIdRef.current !== item.recordId) {
+      recordIdRef.current = item.recordId;
+      setDraftStatus(server.estimateStatus);
+      setScheduledYmd(server.scheduledYmd);
+      setScheduledTime(server.scheduledTime);
+      setMeetingDate(server.meetingDate);
+      setCloseType(server.closeType);
+      setMeetingPlace(server.meetingPlace);
+      setResponseDate(server.responseDate);
+      setFeedback(null);
+      return;
+    }
+
+    // 保存後の再取得。@pocket 側が実際に変わった項目だけ入れ替える。
+    // 一括で入れ替えると、片方だけ保存に失敗したときに未保存の入力まで
+    // 消えてしまい、失敗した分を押し直すことができない
+    if (prev.estimateStatus !== server.estimateStatus) {
+      setDraftStatus(server.estimateStatus);
+    }
+    if (prev.scheduledYmd !== server.scheduledYmd) {
+      setScheduledYmd(server.scheduledYmd);
+    }
+    if (prev.scheduledTime !== server.scheduledTime) {
+      setScheduledTime(server.scheduledTime);
+    }
+    if (prev.meetingDate !== server.meetingDate) setMeetingDate(server.meetingDate);
+    if (prev.closeType !== server.closeType) setCloseType(server.closeType);
+    if (prev.meetingPlace !== server.meetingPlace) {
+      setMeetingPlace(server.meetingPlace);
+    }
+    if (prev.responseDate !== server.responseDate) {
+      setResponseDate(server.responseDate);
+    }
+  }, [server, item.recordId]);
 
   const selectOptions = useMemo(
     () => mergeSelectOptions(statusOptions, item.estimateStatus),
@@ -109,70 +175,53 @@ export function MeetingScheduleItemCard({
   );
 
   const canEditStatus =
-    statusEditable && selectOptions.length > 0 && Boolean(onStatusChange);
-  const canEditSchedule =
-    scheduleEditable && Boolean(onScheduleChange);
-  const needsSetCreatedFields = isMeetingScheduleSetCreatedStatus(draftStatus);
-  const needsHenmachiFields = isMeetingScheduleHenmachiStatus(draftStatus);
-  const showSetCreatedForm = canEditStatus && needsSetCreatedFields;
-  const showHenmachiForm = canEditStatus && needsHenmachiFields;
-  const statusDirty = draftStatus !== item.estimateStatus;
-  const scheduleDirty =
-    scheduledYmd !== item.scheduledYmd ||
-    scheduledTime !== item.scheduledTime;
-  const setCreatedDirty =
-    meetingDate !== item.firstMeetingDateYmd ||
-    closeType !== item.closeType ||
-    meetingPlace !== item.meetingPlace;
-  const henmachiDirty = responseDate !== item.responseDateYmd;
-  const canSaveSetCreated =
-    showSetCreatedForm && (statusDirty || setCreatedDirty) && !statusUpdating;
-  const canSaveHenmachi =
-    showHenmachiForm &&
-    responseDate.trim() &&
-    (statusDirty || henmachiDirty) &&
-    !statusUpdating;
-  const canSaveSchedule =
-    canEditSchedule && scheduleDirty && scheduledYmd.trim() && !statusUpdating;
+    statusEditable && selectOptions.length > 0 && Boolean(onSave);
+  const canEditSchedule = scheduleEditable && Boolean(onSave);
+  const showSetCreatedForm =
+    canEditStatus && isMeetingScheduleSetCreatedStatus(draftStatus);
+  const showHenmachiForm =
+    canEditStatus && isMeetingScheduleHenmachiStatus(draftStatus);
 
-  /** 「日時を保存」が押せない理由。保存中は出さない（ボタンの文言で分かる） */
-  const scheduleSaveHint = (() => {
-    if (canSaveSchedule || statusUpdating) return "";
-    if (!scheduledYmd.trim()) return "日付を入力すると保存できます";
-    if (!scheduleDirty) return "日付か時刻を変更すると保存できます";
-    return "";
-  })();
+  const draft: MeetingScheduleCardValues = {
+    estimateStatus: draftStatus,
+    scheduledYmd,
+    scheduledTime,
+    meetingDate,
+    closeType,
+    meetingPlace,
+    responseDate,
+  };
+  const plan = planMeetingScheduleCardSave(server, draft, {
+    statusEditable: canEditStatus,
+    scheduleEditable: canEditSchedule,
+  });
 
-  const handleStatusSelect = (nextStatus: string) => {
-    setDraftStatus(nextStatus);
-    if (
-      !isMeetingScheduleSetCreatedStatus(nextStatus) &&
-      !isMeetingScheduleHenmachiStatus(nextStatus)
-    ) {
-      onStatusChange?.(item.recordId, { status: nextStatus });
+  const showSaveBar = canEditStatus || canEditSchedule;
+  const canSave = plan.dirty && !plan.blockedReason && !saving;
+
+  /** 押せない理由。保存中は出さない（ボタンの文言で分かる） */
+  const saveHint = saving
+    ? ""
+    : plan.dirty
+      ? plan.blockedReason
+      : "ステータスか日時を変更すると保存できます";
+
+  /** 入力のたびに前回の保存結果を消す。古い成否が残ると読み違える */
+  const clearFeedback = () => setFeedback(null);
+
+  const handleSave = async () => {
+    if (!onSave || !canSave) return;
+    setFeedback(null);
+    const result = await onSave(item.recordId, plan.patch);
+    if (result.errors.length > 0) {
+      setFeedback({ kind: "error", messages: result.errors });
+      return;
     }
-  };
-
-  const handleSaveSetCreated = () => {
-    onStatusChange?.(item.recordId, {
-      status: draftStatus,
-      meetingDate,
-      closeType,
-      meetingPlace,
-    });
-  };
-
-  const handleSaveHenmachi = () => {
-    onStatusChange?.(item.recordId, {
-      status: draftStatus,
-      responseDate,
-    });
-  };
-
-  const handleSaveSchedule = () => {
-    onScheduleChange?.(item.recordId, {
-      scheduledYmd,
-      scheduledTime,
+    setFeedback({
+      kind: "ok",
+      message: result.autoEstimateStatus
+        ? `保存しました（見積ステータスを${result.autoEstimateStatus}に変更しました）`
+        : "保存しました",
     });
   };
 
@@ -221,11 +270,15 @@ export function MeetingScheduleItemCard({
               <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
                 見積ステータス
               </span>
+              {/* 選んだ時点では保存しない。カード下部の「保存」でまとめて送る */}
               <select
                 className={inputClass}
                 value={draftStatus}
-                disabled={statusUpdating}
-                onChange={(e) => handleStatusSelect(e.target.value)}
+                disabled={saving}
+                onChange={(e) => {
+                  clearFeedback();
+                  setDraftStatus(e.target.value);
+                }}
               >
                 {!draftStatus ? (
                   <option value="">選択してください</option>
@@ -250,10 +303,13 @@ export function MeetingScheduleItemCard({
                 </span>
                 <input
                   type="date"
-                  className={`${inputClass} calendar-date-input`}
+                  className={dateTimeInputClass}
                   value={scheduledYmd}
-                  disabled={statusUpdating}
-                  onChange={(e) => setScheduledYmd(e.target.value)}
+                  disabled={saving}
+                  onChange={(e) => {
+                    clearFeedback();
+                    setScheduledYmd(e.target.value);
+                  }}
                 />
               </label>
               <label className="block">
@@ -262,25 +318,15 @@ export function MeetingScheduleItemCard({
                 </span>
                 <input
                   type="time"
-                  className={inputClass}
+                  className={dateTimeInputClass}
                   value={scheduledTime}
-                  disabled={statusUpdating}
-                  onChange={(e) => setScheduledTime(e.target.value)}
+                  disabled={saving}
+                  onChange={(e) => {
+                    clearFeedback();
+                    setScheduledTime(e.target.value);
+                  }}
                 />
               </label>
-              <div>
-                <button
-                  type="button"
-                  disabled={!canSaveSchedule}
-                  onClick={handleSaveSchedule}
-                  className={`${saveButtonClass} bg-emerald-600 dark:bg-emerald-500`}
-                >
-                  {statusUpdating ? "保存中…" : "日時を保存"}
-                </button>
-                {scheduleSaveHint ? (
-                  <p className={saveHintClass}>{scheduleSaveHint}</p>
-                ) : null}
-              </div>
             </div>
           ) : null}
 
@@ -295,10 +341,13 @@ export function MeetingScheduleItemCard({
                 </span>
                 <input
                   type="date"
-                  className={`${inputClass} calendar-date-input`}
+                  className={dateTimeInputClass}
                   value={meetingDate}
-                  disabled={statusUpdating}
-                  onChange={(e) => setMeetingDate(e.target.value)}
+                  disabled={saving}
+                  onChange={(e) => {
+                    clearFeedback();
+                    setMeetingDate(e.target.value);
+                  }}
                 />
               </label>
               <label className="block">
@@ -308,8 +357,11 @@ export function MeetingScheduleItemCard({
                 <select
                   className={inputClass}
                   value={closeType}
-                  disabled={statusUpdating}
-                  onChange={(e) => setCloseType(e.target.value)}
+                  disabled={saving}
+                  onChange={(e) => {
+                    clearFeedback();
+                    setCloseType(e.target.value);
+                  }}
                 >
                   <option value="">選択してください</option>
                   {closeOptions.map((opt) => (
@@ -326,8 +378,11 @@ export function MeetingScheduleItemCard({
                 <select
                   className={inputClass}
                   value={meetingPlace}
-                  disabled={statusUpdating}
-                  onChange={(e) => setMeetingPlace(e.target.value)}
+                  disabled={saving}
+                  onChange={(e) => {
+                    clearFeedback();
+                    setMeetingPlace(e.target.value);
+                  }}
                 >
                   <option value="">選択してください</option>
                   {placeOptions.map((opt) => (
@@ -337,14 +392,6 @@ export function MeetingScheduleItemCard({
                   ))}
                 </select>
               </label>
-              <button
-                type="button"
-                disabled={!canSaveSetCreated}
-                onClick={handleSaveSetCreated}
-                className={`${saveButtonClass} bg-sky-600 dark:bg-sky-500`}
-              >
-                {statusUpdating ? "保存中…" : "保存"}
-              </button>
             </div>
           ) : null}
 
@@ -359,20 +406,15 @@ export function MeetingScheduleItemCard({
                 </span>
                 <input
                   type="date"
-                  className={`${inputClass} calendar-date-input`}
+                  className={dateTimeInputClass}
                   value={responseDate}
-                  disabled={statusUpdating}
-                  onChange={(e) => setResponseDate(e.target.value)}
+                  disabled={saving}
+                  onChange={(e) => {
+                    clearFeedback();
+                    setResponseDate(e.target.value);
+                  }}
                 />
               </label>
-              <button
-                type="button"
-                disabled={!canSaveHenmachi}
-                onClick={handleSaveHenmachi}
-                className={`${saveButtonClass} bg-violet-600 dark:bg-violet-500`}
-              >
-                {statusUpdating ? "保存中…" : "保存"}
-              </button>
             </div>
           ) : null}
 
@@ -403,6 +445,57 @@ export function MeetingScheduleItemCard({
           ) : null}
         </div>
       </div>
+
+      {/*
+        保存はカード全体に対する操作。ステータスも日時も含むため、
+        緑枠（商談・資料送付予定日時）の外に置いて区切り線で分ける
+      */}
+      {showSaveBar ? (
+        <div className="border-t border-slate-100 px-4 pb-4 pt-3 dark:border-slate-800">
+          <button
+            type="button"
+            disabled={!canSave}
+            onClick={() => void handleSave()}
+            className={saveButtonClass}
+          >
+            {saving ? "保存中…" : "保存"}
+          </button>
+          {saveHint ? <p className={saveHintClass}>{saveHint}</p> : null}
+
+          {/*
+            未保存の案内と保存完了の通知。案件ごとに 1 つ置き、
+            要素は出し入れせず読み上げの取りこぼしを防ぐ
+          */}
+          <p
+            role="status"
+            aria-live="polite"
+            className={`mt-1 text-[12px] font-bold leading-relaxed ${
+              plan.dirty
+                ? "text-amber-800 dark:text-amber-300"
+                : "text-emerald-800 dark:text-emerald-300"
+            }`}
+          >
+            {plan.dirty
+              ? "未保存の変更があります"
+              : feedback?.kind === "ok"
+                ? feedback.message
+                : ""}
+          </p>
+
+          {feedback?.kind === "error" ? (
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="mt-1 rounded-lg border border-red-300 bg-red-50 px-2.5 py-2 text-[12px] font-bold leading-relaxed text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+            >
+              {feedback.messages.map((m) => (
+                <p key={m}>{m}</p>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {mapNav ? (
         <div className="border-t border-slate-100 px-4 pb-4 pt-3 dark:border-slate-800">
           <MapNavigationButton
