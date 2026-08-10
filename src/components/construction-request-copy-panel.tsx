@@ -75,10 +75,13 @@ export function ConstructionRequestCopyPanel({
     [values],
   );
 
+  const currentStatus = (values.constructionRequestStatus ?? "").trim();
+
   /** 既に「済」なら更新しない。同じ値を書くだけの保存で監査ログを増やさない */
-  const alreadyDone =
-    (values.constructionRequestStatus ?? "").trim() ===
-    CONSTRUCTION_REQUEST_STATUS_DONE;
+  const alreadyDone = currentStatus === CONSTRUCTION_REQUEST_STATUS_DONE;
+
+  /** 項目名の横に出す現在値。未設定なら「未設定」と明示する */
+  const statusLabel = currentStatus || "未設定";
 
   async function updateStatusToDone(): Promise<boolean> {
     const token = idToken;
@@ -165,7 +168,24 @@ export function ConstructionRequestCopyPanel({
 
   return (
     <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
-      <p className="text-[12px] font-bold text-slate-700">新規施工依頼</p>
+      <div className="flex items-center gap-2">
+        <p className="text-[12px] font-bold text-slate-700">新規施工依頼</p>
+        {/*
+          現在の施工依頼ステータス。コピーで「済」へ変わったことが
+          その場で分かるように項目名の横へ出す。値はフォームの状態から
+          読むので、更新が成功した時点で切り替わる
+        */}
+        <span
+          aria-label={`施工依頼ステータス: ${statusLabel}`}
+          className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold ${
+            alreadyDone
+              ? "bg-emerald-100 text-emerald-900"
+              : "bg-slate-100 text-slate-600"
+          }`}
+        >
+          {statusLabel}
+        </span>
+      </div>
 
       {/* 開閉のトグル。開いている間は何度でもコピーできる */}
       <button
