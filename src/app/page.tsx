@@ -91,6 +91,34 @@ function SalesDashboardGlyph() {
   );
 }
 
+/** 営業進捗（タスクK）。目標に対する達成率のバーを模した形 */
+function SalesProgressGlyph() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect
+        x="3"
+        y="6"
+        width="18"
+        height="4"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path d="M3 8h9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      <rect
+        x="3"
+        y="14"
+        width="18"
+        height="4"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path d="M3 16h14" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function AttendanceGlyph() {
   return (
     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -515,6 +543,14 @@ export default function HomeHubPage() {
                   title="営業ダッシュボード"
                   description="当月の売上KPIや営業成績ランキングをリアルタイムで確認します。"
                   icon={<SalesDashboardGlyph />}
+                  iconTone="blue"
+                  disabled={needsStaffBind}
+                />
+                <LiffMenuCard
+                  href="/sales-progress"
+                  title="営業進捗"
+                  description="目標に対する自分と全社の達成率を月ごとに確認します。"
+                  icon={<SalesProgressGlyph />}
                   iconTone="blue"
                   disabled={needsStaffBind}
                 />
