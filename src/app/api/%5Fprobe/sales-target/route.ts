@@ -16,6 +16,10 @@ import { NextResponse } from "next/server";
  * URL に `_` を出すには `%5F`（アンダースコアの URL エンコード）を使います。
  * 実際のパスは /api/_probe/sales-target になります。
  *
+ * 呼び出し方:
+ *   GET /api/_probe/sales-target            調査結果を返す
+ *   GET /api/_probe/sales-target?check=1    有効かどうかだけ返す（@pocket は呼ばない）
+ *
  * 安全策:
  *   - PROBE_ENABLED=1 のときだけ動作する。未設定なら 404（存在しないルートと
  *     区別が付かないよう、認証より前に判定する）
@@ -127,6 +131,17 @@ export async function GET(request: Request) {
     );
   }
 
+  const url = new URL(request.url);
+
+  /**
+   * ホーム画面の一時ボタンを出すかどうかの判定だけに使う。
+   * @pocket は呼ばない（ボタンの表示可否のために毎回全件取得すると重い）。
+   * ここまで来ている＝PROBE_ENABLED=1 かつ認証・紐付け済み。
+   */
+  if (url.searchParams.get("check") === "1") {
+    return NextResponse.json({ enabled: true });
+  }
+
   const appId = process.env.SALES_TARGET_APP_ID?.trim();
   if (!appId) {
     return NextResponse.json(
@@ -135,7 +150,6 @@ export async function GET(request: Request) {
     );
   }
 
-  const url = new URL(request.url);
   const sampleParam = Number(url.searchParams.get("sample") ?? "5");
   const sampleSize = Number.isFinite(sampleParam)
     ? Math.min(20, Math.max(0, Math.floor(sampleParam)))

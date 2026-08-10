@@ -6,6 +6,8 @@ import { parseFortuneHeadline } from "@/components/fortune-rank-badge";
 import { HomeCompactSummaries } from "@/components/home-compact-summaries";
 import { HomeConstructionHandlerCases } from "@/components/home-construction-handler-cases";
 import { HomeDailyOmikujiCard } from "@/components/home-daily-omikuji-card";
+// 【一時的な調査用】確認が済んだら削除すること（sales-target-probe-panel.tsx 参照）
+import { SalesTargetProbePanel } from "@/components/sales-target-probe-panel";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   LiffAccountBar,
@@ -559,6 +561,14 @@ export default function HomeHubPage() {
             ) : null}
           </div>
         </div>
+
+        {/*
+          【一時的な調査用】目標登録アプリの構成を確認するためのボタン。
+          調査が済んだら、この1行と import、components/sales-target-probe-panel.tsx、
+          app/api/%5Fprobe/sales-target/route.ts をまとめて削除すること。
+          PROBE_ENABLED が無効なら調査ルートが 404 を返し、何も表示されない。
+        */}
+        <SalesTargetProbePanel idToken={idToken} />
       </main>
     </LiffScreen>
   );
