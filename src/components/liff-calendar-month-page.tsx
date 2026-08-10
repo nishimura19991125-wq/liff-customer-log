@@ -2638,7 +2638,7 @@ export function LiffCalendarMonthPage({
   );
 
   const contractorSignature = useMemo(
-    () => contractorKeys.join(" "),
+    () => JSON.stringify(contractorKeys),
     [contractorKeys],
   );
 
