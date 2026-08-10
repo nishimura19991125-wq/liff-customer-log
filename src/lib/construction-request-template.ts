@@ -2,6 +2,7 @@ import {
   installationTypeHidesBatterySection,
   installationTypeHidesPanelSection,
 } from "@/lib/customer-info-form/options";
+import { formatCustomerNameForDisplay } from "@/lib/customer-name-display";
 import { INSTALLATION_TYPE_OPTIONS } from "@/lib/customer-info-form/schema";
 import { formatYmdWithWeekday } from "@/lib/format-weekday-date";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
@@ -121,12 +122,16 @@ function plain(raw: string | undefined): string {
 /** 施工予定日が未設定のときに日付の代わりに入れる */
 export const CONSTRUCTION_DATE_UNDECIDED = "工事未定";
 
-/** お客様名に敬称を付ける。空のときは敬称も付けない */
+/**
+ * お客様名に敬称を付ける。空のときは敬称も付けない。
+ *
+ * 整形は表示用の customer-name-display.ts に一本化している。
+ * 空白を全角へ揃え、既に「様」が付いている値へ二重に付けない扱いも共通。
+ */
 export function formatCustomerNameWithHonorific(
   raw: string | undefined,
 ): string {
-  const name = plain(raw);
-  return name ? `${name}様` : "";
+  return formatCustomerNameForDisplay(raw);
 }
 
 export type ConstructionRequestTemplateResult =

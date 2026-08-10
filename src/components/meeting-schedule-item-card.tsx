@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { LiffCard } from "@/components/liff-chrome";
 import { MapNavigationButton } from "@/components/map-navigation-button";
+import { formatCustomerNameForDisplay } from "@/lib/customer-name-display";
 import {
   isMeetingScheduleHenmachiStatus,
   isMeetingScheduleSetCreatedStatus,
@@ -172,7 +173,8 @@ export function MeetingScheduleItemCard({
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[16px] font-bold leading-snug text-slate-900 dark:text-white">
-            {item.customerName}
+            {/* 表示だけ整える。@pocket の値は変更しない */}
+            {formatCustomerNameForDisplay(item.customerName)}
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {item.city ? (
