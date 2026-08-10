@@ -1,0 +1,47 @@
+# 改行コードは LF に固定する。
+#
+# core.autocrlf の設定は開発者ごとに異なり、Windows では既定で CRLF に
+# 変換される。git stash の往復や checkout でテキストファイルが CRLF に
+# なると、次のコミットで全行差分になり、共同作業者との衝突が避けられない。
+# 実際に3,000行超のファイルで2回発生している。
+#
+# ここで eol=lf を指定すると、作業ツリーの改行も LF に固定され、
+# 各自の core.autocrlf の設定に関係なく揃う。
+#
+# 既存ファイルはすべて LF で保存済み（git ls-files --eol で確認）。
+# そのためこの指定を足しても既存ファイルの内容は変わらない。
+
+# 既定: git がテキストと判定したものは LF で保存・チェックアウトする
+* text=auto eol=lf
+
+# このリポジトリで使っているテキスト形式を明示する。
+# 自動判定に任せると、NUL バイトが1つ紛れただけでバイナリ扱いになり
+# 正規化が効かなくなる（上記の事故がまさにこれ）。
+*.ts     text eol=lf
+*.tsx    text eol=lf
+*.js     text eol=lf
+*.mjs    text eol=lf
+*.cjs    text eol=lf
+*.json   text eol=lf
+*.md     text eol=lf
+*.css    text eol=lf
+*.html   text eol=lf
+*.svg    text eol=lf
+*.toml   text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf
+.env.local.example text eol=lf
+
+# バイナリ。改行変換の対象外にする
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.heic binary
+*.pdf  binary
+*.woff  binary
+*.woff2 binary
