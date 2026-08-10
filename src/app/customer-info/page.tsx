@@ -33,6 +33,7 @@ import {
   CustomerInfoEditForm,
   type CustomerInfoFormFieldApi,
 } from "@/components/customer-info-edit-form";
+import { CustomerInfoDraftPrompt } from "@/components/customer-info-draft-prompt";
 import {
   CustomerInfoSaveBar,
   type CustomerInfoSaveFeedback,
@@ -40,6 +41,17 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
+import {
+  buildCustomerInfoDraft,
+  clearCustomerInfoDraft,
+  CUSTOMER_INFO_DRAFT_DEBOUNCE_MS,
+  hashCustomerInfoValues,
+  loadCustomerInfoDraft,
+  purgeExpiredCustomerInfoDrafts,
+  safeLocalStorage,
+  saveCustomerInfoDraft,
+  type CustomerInfoDraft,
+} from "@/lib/customer-info-draft";
 import { applyCustomerInfoFormChange } from "@/lib/customer-info-form/form-change";
 import {
   commitStaffNameInput,
@@ -150,6 +162,24 @@ function CustomerInfoPageContent() {
     cl: string[];
   }>({ ap: [], cl: [] });
   const saveBarRef = useRef<HTMLDivElement>(null);
+
+  // タスクJ: 入力内容の自動退避。
+  // 退避先の顧客・退避時に読み込んだレコードの状態を、レンダーに影響しない
+  // ref で持つ（値が変わっても再描画は不要なため）
+  const draftRecordIdRef = useRef("");
+  const draftBaseHashRef = useRef("");
+  /**
+   * 保存中は退避を止める。
+   * 入力直後に保存を押すと、保存成功で退避を消した後にデバウンス待ちの
+   * タイマーが発火し、消したはずの退避が書き戻されてしまう
+   */
+  const draftSuppressedRef = useRef(false);
+  /** 復元するか尋ねている退避データ。null なら尋ねていない */
+  const [draftPrompt, setDraftPrompt] = useState<CustomerInfoDraft | null>(null);
+  /** 退避してから @pocket 側が変わっているか（J-3） */
+  const [draftStale, setDraftStale] = useState(false);
+  /** 復元した直後か。まだ保存されていないことを伝えるために出す */
+  const [draftRestored, setDraftRestored] = useState(false);
 
   const editIsCancelled = useMemo(() => {
     if (view !== "edit" || !detail) return false;
@@ -279,6 +309,35 @@ function CustomerInfoPageContent() {
     saveBarRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [saveFeedback]);
 
+  /**
+   * タスクJ: レコードを読み込んだ直後の準備。
+   *
+   * - 期限切れの退避データを、他の顧客の分も含めて掃除する（J-4/J-5）
+   * - この顧客の退避が残っていれば復元するか尋ねる（J-2）
+   * - 退避時に読み込んだレコードの状態と今の状態を比べ、他の人が更新して
+   *   いないかを判定する（J-3）
+   *
+   * 差分の基準（baseHash）は @pocket から読み込んだ値そのもの。
+   * 入力途中の値ではない。
+   */
+  const prepareDraftForRecord = useCallback(
+    (recordId: string, loaded: CustomerInfoFormValues) => {
+      const baseHash = hashCustomerInfoValues(loaded);
+      draftRecordIdRef.current = recordId;
+      draftBaseHashRef.current = baseHash;
+      draftSuppressedRef.current = false;
+      setDraftRestored(false);
+
+      const storage = safeLocalStorage();
+      const now = Date.now();
+      purgeExpiredCustomerInfoDrafts(storage, now);
+      const draft = loadCustomerInfoDraft(storage, recordId, now);
+      setDraftPrompt(draft);
+      setDraftStale(Boolean(draft && draft.baseHash !== baseHash));
+    },
+    [],
+  );
+
   const openRecord = useCallback(
     async (
       recordId: string,
@@ -323,6 +382,7 @@ function CustomerInfoPageContent() {
           setFormFields(data.formFields);
           setMissingCaptions(data.missingCaptions);
           setRequiredFieldErrors(new Set());
+          prepareDraftForRecord(recordId, initial);
         } else {
           const initial: CustomerInfoFormValues = {};
           for (const f of data.editableFields ?? []) {
@@ -331,6 +391,7 @@ function CustomerInfoPageContent() {
           setEditValues(initial);
           setFormFields([]);
           setMissingCaptions(undefined);
+          prepareDraftForRecord(recordId, initial);
         }
         setDetail(data);
         setView("edit");
@@ -340,7 +401,7 @@ function CustomerInfoPageContent() {
         setLoadingRecord(false);
       }
     },
-    [idToken],
+    [idToken, prepareDraftForRecord],
   );
 
   useEffect(() => {
@@ -356,6 +417,40 @@ function CustomerInfoPageContent() {
     openedFromUrlRef.current = true;
     void openRecord(recordIdFromUrl);
   }, [phase, idToken, recordIdFromUrl, needsStaffBind, openRecord]);
+
+  /**
+   * タスクJ-1: 入力内容の自動退避。
+   *
+   * 入力のたびに書くと書き込みが頻繁になりすぎるため、入力が止まってから
+   * 1秒後に1回だけ書く。読み込み直後や、@pocket の値から変わっていない
+   * 状態では書かない。
+   */
+  useEffect(() => {
+    if (view !== "edit" || !detail) return;
+    const recordId = draftRecordIdRef.current;
+    // 読み込み中に別の顧客へ切り替わった直後を弾く
+    if (!recordId || recordId !== detail.recordId) return;
+    // 復元するか尋ねている間は書かない。「破棄する」を選ぶ前に上書きしてしまう
+    if (draftPrompt) return;
+    // 読み込んだ値のままなら退避する意味がない
+    if (hashCustomerInfoValues(editValues) === draftBaseHashRef.current) return;
+
+    const timer = setTimeout(() => {
+      if (draftSuppressedRef.current) return;
+      saveCustomerInfoDraft(
+        safeLocalStorage(),
+        buildCustomerInfoDraft({
+          recordId,
+          savedAt: Date.now(),
+          baseHash: draftBaseHashRef.current,
+          // タスクG の「不要」リセット追跡は画面内の一時的な状態なので退避しない
+          values: editValues,
+        }),
+      );
+    }, CUSTOMER_INFO_DRAFT_DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
+  }, [view, detail, editValues, draftPrompt]);
 
   const handleSave = useCallback(async () => {
     const token = idToken;
@@ -435,6 +530,7 @@ function CustomerInfoPageContent() {
     setRequiredFieldErrors(new Set());
     setSaving(true);
     setSaveFeedback(null);
+    draftSuppressedRef.current = true;
     try {
       const res = await fetch(
         `/api/customer-info/records/${encodeURIComponent(detail.recordId)}`,
@@ -463,6 +559,11 @@ function CustomerInfoPageContent() {
         });
         return;
       }
+      // J-4-1: @pocket に入ったので退避データは不要。個人情報を端末に残さない。
+      // 直後の openRecord が読み直すため、必ずその前に消す
+      clearCustomerInfoDraft(safeLocalStorage(), detail.recordId);
+      setDraftRestored(false);
+
       const savedAt = new Date().toLocaleTimeString("ja-JP", {
         hour: "2-digit",
         minute: "2-digit",
@@ -477,6 +578,8 @@ function CustomerInfoPageContent() {
       setSaveFeedback({ kind: "err", text: "通信に失敗しました" });
     } finally {
       setSaving(false);
+      // 失敗した場合は退避を残したまま再開する
+      draftSuppressedRef.current = false;
     }
   }, [
     idToken,
@@ -671,6 +774,11 @@ function CustomerInfoPageContent() {
                     setView("search");
                     setDetail(null);
                     setSaveFeedback(null);
+                    // 退避データはそのまま残す（次に同じ顧客を開いたら尋ねる）。
+                    // 画面側の問い合わせ状態だけ畳む
+                    setDraftPrompt(null);
+                    setDraftStale(false);
+                    setDraftRestored(false);
                     void loadPendingRecords();
                   }}
                 >
@@ -695,6 +803,24 @@ function CustomerInfoPageContent() {
                     </dl>
                   </div>
                 ) : null}
+                {/*
+                  J-2: 復元した内容はまだ @pocket に入っていない。
+                  要素は出し入れせず常に置いて読み上げの取りこぼしを防ぐ
+                */}
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className={
+                    draftRestored
+                      ? "mb-3 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-[12px] font-bold leading-relaxed text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200"
+                      : "sr-only"
+                  }
+                >
+                  {draftRestored
+                    ? "復元しました。保存ボタンを押すまで @pocket には反映されません"
+                    : ""}
+                </p>
+
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   <p className="text-[12px] font-bold text-slate-700">
                     契約情報入力
@@ -805,6 +931,30 @@ function CustomerInfoPageContent() {
                     })}
                   </div>
                 )}
+                {/* J-2: 自動では復元しない。必ず尋ねる */}
+                {draftPrompt ? (
+                  <CustomerInfoDraftPrompt
+                    savedAt={draftPrompt.savedAt}
+                    stale={draftStale}
+                    onRestore={() => {
+                      setEditValues(draftPrompt.values);
+                      // 復元後の必須エラーは実際の入力に合わせて出し直す
+                      setRequiredFieldErrors(new Set());
+                      setDraftPrompt(null);
+                      setDraftRestored(true);
+                    }}
+                    onDiscard={() => {
+                      // J-4-2: 端末に残さない
+                      clearCustomerInfoDraft(
+                        safeLocalStorage(),
+                        draftPrompt.recordId,
+                      );
+                      setDraftPrompt(null);
+                      setDraftRestored(false);
+                    }}
+                  />
+                ) : null}
+
                 <CustomerInfoSaveBar
                   ref={saveBarRef}
                   saving={saving}
