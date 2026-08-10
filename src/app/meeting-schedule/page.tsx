@@ -292,17 +292,24 @@ export default function MeetingSchedulePage() {
 
   return (
     <LiffScreen>
+      {/*
+        アカウントアイコンは「← メニュー」と同じ行に置く。
+        以前は本文との間に単独で 1 行取っており、氏名を外してアイコンだけに
+        なった後は、余白が空くうえに真下の見出し（緑の LiffMark）と
+        上下の隙間なく並んで重なって見えていた
+      */}
       <header className="flex items-center justify-between gap-3 px-4 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <LiffGhostLink href="/">← メニュー</LiffGhostLink>
-        <ThemeToggle />
+        <div className="flex shrink-0 items-center gap-2">
+          <ThemeToggle />
+          <LiffAccountBar
+            loading={account.loading}
+            pictureUrl={account.pictureUrl}
+            boundStaffName={account.boundStaffName}
+            bindingEnabled={account.bindingEnabled}
+          />
+        </div>
       </header>
-
-      <LiffAccountBar
-        loading={account.loading}
-        pictureUrl={account.pictureUrl}
-        boundStaffName={account.boundStaffName}
-        bindingEnabled={account.bindingEnabled}
-      />
 
       <main className="liff-page-main mx-auto w-full max-w-lg flex-1 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <LiffPageHeader
