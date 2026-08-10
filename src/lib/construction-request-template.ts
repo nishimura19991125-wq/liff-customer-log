@@ -19,18 +19,6 @@ export const CONSTRUCTION_REQUEST_STATUS_DONE = "済";
 /** 1行目の「【…】」内で工事種別と施工予定日を区切る全角スペース */
 const IDEOGRAPHIC_SPACE = String.fromCharCode(0x3000);
 
-/**
- * 新規施工依頼の欄を出すか。
- * 施工依頼ステータスが「済」のときは、選択欄もテンプレートも出さない。
- */
-export function shouldShowConstructionRequestPanel(
-  constructionRequestStatus: string | undefined,
-): boolean {
-  return (
-    (constructionRequestStatus ?? "").trim() !==
-    CONSTRUCTION_REQUEST_STATUS_DONE
-  );
-}
 
 /**
  * 設置種別 → 工事種別の表記。

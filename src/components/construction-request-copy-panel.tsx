@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 
 import {
   buildConstructionRequestTemplate,
@@ -62,16 +62,23 @@ export function ConstructionRequestCopyPanel({
   onStatusUpdated: (status: string) => void;
   onSessionExpired?: () => void;
 }) {
-  const [wantsRequest, setWantsRequest] = useState<"" | "する" | "しない">("");
+  /** 依頼文を開いているか。@pocket には保存しない画面内の状態 */
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<CopyOutcome | null>(null);
   const [showManualCopy, setShowManualCopy] = useState(false);
   const manualRef = useRef<HTMLTextAreaElement | null>(null);
+  const bodyId = useId();
 
   const template = useMemo(
     () => buildConstructionRequestTemplate(values),
     [values],
   );
+
+  /** 既に「済」なら更新しない。同じ値を書くだけの保存で監査ログを増やさない */
+  const alreadyDone =
+    (values.constructionRequestStatus ?? "").trim() ===
+    CONSTRUCTION_REQUEST_STATUS_DONE;
 
   async function updateStatusToDone(): Promise<boolean> {
     const token = idToken;
@@ -131,6 +138,12 @@ export function ConstructionRequestCopyPanel({
         return;
       }
 
+      if (alreadyDone) {
+        // 既に「済」。コピーだけで完了
+        setOutcome({ kind: "ok" });
+        return;
+      }
+
       const updated = await updateStatusToDone();
       if (updated) {
         onStatusUpdated(CONSTRUCTION_REQUEST_STATUS_DONE);
@@ -154,44 +167,24 @@ export function ConstructionRequestCopyPanel({
     <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
       <p className="text-[12px] font-bold text-slate-700">新規施工依頼</p>
 
-      <fieldset className="mt-2">
-        <legend className="text-[11px] font-semibold text-slate-600">
-          新規施工依頼する/しない
-        </legend>
-        <div className="mt-1 flex gap-2">
-          {(["する", "しない"] as const).map((opt) => (
-            <label
-              key={opt}
-              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium ${
-                wantsRequest === opt
-                  ? "border-emerald-400 bg-emerald-50 text-emerald-900"
-                  : "border-slate-200 bg-white text-slate-700"
-              }`}
-            >
-              <input
-                type="radio"
-                name={`construction-request-${recordId}`}
-                className="size-4 border-slate-300 text-emerald-600"
-                value={opt}
-                checked={wantsRequest === opt}
-                disabled={disabled || busy}
-                onChange={() => {
-                  setWantsRequest(opt);
-                  setOutcome(null);
-                  setShowManualCopy(false);
-                }}
-              />
-              {opt}
-            </label>
-          ))}
-        </div>
-        <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-          この選択は @pocket に保存されません（この画面の中だけの切り替えです）
-        </p>
-      </fieldset>
+      {/* 開閉のトグル。開いている間は何度でもコピーできる */}
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        disabled={disabled || busy}
+        onClick={() => {
+          setOpen((v) => !v);
+          setOutcome(null);
+          setShowManualCopy(false);
+        }}
+        className="mt-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-[13px] font-bold text-emerald-900 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+      >
+        {open ? "閉じる" : "送る"}
+      </button>
 
-      {wantsRequest === "する" ? (
-        <div className="mt-3">
+      {open ? (
+        <div id={bodyId} className="mt-3">
           {template.ok ? (
             <>
               {/* 何がコピーされるかを必ず見せる */}
@@ -205,7 +198,11 @@ export function ConstructionRequestCopyPanel({
                 onClick={() => void handleCopy()}
                 className="mt-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-bold text-white disabled:bg-slate-300"
               >
-                {busy ? "処理中…" : "コピーして施工依頼ステータスを済にする"}
+                {busy
+                  ? "処理中…"
+                  : alreadyDone
+                    ? "コピーする"
+                    : "コピーして施工依頼ステータスを済にする"}
               </button>
 
               {showManualCopy ? (

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ConstructionRequestCopyPanel } from "@/components/construction-request-copy-panel";
 import { CustomerDocumentUploadPanel } from "@/components/customer-document-upload-panel";
-import { shouldShowConstructionRequestPanel } from "@/lib/construction-request-template";
 import { KatakanaAwareTextInput } from "@/components/katakana-aware-text-input";
 import { StaffNameSuggestCombobox } from "@/components/staff-name-suggest-combobox";
 import {
@@ -1151,13 +1150,10 @@ export function CustomerInfoEditForm({
       })}
       {/*
         新規施工依頼（タスクH）。入力を終えてから使う欄なのでフォームの最下部に置く。
-        施工依頼ステータスが「済」のときは選択欄ごと出さない
-        （既に依頼済みの案件で再依頼させないため）
+        施工依頼ステータスが「済」でも出す。依頼文は何度でも送り直せる必要があり、
+        一度コピーしたら二度と開けない作りだと再送できなくなるため
       */}
-      {recordId &&
-      shouldShowConstructionRequestPanel(
-        displayValues.constructionRequestStatus,
-      ) ? (
+      {recordId ? (
         <ConstructionRequestCopyPanel
           recordId={recordId}
           values={displayValues}

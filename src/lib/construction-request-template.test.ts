@@ -11,7 +11,6 @@ import {
   formatConstructionRequestDate,
   formatPanelCapacity,
   installationTypesWithoutWorkType,
-  shouldShowConstructionRequestPanel,
 } from "@/lib/construction-request-template";
 import {
   CONSTRUCTION_REQUEST_STATUS_OPTIONS,
@@ -304,21 +303,9 @@ describe("テンプレート全文", () => {
   });
 });
 
-describe("施工依頼ステータスによる表示条件", () => {
+describe("施工依頼ステータス", () => {
   it("完了値は「済」", () => {
     expect(CONSTRUCTION_REQUEST_STATUS_DONE).toBe("済");
-  });
-
-  it("「済」のときは欄を出さない", () => {
-    expect(shouldShowConstructionRequestPanel("済")).toBe(false);
-    expect(shouldShowConstructionRequestPanel(" 済 ")).toBe(false);
-  });
-
-  it("「済」以外・未設定のときは欄を出す", () => {
-    expect(shouldShowConstructionRequestPanel("")).toBe(true);
-    expect(shouldShowConstructionRequestPanel(undefined)).toBe(true);
-    expect(shouldShowConstructionRequestPanel("未")).toBe(true);
-    expect(shouldShowConstructionRequestPanel("-")).toBe(true);
   });
 });
 
