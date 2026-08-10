@@ -9,6 +9,7 @@ import {
   LiffCard,
   LiffGhostLink,
   LiffLoadingBlock,
+  LiffMark,
   LiffPageHeader,
   LiffScreen,
   LiffSessionExpiredPanel,
@@ -179,20 +180,37 @@ export default function CustomerDetailPage() {
 
   return (
     <LiffScreen>
-      <LiffPageHeader
-        title={detail?.customerName ?? "顧客カルテ"}
-        subtitle={detail?.subtitle || "担当案件の詳細"}
-        action={
-          <LiffGhostLink href="/customer-list">一覧</LiffGhostLink>
-        }
-      />
+      {/*
+        1行目: アカウントアイコン（左）／「一覧」リンク（右）
+        2行目: 情報確認バッジ ＋ 顧客名 ＋ T番号
+        以前は「顧客名と一覧が同じ行」「その下にアカウント名」の2行構成だった。
+        行数は増やさず入れ替えている
+      */}
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <LiffAccountBar
+          loading={account.loading}
+          pictureUrl={account.pictureUrl}
+          boundStaffName={account.boundStaffName}
+          bindingEnabled={account.bindingEnabled}
+        />
+        <LiffGhostLink href="/customer-list">一覧</LiffGhostLink>
+      </div>
 
-      <LiffAccountBar
-        loading={account.loading}
-        pictureUrl={account.pictureUrl}
-        boundStaffName={account.boundStaffName}
-        bindingEnabled={account.bindingEnabled}
-      />
+      {/*
+        バッジ・顧客名・T番号を1行に収める。LiffPageHeader は subtitle を
+        名前の下の行に描くため、ここでは使わずに組んでいる
+      */}
+      <div className="mb-5 flex min-w-0 items-center gap-2 sm:gap-3">
+        <LiffMark />
+        <div className="flex min-w-0 flex-1 items-baseline gap-2">
+          <h1 className="min-w-0 truncate text-[1.35rem] font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
+            {detail?.customerName ?? "顧客カルテ"}
+          </h1>
+          <span className="shrink-0 text-[13px] leading-snug text-slate-500 dark:text-slate-400">
+            {detail?.subtitle || "担当案件の詳細"}
+          </span>
+        </div>
+      </div>
 
       <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
       <LiffStaffBindPanel
