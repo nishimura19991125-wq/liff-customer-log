@@ -53,10 +53,7 @@ import {
   type CustomerInfoDraft,
 } from "@/lib/customer-info-draft";
 import { applyCustomerInfoFormChange } from "@/lib/customer-info-form/form-change";
-import {
-  commitStaffNameInput,
-  isExactStaffName,
-} from "@/lib/staff-name-options";
+import { commitApClStaffForSave } from "@/lib/customer-info-form/ap-cl-staff-commit";
 import {
   expandNamePartsInValues,
   joinJapaneseFullName,
@@ -174,6 +171,15 @@ function CustomerInfoPageContent() {
    * タイマーが発火し、消したはずの退避が書き戻されてしまう
    */
   const draftSuppressedRef = useRef(false);
+
+  /**
+   * @pocket から読み込んだ AP/CL担当者。保存時に「利用者が触ったか」を
+   * 判定するためだけに使う。触っていない項目は加工せずそのまま送る
+   */
+  const loadedApClRef = useRef<{ apStaff: string; clStaff: string }>({
+    apStaff: "",
+    clStaff: "",
+  });
   /** 復元するか尋ねている退避データ。null なら尋ねていない */
   const [draftPrompt, setDraftPrompt] = useState<CustomerInfoDraft | null>(null);
   /** 退避してから @pocket 側が変わっているか（J-3） */
@@ -322,6 +328,12 @@ function CustomerInfoPageContent() {
    */
   const prepareDraftForRecord = useCallback(
     (recordId: string, loaded: CustomerInfoFormValues) => {
+      // 保存時の「触ったか」判定に使う。復元とは別の目的なので値を分けて持つ
+      loadedApClRef.current = {
+        apStaff: loaded.apStaff ?? "",
+        clStaff: loaded.clStaff ?? "",
+      };
+
       const baseHash = hashCustomerInfoValues(loaded);
       draftRecordIdRef.current = recordId;
       draftBaseHashRef.current = baseHash;
@@ -461,17 +473,28 @@ function CustomerInfoPageContent() {
     );
 
     if (detail.usesFormSchema && formFields.length > 0) {
+      /**
+       * AP/CL担当者は、**読み込んだ値から変わっていなければそのまま送る**。
+       * 以前は保存のたびに名簿へ突き合わせて確定していたため、名簿の候補
+       * （AP/CL稼働が「稼働」の人だけ）に入っていない担当者が、利用者が
+       * 何も触っていなくても別の人へすり替わるか空になっていた。
+       */
+      const apCommit = commitApClStaffForSave({
+        loaded: loadedApClRef.current.apStaff,
+        current: editValues.apStaff,
+        options: apClStaffOptions.ap,
+      });
+      const clCommit = commitApClStaffForSave({
+        loaded: loadedApClRef.current.clStaff,
+        current: editValues.clStaff,
+        options: apClStaffOptions.cl,
+      });
+
       formValuesToSave = syncCombinedNameFields(
         expandNamePartsInValues({
           ...editValues,
-          apStaff: commitStaffNameInput(
-            apClStaffOptions.ap,
-            editValues.apStaff,
-          ),
-          clStaff: commitStaffNameInput(
-            apClStaffOptions.cl,
-            editValues.clStaff,
-          ),
+          apStaff: apCommit.value,
+          clStaff: clCommit.value,
         }),
       );
 
@@ -496,21 +519,12 @@ function CustomerInfoPageContent() {
         formValuesToSave,
       );
 
+      // 名簿と一致しないことを知らせるのは、利用者が触った項目だけ。
+      // 触っていない既存値で保存を止めると、退職者が担当の案件を
+      // いつまでも保存できなくなる
       const staffMismatch: string[] = [];
-      if (
-        apClStaffOptions.ap.length > 0 &&
-        (formValuesToSave.apStaff ?? "").trim() &&
-        !isExactStaffName(apClStaffOptions.ap, formValuesToSave.apStaff)
-      ) {
-        staffMismatch.push("apStaff");
-      }
-      if (
-        apClStaffOptions.cl.length > 0 &&
-        (formValuesToSave.clStaff ?? "").trim() &&
-        !isExactStaffName(apClStaffOptions.cl, formValuesToSave.clStaff)
-      ) {
-        staffMismatch.push("clStaff");
-      }
+      if (apCommit.mismatch) staffMismatch.push("apStaff");
+      if (clCommit.mismatch) staffMismatch.push("clStaff");
 
       if (missing.length > 0 || staffMismatch.length > 0) {
         setRequiredFieldErrors(
