@@ -494,6 +494,34 @@ export async function ensureCustomerFolder(
 }
 
 /**
+ * 既に存在するフォルダの共有リンクだけを取る（タスクN の一括紐付け用）。
+ *
+ * ensureCustomerFolder との違いは **files/create_folder_v2 を呼ばない**点だけ。
+ * 一括紐付けの対象は Dropbox 上に実在するフォルダに限られ（一覧で確認済み）、
+ * 作成を試しても必ず path/conflict になる。1件あたり1往復の無駄になるので省く。
+ *
+ * 共有リンクの取得は ensureCustomerFolder と**同じ sharedLinkUrlFor** を通す。
+ * audience="team" の明示と resolved_visibility の検証はその中にあり、
+ * 速度のためにこの検証を飛ばすことはしない。
+ */
+export async function customerFolderSharedLink(
+  folderName: string,
+): Promise<DropboxFolderResult> {
+  const cfg = readDropboxConfig();
+  if (!cfg) {
+    throw new DropboxError("Dropbox の環境変数が未設定です");
+  }
+  const name = folderName.trim();
+  if (!name) {
+    throw new DropboxError("フォルダ名が空です");
+  }
+
+  const path = joinDropboxPath(cfg.rootPath, name);
+  const url = await sharedLinkUrlFor(path, cfg);
+  return { path, url };
+}
+
+/**
  * 顧客フォルダをリネームして、リネーム後の共有リンクを返す。
  * 顧客名の変更時に使う。
  */
