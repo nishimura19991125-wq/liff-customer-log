@@ -18,6 +18,7 @@ import {
 import {
   applyCustomerInfoFormChange,
   isContractAmountDerived,
+  syncContractAmountFromPayment,
 } from "@/lib/customer-info-form/form-change";
 import { formatDecimalKwInput } from "@/lib/customer-info-form/decimal-kw";
 import {
@@ -520,8 +521,7 @@ function ContractAmountHint({ values }: { values: CustomerInfoFormValues }) {
   if (!isContractAmountDerived(values.paymentMethod ?? "")) return null;
   return (
     <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-      支払方法・現金・ローン金額を変えると契約金額に自動反映します。
-      違う金額のときは直接入力してください（保存時はカンマなし）
+      現金とローン金額の合計を契約金額に自動反映します（保存時はカンマなし）
     </p>
   );
 }
@@ -603,17 +603,20 @@ export function CustomerInfoEditForm({
   }, [recordId]);
 
   /**
-   * 契約金額を毎回引き直さない（タスクM-3）。
+   * 契約金額は現金+ローンから引き直して表示する。
    *
-   * 以前はここで syncContractAmountFromPayment を掛けていたため、画面には
-   * 常に「現金+ローン」の計算結果が出て、入力欄も disabled にしていた。
-   * 保存時にも同じ再計算が走り、@pocket に別の金額が入っている既存レコードは
-   * 開いて保存しただけで書き換わっていた。
+   * 連動する支払方法のとき、入力欄は disabled にして手入力させない。
+   * 画面に出る金額を常に計算結果に揃えるため。
    *
-   * 連動は applyCustomerInfoFormChange（支払方法・現金・ローンを変えたとき）
-   * だけに残し、契約金額は利用者が直せる欄に戻した。
+   * ※ 保存時の再計算はタスクM-3 で外してある（put-payload / rules）。
+   *   そのため @pocket 側に計算式と異なる金額が入っている既存レコードでは、
+   *   画面の表示（計算値）と保存される値（@pocket の値）がずれる。
+   *   この扱いは別途検討中。
    */
-  const displayValues = values;
+  const displayValues = useMemo(
+    () => syncContractAmountFromPayment(values),
+    [values],
+  );
 
   const manufacturer = (displayValues.manufacturer ?? "").trim();
 
@@ -1052,14 +1055,20 @@ export function CustomerInfoEditForm({
             field={field}
             invalid={invalid}
             value={
-              field.key === "panelCombo"
-                ? displayValues.panelCombo === "有"
-                  ? "有"
-                  : "無"
-                : (displayValues[field.key] ?? "")
+              field.key === "contractAmount" &&
+              isContractAmountDerived(displayValues.paymentMethod ?? "")
+                ? (displayValues.contractAmount ?? "")
+                : field.key === "panelCombo"
+                  ? displayValues.panelCombo === "有"
+                    ? "有"
+                    : "無"
+                  : (displayValues[field.key] ?? "")
             }
-            // 契約金額は自動反映されるが、直したいときは直せる（タスクM-3）
-            disabled={saving}
+            disabled={
+              saving ||
+              (field.key === "contractAmount" &&
+                isContractAmountDerived(displayValues.paymentMethod ?? ""))
+            }
             onChange={(next) => handleFieldChange(field.key, next)}
             onBlur={
               field.key === "postalCode" ? () => void handlePostalBlur() : undefined
