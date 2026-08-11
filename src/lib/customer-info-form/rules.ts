@@ -1,5 +1,6 @@
 import { CUSTOMER_DOCUMENT_KEYS } from "@/lib/customer-documents-spec";
 import { checkboxGroupValueToPocketArray } from "@/lib/customer-info-form/checkbox-pocket";
+import { contractAmountForPocket } from "@/lib/customer-info-form/form-change";
 import { commaIntegerForPocket } from "@/lib/customer-info-form/numeric-comma";
 import {
   INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY,
@@ -79,18 +80,24 @@ function isEmptyPocketInput(raw: string): boolean {
 }
 
 /**
- * 契約金額はここで再計算しない（タスクM-3）。
- * 以前は contractAmountForPocket で現金+ローンから引き直しており、画面で
- * 直した値が保存時に戻っていた。連動は画面側（applyCustomerInfoFormChange）
- * だけで行い、保存は利用者が確定した値をそのまま書く。
- * 型は comma-integer なので下の COMMA_INTEGER_KEYS の分岐で処理される。
+ * 契約金額は現金+ローンから引き直して書き込む。
+ *
+ * 連動する支払方法のとき入力欄は disabled で、画面には常に計算結果が出る。
+ * 保存も同じ計算を通すことで、**画面の表示と保存される値を一致させる**。
+ * 契約金額は @pocket 側でも「現金 + ローン金額」と一致する運用のため、
+ * 両者がずれることは起こりえない（運用で確認済み）。
  */
 function pocketFieldValueForPut(
   key: string,
   raw: string,
   visible: boolean,
   hiddenFallback: string,
+  values?: CustomerInfoFormValues,
 ): string {
+  if (key === "contractAmount" && values) {
+    if (!visible) return hiddenFallback;
+    return contractAmountForPocket(values) || hiddenFallback;
+  }
   if (key === "postalCode") {
     if (!visible) return hiddenFallback;
     const pocket = postalCodeForPocket(raw);
@@ -350,6 +357,7 @@ export function buildCustomerInfoFormPayload(
         raw,
         false,
         hiddenFallback,
+        values,
       );
       if (
         shouldPreserveHiddenFieldOnPut(
@@ -369,6 +377,7 @@ export function buildCustomerInfoFormPayload(
       raw,
       true,
       hiddenFallback,
+      values,
     );
   }
   return payload;

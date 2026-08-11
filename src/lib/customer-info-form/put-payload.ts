@@ -11,6 +11,7 @@ import {
   customerInfoPutValue,
   readCustomerInfoImportKeyFromRecord,
 } from "@/lib/customer-info-record";
+import { syncContractAmountFromPayment } from "@/lib/customer-info-form/form-change";
 import {
   expandNamePartsInValues,
   syncCombinedNameFields,
@@ -226,10 +227,11 @@ export async function formPayloadFromValues(
    */
   loadedStaff?: { apStaff?: string; clStaff?: string } | null,
 ): Promise<Record<string, unknown>> {
-  // 契約金額の再計算はここでは行わない（タスクM-3）。
-  // 連動は画面側（applyCustomerInfoFormChange）だけで行い、保存は
-  // 利用者が確定した値をそのまま書く
-  const synced = syncCombinedNameFields(expandNamePartsInValues(values));
+  // 契約金額は現金+ローンから引き直す。画面（disabled の表示値）と
+  // 保存される値を一致させるため。@pocket 側でも両者は一致する運用
+  const synced = syncCombinedNameFields(
+    expandNamePartsInValues(syncContractAmountFromPayment(values)),
+  );
   const stringPayload = buildCustomerInfoFormPayload(synced, resolved);
   const { resolved: transferResolved } =
     resolveCustomerInfoPtTransferFields(appFields);

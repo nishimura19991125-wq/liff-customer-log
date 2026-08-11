@@ -25,19 +25,26 @@ const BASE: CustomerInfoFormValues = {
   panelCombo: "無",
 };
 
-describe("M-3: 保存時に契約金額を再計算しない", () => {
-  it("★ 手入力した契約金額がそのまま保存される", () => {
+/**
+ * 契約金額は現金+ローンから引き直して保存する。
+ *
+ * 入力欄は連動する支払方法のとき disabled で、画面には常に計算結果が出る。
+ * 保存も同じ計算を通すことで **画面の表示と保存される値を一致させる**。
+ * @pocket 側でも両者は一致する運用のため、ずれることは起こりえない。
+ */
+describe("契約金額は自動計算値で保存する", () => {
+  it("★ 現金一括: 現金の額で保存される", () => {
     const p = payloadFor({
       ...BASE,
       paymentMethod: "現金一括",
       cashAmount: "1,000,000",
+      // 画面は disabled なのでここに別の値が入ることは通常ない
       contractAmount: "1,234,567",
     });
-    // 以前は現金（1000000）で上書きされていた
-    expect(p.contractAmount).toBe("1234567");
+    expect(p.contractAmount).toBe("1000000");
   });
 
-  it("★ 頭金+ソーラーローンでも、入っている契約金額を書き換えない", () => {
+  it("★ 頭金+ソーラーローン: 現金+ローンの合計で保存される", () => {
     const p = payloadFor({
       ...BASE,
       paymentMethod: "頭金+ソーラーローン",
@@ -45,36 +52,60 @@ describe("M-3: 保存時に契約金額を再計算しない", () => {
       loanAmount: "1,500,000",
       contractAmount: "1,900,000",
     });
-    expect(p.contractAmount).toBe("1900000");
+    expect(p.contractAmount).toBe("2000000");
   });
 
-  it("★ ソーラーローンでも書き換えない", () => {
+  it("★ ソーラーローン: ローンの額で保存される", () => {
     const p = payloadFor({
       ...BASE,
       paymentMethod: "ソーラーローン",
       loanAmount: "2,000,000",
       contractAmount: "1,800,000",
     });
-    expect(p.contractAmount).toBe("1800000");
+    expect(p.contractAmount).toBe("2000000");
   });
 
-  it("契約金額が空なら - が書かれる（従来の未入力時の扱い）", () => {
+  it("★ 画面の表示値と保存値が一致する", () => {
+    const values: CustomerInfoFormValues = {
+      ...BASE,
+      paymentMethod: "頭金+ソーラーローン",
+      cashAmount: "500,000",
+      loanAmount: "1,500,000",
+      contractAmount: "1,900,000",
+    };
+    // 画面（displayValues）が出す値
+    const shown = syncContractAmountFromPayment(values).contractAmount ?? "";
+    // 保存される値（カンマなし）
+    const saved = String(payloadFor(values).contractAmount ?? "");
+    expect(shown).toBe("2,000,000");
+    expect(saved).toBe(shown.replace(/,/g, ""));
+  });
+
+  it("連動しない支払方法（住宅ローン組込）なら入力値をそのまま保存する", () => {
     const p = payloadFor({
       ...BASE,
-      paymentMethod: "現金一括",
-      cashAmount: "1,000,000",
+      paymentMethod: "住宅ローン組込",
+      contractAmount: "1,234,567",
+    });
+    expect(p.contractAmount).toBe("1234567");
+  });
+
+  it("契約金額が空なら - が書かれる（未入力時の扱い）", () => {
+    const p = payloadFor({
+      ...BASE,
+      paymentMethod: "住宅ローン組込",
       contractAmount: "",
     });
     expect(p.contractAmount).toBe("-");
   });
 
-  it("カンマは外して書き込む（従来どおり）", () => {
+  it("カンマは外して書き込む", () => {
     const p = payloadFor({ ...BASE, contractAmount: "3,000,000" });
     expect(p.contractAmount).toBe("3000000");
   });
 });
 
-describe("M-3: 画面上の自動計算は維持する", () => {
+describe("画面上の自動計算", () => {
   it("支払方法を変えると契約金額が入る", () => {
     const next = applyCustomerInfoFormChange(
       { ...BASE, cashAmount: "1,000,000", contractAmount: "" },
@@ -93,14 +124,9 @@ describe("M-3: 画面上の自動計算は維持する", () => {
     expect(afterCash.contractAmount).toBe("2,000,000");
   });
 
-  it("★ 契約金額そのものを直したら、その値が残る（連動で戻さない）", () => {
+  it("連動しない支払方法（住宅ローン組込）なら契約金額を直接入力できる", () => {
     const next = applyCustomerInfoFormChange(
-      {
-        ...BASE,
-        paymentMethod: "現金一括",
-        cashAmount: "1,000,000",
-        contractAmount: "1,000,000",
-      },
+      { ...BASE, paymentMethod: "住宅ローン組込", contractAmount: "" },
       "contractAmount",
       "1,234,567",
     );
