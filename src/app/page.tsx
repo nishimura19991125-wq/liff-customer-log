@@ -6,6 +6,8 @@ import { parseFortuneHeadline } from "@/components/fortune-rank-badge";
 import { HomeCompactSummaries } from "@/components/home-compact-summaries";
 import { HomeConstructionHandlerCases } from "@/components/home-construction-handler-cases";
 import { HomeDailyOmikujiCard } from "@/components/home-daily-omikuji-card";
+// 【一時的な移行用】完了後に削除すること（dropbox-link-migration-panel.tsx 参照）
+import { DropboxLinkMigrationPanel } from "@/components/dropbox-link-migration-panel";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   LiffAccountBar,
@@ -595,6 +597,15 @@ export default function HomeHubPage() {
             ) : null}
           </div>
         </div>
+
+        {/*
+          【一時的な移行用】既存顧客の Dropboxリンク 一括紐付け（タスクN）。
+          移行が済んだら、この1行と import、
+          components/dropbox-link-migration-panel.tsx、
+          app/api/%5Fmigrate/dropbox-link/route.ts をまとめて削除すること。
+          MIGRATE_ENABLED が無効なら移行ルートが 404 を返し、何も表示されない。
+        */}
+        <DropboxLinkMigrationPanel idToken={idToken} />
       </main>
     </LiffScreen>
   );
