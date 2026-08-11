@@ -22,10 +22,7 @@ import {
   ROOF_MATERIAL_OPTIONS,
 } from "@/lib/customer-info-form/schema";
 import { dateValueForPocket } from "@/lib/customer-info-form/date-pocket";
-import {
-  decimalKwForPocket,
-  hasDecimalKwValue,
-} from "@/lib/customer-info-form/decimal-kw";
+import { decimalKwForPocket } from "@/lib/customer-info-form/decimal-kw";
 import { phoneNumberForPocket } from "@/lib/customer-info-form/phone-number";
 import { postalCodeForPocket } from "@/lib/customer-info-form/postal-code";
 import type {
@@ -277,8 +274,20 @@ function checkboxSelections(raw: string): string[] {
 }
 
 /**
- * 非表示項目を PUT するとき、フォームに実データが残っている場合は @pocket を上書きしない。
- * （設置種別未読込などで一時的に非表示になった書類回収状況等を "-" で消さない）
+ * 非表示項目を PUT するとき、@pocket 側の値をそのまま残すか（タスクM-1）。
+ *
+ * 設置種別や支払方法を切り替えると、数量・金額・型番の各列が一時的に
+ * 非表示になる。以前はこれらのキーに対して無条件で false を返しており、
+ * **非表示になった時点で 0 や "-" が書き込まれて値が失われていた。**
+ * 表示条件を戻しても復元されない。
+ *
+ * 一度消えると同じ内容を再入力することになり業務上の負担が大きいので、
+ * **非表示になった項目は payload から落とし、@pocket の値を残す**方針にした。
+ * 書類ステータス（タスクG）の「システムが書いた値を戻す」方式とは別で、
+ * こちらはそもそも書き込まない。
+ *
+ * 保護するのは非表示になった項目だけ。表示中に利用者が空にした場合は、
+ * この関数を通らず従来どおり空・0・"-" が書き込まれる。
  */
 function shouldPreserveHiddenFieldOnPut(
   fieldKey: string,
@@ -286,18 +295,13 @@ function shouldPreserveHiddenFieldOnPut(
   hiddenFallback: string,
   hiddenPut: string,
 ): boolean {
-  // 設置種別で一時非表示でも @pocket の容量を 0 で上書きしない（再編集で復元できるようにする）
-  if (fieldKey === "panelCapacityKw") {
-    const t = raw.trim();
-    if (isEmptyPocketInput(t) || t === "0") return false;
-    return hasDecimalKwValue(t);
-  }
+  // 数量・金額・型番。panelCapacityKw の個別扱いはこの分岐に吸収した
   if (
     POCKET_DASH_WHEN_EMPTY_KEYS.has(fieldKey) ||
     POCKET_ZERO_WHEN_EMPTY_KEYS.has(fieldKey) ||
     POCKET_ZERO_WHEN_HIDDEN_KEYS.has(fieldKey)
   ) {
-    return false;
+    return true;
   }
   if (isEmptyPocketInput(raw)) return false;
   if (raw === hiddenFallback || raw === hiddenPut) return false;
