@@ -16,7 +16,7 @@ import { NextResponse } from "next/server";
  * 呼び出し方:
  *   POST /api/_migrate/dropbox-link                 ドライラン（既定・書き込まない）
  *   POST /api/_migrate/dropbox-link?dryRun=0        実際に書き込む
- *   POST /api/_migrate/dropbox-link?dryRun=0&limit=50&delayMs=200
+ *   POST /api/_migrate/dropbox-link?dryRun=0&limit=50&delayMs=100&budgetMs=8000
  *   POST /api/_migrate/dropbox-link?check=1         有効かどうかだけ返す
  *
  * 安全策:
@@ -25,12 +25,16 @@ import { NextResponse } from "next/server";
  *   - LINE 認証必須（未認証は 401）。スタッフ名簿への紐付け必須（無ければ 403）
  *   - **ドライランが既定**。?dryRun=0 を明示しない限り書き込まない
  *   - 1回で処理する件数に上限（既定50件・最大200件）
- *   - レコードごとに待機（既定200ms）。429 はリトライせず中断して報告
+ *   - **1回の実行時間にも上限**（既定8秒・最大9秒）。Netlify Free の
+ *     関数実行上限10秒に収める。超えたらその回は打ち切り、remaining を返す
+ *   - レコードごとに待機（既定100ms）。429 はリトライせず中断して報告
+ *   - 連続5件の失敗で中断して報告
  *   - Dropbox / @pocket のエラー本文はレスポンスに載せない
  *   - 触るのは Dropboxリンク 列だけ（取込キーは更新に必須のため同値で同送）
  */
 
 import {
+  DROPBOX_LINK_MIGRATION_DEFAULT_BUDGET_MS,
   DROPBOX_LINK_MIGRATION_DEFAULT_DELAY_MS,
   DROPBOX_LINK_MIGRATION_DEFAULT_LIMIT,
   runDropboxLinkMigration,
@@ -46,6 +50,12 @@ export const dynamic = "force-dynamic";
 /** 1回のリクエストで処理する件数の上限。全件を一度に流さない */
 const MAX_LIMIT = 200;
 const MAX_DELAY_MS = 5000;
+/**
+ * 1回の実行時間の上限。
+ * Netlify Free は関数の実行上限が10秒固定なので、応答を返す余裕を残して
+ * それより短く抑える。ここを超える値は指定できない。
+ */
+const MAX_BUDGET_MS = 9000;
 
 function readIntParam(
   raw: string | null,
@@ -98,12 +108,19 @@ export async function POST(request: Request) {
     0,
     MAX_DELAY_MS,
   );
+  const budgetMs = readIntParam(
+    url.searchParams.get("budgetMs"),
+    DROPBOX_LINK_MIGRATION_DEFAULT_BUDGET_MS,
+    1000,
+    MAX_BUDGET_MS,
+  );
 
   try {
     const outcome = await runDropboxLinkMigration({
       dryRun,
       limit,
       delayMs,
+      budgetMs,
       lineUserId: auth.lineUserId,
     });
     if (!outcome.ok) {

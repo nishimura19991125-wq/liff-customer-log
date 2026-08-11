@@ -23,10 +23,10 @@ import {
   readCustomerInfoFieldValue,
 } from "@/lib/customer-info-record";
 import {
+  customerFolderSharedLink,
   DropboxError,
   dropboxConfigured,
   dropboxCustomerRootPath,
-  ensureCustomerFolder,
   listCustomerFolderFileNames,
 } from "@/lib/dropbox";
 import {
@@ -45,9 +45,23 @@ import {
  * 取込キーは @pocket の更新に必須で、値は元のまま変えない。
  *
  * ■ 共有リンクの取得はタスクE の関数をそのまま通す
- * ensureCustomerFolder を使う。audience=team の明示、既存リンクの
+ * customerFolderSharedLink を使う。中身は ensureCustomerFolder と同じ
+ * sharedLinkUrlFor で、audience=team の明示、既存リンクの
  * resolved_visibility 検証、public 相当なら不採用、はすべてその中にある。
- * ここで新しく Dropbox を呼ぶことはしない。
+ * **速度のためにこの検証を飛ばすことはしない。**
+ * 違いは files/create_folder_v2 を呼ばない点だけ（対象は実在するフォルダに
+ * 限られるので、作成は必ず conflict になり1往復の無駄になる）。
+ *
+ * ■ 時間の使い方（Netlify Free は関数の実行上限が10秒固定）
+ * 件数ではなく**経過時間**で打ち切る。budgetMs を超えたらその回は終了し、
+ * remaining を返して呼び出し側に続きを促す。件数固定だと、1往復の速さが
+ * 変わっただけでタイムアウトする。
+ *
+ * ■ 並列と直列の切り分け
+ * Dropbox の共有リンク取得は顧客ごとに独立なので**同時5件**で流す。
+ * @pocket への書き込み（お客様情報の更新・更新履歴の作成）は**直列**のまま。
+ * 更新履歴の作成が同時に走ると、レート上限に当たったときにどの行が
+ * 書けなかったのか追えなくなるため。
  *
  * ■ 冪等
  * 対象は「Dropboxリンクが空」の顧客だけ。埋まったものは次回の対象にならない。
@@ -55,7 +69,13 @@ import {
  */
 
 export const DROPBOX_LINK_MIGRATION_DEFAULT_LIMIT = 50;
-export const DROPBOX_LINK_MIGRATION_DEFAULT_DELAY_MS = 200;
+export const DROPBOX_LINK_MIGRATION_DEFAULT_DELAY_MS = 100;
+/** Netlify Free の実行上限10秒に対する既定。応答を返す余裕を残す */
+export const DROPBOX_LINK_MIGRATION_DEFAULT_BUDGET_MS = 8000;
+/** Dropbox の共有リンク取得の同時実行数 */
+const DROPBOX_CONCURRENCY = 5;
+/** これだけ連続で失敗したら中断する。同じ失敗を延々繰り返さないため */
+const MAX_CONSECUTIVE_FAILURES = 5;
 /** 報告に載せる一覧の上限。全件返すと応答が膨らむ */
 const SAMPLE_LIMIT = 50;
 
@@ -63,6 +83,8 @@ export type DropboxLinkMigrationOptions = {
   dryRun: boolean;
   limit: number;
   delayMs: number;
+  /** この時間を超えたらその回は打ち切る */
+  budgetMs: number;
   /** 監査ログの実行者 */
   lineUserId: string;
 };
@@ -89,12 +111,20 @@ export type DropboxLinkMigrationResult = {
   ambiguousTNumbers: string[];
   /** T番号で始まっていないフォルダ名 */
   unparsableFolderNames: string[];
+  /** 対象の抽出とフォルダ一覧にかかった時間（残り時間の目安） */
+  setupMs: number;
   /** 実行時のみ */
   processed?: number;
   succeeded?: number;
   failed?: DropboxLinkMigrationFailure[];
+  /** この回で書き終えられなかった突合済みの件数。0 になるまで繰り返す */
+  remaining?: number;
   /** 429 で打ち切ったか */
   stoppedByRateLimit?: boolean;
+  /** 連続失敗で打ち切ったか */
+  stoppedByFailures?: boolean;
+  /** 時間切れで打ち切ったか（正常。続きを呼べばよい） */
+  stoppedByBudget?: boolean;
 };
 
 export type DropboxLinkMigrationOutcome =
@@ -147,6 +177,10 @@ function collectTargets(
 export async function runDropboxLinkMigration(
   opts: DropboxLinkMigrationOptions,
 ): Promise<DropboxLinkMigrationOutcome> {
+  // 予算は関数の実行開始から数える。対象の抽出とフォルダ一覧もこの中に含む
+  const startedAt = Date.now();
+  const overBudget = () => Date.now() - startedAt >= opts.budgetMs;
+
   const cfg = customerInfoConfigReady();
   if (!cfg.ok) {
     return { ok: false, status: 503, error: cfg.error };
@@ -216,6 +250,8 @@ export async function runDropboxLinkMigration(
     folderNames,
   });
 
+  const setupMs = Date.now() - startedAt;
+
   const base: DropboxLinkMigrationResult = {
     dryRun: opts.dryRun,
     customersWithoutLink: targets.length,
@@ -231,6 +267,7 @@ export async function runDropboxLinkMigration(
       .map((a) => a.tNumber)
       .slice(0, SAMPLE_LIMIT),
     unparsableFolderNames: match.unparsableFolderNames.slice(0, SAMPLE_LIMIT),
+    setupMs,
   };
 
   if (opts.dryRun) {
@@ -245,75 +282,138 @@ export async function runDropboxLinkMigration(
 
   let processed = 0;
   let succeeded = 0;
+  let consecutiveFailures = 0;
   const failed: DropboxLinkMigrationFailure[] = [];
   let stoppedByRateLimit = false;
+  let stoppedByFailures = false;
+  let stoppedByBudget = false;
 
-  for (const item of batch) {
-    const recordId = recordIdByTNumber.get(item.tNumber);
-    if (!recordId) continue;
+  const noteFailure = (tNumber: string, reason: string): void => {
+    failed.push({ tNumber, reason });
+    consecutiveFailures += 1;
+  };
 
-    processed += 1;
-    try {
-      // タスクE と同じ経路。公開範囲の検証もこの中で行われる
-      const folder = await ensureCustomerFolder(item.folderName);
+  /** Dropbox の共有リンクを同時に取る。@pocket はこの後で直列に書く */
+  type Resolved = { item: (typeof batch)[number]; url?: string; error?: unknown };
 
-      await writePocketRecordWithImportKey({
-        appId: cfg.appId,
-        recordId,
-        // Dropboxリンク と 取込キー だけ。他の項目は載せない
-        payload: {
-          [linkFieldId]: folder.url,
-          [importKeyFieldId]: item.tNumber,
-        },
-        importKeyFieldId,
-        readAuth,
-        writeAuth,
-      });
-
-      // 記録に失敗しても書き込みは確定済み（既存のベストエフォート方針と同じ）
-      await recordAuditLog({
-        lineUserId: opts.lineUserId,
-        operation: "update",
-        targetAppId: cfg.appId,
-        targetRecordId: recordId,
-        targetTNumber: item.tNumber,
-        changes: [
-          {
-            fieldId: linkFieldId,
-            label: linkLabel,
-            before: "",
-            after: folder.url,
-          },
-        ],
-      });
-
-      succeeded += 1;
-    } catch (e) {
-      if (isPocketHttpRateLimitError(e) || isDropboxRateLimit(e)) {
-        // リトライせずその場で止める
-        stoppedByRateLimit = true;
-        failed.push({
-          tNumber: item.tNumber,
-          reason: "利用上限（429）に達したため中断しました",
-        });
-        break;
-      }
-      // Dropbox / @pocket の生の本文はクライアントへ返さない
-      console.error("[migrate:dropbox-link]", item.tNumber, e);
-      failed.push({
-        tNumber: item.tNumber,
-        reason:
-          e instanceof DropboxError
-            ? "Dropbox の共有リンクを取得できませんでした（詳細はサーバログ）"
-            : "@pocket への書き込みに失敗しました（詳細はサーバログ）",
-      });
+  for (let i = 0; i < batch.length; i += DROPBOX_CONCURRENCY) {
+    if (overBudget()) {
+      stoppedByBudget = true;
+      break;
     }
 
-    if (opts.delayMs > 0) await sleep(opts.delayMs);
+    const chunk = batch.slice(i, i + DROPBOX_CONCURRENCY);
+    const resolved: Resolved[] = await Promise.all(
+      chunk.map(async (item): Promise<Resolved> => {
+        try {
+          // タスクE と同じ sharedLinkUrlFor を通る。公開範囲の検証もこの中
+          const folder = await customerFolderSharedLink(item.folderName);
+          return { item, url: folder.url };
+        } catch (error) {
+          return { item, error };
+        }
+      }),
+    );
+
+    // Dropbox 側で 429 に当たったら、書き込みに進まずその場で止める
+    const rateLimited = resolved.find((r) => isDropboxRateLimit(r.error));
+    if (rateLimited) {
+      stoppedByRateLimit = true;
+      failed.push({
+        tNumber: rateLimited.item.tNumber,
+        reason: "Dropbox の利用上限（429）に達したため中断しました",
+      });
+      break;
+    }
+
+    // @pocket への書き込みは直列。更新履歴の作成を同時に走らせない
+    for (const r of resolved) {
+      const recordId = recordIdByTNumber.get(r.item.tNumber);
+      if (!recordId) continue;
+
+      processed += 1;
+
+      if (r.error !== undefined || !r.url) {
+        // Dropbox の生の本文はクライアントへ返さない
+        console.error("[migrate:dropbox-link]", r.item.tNumber, r.error);
+        noteFailure(
+          r.item.tNumber,
+          "Dropbox の共有リンクを取得できませんでした（詳細はサーバログ）",
+        );
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+          stoppedByFailures = true;
+          break;
+        }
+        continue;
+      }
+
+      const url = r.url;
+      try {
+        await writePocketRecordWithImportKey({
+          appId: cfg.appId,
+          recordId,
+          // Dropboxリンク と 取込キー だけ。他の項目は載せない
+          payload: {
+            [linkFieldId]: url,
+            [importKeyFieldId]: r.item.tNumber,
+          },
+          importKeyFieldId,
+          readAuth,
+          writeAuth,
+        });
+
+        // 記録に失敗しても書き込みは確定済み（既存のベストエフォート方針と同じ）
+        await recordAuditLog({
+          lineUserId: opts.lineUserId,
+          operation: "update",
+          targetAppId: cfg.appId,
+          targetRecordId: recordId,
+          targetTNumber: r.item.tNumber,
+          changes: [
+            { fieldId: linkFieldId, label: linkLabel, before: "", after: url },
+          ],
+        });
+
+        succeeded += 1;
+        consecutiveFailures = 0;
+      } catch (e) {
+        if (isPocketHttpRateLimitError(e)) {
+          // リトライせずその場で止める
+          stoppedByRateLimit = true;
+          failed.push({
+            tNumber: r.item.tNumber,
+            reason: "@pocket の利用上限（429）に達したため中断しました",
+          });
+          break;
+        }
+        console.error("[migrate:dropbox-link]", r.item.tNumber, e);
+        noteFailure(
+          r.item.tNumber,
+          "@pocket への書き込みに失敗しました（詳細はサーバログ）",
+        );
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+          stoppedByFailures = true;
+          break;
+        }
+      }
+
+      if (opts.delayMs > 0) await sleep(opts.delayMs);
+    }
+
+    if (stoppedByRateLimit || stoppedByFailures) break;
   }
 
   return {
     ok: true,
-    result: { ...base, processed, succeeded, failed, stoppedByRateLimit },
+    result: {
+      ...base,
+      processed,
+      succeeded,
+      failed,
+      remaining: Math.max(0, match.matched.length - succeeded),
+      stoppedByRateLimit,
+      stoppedByFailures,
+      stoppedByBudget,
+    },
   };
 }
