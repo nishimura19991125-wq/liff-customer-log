@@ -85,6 +85,8 @@ export type DropboxLinkMigrationOptions = {
   delayMs: number;
   /** この時間を超えたらその回は打ち切る */
   budgetMs: number;
+  /** フォルダ一覧のキャッシュを使わず取り直す */
+  refreshFolders?: boolean;
   /** 監査ログの実行者 */
   lineUserId: string;
 };
@@ -113,6 +115,8 @@ export type DropboxLinkMigrationResult = {
   unparsableFolderNames: string[];
   /** 対象の抽出とフォルダ一覧にかかった時間（残り時間の目安） */
   setupMs: number;
+  /** フォルダ一覧をキャッシュから使ったか */
+  foldersFromCache: boolean;
   /** 実行時のみ */
   processed?: number;
   succeeded?: number;
@@ -133,6 +137,56 @@ export type DropboxLinkMigrationOutcome =
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * フォルダ一覧のプロセスメモリキャッシュ。
+ *
+ * 準備（対象の抽出＋フォルダ一覧）に毎回3〜4秒かかり、8秒の予算の半分近くを
+ * 占めていた。フォルダ一覧は移行の最中に増減しない前提でよいので、
+ * 短時間だけ使い回す。
+ *
+ * **顧客一覧はキャッシュしない。** 「Dropboxリンクが空」の判定が古くなると、
+ * 書き込み済みのレコードを再び対象にしてしまい、更新履歴が二重に増える。
+ * 冪等性の根拠が「毎回空のものを抽出し直す」ことなので、ここは崩さない。
+ *
+ * Netlify Free はコンテナが使い回されないと当たらない。当たれば速く、
+ * 当たらなくても従来どおり動く、という位置づけ。
+ */
+const FOLDER_LIST_CACHE_TTL_MS = 10 * 60 * 1000;
+
+let folderListCache: {
+  rootPath: string;
+  names: string[];
+  expiresAt: number;
+} | null = null;
+
+/** テストと、フォルダを追加した直後のやり直し用 */
+export function resetDropboxLinkMigrationFolderCache(): void {
+  folderListCache = null;
+}
+
+async function customerFolderNamesCached(
+  rootPath: string,
+  refresh: boolean,
+): Promise<{ names: string[]; fromCache: boolean }> {
+  const now = Date.now();
+  if (
+    !refresh &&
+    folderListCache &&
+    folderListCache.rootPath === rootPath &&
+    folderListCache.expiresAt > now
+  ) {
+    return { names: folderListCache.names, fromCache: true };
+  }
+
+  const names = await listCustomerFolderFileNames(rootPath);
+  folderListCache = {
+    rootPath,
+    names,
+    expiresAt: Date.now() + FOLDER_LIST_CACHE_TTL_MS,
+  };
+  return { names, fromCache: false };
 }
 
 /** Dropbox 側の 429。本文はクライアントへ返さない */
@@ -242,8 +296,12 @@ export async function runDropboxLinkMigration(
   );
   const targets = collectTargets(rows, importKeyFieldId, linkFieldId);
 
-  // ── Dropbox のフォルダ一覧（1回だけ） ──────────────
-  const folderNames = await listCustomerFolderFileNames(rootPath);
+  // ── Dropbox のフォルダ一覧（1回だけ・短時間キャッシュ） ──
+  const folders = await customerFolderNamesCached(
+    rootPath,
+    opts.refreshFolders === true,
+  );
+  const folderNames = folders.names;
 
   const match = matchDropboxFoldersByTNumber({
     tNumbers: targets.map((t) => t.tNumber),
@@ -268,6 +326,7 @@ export async function runDropboxLinkMigration(
       .slice(0, SAMPLE_LIMIT),
     unparsableFolderNames: match.unparsableFolderNames.slice(0, SAMPLE_LIMIT),
     setupMs,
+    foldersFromCache: folders.fromCache,
   };
 
   if (opts.dryRun) {

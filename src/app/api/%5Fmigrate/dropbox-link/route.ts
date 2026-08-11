@@ -17,6 +17,7 @@ import { NextResponse } from "next/server";
  *   POST /api/_migrate/dropbox-link                 ドライラン（既定・書き込まない）
  *   POST /api/_migrate/dropbox-link?dryRun=0        実際に書き込む
  *   POST /api/_migrate/dropbox-link?dryRun=0&limit=50&delayMs=100&budgetMs=8000
+ *   POST /api/_migrate/dropbox-link?refreshFolders=1 フォルダ一覧を取り直す
  *   POST /api/_migrate/dropbox-link?check=1         有効かどうかだけ返す
  *
  * 安全策:
@@ -131,6 +132,8 @@ export async function POST(request: Request) {
       limit,
       delayMs,
       budgetMs,
+      // フォルダを追加した直後など、一覧を取り直したいとき
+      refreshFolders: url.searchParams.get("refreshFolders") === "1",
       lineUserId: auth.lineUserId,
     });
     if (!outcome.ok) {
