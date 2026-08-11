@@ -75,6 +75,46 @@ function readTargetTNumber(
   return readCustomerInfoFieldValue(recObj, tNumberId);
 }
 
+/**
+ * 保存前の AP/CL担当者を @pocket から読む。
+ *
+ * AP所属支店・CL所属支店は画面に出ない列で、担当者名から名簿を引いて
+ * 自動で入れている。担当者が変わっていないなら引き直す必要が無いので、
+ * その判定材料としてだけ使う。取得できなければ null を返し、呼び出し側は
+ * 従来どおり引き直す（引けなければ書かないので値は潰れない）。
+ */
+async function readCustomerInfoApClStaffNames(
+  appId: string,
+  recordId: string,
+  pocketAuth: AtPocketFetchAuth,
+  resolved: Awaited<ReturnType<typeof resolveCustomerInfoFormFields>>["resolved"],
+): Promise<{ apStaff?: string; clStaff?: string } | null> {
+  const apFieldId = resolved.find((f) => f.key === "apStaff")?.fieldId;
+  const clFieldId = resolved.find((f) => f.key === "clStaff")?.fieldId;
+  if (!apFieldId && !clFieldId) return null;
+
+  try {
+    const csv = [apFieldId, clFieldId].filter(Boolean).join(",");
+    let row = await fetchRecordById(appId, recordId, pocketAuth, csv);
+    if (!row?.record) {
+      row = await fetchRecordById(appId, recordId, pocketAuth);
+    }
+    const rec = row?.record;
+    if (!rec || typeof rec !== "object") return null;
+    const recObj = rec as Record<string, unknown>;
+    return {
+      apStaff: apFieldId ? readCustomerInfoFieldValue(recObj, apFieldId) : undefined,
+      clStaff: clFieldId ? readCustomerInfoFieldValue(recObj, clFieldId) : undefined,
+    };
+  } catch (e) {
+    console.warn(
+      "[api/customer-info/records/[recordId]] AP/CL担当者の取得に失敗（所属支店は従来どおり引き直す）",
+      e,
+    );
+    return null;
+  }
+}
+
 async function attachImportKeyAndUpdate(
   appId: string,
   recordId: string,
@@ -431,11 +471,22 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         );
       }
 
+      // AP/CL所属支店を引き直すかの判定に使う。担当者が変わっていなければ
+      // 支店は触らない（引けないときに "-" で潰さないため）。
+      // 取得に失敗しても保存は続ける（従来どおり引き直す動きに戻るだけ）
+      const loadedStaff = await readCustomerInfoApClStaffNames(
+        cfg.appId,
+        recordId,
+        readAuth,
+        resolved,
+      );
+
       const payload = await formPayloadFromValues(
         values,
         resolved,
         appFields,
         writeAuth,
+        loadedStaff,
       );
       if (Object.keys(payload).length === 0) {
         return NextResponse.json(

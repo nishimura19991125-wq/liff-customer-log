@@ -17,6 +17,10 @@ import {
   syncCombinedNameFields,
 } from "@/lib/customer-info-form/name-parts";
 import { computePtTransfer } from "@/lib/customer-info-form/pt-transfer";
+import {
+  staffBranchNeedsRefresh,
+  staffBranchValueToWrite,
+} from "@/lib/customer-info-form/staff-branch-write";
 import { filterCustomerInfoPutPayload } from "@/lib/customer-info-form/pocket-writable-fields";
 import {
   buildCustomerInfoFormPayload,
@@ -103,32 +107,59 @@ function applyPtTransferToPayload(
 
 const BRANCH_FALLBACK = "-";
 
-/** AP所属支店＝AP担当者の名簿レコードの勤務場所、CL所属支店＝CL担当者の勤務場所（フォーム非表示） */
+/**
+ * AP所属支店＝AP担当者の名簿レコードの勤務場所、CL所属支店＝CL担当者の勤務場所
+ * （フォーム非表示）。
+ *
+ * **担当者が変わったときだけ引き直し、引けたときだけ書く。**
+ * 以前は保存のたびに引き直して、引けなければ "-" で潰していた。
+ * 判定は staff-branch-write.ts に切り出してある。
+ */
 async function applyStaffBranchesToPayload(
   values: CustomerInfoFormValues,
   resolved: CustomerInfoFormFieldResolved[],
   payload: Record<string, unknown>,
+  loadedStaff?: { apStaff?: string; clStaff?: string } | null,
 ): Promise<void> {
   const apBranchField = resolved.find((f) => f.key === "apBranch");
   const clBranchField = resolved.find((f) => f.key === "clBranch");
   if (!apBranchField?.fieldId && !clBranchField?.fieldId) return;
 
+  const targets: Array<{ fieldId: string; loaded?: string; current?: string }> =
+    [];
+  if (apBranchField?.fieldId) {
+    targets.push({
+      fieldId: apBranchField.fieldId,
+      loaded: loadedStaff?.apStaff,
+      current: values.apStaff,
+    });
+  }
+  if (clBranchField?.fieldId) {
+    targets.push({
+      fieldId: clBranchField.fieldId,
+      loaded: loadedStaff?.clStaff,
+      current: values.clStaff,
+    });
+  }
+
+  const pending = targets.filter((t) =>
+    staffBranchNeedsRefresh(t.loaded, t.current),
+  );
+  // 担当者が両方とも変わっていなければ名簿を読む必要がない
+  if (pending.length === 0) return;
+
   const staffCfg = await resolveStaffWorkplaceLookupConfig();
   if (!staffCfg) return;
 
-  if (apBranchField?.fieldId) {
+  for (const t of pending) {
     const workplace = await lookupStaffWorkplaceByStaffName(
-      values.apStaff,
+      t.current,
       staffCfg,
     );
-    payload[apBranchField.fieldId] = workplace?.trim() || BRANCH_FALLBACK;
-  }
-  if (clBranchField?.fieldId) {
-    const workplace = await lookupStaffWorkplaceByStaffName(
-      values.clStaff,
-      staffCfg,
-    );
-    payload[clBranchField.fieldId] = workplace?.trim() || BRANCH_FALLBACK;
+    const value = staffBranchValueToWrite(workplace);
+    // 引けなかったら書かない。"-" で潰さない
+    if (value === null) continue;
+    payload[t.fieldId] = value;
   }
 }
 
@@ -190,6 +221,11 @@ export async function formPayloadFromValues(
   resolved: CustomerInfoFormFieldResolved[],
   appFields: AtPocketFieldRow[],
   pocketAuth: AtPocketFetchAuth,
+  /**
+   * @pocket に入っている現在の AP/CL担当者。所属支店を引き直すかどうかの
+   * 判定にだけ使う。取れなかったときは省略してよい（従来どおり引き直す）
+   */
+  loadedStaff?: { apStaff?: string; clStaff?: string } | null,
 ): Promise<Record<string, unknown>> {
   const synced = syncCombinedNameFields(
     expandNamePartsInValues(syncContractAmountFromPayment(values)),
@@ -199,7 +235,12 @@ export async function formPayloadFromValues(
     resolveCustomerInfoPtTransferFields(appFields);
   applyCombinedNameFieldsToPayload(synced, resolved, stringPayload);
   applyPtTransferToPayload(values, transferResolved, stringPayload);
-  await applyStaffBranchesToPayload(values, resolved, stringPayload);
+  await applyStaffBranchesToPayload(
+    values,
+    resolved,
+    stringPayload,
+    loadedStaff,
+  );
   await applyBatteryModelNumbersToPayload(values, resolved, stringPayload);
   const { payload: filtered, dropped } = filterCustomerInfoPutPayload(
     stringPayload,
