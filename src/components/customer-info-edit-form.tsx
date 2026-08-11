@@ -18,7 +18,6 @@ import {
 import {
   applyCustomerInfoFormChange,
   isContractAmountDerived,
-  syncContractAmountFromPayment,
 } from "@/lib/customer-info-form/form-change";
 import { formatDecimalKwInput } from "@/lib/customer-info-form/decimal-kw";
 import {
@@ -521,7 +520,8 @@ function ContractAmountHint({ values }: { values: CustomerInfoFormValues }) {
   if (!isContractAmountDerived(values.paymentMethod ?? "")) return null;
   return (
     <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-      現金とローン金額の合計を契約金額に自動反映します（保存時はカンマなし）
+      支払方法・現金・ローン金額を変えると契約金額に自動反映します。
+      違う金額のときは直接入力してください（保存時はカンマなし）
     </p>
   );
 }
@@ -602,10 +602,18 @@ export function CustomerInfoEditForm({
     autoFilledDocKeysRef.current = new Set();
   }, [recordId]);
 
-  const displayValues = useMemo(
-    () => syncContractAmountFromPayment(values),
-    [values],
-  );
+  /**
+   * 契約金額を毎回引き直さない（タスクM-3）。
+   *
+   * 以前はここで syncContractAmountFromPayment を掛けていたため、画面には
+   * 常に「現金+ローン」の計算結果が出て、入力欄も disabled にしていた。
+   * 保存時にも同じ再計算が走り、@pocket に別の金額が入っている既存レコードは
+   * 開いて保存しただけで書き換わっていた。
+   *
+   * 連動は applyCustomerInfoFormChange（支払方法・現金・ローンを変えたとき）
+   * だけに残し、契約金額は利用者が直せる欄に戻した。
+   */
+  const displayValues = values;
 
   const manufacturer = (displayValues.manufacturer ?? "").trim();
 
@@ -1044,20 +1052,14 @@ export function CustomerInfoEditForm({
             field={field}
             invalid={invalid}
             value={
-              field.key === "contractAmount" &&
-              isContractAmountDerived(displayValues.paymentMethod ?? "")
-                ? (displayValues.contractAmount ?? "")
-                : field.key === "panelCombo"
-                  ? displayValues.panelCombo === "有"
-                    ? "有"
-                    : "無"
-                  : (displayValues[field.key] ?? "")
+              field.key === "panelCombo"
+                ? displayValues.panelCombo === "有"
+                  ? "有"
+                  : "無"
+                : (displayValues[field.key] ?? "")
             }
-            disabled={
-              saving ||
-              (field.key === "contractAmount" &&
-                isContractAmountDerived(displayValues.paymentMethod ?? ""))
-            }
+            // 契約金額は自動反映されるが、直したいときは直せる（タスクM-3）
+            disabled={saving}
             onChange={(next) => handleFieldChange(field.key, next)}
             onBlur={
               field.key === "postalCode" ? () => void handlePostalBlur() : undefined
