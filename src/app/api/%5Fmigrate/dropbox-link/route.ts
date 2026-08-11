@@ -57,13 +57,23 @@ const MAX_DELAY_MS = 5000;
  */
 const MAX_BUDGET_MS = 9000;
 
+/**
+ * クエリの整数。**未指定なら fallback を返す。**
+ *
+ * 以前は `Number(raw)` の結果だけを見ていた。`Number(null)` は 0 で
+ * Number.isFinite(0) は true なので、パラメータを付けないと 0 が採用され、
+ * min で丸められていた。budgetMs は既定8000ms のはずが 1000ms になり、
+ * 準備（約3.2秒）だけで予算切れになって1件も処理できなかった。
+ */
 function readIntParam(
   raw: string | null,
   fallback: number,
   min: number,
   max: number,
 ): number {
-  const n = Number(raw);
+  const t = raw?.trim();
+  if (!t) return fallback;
+  const n = Number(t);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, Math.floor(n)));
 }

@@ -296,13 +296,19 @@ export async function runDropboxLinkMigration(
   /** Dropbox の共有リンクを同時に取る。@pocket はこの後で直列に書く */
   type Resolved = { item: (typeof batch)[number]; url?: string; error?: unknown };
 
-  for (let i = 0; i < batch.length; i += DROPBOX_CONCURRENCY) {
-    if (overBudget()) {
+  let cursor = 0;
+  while (cursor < batch.length) {
+    const budgetExhausted = overBudget();
+    // 予算を使い切っていても **1件目は必ず処理する**。
+    // 1件も進まないと remaining が減らず、呼び直しても永久に終わらない
+    if (cursor > 0 && budgetExhausted) {
       stoppedByBudget = true;
       break;
     }
-
-    const chunk = batch.slice(i, i + DROPBOX_CONCURRENCY);
+    // 予算切れの状態で始めるときは1件だけにして、超過を最小に抑える
+    const chunkSize = budgetExhausted ? 1 : DROPBOX_CONCURRENCY;
+    const chunk = batch.slice(cursor, cursor + chunkSize);
+    cursor += chunkSize;
     const resolved: Resolved[] = await Promise.all(
       chunk.map(async (item): Promise<Resolved> => {
         try {
