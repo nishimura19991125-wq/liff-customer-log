@@ -101,6 +101,16 @@ describe("組み合わせ（実際の保存の流れ）", () => {
     expect(decide("山田太郎", "")).toEqual({ write: false });
   });
 
+  it("★ カレンダー連携の新規作成（M-2）: 引けなければ書かない", () => {
+    // 新規作成には「前の担当者」が無いので needsRefresh は使わず、
+    // 引けた値だけを書く（sync-construction-to-customer-info と同じ形）
+    const writeOnCreate = (staffName: string) =>
+      staffBranchValueToWrite(lookup(staffName));
+
+    expect(writeOnCreate("山田太郎")).toBe("奈良本社");
+    expect(writeOnCreate("勤務場所が無い人")).toBeNull();
+  });
+
   it("新規に担当者を入れた（読み込み値なし） → 支店が入る", () => {
     expect(decide(undefined, "奈良本社の人がいない場合")).toEqual({
       write: false,

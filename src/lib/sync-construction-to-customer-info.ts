@@ -39,6 +39,7 @@ import {
 } from "@/lib/customer-info-creator-field";
 import { findCustomerInfoRecordIdByUniqueKeyCached } from "@/lib/customer-info-key-lookup-cache";
 import { defaultApClStaffNamesForLineUser } from "@/lib/staff-ap-cl-candidates";
+import { staffBranchValueToWrite } from "@/lib/customer-info-form/staff-branch-write";
 import {
   boundStaffFromRosterRows,
   fetchStaffRosterRowsCached,
@@ -148,8 +149,6 @@ export async function syncConstructionRecordToCustomerInfoApp(opts: {
   }
 }
 
-const BRANCH_FALLBACK = "-";
-
 async function applyApClStaffFromLineUserToCustomerRecord(
   customerRecord: Record<string, unknown>,
   customerFields: AtPocketFieldRow[],
@@ -191,13 +190,20 @@ async function applyApClStaffFromLineUserToCustomerRecord(
     "CL所属支店",
     customerFields,
   );
+  // 名簿から引けなければ書かない（タスクM-2）。以前は "-" を入れていたため、
+  // 勤務場所が引けない担当者では新規作成の時点で支店が "-" になっていた。
+  // 「引けない」ことと「支店が無い」ことは別。put-payload 側と考え方を揃える
   if (apStaff && apBranchFieldId) {
-    const workplace = await lookupStaffWorkplaceByStaffName(apStaff, staffCfg);
-    customerRecord[apBranchFieldId] = workplace?.trim() || BRANCH_FALLBACK;
+    const workplace = staffBranchValueToWrite(
+      await lookupStaffWorkplaceByStaffName(apStaff, staffCfg),
+    );
+    if (workplace !== null) customerRecord[apBranchFieldId] = workplace;
   }
   if (clStaff && clBranchFieldId) {
-    const workplace = await lookupStaffWorkplaceByStaffName(clStaff, staffCfg);
-    customerRecord[clBranchFieldId] = workplace?.trim() || BRANCH_FALLBACK;
+    const workplace = staffBranchValueToWrite(
+      await lookupStaffWorkplaceByStaffName(clStaff, staffCfg),
+    );
+    if (workplace !== null) customerRecord[clBranchFieldId] = workplace;
   }
 }
 
