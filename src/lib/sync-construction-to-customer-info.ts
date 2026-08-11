@@ -35,6 +35,7 @@ import {
 import { INPUT_STATUS_PENDING } from "@/lib/customer-info-form/options";
 import {
   applyCreatorNameToCustomerRecord,
+  resolveCustomerInfoCreatorFieldId,
 } from "@/lib/customer-info-creator-field";
 import { findCustomerInfoRecordIdByUniqueKeyCached } from "@/lib/customer-info-key-lookup-cache";
 import { defaultApClStaffNamesForLineUser } from "@/lib/staff-ap-cl-candidates";
@@ -547,12 +548,35 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   );
 
   if (existingId) {
-    if (inputStatusFieldId) {
+    /**
+     * 既存のお客様情報レコードを更新するとき、**既に値が入っている項目は
+     * 上書きしない**。
+     *
+     * AP担当者・CL担当者・所属支店・案件作成者は、上の
+     * applyApClStaffFromLineUserToCustomerRecord で「呼び出した人自身」の
+     * 名前を入れている。新規登録の初期値としては妥当だが、既存レコードに
+     * そのまま流すと、他人が担当している案件の担当者がカレンダーを操作した
+     * 人へ書き換わってしまう。
+     *
+     * 入力ステータスは以前から同じ扱いをしていた。同じ規則の項目なので
+     * 一度の取得にまとめている。
+     */
+    const preserveFieldIds = [
+      inputStatusFieldId,
+      resolveCustomerInfoFormFieldId("apStaff", "AP担当者", customerFields),
+      resolveCustomerInfoFormFieldId("clStaff", "CL担当者", customerFields),
+      resolveCustomerInfoFormFieldId("apBranch", "AP所属支店", customerFields),
+      resolveCustomerInfoFormFieldId("clBranch", "CL所属支店", customerFields),
+      resolveCustomerInfoCreatorFieldId(customerFields),
+    ].filter((id): id is string => Boolean(id) && id! in pocketPayload);
+
+    if (preserveFieldIds.length > 0) {
+      const wanted = [...new Set(preserveFieldIds)];
       let existingRow = await fetchRecordById(
         customerAppId,
         existingId,
         customerAuth,
-        inputStatusFieldId,
+        wanted.join(","),
       );
       if (!existingRow?.record) {
         existingRow = await fetchRecordById(
@@ -563,12 +587,11 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       }
       const existingRec = existingRow?.record;
       if (existingRec && typeof existingRec === "object") {
-        const currentStatus = readCustomerInfoFieldValue(
-          existingRec as Record<string, unknown>,
-          inputStatusFieldId,
-        );
-        if (currentStatus.trim()) {
-          delete pocketPayload[inputStatusFieldId];
+        const recObjExisting = existingRec as Record<string, unknown>;
+        for (const fieldId of wanted) {
+          const current = readCustomerInfoFieldValue(recObjExisting, fieldId);
+          // 空欄なら初期値として入れる。値があれば触らない
+          if (current.trim()) delete pocketPayload[fieldId];
         }
       }
     }
