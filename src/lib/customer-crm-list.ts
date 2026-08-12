@@ -9,6 +9,7 @@ import {
   customerInfoPocketAuth,
   customerInfoSubtitleFieldId,
 } from "@/lib/customer-info-config";
+import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
 import { findCustomerInfoRecordIdByUniqueKeyCached } from "@/lib/customer-info-key-lookup-cache";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import {
@@ -69,20 +70,51 @@ export type CustomerCrmListItem = {
 const PAGE_LIMIT = 1000;
 const DEFAULT_MAX_PAGES = 25;
 const DEFAULT_MAX_RESULTS = 80;
-const DEFAULT_CACHE_TTL_MS = 120_000;
+/**
+ * 既定10分。
+ *
+ * 以前は担当者ごとにキャッシュしており、10人使えば10回の全件走査になっていた。
+ * @pocket の利用制限は **サイト単位で100秒あたり100回**なので、人数ぶん
+ * 増えるのは致命的。全件を1回だけ取ってキャッシュし、絞り込みは取り出した
+ * 後に行う形へ変えたうえで、TTL も伸ばしている。
+ */
+const DEFAULT_CACHE_TTL_MS = 600_000;
 const DEFAULT_PAGE_DELAY_MS = 400;
 
-type CrmCandidate = CustomerCrmListItem & { sortKey: number };
+/**
+ * キャッシュに載せる1件（タスクO-3）。
+ *
+ * audience は AP担当者・CL担当者・案件作成者の**生の値**だけを、@pocket と
+ * 同じ fieldId をキーにして持つ。matchCustomerInfoPendingAudience はこの3列しか
+ * 読まないので、これを渡せば**判定ロジックを一切変えずに**絞り込める。
+ */
+type CrmCandidate = CustomerCrmListItem & {
+  sortKey: number;
+  audience: Record<string, unknown>;
+};
 
-const crmListStore = new Map<string, { expiresAt: number; items: CrmCandidate[] }>();
-const crmListInflight = new Map<string, Promise<CrmCandidate[]>>();
+/** 担当者で絞る前の全件。ユーザー非依存なのでキーに氏名を含めない */
+type CrmCacheEntry = {
+  expiresAt: number;
+  items: CrmCandidate[];
+  apFieldId: string | null;
+  clFieldId: string | null;
+  creatorFieldId: string | null;
+};
+
+export type CrmSnapshot = Omit<CrmCacheEntry, "expiresAt">;
+
+/**
+ * ★ ユーザー非依存キー。**絞り込み前の全件だけ**を入れる。
+ * 担当者で絞った結果をここへ入れてはならない（Phase 0 §6）。
+ */
+const CRM_ALL_CACHE_KEY = "all";
+
+const crmListStore = new Map<string, CrmCacheEntry>();
+const crmListInflight = new Map<string, Promise<CrmSnapshot>>();
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function crmCacheKey(boundStaffName: string): string {
-  return boundStaffName.normalize("NFKC").trim();
 }
 
 function crmCacheTtlMs(): number {
@@ -231,14 +263,22 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
   };
 }
 
-async function fetchCustomerCrmCandidatesFromPocket(
-  boundStaffName: string,
-): Promise<CrmCandidate[]> {
+/**
+ * 絞り込み**前**の全件を取る（タスクO-3）。
+ * 担当者名は受け取らない。誰が呼んでも同じ結果になる＝キャッシュを共有できる。
+ */
+async function fetchAllCustomerCrmCandidatesFromPocket(): Promise<CrmSnapshot> {
+  const empty: CrmSnapshot = {
+    items: [],
+    apFieldId: null,
+    clFieldId: null,
+    creatorFieldId: null,
+  };
   const cfg = customerInfoConfigReady();
-  if (!cfg.ok) return [];
+  if (!cfg.ok) return empty;
 
   const appId = customerInfoAppId();
-  if (!appId) return [];
+  if (!appId) return empty;
 
   const listAuths = customerInfoListAuths();
   const readAuths = readAuthsForApp("CUSTOMER_INFO");
@@ -252,9 +292,9 @@ async function fetchCustomerCrmCandidatesFromPocket(
       appId,
       readAuths.map((a) => a.apiKey ?? ""),
     )) ?? [];
-  if (appFields.length === 0) return [];
+  if (appFields.length === 0) return empty;
   const ctx = buildCrmFieldContext(appFields);
-  if (!ctx) return [];
+  if (!ctx) return empty;
 
   const candidates: CrmCandidate[] = [];
   const maxPages = crmMaxPages();
@@ -292,16 +332,12 @@ async function fetchCustomerCrmCandidatesFromPocket(
       const customerName = readCustomerInfoFieldValue(recObj, ctx.nameField);
       if (!customerName) continue;
 
-      if (
-        !matchCustomerInfoPendingAudience(
-          recObj,
-          boundStaffName,
-          ctx.apFieldId,
-          ctx.clFieldId,
-          ctx.creatorFieldId,
-        )
-      ) {
-        continue;
+      // 担当者での絞り込みはここでは行わない。キャッシュから取り出した後に
+      // 同じ matchCustomerInfoPendingAudience で判定する（タスクO-3）
+      const audience: Record<string, unknown> = {};
+      for (const id of [ctx.apFieldId, ctx.clFieldId, ctx.creatorFieldId]) {
+        if (!id) continue;
+        audience[id] = pickRecordValueByFieldAliases(recObj, id);
       }
 
       const isCancelled = recordIsCustomerStatusCancelled(
@@ -340,6 +376,7 @@ async function fetchCustomerCrmCandidatesFromPocket(
         isConstructionDateUnset,
         isCancelled,
         sortKey: crmSortKeyFromRecord(recObj, recordId, ctx.sortFieldId),
+        audience,
       });
     }
 
@@ -347,41 +384,88 @@ async function fetchCustomerCrmCandidatesFromPocket(
   }
 
   candidates.sort((a, b) => b.sortKey - a.sortKey);
-  return candidates;
+  return {
+    items: candidates,
+    apFieldId: ctx.apFieldId,
+    clFieldId: ctx.clFieldId,
+    creatorFieldId: ctx.creatorFieldId,
+  };
 }
 
-async function getCachedCustomerCrmCandidates(
-  boundStaffName: string,
-): Promise<CrmCandidate[]> {
+/** sortKey と audience は内部用。画面へは出さない */
+function toCustomerCrmListItem(c: CrmCandidate): CustomerCrmListItem {
+  return {
+    recordId: c.recordId,
+    customerName: c.customerName,
+    subtitle: c.subtitle,
+    tNumber: c.tNumber,
+    isDocumentMissing: c.isDocumentMissing,
+    isSubsidyTarget: c.isSubsidyTarget,
+    combinedSubsidyName: c.combinedSubsidyName,
+    isConstructionDateUnset: c.isConstructionDateUnset,
+    isCancelled: c.isCancelled,
+  };
+}
+
+/** 絞り込み前の全件を、ユーザー非依存キーで共有する（タスクO-3） */
+async function getCachedCustomerCrmSnapshot(): Promise<CrmSnapshot> {
   const ttl = crmCacheTtlMs();
   if (ttl <= 0) {
-    return fetchCustomerCrmCandidatesFromPocket(boundStaffName);
+    return fetchAllCustomerCrmCandidatesFromPocket();
   }
 
-  const key = crmCacheKey(boundStaffName);
   const now = Date.now();
-  const hit = crmListStore.get(key);
+  const hit = crmListStore.get(CRM_ALL_CACHE_KEY);
   if (hit && hit.expiresAt > now) {
-    return hit.items.map((item) => ({ ...item }));
+    return {
+      items: hit.items,
+      apFieldId: hit.apFieldId,
+      clFieldId: hit.clFieldId,
+      creatorFieldId: hit.creatorFieldId,
+    };
   }
 
-  const pending = crmListInflight.get(key);
-  if (pending) {
-    return pending.then((items) => items.map((item) => ({ ...item })));
-  }
+  const pending = crmListInflight.get(CRM_ALL_CACHE_KEY);
+  if (pending) return pending;
 
   const promise = (async () => {
     try {
-      const items = await fetchCustomerCrmCandidatesFromPocket(boundStaffName);
-      crmListStore.set(key, { expiresAt: Date.now() + ttl, items });
-      return items;
+      const snapshot = await fetchAllCustomerCrmCandidatesFromPocket();
+      crmListStore.set(CRM_ALL_CACHE_KEY, {
+        expiresAt: Date.now() + ttl,
+        ...snapshot,
+      });
+      return snapshot;
     } finally {
-      crmListInflight.delete(key);
+      crmListInflight.delete(CRM_ALL_CACHE_KEY);
     }
   })();
 
-  crmListInflight.set(key, promise);
+  crmListInflight.set(CRM_ALL_CACHE_KEY, promise);
   return promise;
+}
+
+/**
+ * 担当者で絞る。**キャッシュから取り出した後**に行うのが要点で、
+ * 絞り込み済みの結果をキャッシュへ戻さない（Phase 0 §6）。
+ * 判定は既存の matchCustomerInfoPendingAudience をそのまま使う。
+ */
+export function filterCrmCandidatesForStaff(
+  snapshot: CrmSnapshot,
+  boundStaffName: string,
+): CrmCandidate[] {
+  const bound = boundStaffName.normalize("NFKC").trim();
+  if (!bound) return [];
+  return snapshot.items.filter(
+    (item) =>
+      matchCustomerInfoPendingAudience(
+        item.audience,
+        bound,
+        snapshot.apFieldId,
+        snapshot.clFieldId,
+        snapshot.creatorFieldId,
+      ) != null,
+  );
 }
 
 /**
@@ -394,11 +478,12 @@ export async function listCustomerCrmRecords(
 ): Promise<CustomerCrmListItem[]> {
   const maxResults =
     options?.maxResults === null ? null : (options?.maxResults ?? crmMaxResults());
-  const all = await getCachedCustomerCrmCandidates(boundStaffName);
-  const filtered = all.filter((item) => passesCrmFilter(item, filter));
+  const snapshot = await getCachedCustomerCrmSnapshot();
+  const mine = filterCrmCandidatesForStaff(snapshot, boundStaffName);
+  const filtered = mine.filter((item) => passesCrmFilter(item, filter));
   const sliced =
     maxResults == null ? filtered : filtered.slice(0, maxResults);
-  return sliced.map(({ sortKey: _s, ...item }) => item);
+  return sliced.map(toCustomerCrmListItem);
 }
 
 /**
@@ -413,7 +498,8 @@ export async function staffOwnsCustomerByTNumber(
   const bound = normApClStaffName(boundStaffName);
   if (!normT || !bound) return false;
 
-  const cached = await getCachedCustomerCrmCandidates(bound);
+  const snapshot = await getCachedCustomerCrmSnapshot();
+  const cached = filterCrmCandidatesForStaff(snapshot, bound);
   if (cached.some((c) => normApClStaffName(c.tNumber ?? "") === normT)) {
     return true;
   }
