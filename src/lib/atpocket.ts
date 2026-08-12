@@ -1019,8 +1019,28 @@ export async function fetchRecordsList(
   return text ? (JSON.parse(text) as AtPocketListResponse) : { records: [] };
 }
 
-/** アプリのフィールド定義一覧 GET /api/apps/{appsId}/fields（短時間キャッシュで一覧連打を抑制） */
-const APP_FIELDS_TTL_MS = 5 * 60 * 1000;
+/**
+ * アプリのフィールド定義一覧 GET /api/apps/{appsId}/fields のキャッシュ TTL。
+ *
+ * @pocket の利用制限は **サイト単位で100秒あたり100回**（API キー単位ではない）。
+ * キーを増やしても分散できないため、呼び出しの総量を減らすしかない。
+ * 列定義は全アプリ・全画面の入口で呼ばれるうえ滅多に変わらないので、
+ * 既定を30分にしている。
+ *
+ * ⚠ **@pocket 側で列を追加・変更しても、最大30分は反映されない。**
+ *   列を触った直後に画面へ出したいときは、
+ *   ATPOCKET_APP_FIELDS_CACHE_SECONDS を一時的に短くするか、
+ *   invalidateAppFieldsCache(appsId) を呼ぶこと。
+ */
+const APP_FIELDS_DEFAULT_TTL_SECONDS = 30 * 60;
+
+function appFieldsTtlMs(): number {
+  const raw = process.env.ATPOCKET_APP_FIELDS_CACHE_SECONDS?.trim();
+  const sec = raw ? Number(raw) : APP_FIELDS_DEFAULT_TTL_SECONDS;
+  if (!Number.isFinite(sec)) return APP_FIELDS_DEFAULT_TTL_SECONDS * 1000;
+  // 0 を許すと毎回取りに行って上限に当たるので下限を設ける
+  return Math.min(6 * 60 * 60, Math.max(60, sec)) * 1000;
+}
 /** 429 時は期限切れでも返す猶予 */
 const APP_FIELDS_STALE_SERVE_MS = 6 * 60 * 60 * 1000;
 type FieldsCacheEntry = {
@@ -1086,7 +1106,7 @@ export async function fetchAppFields(
   const promise = (async () => {
     try {
       const fields = await fetchAppFieldsOnce(appsId, auth, ctx, options);
-      const ttl = APP_FIELDS_TTL_MS;
+      const ttl = appFieldsTtlMs();
       appFieldsStore.set(key, {
         expiresAt: Date.now() + ttl,
         staleUntil: Date.now() + ttl + APP_FIELDS_STALE_SERVE_MS,
