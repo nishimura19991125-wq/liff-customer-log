@@ -18,6 +18,7 @@ import {
   buildSalesProgressMonthOptions,
   parseSalesProgressMonthParam,
 } from "@/lib/sales-progress-period";
+import { tryConsumeManualRefresh } from "@/lib/manual-refresh-throttle";
 import { getOrComputeSalesProgressCore } from "@/lib/sales-progress-response-cache";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
@@ -66,6 +67,9 @@ export type SalesProgressPayload = {
   branches: SalesProgressBranchPayload[];
   /** 目標が1件も取れなかった月 */
   targetsAvailable: boolean;
+  /** 「更新」が間隔制限で見送られた */
+  refreshThrottled?: boolean;
+  refreshRetryAfterSec?: number;
   needsStaffBind?: boolean;
 };
 
@@ -100,6 +104,12 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const month = parseSalesProgressMonthParam(url.searchParams.get("month"));
+  // 画面の「更新」。連打で @pocket を叩き続けないよう同一利用者は60秒に1回
+  const wantsRefresh = url.searchParams.get("refresh") === "1";
+  const refreshDecision = wantsRefresh
+    ? tryConsumeManualRefresh("sales-progress", auth.lineUserId)
+    : ({ allowed: false } as const);
+  const forceRefresh = wantsRefresh && refreshDecision.allowed;
   const monthOptions = buildSalesProgressMonthOptions().map((m) => ({
     ym: m.ym,
     label: m.label,
@@ -116,7 +126,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const core = await getOrComputeSalesProgressCore(month);
+    const core = await getOrComputeSalesProgressCore(month, forceRefresh);
     if (!core) {
       return NextResponse.json(
         {
@@ -140,6 +150,16 @@ export async function GET(request: Request) {
       company: core.company,
       branches: toBranchPayload(core.branches, selfName),
       targetsAvailable: core.targetsAvailable,
+      // 「更新」を押したが間隔制限で見送った場合に画面へ知らせる
+      ...(wantsRefresh && !forceRefresh
+        ? {
+            refreshThrottled: true,
+            refreshRetryAfterSec:
+              "retryAfterSec" in refreshDecision
+                ? refreshDecision.retryAfterSec
+                : 60,
+          }
+        : {}),
     };
     return NextResponse.json(payload);
   } catch (e) {

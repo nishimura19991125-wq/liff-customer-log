@@ -12,6 +12,7 @@ import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
+import { tryConsumeManualRefresh } from "@/lib/manual-refresh-throttle";
 import { personalizeSalesDashboardPayload } from "@/lib/sales-dashboard-personalize";
 import {
   getAnyStaleSalesDashboardCore,
@@ -38,6 +39,12 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const period = parseSalesDashboardPeriodParam(url.searchParams.get("period"));
+  // 画面の「更新」。連打で @pocket を叩き続けないよう同一利用者は60秒に1回
+  const wantsRefresh = url.searchParams.get("refresh") === "1";
+  const refreshDecision = wantsRefresh
+    ? tryConsumeManualRefresh("sales-dashboard", auth.lineUserId)
+    : ({ allowed: false } as const);
+  const forceRefresh = wantsRefresh && refreshDecision.allowed;
 
   try {
     const boundStaffName = await resolveBoundStaffNameForLineUser(
@@ -47,7 +54,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ needsStaffBind: true });
     }
 
-    const core = await getOrComputeSalesDashboardCore(period);
+    const core = await getOrComputeSalesDashboardCore(period, forceRefresh);
     const payload = core
       ? personalizeSalesDashboardPayload(core, boundStaffName)
       : null;
@@ -61,7 +68,19 @@ export async function GET(request: Request) {
       );
     }
 
-    return NextResponse.json(payload);
+    return NextResponse.json({
+      ...payload,
+      // 「更新」を押したが間隔制限で見送った場合に画面へ知らせる
+      ...(wantsRefresh && !forceRefresh
+        ? {
+            refreshThrottled: true,
+            refreshRetryAfterSec:
+              "retryAfterSec" in refreshDecision
+                ? refreshDecision.retryAfterSec
+                : 60,
+          }
+        : {}),
+    });
   } catch (e) {
     console.error("[api/sales-dashboard]", e);
     if (isPocketHttpRateLimitError(e)) {

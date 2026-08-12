@@ -33,14 +33,22 @@ type Entry = {
 const store = new Map<string, Entry>();
 const inflight = new Map<string, Promise<SalesProgressCore | null>>();
 
-const DEFAULT_TTL_SECONDS = 300;
+/**
+ * 既定30分。
+ *
+ * @pocket の利用制限は **サイト単位で100秒あたり100回**（API キー単位ではない）。
+ * この画面は初回に目標・PT・アポの3アプリを全件走査するため、数人が同時に
+ * 開くだけで上限に届く。集計値なので多少古くても業務判断は変わらない。
+ * 最新が要るときは画面の「更新」（refresh=1）で取り直せる。
+ */
+const DEFAULT_TTL_SECONDS = 1800;
 
 function cacheTtlMs(): number {
   const raw = process.env.SALES_PROGRESS_CACHE_SECONDS?.trim();
   const sec = raw ? Number(raw) : DEFAULT_TTL_SECONDS;
   if (!Number.isFinite(sec)) return DEFAULT_TTL_SECONDS * 1000;
   // 既存のダッシュボードと同じ範囲に収める
-  return Math.min(900, Math.max(60, sec)) * 1000;
+  return Math.min(3600, Math.max(60, sec)) * 1000;
 }
 
 function cacheKey(month: SalesProgressMonth): string {
@@ -60,11 +68,13 @@ function cacheKey(month: SalesProgressMonth): string {
 /** 全社員共通の集計（本人分の抽出は呼び出し側で行う） */
 export async function getOrComputeSalesProgressCore(
   month: SalesProgressMonth,
+  /** 画面の「更新」。キャッシュを無視して取り直す（呼び出し側で連打を抑えること） */
+  forceRefresh = false,
 ): Promise<SalesProgressCore | null> {
   const key = cacheKey(month);
   const now = Date.now();
   const hit = store.get(key);
-  if (hit && hit.expiresAt > now) return hit.core;
+  if (!forceRefresh && hit && hit.expiresAt > now) return hit.core;
 
   const pending = inflight.get(key);
   if (pending) return pending;

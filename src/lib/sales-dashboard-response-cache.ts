@@ -21,11 +21,21 @@ const inflight = new Map<string, Promise<SalesDashboardPayload | null>>();
 /** 429 時に期限切れ TTL 後も返せる猶予（カレンダーと同様） */
 const SALES_DASHBOARD_STALE_SERVE_MS = 6 * 60 * 60 * 1000;
 
+/**
+ * 既定30分。
+ *
+ * @pocket の利用制限は **サイト単位で100秒あたり100回**（API キー単位ではない）。
+ * この画面は初回に3アプリを全件走査するため、数人が同時に開くだけで上限に届く。
+ * 集計値なので多少古くても業務判断は変わらない、という判断で長くしている。
+ * 最新が要るときは画面の「更新」（refresh=1）で取り直せる。
+ */
+const DEFAULT_TTL_SECONDS = 1800;
+
 function cacheTtlMs(): number {
   const raw = process.env.SALES_DASHBOARD_CACHE_SECONDS?.trim();
-  const sec = raw ? Number(raw) : 300;
-  if (!Number.isFinite(sec)) return 300_000;
-  return Math.min(900, Math.max(60, sec)) * 1000;
+  const sec = raw ? Number(raw) : DEFAULT_TTL_SECONDS;
+  if (!Number.isFinite(sec)) return DEFAULT_TTL_SECONDS * 1000;
+  return Math.min(3600, Math.max(60, sec)) * 1000;
 }
 
 function cacheKey(periodKey: SalesDashboardPeriodKey): string {
@@ -61,12 +71,14 @@ export function getAnyStaleSalesDashboardCore(): SalesDashboardPayload | null {
 /** 全社員共通の集計結果（isSelf は未付与・API で個人化） */
 export async function getOrComputeSalesDashboardCore(
   periodKey: SalesDashboardPeriodKey,
+  /** 画面の「更新」。キャッシュを無視して取り直す（呼び出し側で連打を抑えること） */
+  forceRefresh = false,
 ): Promise<SalesDashboardPayload | null> {
   const key = cacheKey(periodKey);
   const ttl = cacheTtlMs();
   const now = Date.now();
   const hit = store.get(key);
-  if (hit && hit.expiresAt > now) return hit.payload;
+  if (!forceRefresh && hit && hit.expiresAt > now) return hit.payload;
 
   const pending = inflight.get(key);
   if (pending) return pending;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   SalesDashboardCyberView,
@@ -22,7 +22,11 @@ import {
 import { resetLiffScroll } from "@/components/liff-scroll-reset";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
-import { LIFF_SWR_DASHBOARD_OPTIONS, isLiffSwrSessionExpired } from "@/lib/liff-swr";
+import {
+  LIFF_SWR_DASHBOARD_OPTIONS,
+  isLiffSwrSessionExpired,
+  liffAuthedJsonFetch,
+} from "@/lib/liff-swr";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
@@ -93,6 +97,9 @@ export default function SalesDashboardPage() {
     rateLimited?: boolean;
     dashboardStale?: boolean;
     rosterMessage?: string;
+    /** 「更新」が間隔制限で見送られた（タスクO-2） */
+    refreshThrottled?: boolean;
+    refreshRetryAfterSec?: number;
   };
 
   const dashboardPath = canFetchDashboard
@@ -104,7 +111,40 @@ export default function SalesDashboardPage() {
     error: swrError,
     isLoading: dashboardLoading,
     isValidating,
+    mutate,
   } = useLiffSwr<DashboardApiBody>(dashboardPath, idToken, LIFF_SWR_DASHBOARD_OPTIONS);
+
+  /**
+   * 集計のキャッシュを無視して取り直す（タスクO-2）。
+   * TTL を30分に伸ばしたぶん、最新が要るときの手段を用意する。
+   * サーバ側で同一利用者60秒に1回へ絞っているので、連打しても
+   * @pocket は叩かれない（refreshThrottled が返る）。
+   */
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState("");
+
+  const handleRefresh = useCallback(async () => {
+    if (!idToken || !dashboardPath || refreshing) return;
+    setRefreshing(true);
+    setRefreshMessage("");
+    try {
+      const sep = dashboardPath.includes("?") ? "&" : "?";
+      const fresh = await liffAuthedJsonFetch<DashboardApiBody>(
+        `${dashboardPath}${sep}refresh=1`,
+        idToken,
+      );
+      await mutate(fresh, { revalidate: false });
+      setRefreshMessage(
+        fresh.refreshThrottled
+          ? `更新は${fresh.refreshRetryAfterSec ?? 60}秒後に再度お試しください（表示は最新の集計です）`
+          : "最新の集計を取得しました",
+      );
+    } catch {
+      setRefreshMessage("更新に失敗しました");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [idToken, dashboardPath, refreshing, mutate]);
 
   useEffect(() => {
     if (!idToken || phase !== "ready") return;
@@ -185,6 +225,14 @@ export default function SalesDashboardPage() {
         subtitleClassName="mt-0.5 truncate text-[12px] leading-snug text-slate-500 sm:text-[13px] dark:text-slate-400"
         action={
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <button
+              type="button"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing || !dashboardPath}
+              className="rounded-lg px-2 py-1 text-[13px] font-medium text-sky-700 active:bg-sky-50 disabled:opacity-50 dark:text-sky-300 dark:active:bg-sky-950/40"
+            >
+              {refreshing ? "更新中…" : "更新"}
+            </button>
             <ThemeToggle />
             <LiffAccountBar
               loading={account.loading}
@@ -195,6 +243,19 @@ export default function SalesDashboardPage() {
           </div>
         }
       />
+
+      {/* 「更新」の結果。要素は出し入れせず読み上げの取りこぼしを防ぐ */}
+      <p
+        role="status"
+        aria-live="polite"
+        className={
+          refreshMessage
+            ? "mb-2 text-[12px] font-bold text-slate-600 dark:text-slate-300"
+            : "sr-only"
+        }
+      >
+        {refreshMessage}
+      </p>
 
       <div className="mb-4">
         <LiffGhostLink href="/">メニューへ</LiffGhostLink>

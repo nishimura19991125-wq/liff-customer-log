@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 
 import {
   LiffAccountBar,
@@ -24,6 +24,7 @@ import { initLiffAndGetToken } from "@/lib/liff-session";
 import {
   LIFF_SWR_DASHBOARD_OPTIONS,
   isLiffSwrSessionExpired,
+  liffAuthedJsonFetch,
 } from "@/lib/liff-swr";
 import {
   sortSalesProgressStaffRows,
@@ -91,9 +92,45 @@ export default function SalesProgressPage() {
     ? `/api/sales-progress${ym ? `?month=${encodeURIComponent(ym)}` : ""}`
     : null;
 
-  const { data, error: swrError, isLoading } = useLiffSwr<
-    SalesProgressPayload & { error?: string; disabled?: boolean }
-  >(apiPath, idToken, LIFF_SWR_DASHBOARD_OPTIONS);
+  type ProgressBody = SalesProgressPayload & {
+    error?: string;
+    disabled?: boolean;
+  };
+
+  const { data, error: swrError, isLoading, mutate } =
+    useLiffSwr<ProgressBody>(apiPath, idToken, LIFF_SWR_DASHBOARD_OPTIONS);
+
+  /**
+   * 集計のキャッシュを無視して取り直す（タスクO-2）。
+   * TTL を30分に伸ばしたぶん、最新が要るときの手段を用意する。
+   * サーバ側で同一利用者60秒に1回へ絞っているので、連打しても
+   * @pocket は叩かれない（refreshThrottled が返る）。
+   */
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState("");
+
+  const handleRefresh = useCallback(async () => {
+    if (!idToken || !apiPath || refreshing) return;
+    setRefreshing(true);
+    setRefreshMessage("");
+    try {
+      const sep = apiPath.includes("?") ? "&" : "?";
+      const fresh = await liffAuthedJsonFetch<ProgressBody>(
+        `${apiPath}${sep}refresh=1`,
+        idToken,
+      );
+      await mutate(fresh, { revalidate: false });
+      setRefreshMessage(
+        fresh.refreshThrottled
+          ? `更新は${fresh.refreshRetryAfterSec ?? 60}秒後に再度お試しください（表示は最新の集計です）`
+          : "最新の集計を取得しました",
+      );
+    } catch {
+      setRefreshMessage("更新に失敗しました");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [idToken, apiPath, refreshing, mutate]);
 
   useEffect(() => {
     if (!LIFF_ID) return;
@@ -194,7 +231,32 @@ export default function SalesProgressPage() {
       </header>
 
       <main className="liff-page-main mx-auto w-full max-w-lg flex-1 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-        <LiffPageHeader title="営業進捗" />
+        <LiffPageHeader
+          title="営業進捗"
+          action={
+            <button
+              type="button"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing || !apiPath}
+              className="rounded-lg px-2 py-1 text-[13px] font-medium text-sky-700 active:bg-sky-50 disabled:opacity-50 dark:text-sky-300 dark:active:bg-sky-950/40"
+            >
+              {refreshing ? "更新中…" : "更新"}
+            </button>
+          }
+        />
+
+        {/* 「更新」の結果。要素は出し入れせず読み上げの取りこぼしを防ぐ */}
+        <p
+          role="status"
+          aria-live="polite"
+          className={
+            refreshMessage
+              ? "mb-2 text-[12px] font-bold text-slate-600 dark:text-slate-300"
+              : "sr-only"
+          }
+        >
+          {refreshMessage}
+        </p>
 
         <LiffStaffBindingConfigNotice message={account.bindingConfigError} />
 
