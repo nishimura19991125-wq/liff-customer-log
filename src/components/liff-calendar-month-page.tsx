@@ -445,6 +445,8 @@ function CaseConstructionHandlerEditor({
         constructionHandlerName?: string;
         rosterMessage?: string;
         calendarPatchSkipped?: boolean;
+        /** お客様情報アプリへ反映できなかったときだけ入る（タスクP） */
+        warning?: string;
       } = {};
       if (rawBody.trim()) {
         try {
@@ -472,8 +474,15 @@ function CaseConstructionHandlerEditor({
         await onSaved(null);
       }
       setFeedback({
-        kind: "ok",
+        /**
+         * お客様情報へ反映できなかったときは、成功文言ではなく警告を出す
+         * （タスクP）。工事カレンダー側は更新済みだが、@pocket の連携で
+         * 元の値に戻される恐れがあるので気づける必要がある。
+         * 警告文は「工事カレンダーは更新しましたが…」と自己完結している
+         */
+        kind: data.warning ? "err" : "ok",
         text:
+          data.warning ??
           data.rosterMessage ??
           `工事対応者を更新しました（${data.constructionHandlerName ?? "保存済"}）`,
       });
