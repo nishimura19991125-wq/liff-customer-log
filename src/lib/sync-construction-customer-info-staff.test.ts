@@ -252,3 +252,45 @@ describe("修正2: existingId が引けないときはキャッシュを外し�
   });
 });
 
+describe("修正4: 工事カレンダー連携を監査ログに記録する", () => {
+  it("★ 既存更新を「お客様情報アプリ」宛で記録する", async () => {
+    h.cachedId = "1483";
+
+    await runSync();
+
+    expect(h.auditCalls).toHaveLength(1);
+    const entry = h.auditCalls[0];
+    expect(entry.operation).toBe("update");
+    expect(entry.targetAppId).toBe("35");
+    expect(entry.targetRecordId).toBe("1483");
+    expect(entry.targetTNumber).toBe("T00001691");
+    expect(entry.lineUserId).toBe("U-operator");
+  });
+
+  it("★ 新規作成も記録する", async () => {
+    h.cachedId = null;
+    h.refetchedId = null;
+
+    await runSync();
+
+    expect(h.auditCalls).toHaveLength(1);
+    const entry = h.auditCalls[0];
+    expect(entry.operation).toBe("create");
+    expect(entry.targetAppId).toBe("35");
+    expect(entry.targetRecordId).toBe("999");
+  });
+
+  it("新規作成の記録には担当者の変更行が含まれる（経路の判別材料になる）", async () => {
+    h.cachedId = null;
+    h.refetchedId = null;
+
+    await runSync();
+
+    const changes = h.auditCalls[0].changes as Array<{
+      label: string;
+      after: string;
+    }>;
+    const ap = changes.find((c) => c.label === "AP担当者");
+    expect(ap?.after).toBe("操作者太郎");
+  });
+});

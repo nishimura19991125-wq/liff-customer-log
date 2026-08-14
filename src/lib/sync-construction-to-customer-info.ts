@@ -13,6 +13,8 @@ import {
   fetchRecordById,
   updateRecord,
 } from "@/lib/atpocket";
+import { auditLogEnabled, recordAuditLog } from "@/lib/audit-log";
+import { computeAuditChanges } from "@/lib/audit-log-changes";
 import {
   DROPBOX_FOLDER_WARNING,
   ensureCustomerFolderLink,
@@ -50,6 +52,7 @@ import {
 } from "@/lib/customer-info-form/resolve-fields";
 import {
   customerInfoPutValue,
+  fieldCaptionByUniqueId,
   readCustomerInfoFieldValue,
 } from "@/lib/customer-info-record";
 import {
@@ -226,6 +229,74 @@ async function resolveExistingCustomerInfoRecordId(
   );
   if (cached) return cached;
   return refetchCustomerInfoRecordIdByUniqueKey(keyFieldSchemaId, uniqueKey);
+}
+
+/**
+ * 監査ログの「変更前」に使うレコード。
+ * 取得に失敗しても連携は止めない（ログの精度より業務を優先する）。
+ * null のときは全項目が「（空） → 値」として記録される点に注意。
+ */
+async function readCustomerInfoRecordForAudit(
+  customerAppId: string,
+  recordId: string,
+  customerAuth: AtPocketFetchAuth,
+): Promise<Record<string, unknown> | null> {
+  if (!auditLogEnabled()) return null;
+  try {
+    const row = await fetchRecordById(customerAppId, recordId, customerAuth);
+    if (row?.record && typeof row.record === "object") {
+      return row.record as Record<string, unknown>;
+    }
+  } catch (e) {
+    console.warn(
+      "[sync-construction-to-customer-info] 監査ログ用の更新前レコード取得に失敗",
+      e,
+    );
+  }
+  return null;
+}
+
+/**
+ * 工事カレンダー連携によるお客様情報アプリへの書き込みを監査ログに残す（修正4）。
+ *
+ * 従来この経路は1行も記録しておらず、担当者が書き換わったときに
+ * 「/customer-info の保存が書いたのか、この連携が書いたのか」を
+ * 更新履歴から判別できなかった。対象アプリIDはお客様情報アプリを入れる
+ * （カレンダー側ルートの監査ログは工事アプリが対象で、別物）。
+ *
+ * ベストエフォート。記録に失敗しても連携は成功として扱う。
+ */
+async function recordCustomerInfoSyncAuditLog(input: {
+  operation: "create" | "update";
+  lineUserId: string;
+  customerAppId: string;
+  recordId: string;
+  tNumber: string;
+  before: Record<string, unknown> | null;
+  payload: Record<string, unknown>;
+  customerFields: AtPocketFieldRow[];
+}): Promise<void> {
+  if (!auditLogEnabled()) return;
+  try {
+    await recordAuditLog({
+      lineUserId: input.lineUserId,
+      operation: input.operation,
+      targetAppId: input.customerAppId,
+      targetRecordId: input.recordId,
+      targetTNumber: input.tNumber,
+      changes: computeAuditChanges(input.before, input.payload, {
+        labelOf: (fieldId) =>
+          fieldCaptionByUniqueId(input.customerFields, fieldId),
+      }),
+    });
+  } catch (e) {
+    // recordAuditLog は作成・更新では throw しない約束だが、
+    // ここで連携を落とさないことを呼び出し側から見て自明にしておく
+    console.warn(
+      "[sync-construction-to-customer-info] 監査ログの記録に失敗",
+      e,
+    );
+  }
 }
 
 async function syncConstructionRecordToCustomerInfoAppInner(opts: {
@@ -628,12 +699,27 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       }
     }
 
+    const before = await readCustomerInfoRecordForAudit(
+      customerAppId,
+      existingId,
+      customerAuth,
+    );
     await updateRecord(
       customerAppId,
       existingId,
       pocketPayload,
       customerAuth,
     );
+    await recordCustomerInfoSyncAuditLog({
+      operation: "update",
+      lineUserId: opts.lineUserId ?? "",
+      customerAppId,
+      recordId: existingId,
+      tNumber: uniqueKey,
+      before,
+      payload: pocketPayload,
+      customerFields,
+    });
     return {
       kind: "synced",
       customerInfoRecordId: existingId,
@@ -648,6 +734,17 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   );
   const customerInfoRecordId =
     atPocketRecordIdFromCreateResult(created) ?? undefined;
+
+  await recordCustomerInfoSyncAuditLog({
+    operation: "create",
+    lineUserId: opts.lineUserId ?? "",
+    customerAppId,
+    recordId: customerInfoRecordId ?? "",
+    tNumber: uniqueKey,
+    before: null,
+    payload: pocketPayload,
+    customerFields,
+  });
 
   return {
     kind: "synced",
