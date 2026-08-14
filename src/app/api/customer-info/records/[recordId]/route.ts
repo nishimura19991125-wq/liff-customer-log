@@ -505,6 +505,11 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       );
       if (keyErr) return keyErr;
 
+      // 未入力一覧・T番号キー検索のキャッシュは、legacy 分岐だけでなく
+      // こちらでも捨てる。入力ステータスや T番号が変わったのに一覧が
+      // 古いままだと、保存したはずの案件が未入力に残り続ける
+      invalidateCustomerInfoPendingCache();
+      invalidateCustomerInfoKeyLookupCache();
       return NextResponse.json({ ok: true });
     }
 
