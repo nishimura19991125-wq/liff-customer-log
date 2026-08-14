@@ -13,7 +13,6 @@ import {
   fetchRecordById,
   updateRecord,
 } from "@/lib/atpocket";
-import { customerInfoPutValue } from "@/lib/customer-info-record";
 import {
   DROPBOX_FOLDER_WARNING,
   ensureCustomerFolderLink,
@@ -33,11 +32,11 @@ import {
   resolveCustomerInfoRegistrationNumberFieldIds,
 } from "@/lib/construction-customer-info-sync-fields";
 import { INPUT_STATUS_PENDING } from "@/lib/customer-info-form/options";
+import { applyCreatorNameToCustomerRecord } from "@/lib/customer-info-creator-field";
 import {
-  applyCreatorNameToCustomerRecord,
-  resolveCustomerInfoCreatorFieldId,
-} from "@/lib/customer-info-creator-field";
-import { findCustomerInfoRecordIdByUniqueKeyCached } from "@/lib/customer-info-key-lookup-cache";
+  findCustomerInfoRecordIdByUniqueKeyCached,
+  refetchCustomerInfoRecordIdByUniqueKey,
+} from "@/lib/customer-info-key-lookup-cache";
 import { defaultApClStaffNamesForLineUser } from "@/lib/staff-ap-cl-candidates";
 import { staffBranchValueToWrite } from "@/lib/customer-info-form/staff-branch-write";
 import {
@@ -49,7 +48,10 @@ import {
   normalizeDateForInput,
   resolveCustomerInfoFormFieldId,
 } from "@/lib/customer-info-form/resolve-fields";
-import { readCustomerInfoFieldValue } from "@/lib/customer-info-record";
+import {
+  customerInfoPutValue,
+  readCustomerInfoFieldValue,
+} from "@/lib/customer-info-record";
 import {
   lookupStaffWorkplaceByStaffName,
   resolveStaffWorkplaceLookupConfig,
@@ -205,6 +207,25 @@ async function applyApClStaffFromLineUserToCustomerRecord(
     );
     if (workplace !== null) customerRecord[clBranchFieldId] = workplace;
   }
+}
+
+/**
+ * お客様情報アプリに同じ T番号のレコードが既にあるか。
+ *
+ * キャッシュが null を返したときは、キャッシュを外して1回だけ引き直す（修正2）。
+ * 「見つからない」を取り違えると createRecord まで進んでしまい、同じ顧客の
+ * レコードが二重にできる。読み取り1回で防げるなら安いほうを選ぶ。
+ */
+async function resolveExistingCustomerInfoRecordId(
+  keyFieldSchemaId: string,
+  uniqueKey: string,
+): Promise<string | null> {
+  const cached = await findCustomerInfoRecordIdByUniqueKeyCached(
+    keyFieldSchemaId,
+    uniqueKey,
+  );
+  if (cached) return cached;
+  return refetchCustomerInfoRecordIdByUniqueKey(keyFieldSchemaId, uniqueKey);
 }
 
 async function syncConstructionRecordToCustomerInfoAppInner(opts: {
@@ -429,6 +450,23 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     };
   }
 
+  /**
+   * 既存レコードかどうかを、payload を組み立てる**前**に確定させる（修正1／案A）。
+   *
+   * AP担当者・CL担当者・AP所属支店・CL所属支店・案件作成者は
+   * 「この連携を呼んだ人自身」の名前を入れる項目で、新規登録の初期値としては
+   * 妥当だが、既存レコードに流すと他人が担当している案件の担当者が
+   * カレンダーを操作した人へ書き換わる。
+   *
+   * 以前は「payload に載せてから、@pocket を読み直して値があれば消す」方式で
+   * 防いでいたが、読み直しが1回でも空を返すと消し損ねて上書きが通ってしまう。
+   * 判定を先に済ませ、既存レコードでは**そもそも payload に載せない**。
+   */
+  const existingId = await resolveExistingCustomerInfoRecordId(
+    resolvedCustomerKey,
+    uniqueKey,
+  );
+
   const customerRecord: Record<string, unknown> = {
     [resolvedCustomerKey]: uniqueKey,
   };
@@ -487,7 +525,15 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     }
   }
 
-  if (opts.lineUserId?.trim()) {
+  /**
+   * 担当者・所属支店・案件作成者の初期値は**新規作成のときだけ**入れる。
+   *
+   * 既存レコードでは、AP/CL担当者が空欄であっても操作者の名前を入れない。
+   * 「空欄なら初期値として補う」挙動はここで意図的に捨てている。
+   * 空欄を埋める利便より、他人の担当案件を書き換えない確実性を優先する。
+   * 担当者の設定・修正は /customer-info の編集画面で行う。
+   */
+  if (!existingId && opts.lineUserId?.trim()) {
     const lineUserId = opts.lineUserId.trim();
     const [{ apStaff, clStaff }, rosterRows] = await Promise.all([
       defaultApClStaffNamesForLineUser(lineUserId),
@@ -548,41 +594,21 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     pocketPayload[k] = customerInfoPutValue(v);
   }
 
-  const existingId = await findCustomerInfoRecordIdByUniqueKeyCached(
-    resolvedCustomerKey,
-    uniqueKey,
-  );
-
   if (existingId) {
     /**
-     * 既存のお客様情報レコードを更新するとき、**既に値が入っている項目は
-     * 上書きしない**。
+     * 入力ステータスは「空欄なら未入力を入れる、値があれば触らない」。
      *
-     * AP担当者・CL担当者・所属支店・案件作成者は、上の
-     * applyApClStaffFromLineUserToCustomerRecord で「呼び出した人自身」の
-     * 名前を入れている。新規登録の初期値としては妥当だが、既存レコードに
-     * そのまま流すと、他人が担当している案件の担当者がカレンダーを操作した
-     * 人へ書き換わってしまう。
-     *
-     * 入力ステータスは以前から同じ扱いをしていた。同じ規則の項目なので
-     * 一度の取得にまとめている。
+     * 担当者・所属支店・案件作成者は payload に載せていない（修正1）ので、
+     * 読み直しの対象はこの1列だけになった。読み直しが失敗したときに
+     * 上書きが通ってしまう弱点は残るが、入力ステータスは
+     * /customer-info の保存で入り直る運用項目なので影響が限定される。
      */
-    const preserveFieldIds = [
-      inputStatusFieldId,
-      resolveCustomerInfoFormFieldId("apStaff", "AP担当者", customerFields),
-      resolveCustomerInfoFormFieldId("clStaff", "CL担当者", customerFields),
-      resolveCustomerInfoFormFieldId("apBranch", "AP所属支店", customerFields),
-      resolveCustomerInfoFormFieldId("clBranch", "CL所属支店", customerFields),
-      resolveCustomerInfoCreatorFieldId(customerFields),
-    ].filter((id): id is string => Boolean(id) && id! in pocketPayload);
-
-    if (preserveFieldIds.length > 0) {
-      const wanted = [...new Set(preserveFieldIds)];
+    if (inputStatusFieldId && inputStatusFieldId in pocketPayload) {
       let existingRow = await fetchRecordById(
         customerAppId,
         existingId,
         customerAuth,
-        wanted.join(","),
+        inputStatusFieldId,
       );
       if (!existingRow?.record) {
         existingRow = await fetchRecordById(
@@ -593,14 +619,15 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       }
       const existingRec = existingRow?.record;
       if (existingRec && typeof existingRec === "object") {
-        const recObjExisting = existingRec as Record<string, unknown>;
-        for (const fieldId of wanted) {
-          const current = readCustomerInfoFieldValue(recObjExisting, fieldId);
-          // 空欄なら初期値として入れる。値があれば触らない
-          if (current.trim()) delete pocketPayload[fieldId];
-        }
+        const current = readCustomerInfoFieldValue(
+          existingRec as Record<string, unknown>,
+          inputStatusFieldId,
+        );
+        // 空欄なら初期値として入れる。値があれば触らない
+        if (current.trim()) delete pocketPayload[inputStatusFieldId];
       }
     }
+
     await updateRecord(
       customerAppId,
       existingId,

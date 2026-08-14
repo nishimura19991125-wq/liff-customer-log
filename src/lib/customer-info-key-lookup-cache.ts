@@ -26,6 +26,25 @@ export function invalidateCustomerInfoKeyLookupCache(): void {
   inflight.clear();
 }
 
+/**
+ * この1件だけキャッシュを捨てて引き直す。
+ *
+ * 「見つかった」の取り違えは更新先を間違えるだけで気づけるが、
+ * **「見つからない」の取り違えは新規レコードを増やしてしまい取り返しがつかない**。
+ * キャッシュ由来の null（TTL 内に登録されたレコードなど）を信じて
+ * createRecord すると、同じ T番号の顧客が二重にできる。
+ * そのため null のときだけ、このキャッシュ無しの経路で確認し直す。
+ */
+export async function refetchCustomerInfoRecordIdByUniqueKey(
+  keyFieldSchemaId: string,
+  uniqueKey: string,
+): Promise<string | null> {
+  const key = cacheKey(keyFieldSchemaId, uniqueKey);
+  store.delete(key);
+  inflight.delete(key);
+  return findCustomerInfoRecordIdByUniqueKeyCached(keyFieldSchemaId, uniqueKey);
+}
+
 export async function findCustomerInfoRecordIdByUniqueKeyCached(
   keyFieldSchemaId: string,
   uniqueKey: string,
