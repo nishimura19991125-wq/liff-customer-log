@@ -1302,6 +1302,15 @@ export async function fetchAllRecordsPages(
   const authKeys =
     options?.authKeys?.filter((a) => a.apiKey?.trim()) ?? [];
   const all: AtPocketRecordRow[] = [];
+  /**
+   * 最終ページに到達せず、上限で打ち切ったか。
+   *
+   * 最終ページの判定は「返った件数 < 要求した件数」なので、上限まで回りきって
+   * なお最後のページが満杯だった場合は**続きが残っている**。
+   * 以前はここを黙って抜けていたため、件数が上限×1000を超えた瞬間に
+   * エラーも警告もなくレコードが欠落する。集計値が静かに狂うのが最も危ない。
+   */
+  let truncated = false;
   for (let page = 1; page <= pageCap; page++) {
     const pageStart =
       authKeys.length > 0 ? (page - 1) % authKeys.length : 0;
@@ -1326,7 +1335,18 @@ export async function fetchAllRecordsPages(
     const recs = data.records ?? [];
     all.push(...recs);
     if (recs.length < CALENDAR_PAGE_LIMIT) break;
+    if (page === pageCap) truncated = true;
   }
+
+  if (truncated) {
+    // レコードの中身は出さない。上限に当たった事実と規模だけを残す
+    console.warn(
+      "[atpocket] ページ上限に達したため取得を打ち切りました。以降のレコードは取得できていません" +
+        ` appsId=${appsId} maxPages=${pageCap} fetched=${all.length}` +
+        ` operation=${ctx?.operation ?? "unknown"}`,
+    );
+  }
+
   return all;
 }
 
