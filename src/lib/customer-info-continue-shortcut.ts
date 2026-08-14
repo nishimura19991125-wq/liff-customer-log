@@ -29,7 +29,10 @@ import {
 } from "@/lib/customer-info-creator-field";
 import type { AtPocketFieldRow } from "@/lib/atpocket";
 import { fetchAppFields, fetchRecordsList } from "@/lib/atpocket";
-import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
+import {
+  pickRecordValueByFieldAliases,
+  resolveConfiguredFieldToSchemaUniqueId,
+} from "@/lib/calendar-kojo";
 
 export type CustomerInfoContinueShortcutHit = {
   recordId: string;
@@ -149,17 +152,55 @@ function recordHasIncompleteRequiredForm(
 }
 
 /**
- * 入力ステータスが未入力（空欄は未入力扱い）のレコード一覧。
- * 作成日による絞り込みは行わない。AP/CL 担当者一致、または担当者未設定で作成者がログイン担当者のとき表示。
+ * キャッシュに載せる1件（絞り込み前）。
+ *
+ * audience は AP担当者・CL担当者・案件作成者の**生の値**だけを、@pocket と
+ * 同じ fieldId をキーにして持つ。matchCustomerInfoPendingAudience はこの3列しか
+ * 読まないので、これを渡せば**判定ロジックを一切変えずに**絞り込める。
+ * 担当顧客一覧（タスクO-3）と同じ作りに揃えている。
  */
-export async function findCustomerInfoPendingRecords(
-  boundStaffName: string,
-): Promise<CustomerInfoContinueShortcutHit[]> {
+export type CustomerInfoPendingCandidate = {
+  recordId: string;
+  customerName: string;
+  /** 絞り込み後に pendingHitSubtitle へ渡す元の値（「担当者未設定」の付与は取り出し後） */
+  subtitleRaw: string;
+  audience: Record<string, unknown>;
+};
+
+/** 担当者で絞る前の全件。ユーザー非依存なのでキーに氏名を含めない */
+export type CustomerInfoPendingSnapshot = {
+  candidates: CustomerInfoPendingCandidate[];
+  apFieldId: string | null;
+  clFieldId: string | null;
+  creatorFieldId: string | null;
+};
+
+const EMPTY_SNAPSHOT: CustomerInfoPendingSnapshot = {
+  candidates: [],
+  apFieldId: null,
+  clFieldId: null,
+  creatorFieldId: null,
+};
+
+/**
+ * 入力ステータスが未入力（空欄は未入力扱い）のレコードを**担当者で絞る前**に集める。
+ *
+ * 以前は担当者ごとにこの走査を行っていたため、10人使えば10回の全件走査になり、
+ * @pocket の「サイト単位で100秒あたり100回」をホーム画面だけで削っていた。
+ * 走査は全社で1回に集約し、担当者での絞り込みは
+ * filterCustomerInfoPendingForStaff で取り出した後に行う（Phase 0 §6）。
+ *
+ * ここで適用してよいのは**担当者に依存しない条件だけ**。
+ *   - お客様名が入っていること
+ *   - 入力ステータスが未入力（または必須項目が未充足）
+ * 担当者一致（matchCustomerInfoPendingAudience）はここでは呼ばない。
+ */
+export async function fetchCustomerInfoPendingSnapshot(): Promise<CustomerInfoPendingSnapshot> {
   const cfg = customerInfoConfigReady();
-  if (!cfg.ok) return [];
+  if (!cfg.ok) return EMPTY_SNAPSHOT;
 
   const appId = customerInfoAppId();
-  if (!appId) return [];
+  if (!appId) return EMPTY_SNAPSHOT;
 
   const auth = customerInfoPocketAuth1();
   const pocketCtx = {
@@ -172,7 +213,7 @@ export async function findCustomerInfoPendingRecords(
     customerInfoNameFieldId()!,
     appFields,
   );
-  if (!nameField) return [];
+  if (!nameField) return EMPTY_SNAPSHOT;
 
   const subtitleEnv = customerInfoSubtitleFieldId();
   let subtitleField: string | null = null;
@@ -238,9 +279,8 @@ export async function findCustomerInfoPendingRecords(
   }
   const fieldsCsv = [...fieldIdSet].join(",");
 
-  const hits: CustomerInfoContinueShortcutHit[] = [];
+  const candidates: CustomerInfoPendingCandidate[] = [];
   const maxPages = continueMaxPages();
-  const maxResults = continueMaxResults();
 
   for (let page = 1; page <= maxPages; page++) {
     const data = await fetchRecordsList(
@@ -265,17 +305,7 @@ export async function findCustomerInfoPendingRecords(
       const customerName = readCustomerInfoFieldValue(recObj, nameField);
       if (!customerName) continue;
 
-      const audienceReason = matchCustomerInfoPendingAudience(
-        recObj,
-        boundStaffName,
-        apFieldId,
-        clFieldId,
-        creatorFieldId,
-      );
-      if (!audienceReason) {
-        continue;
-      }
-
+      // 担当者に依存しない条件だけをここで適用する
       if (useStatusFilter && statusFieldId) {
         if (!recordMatchesContinueStatus(recObj, statusFieldId, statusValues)) {
           continue;
@@ -291,33 +321,77 @@ export async function findCustomerInfoPendingRecords(
         continue;
       }
 
-      const subtitle = pendingHitSubtitle(
-        subtitleField
-          ? readCustomerInfoFieldValue(recObj, subtitleField)
-          : "",
-        audienceReason,
-      );
+      // 担当者での絞り込みは取り出した後に同じ判定関数で行う
+      const audience: Record<string, unknown> = {};
+      for (const id of [apFieldId, clFieldId, creatorFieldId]) {
+        if (!id) continue;
+        audience[id] = pickRecordValueByFieldAliases(recObj, id);
+      }
 
-      hits.push({
+      candidates.push({
         recordId,
         customerName,
-        subtitle,
-        creatorOnly: audienceReason === "creator",
-        audienceReason,
+        subtitleRaw: subtitleField
+          ? readCustomerInfoFieldValue(recObj, subtitleField)
+          : "",
+        audience,
       });
-      if (hits.length >= maxResults) break;
     }
 
-    if (hits.length >= maxResults) break;
     if (rows.length < PAGE_LIMIT) break;
+  }
+
+  return { candidates, apFieldId, clFieldId, creatorFieldId };
+}
+
+/**
+ * 担当者で絞る。**キャッシュから取り出した後**に行うのが要点で、
+ * 絞り込み済みの結果をキャッシュへ戻さない（Phase 0 §6）。
+ * 判定は既存の matchCustomerInfoPendingAudience をそのまま使う。
+ */
+export function filterCustomerInfoPendingForStaff(
+  snapshot: CustomerInfoPendingSnapshot,
+  boundStaffName: string,
+): CustomerInfoContinueShortcutHit[] {
+  const hits: CustomerInfoContinueShortcutHit[] = [];
+  const maxResults = continueMaxResults();
+
+  for (const c of snapshot.candidates) {
+    const audienceReason = matchCustomerInfoPendingAudience(
+      c.audience,
+      boundStaffName,
+      snapshot.apFieldId,
+      snapshot.clFieldId,
+      snapshot.creatorFieldId,
+    );
+    if (!audienceReason) continue;
+
+    hits.push({
+      recordId: c.recordId,
+      customerName: c.customerName,
+      subtitle: pendingHitSubtitle(c.subtitleRaw, audienceReason),
+      creatorOnly: audienceReason === "creator",
+      audienceReason,
+    });
   }
 
   if (hits.length === 0) return [];
 
-  hits.sort((a, b) =>
-    a.customerName.localeCompare(b.customerName, "ja"),
-  );
-  return hits;
+  // 並べ替えてから件数を絞る。以前は走査の途中で打ち切っていたため、
+  // 五十音順の後ろにいる顧客が候補から漏れることがあった
+  hits.sort((a, b) => a.customerName.localeCompare(b.customerName, "ja"));
+  return hits.slice(0, maxResults);
+}
+
+/**
+ * 入力ステータスが未入力のレコードのうち、ログイン担当者に出すもの。
+ * 走査（全社共通）と絞り込み（担当者別）を分けただけで、条件は従来と同じ。
+ */
+export async function findCustomerInfoPendingRecords(
+  boundStaffName: string,
+): Promise<CustomerInfoContinueShortcutHit[]> {
+  const snapshot = await fetchCustomerInfoPendingSnapshot();
+  return filterCustomerInfoPendingForStaff(snapshot, boundStaffName);
 }
 
 /** 未入力レコード（トップの続き入力ショートカット用。お客様情報の未入力一覧と同条件） */
