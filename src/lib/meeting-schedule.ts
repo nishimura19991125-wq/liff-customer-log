@@ -41,11 +41,12 @@ import {
   isMeetingScheduleSetCreatedStatus,
   MEETING_SCHEDULE_ESTIMATE_REQUESTED_STATUS,
 } from "@/lib/meeting-schedule-shared";
-import { salesDashboardApoAppId } from "@/lib/sales-dashboard-fields";
 import {
-  fetchSalesDashboardRecordPages,
-  salesDashboardApoListAuths,
-} from "@/lib/sales-dashboard-list-fetch";
+  fetchMeetingScheduleRecordsCached,
+  invalidateMeetingScheduleRecordsCache,
+} from "@/lib/meeting-schedule-records-cache";
+import { salesDashboardApoAppId } from "@/lib/sales-dashboard-fields";
+import { salesDashboardApoListAuths } from "@/lib/sales-dashboard-list-fetch";
 import type {
   MeetingScheduleItem,
   MeetingSchedulePayload,
@@ -626,6 +627,8 @@ export async function updateMeetingScheduleStatusForStaff(
     }
 
     await updateRecord(apoAppId, recordId, payload, writeAuth);
+    // 一覧のキャッシュを捨てる。保存直後に古い値を出さないため
+    invalidateMeetingScheduleRecordsCache();
 
     return { ok: true, estimateStatus: normalizedStatus };
   } catch (e) {
@@ -814,6 +817,8 @@ export async function updateMeetingScheduleScheduledForStaff(
     }
 
     await updateRecord(apoAppId, recordId, payload, writeAuth);
+    // 一覧のキャッシュを捨てる。保存直後に古い値を出さないため
+    invalidateMeetingScheduleRecordsCache();
 
     return {
       ok: true,
@@ -877,7 +882,8 @@ export async function buildMeetingScheduleForStaff(
 
     const wanted = meetingScheduleWantedFieldCsv(fieldMap, mapAddressIds);
 
-    const records = await fetchSalesDashboardRecordPages(
+    // 絞り込み前の全件。担当者での絞り込みは下のループで行う（Phase 0 §6）
+    const records = await fetchMeetingScheduleRecordsCached(
       apoAppId,
       wanted,
       listAuths,
@@ -972,7 +978,8 @@ export async function buildMeetingScheduleListForStaff(
 
     const wanted = meetingScheduleWantedFieldCsv(fieldMap, mapAddressIds);
 
-    const records = await fetchSalesDashboardRecordPages(
+    // 絞り込み前の全件。担当者での絞り込みは下のループで行う（Phase 0 §6）
+    const records = await fetchMeetingScheduleRecordsCached(
       apoAppId,
       wanted,
       listAuths,
