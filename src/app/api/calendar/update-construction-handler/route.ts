@@ -4,6 +4,7 @@ import { buildCalendarPatchAfterConstructionSave } from "@/lib/calendar-record-p
 import { recordAuditLog } from "@/lib/audit-log";
 import { computeAuditChanges } from "@/lib/audit-log-changes";
 import { fieldCaptionByUniqueId } from "@/lib/customer-info-record";
+import { writeConstructionHandlerToCustomerInfo } from "@/lib/customer-info-construction-handler";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
@@ -170,12 +171,60 @@ export async function POST(request: Request) {
       );
     }
 
+    /**
+     * タスクP: お客様情報アプリ → 工事カレンダーの順で書く。
+     *
+     * @pocket 側に「お客様情報 → 工事カレンダー」の連携設定があるため、
+     * 逆順だと工事カレンダーに書いた直後に古い値で上書きされる恐れがある。
+     * お客様情報への書き込みに失敗したら、工事カレンダーにも書かずに返す
+     * （片方だけ新しい値になると、連携でどちらに転ぶか読めなくなる）。
+     */
+    const customerInfoWrite = await writeConstructionHandlerToCustomerInfo({
+      tNumber: existingT,
+      handlerName: resolvedName.name,
+      lineUserId: auth.lineUserId,
+    });
+    if (customerInfoWrite.kind === "failed") {
+      return NextResponse.json(
+        {
+          error:
+            formatConstructionCreateRecordError(customerInfoWrite.error) ||
+            "お客様情報の工事対応者を更新できませんでした。工事カレンダーも更新していません。",
+        },
+        { status: 502 },
+      );
+    }
+    const customerInfoWarning =
+      customerInfoWrite.kind === "skipped"
+        ? customerInfoWrite.warning
+        : undefined;
+
     const writeAuth = { apiKey: apiKeyForCalendarWrite() };
     const handlerPatch = {
       [resolvedTNumber]: existingT,
       [resolvedHandlerField]: resolvedName.name,
     };
-    await updateRecord(calAppId, recordId, handlerPatch, writeAuth);
+    try {
+      await updateRecord(calAppId, recordId, handlerPatch, writeAuth);
+    } catch (calendarErr) {
+      // お客様情報は更新済み。片方だけ入った状態であることを明示して伝える
+      console.error(
+        "[api/calendar/update-construction-handler] お客様情報は更新済みだが工事カレンダーの更新に失敗",
+        calendarErr,
+      );
+      if (isPocketHttpRateLimitError(calendarErr)) throw calendarErr;
+      const detail =
+        calendarErr instanceof Error ? calendarErr.message : String(calendarErr);
+      return NextResponse.json(
+        {
+          error:
+            "お客様情報には反映されましたが、工事カレンダーの更新に失敗しました。" +
+            (formatConstructionCreateRecordError(detail) || detail),
+          customerInfoUpdated: true,
+        },
+        { status: 502 },
+      );
+    }
 
     // 工事対応者の差し替え（ベストエフォート。更新は確定済み）
     await recordAuditLog({
@@ -218,6 +267,8 @@ export async function POST(request: Request) {
       ok: true,
       constructionHandlerName: resolvedName.name,
       calendarPatch,
+      // お客様情報へ反映できなかったときだけ出す（見つからない・設定未解決）
+      ...(customerInfoWarning ? { warning: customerInfoWarning } : {}),
       ...(calendarPatch
         ? {}
         : {
