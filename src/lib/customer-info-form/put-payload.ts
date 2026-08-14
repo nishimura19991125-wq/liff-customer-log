@@ -11,6 +11,7 @@ import {
   customerInfoPutValue,
   readCustomerInfoImportKeyFromRecord,
 } from "@/lib/customer-info-record";
+import { decideApClStaffPut } from "@/lib/customer-info-form/ap-cl-staff-commit";
 import { syncContractAmountFromPayment } from "@/lib/customer-info-form/form-change";
 import {
   expandNamePartsInValues,
@@ -163,6 +164,46 @@ async function applyStaffBranchesToPayload(
   }
 }
 
+/**
+ * AP/CL担当者は、@pocket の現在値と同じなら payload から落とす（修正3／案F）。
+ *
+ * ここは PUT /api/customer-info/records/[recordId] が payload を組み立てる
+ * 唯一の入口なので、画面の保存でも施工依頼パネルの直接 PUT でも同じように効く。
+ * クライアント側の commitApClStaffForSave との二重防御になる。
+ *
+ * 判定は decideApClStaffPut（純粋関数）に切り出してある。空欄の扱いの
+ * 理由もそちらに書いてある。
+ */
+function applyApClStaffGuardToPayload(
+  resolved: CustomerInfoFormFieldResolved[],
+  payload: Record<string, unknown>,
+  loadedStaff?: { apStaff?: string; clStaff?: string } | null,
+): void {
+  for (const key of ["apStaff", "clStaff"] as const) {
+    const field = resolved.find((f) => f.key === key);
+    if (!field?.fieldId) continue;
+    if (!Object.prototype.hasOwnProperty.call(payload, field.fieldId)) continue;
+
+    // loadedStaff 自体が null＝レコードの読み取りに失敗している。
+    // 列が解決できず undefined のときは「空」として比較する
+    const loaded = loadedStaff ? (loadedStaff[key] ?? "") : null;
+    const decision = decideApClStaffPut({
+      loaded,
+      outgoing: String(payload[field.fieldId] ?? ""),
+    });
+    if (decision.send) continue;
+
+    delete payload[field.fieldId];
+    // "unchanged" は設計どおりの通常経路なので出さない（毎回の保存で出て埋もれる）。
+    // 空欄・現在値未取得は「想定外の値が来ている」合図なので残す
+    if (decision.reason !== "unchanged") {
+      console.info(
+        `[customer-info put-payload] ${field.label}は送信しません（${decision.reason}）`,
+      );
+    }
+  }
+}
+
 /** お客様名・フリガナ（フォームは苗字/名前分割・@pocket は単一列） */
 function applyCombinedNameFieldsToPayload(
   values: CustomerInfoFormValues,
@@ -243,6 +284,9 @@ export async function formPayloadFromValues(
     stringPayload,
     loadedStaff,
   );
+  // 所属支店の判定（担当者が変わったときだけ引き直す）が終わってから外す。
+  // 支店側は values を見て判断しており、payload の増減には影響されない
+  applyApClStaffGuardToPayload(resolved, stringPayload, loadedStaff);
   await applyBatteryModelNumbersToPayload(values, resolved, stringPayload);
   const { payload: filtered, dropped } = filterCustomerInfoPutPayload(
     stringPayload,

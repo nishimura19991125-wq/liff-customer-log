@@ -1,0 +1,195 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { decideApClStaffPut } from "@/lib/customer-info-form/ap-cl-staff-commit";
+import { CUSTOMER_INFO_FORM_FIELDS } from "@/lib/customer-info-form/schema";
+import type {
+  CustomerInfoFormFieldResolved,
+  CustomerInfoFormValues,
+} from "@/lib/customer-info-form/types";
+
+/**
+ * サーバ側の最終防衛（修正3／案F）。
+ *
+ * 画面を経由しない保存（施工依頼パネルの直接 PUT）でも効くことを見たいので、
+ * 純粋関数だけでなく payload 組み立ての入口 formPayloadFromValues まで通す。
+ */
+
+vi.mock("@/lib/staff-workplace-lookup", () => ({
+  resolveStaffWorkplaceLookupConfig: async () => ({ staffAppId: "1" }),
+  lookupStaffWorkplaceByStaffName: async (name: string | undefined) =>
+    (name ?? "").trim() ? "本社" : null,
+}));
+
+vi.mock("@/lib/product-catalog-models", () => ({
+  lookupBatteryModelNumberByCapacity: async () => null,
+}));
+
+const { formPayloadFromValues } = await import(
+  "@/lib/customer-info-form/put-payload"
+);
+
+/** fieldId にキー名をそのまま使い、payload を読みやすくする */
+const RESOLVED: CustomerInfoFormFieldResolved[] = CUSTOMER_INFO_FORM_FIELDS.map(
+  (f) => ({
+    ...f,
+    fieldId: f.liffOnly ? "" : f.key,
+    label: f.formLabel ?? f.caption,
+    value: "",
+  }),
+);
+
+const APP_FIELDS = CUSTOMER_INFO_FORM_FIELDS.filter((f) => !f.liffOnly).map(
+  (f) => ({ uniqueId: f.key, caption: f.caption }),
+);
+
+const BASE_VALUES: CustomerInfoFormValues = {
+  customerName: "山田太郎",
+  apStaff: "冨田菜摘",
+  clStaff: "鈴木一郎",
+};
+
+function buildPayload(
+  values: CustomerInfoFormValues,
+  loadedStaff: { apStaff?: string; clStaff?: string } | null,
+) {
+  return formPayloadFromValues(
+    values,
+    RESOLVED,
+    APP_FIELDS,
+    { apiKey: "dummy" },
+    loadedStaff,
+  );
+}
+
+beforeEach(() => {
+  delete process.env.CUSTOMER_INFO_FIELD_AP_STAFF;
+  delete process.env.CUSTOMER_INFO_FIELD_CL_STAFF;
+});
+
+describe("decideApClStaffPut（判定の純粋関数）", () => {
+  it("@pocket の現在値と同じなら送らない", () => {
+    const d = decideApClStaffPut({ loaded: "冨田菜摘", outgoing: "冨田菜摘" });
+    expect(d).toEqual({ send: false, reason: "unchanged" });
+  });
+
+  it("全角半角・空白のゆれだけなら「変わっていない」として送らない", () => {
+    const d = decideApClStaffPut({ loaded: "山田 太郎", outgoing: "山田　太郎" });
+    expect(d).toEqual({ send: false, reason: "unchanged" });
+  });
+
+  it("担当者を変えたときは送る", () => {
+    const d = decideApClStaffPut({ loaded: "冨田菜摘", outgoing: "鈴木一郎" });
+    expect(d).toEqual({ send: true, reason: "changed" });
+  });
+
+  it("★ 空欄は送らない（意図的な空欄化の運用は無いという前提）", () => {
+    expect(decideApClStaffPut({ loaded: "冨田菜摘", outgoing: "" })).toEqual({
+      send: false,
+      reason: "empty",
+    });
+    expect(
+      decideApClStaffPut({ loaded: "冨田菜摘", outgoing: undefined }),
+    ).toEqual({ send: false, reason: "empty" });
+    // "-" は normApClStaffName では空にならないので送る側に回る（列を潰さない）
+    expect(decideApClStaffPut({ loaded: "冨田菜摘", outgoing: "-" }).send).toBe(
+      true,
+    );
+  });
+
+  it("現在値を読めなかったときは送る（@pocket 不調で変更不能にしない）", () => {
+    const d = decideApClStaffPut({ loaded: null, outgoing: "鈴木一郎" });
+    expect(d).toEqual({ send: true, reason: "unknown-current" });
+  });
+
+  it("現在値が読めず、送る値も空なら送らない", () => {
+    expect(decideApClStaffPut({ loaded: null, outgoing: "" })).toEqual({
+      send: false,
+      reason: "empty",
+    });
+  });
+
+  it("列が解決できず現在値が空扱いでも、同じ空同士なら送らない", () => {
+    expect(decideApClStaffPut({ loaded: "", outgoing: "" })).toEqual({
+      send: false,
+      reason: "empty",
+    });
+  });
+});
+
+describe("修正3: formPayloadFromValues が変更の無い AP/CL担当者を落とす", () => {
+  it("★ @pocket の現在値と同じ AP/CL担当者は payload から落ちる", async () => {
+    const payload = await buildPayload(BASE_VALUES, {
+      apStaff: "冨田菜摘",
+      clStaff: "鈴木一郎",
+    });
+    expect(payload).not.toHaveProperty("apStaff");
+    expect(payload).not.toHaveProperty("clStaff");
+    // 巻き添えで他の列まで落ちていないこと
+    // （お客様名は苗字/名前に分解して結合し直されるので全角スペースが入る）
+    expect(payload).toHaveProperty("customerName");
+    expect(String(payload.customerName)).toContain("山田");
+  });
+
+  it("★ AP/CL担当者を変更した場合は正しく送られる", async () => {
+    const payload = await buildPayload(
+      { ...BASE_VALUES, apStaff: "山田花子" },
+      { apStaff: "冨田菜摘", clStaff: "鈴木一郎" },
+    );
+    expect(payload.apStaff).toBe("山田花子");
+    // 変えていない CL は落ちる
+    expect(payload).not.toHaveProperty("clStaff");
+  });
+
+  it("★ 画面の値が空でも @pocket の担当者を潰さない（施工依頼パネル経由の保護）", async () => {
+    const payload = await buildPayload(
+      { ...BASE_VALUES, apStaff: "", clStaff: "" },
+      { apStaff: "冨田菜摘", clStaff: "鈴木一郎" },
+    );
+    expect(payload).not.toHaveProperty("apStaff");
+    expect(payload).not.toHaveProperty("clStaff");
+  });
+
+  it("現在値を読めなかった（null）ときは従来どおり送る", async () => {
+    const payload = await buildPayload(BASE_VALUES, null);
+    expect(payload.apStaff).toBe("冨田菜摘");
+    expect(payload.clStaff).toBe("鈴木一郎");
+  });
+
+  it("新規入力（@pocket 側が空）なら送る", async () => {
+    const payload = await buildPayload(BASE_VALUES, {
+      apStaff: "",
+      clStaff: "",
+    });
+    expect(payload.apStaff).toBe("冨田菜摘");
+    expect(payload.clStaff).toBe("鈴木一郎");
+  });
+});
+
+describe("所属支店の保護（8/11 の修正）と矛盾しないこと", () => {
+  it("担当者が変わっていなければ支店も送らない", async () => {
+    const payload = await buildPayload(BASE_VALUES, {
+      apStaff: "冨田菜摘",
+      clStaff: "鈴木一郎",
+    });
+    expect(payload).not.toHaveProperty("apBranch");
+    expect(payload).not.toHaveProperty("clBranch");
+  });
+
+  it("担当者を変えたら担当者と支店の両方が送られる", async () => {
+    const payload = await buildPayload(
+      { ...BASE_VALUES, apStaff: "山田花子" },
+      { apStaff: "冨田菜摘", clStaff: "鈴木一郎" },
+    );
+    expect(payload.apStaff).toBe("山田花子");
+    expect(payload.apBranch).toBe("本社");
+  });
+
+  it("担当者を空にしたときは担当者も支店も送らない（片方だけ残さない）", async () => {
+    const payload = await buildPayload(
+      { ...BASE_VALUES, apStaff: "" },
+      { apStaff: "冨田菜摘", clStaff: "鈴木一郎" },
+    );
+    expect(payload).not.toHaveProperty("apStaff");
+    expect(payload).not.toHaveProperty("apBranch");
+  });
+});
