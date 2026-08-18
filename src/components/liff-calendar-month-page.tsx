@@ -22,7 +22,18 @@ import {
   LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
 import { CustomerNameSplitInput } from "@/components/customer-name-split-input";
+import { CalendarAssignUndatedCaseForm } from "@/components/calendar-assign-undated-case-form";
 import { CalendarMonthSkeleton } from "@/components/calendar-month-skeleton";
+import {
+  UndatedCasePicker,
+  undatedCaseOptionLabel,
+} from "@/components/undated-case-picker";
+import { useConstructionContractorOptions } from "@/hooks/use-construction-contractor-options";
+import { useUndatedConstructionCases } from "@/hooks/use-undated-construction-cases";
+import {
+  calendarSubmitCatchMessage,
+  idTokenForConstructionSubmit,
+} from "@/lib/calendar-submit-client";
 import { MapNavigationButton } from "@/components/map-navigation-button";
 import { StaffNameSuggestCombobox } from "@/components/staff-name-suggest-combobox";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -49,8 +60,6 @@ import type {
   CalendarAttachmentMeta,
   CalendarMonthApiItem,
   CalendarRecordMonthPatch,
-  UndatedConstructionCase,
-  UndatedConstructionCasesPayload,
 } from "@/lib/calendar-api-types";
 import {
   EMPTY_FILL_HOUSING_STATUS_NEW_BUILD,
@@ -67,7 +76,7 @@ import {
   liffAuthedJsonFetch,
 } from "@/lib/liff-swr";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
-import { initLiffAndGetToken, refreshLiffIdToken } from "@/lib/liff-session";
+import { initLiffAndGetToken } from "@/lib/liff-session";
 import type { LiffCalendarPageConfig } from "@/lib/liff-calendar-page-config";
 
 type HandlerStaffRow = {
@@ -264,32 +273,6 @@ function ConstructionHandlerStaffSelect({
 }
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
-
-function calendarSubmitCatchMessage(e: unknown): string {
-  const msg = e instanceof Error ? e.message : String(e);
-  if (
-    e instanceof TypeError ||
-    /failed to fetch|networkerror|load failed|network/i.test(msg)
-  ) {
-    return "通信に失敗しました。処理に時間がかかりすぎた可能性があります。工事アプリに登録されている場合はカレンダーを更新して確認してください。";
-  }
-  return msg.trim() || "通信に失敗しました";
-}
-
-async function idTokenForConstructionSubmit(
-  current: string | null,
-  onSessionExpired?: () => void,
-): Promise<string | null> {
-  if (LIFF_ID) {
-    const fresh = await refreshLiffIdToken(LIFF_ID);
-    if (!fresh) {
-      onSessionExpired?.();
-      return null;
-    }
-    return fresh;
-  }
-  return current;
-}
 
 function matchHandlerStaffRecordId(
   handlerName: string | undefined,
@@ -1015,17 +998,6 @@ function CalendarEmptySlotReadOnly({
   );
 }
 
-function undatedCaseOptionLabel(c: UndatedConstructionCase): string {
-  const meta = [
-    c.housingShort,
-    c.contractorName,
-    c.tNumber ? `T:${c.tNumber}` : "",
-  ]
-    .filter(Boolean)
-    .join(" / ");
-  return meta ? `${c.customerName}（${meta}）` : c.customerName;
-}
-
 function EmptySlotCard({
   item,
   idToken,
@@ -1062,17 +1034,6 @@ function EmptySlotCard({
     "idle" | "loading" | "ok" | "err"
   >("idle");
   const [handlerListError, setHandlerListError] = useState("");
-  const [undatedCases, setUndatedCases] = useState<UndatedConstructionCase[]>(
-    [],
-  );
-  const [myUndatedCases, setMyUndatedCases] = useState<
-    UndatedConstructionCase[]
-  >([]);
-  const [undatedListStatus, setUndatedListStatus] = useState<
-    "idle" | "loading" | "ok" | "err"
-  >("idle");
-  const [undatedListError, setUndatedListError] = useState("");
-  const [undatedNeedsStaffBind, setUndatedNeedsStaffBind] = useState(false);
   const [selectedCaseRecordId, setSelectedCaseRecordId] = useState("");
   const [caseSearchInput, setCaseSearchInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -1107,122 +1068,19 @@ function EmptySlotCard({
     }
   }, [housingStatus]);
 
-  useEffect(() => {
-    if (!open || !idToken || fillMode !== "assign") {
-      if (!open || fillMode !== "assign") {
-        setSelectedCaseRecordId("");
-        setCaseSearchInput("");
-        setUndatedCases([]);
-        setMyUndatedCases([]);
-        setUndatedListStatus("idle");
-        setUndatedListError("");
-        setUndatedNeedsStaffBind(false);
-      }
-      return;
-    }
+  // 未定案件の一覧は新規登録の「未定案件を割り当て」（タスクS）と共通のフック
+  const undatedCasesState = useUndatedConstructionCases(
+    idToken,
+    open && fillMode === "assign",
+    onSessionExpired,
+  );
+  const undatedListStatus = undatedCasesState.status;
+  const undatedCases = undatedCasesState.cases;
 
-    let cancelled = false;
-
-    (async () => {
-      setSelectedCaseRecordId("");
-      setCaseSearchInput("");
-      setUndatedCases([]);
-      setMyUndatedCases([]);
-      setUndatedNeedsStaffBind(false);
-      setUndatedListStatus("loading");
-      setUndatedListError("");
-      try {
-        const res = await fetch("/api/calendar/undated-construction-cases", {
-          headers: { Authorization: `Bearer ${idToken}` },
-        });
-        const data = (await res.json()) as UndatedConstructionCasesPayload & {
-          error?: string;
-        };
-        if (cancelled) return;
-        if (res.status === 401 && isLineSessionExpiredPayload(data)) {
-          onSessionExpired?.();
-          setUndatedListStatus("err");
-          setUndatedListError(
-            "ログインの有効期限が切れました。画面を更新してください。",
-          );
-          return;
-        }
-        if (!res.ok) {
-          setUndatedListStatus("err");
-          setUndatedListError(
-            typeof data.error === "string"
-              ? data.error
-              : "工事日未定案件の取得に失敗しました",
-          );
-          return;
-        }
-        const items = data.items ?? [];
-        setUndatedCases(items);
-        setMyUndatedCases(
-          data.myItems ?? items.filter((c) => c.isMyApCl),
-        );
-        setUndatedNeedsStaffBind(Boolean(data.needsStaffBind));
-        setUndatedListStatus("ok");
-      } catch {
-        if (!cancelled) {
-          setUndatedListStatus("err");
-          setUndatedListError("通信に失敗しました");
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, idToken, fillMode, onSessionExpired]);
-
-  const filteredUndatedCases = useMemo(() => {
-    const q = caseSearchInput.trim().normalize("NFKC").toLowerCase();
-    if (!q || selectedCaseRecordId) return [];
-    const matched: UndatedConstructionCase[] = [];
-    for (const c of undatedCases) {
-      const name = c.customerName.normalize("NFKC").toLowerCase();
-      const t = c.tNumber.normalize("NFKC").toLowerCase();
-      if (name.includes(q) || t.includes(q)) {
-        matched.push(c);
-        if (matched.length >= 40) break;
-      }
-    }
-    return matched;
-  }, [undatedCases, caseSearchInput, selectedCaseRecordId]);
-
-  function selectUndatedCase(c: UndatedConstructionCase) {
-    setSelectedCaseRecordId(c.recordId);
-    setCaseSearchInput(undatedCaseOptionLabel(c));
-  }
-
-  function renderUndatedCaseButton(c: UndatedConstructionCase) {
-    return (
-      <button
-        type="button"
-        className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition hover:bg-emerald-50 active:bg-emerald-100"
-        disabled={submitting}
-        onClick={() => selectUndatedCase(c)}
-      >
-        <span className="flex items-center gap-1.5 text-[14px] font-semibold text-slate-900">
-          {c.customerName}
-          {c.isMyApCl ? (
-            <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-800">
-              AP/CL担当
-            </span>
-          ) : null}
-        </span>
-        <span className="text-[11px] text-slate-500">
-          {[
-            c.housingShort,
-            c.contractorName,
-            c.tNumber ? `T:${c.tNumber}` : "",
-          ]
-            .filter(Boolean)
-            .join(" / ") || "詳細なし"}
-        </span>
-      </button>
-    );
+  /** 案件の選択をまっさらにする（開閉・タブ切り替え時） */
+  function resetUndatedCaseSelection() {
+    setSelectedCaseRecordId("");
+    setCaseSearchInput("");
   }
 
   useEffect(() => {
@@ -1599,6 +1457,7 @@ function EmptySlotCard({
             setOpen((o) => !o);
             setFeedback(null);
             setFillMode("new");
+            resetUndatedCaseSelection();
           }}
         >
           {open ? "入力を閉じる" : "情報を入力"}
@@ -1641,6 +1500,7 @@ function EmptySlotCard({
               onClick={() => {
                 setFillMode("new");
                 setFeedback(null);
+                resetUndatedCaseSelection();
               }}
             >
               新規入力
@@ -1658,6 +1518,7 @@ function EmptySlotCard({
               onClick={() => {
                 setFillMode("assign");
                 setFeedback(null);
+                resetUndatedCaseSelection();
               }}
             >
               未定案件を割り当て
@@ -1682,109 +1543,21 @@ function EmptySlotCard({
                   カレンダー上の日付が特定できないため、割り当てできません。日付を選び直してください。
                 </p>
               ) : null}
-              <div className="block">
-                <span className="mb-1 block text-[12px] font-bold text-slate-700">
-                  工事日未定案件（名前検索）{" "}
-                  <span className="font-semibold text-red-600">必須</span>
-                  <span className="mt-0.5 block text-[11px] font-normal leading-snug text-slate-500">
-                    お客様名（またはT番号）の一部を入力して候補から選んでください（キャンセル案件は除外）
-                    {undatedListStatus === "ok"
-                      ? `（未定 ${undatedCases.length}件）`
-                      : ""}
-                  </span>
-                </span>
-                <input
-                  type="search"
-                  inputMode="search"
-                  autoComplete="off"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-inner outline-none ring-1 ring-slate-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-200"
-                  value={caseSearchInput}
-                  disabled={
-                    submitting ||
-                    !canSubmit ||
-                    undatedListStatus === "loading" ||
-                    undatedListStatus === "err"
-                  }
-                  placeholder={
-                    undatedListStatus === "loading"
-                      ? "未定案件を読み込み中…"
-                      : undatedListStatus === "err"
-                        ? "取得に失敗しました"
-                        : undatedCases.length === 0
-                          ? "割り当て可能な未定案件がありません"
-                          : "例: 山田 / T番号"
-                  }
-                  onChange={(e) => {
-                    setCaseSearchInput(e.target.value);
-                    setSelectedCaseRecordId("");
-                  }}
-                />
-                {undatedListStatus === "ok" &&
-                caseSearchInput.trim() &&
-                !selectedCaseRecordId ? (
-                  <ul className="mt-2 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-sm">
-                    {filteredUndatedCases.length === 0 ? (
-                      <li className="px-3 py-2 text-[12px] text-slate-500">
-                        一致する案件がありません
-                      </li>
-                    ) : (
-                      filteredUndatedCases.map((c) => (
-                        <li key={c.recordId}>{renderUndatedCaseButton(c)}</li>
-                      ))
-                    )}
-                  </ul>
-                ) : null}
-                {undatedListStatus === "ok" &&
-                !caseSearchInput.trim() &&
-                !selectedCaseRecordId ? (
-                  <div className="mt-3">
-                    <p className="mb-1.5 text-[12px] font-bold text-slate-700">
-                      あなたのAP/CL担当候補
-                      <span className="ml-1 font-normal text-slate-500">
-                        （{myUndatedCases.length}件）
-                      </span>
-                    </p>
-                    {undatedNeedsStaffBind ? (
-                      <p className="rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-amber-900 ring-1 ring-amber-100">
-                        スタッフ紐付け後に、あなたのAP/CL担当の未定案件がここに表示されます。全案件は上の名前検索で選べます。
-                      </p>
-                    ) : myUndatedCases.length === 0 ? (
-                      <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-500">
-                        担当の未定案件はありません。上の検索から他の案件を選べます。
-                      </p>
-                    ) : (
-                      <ul className="max-h-56 overflow-y-auto rounded-xl border border-sky-200 bg-sky-50/40 py-1 shadow-sm">
-                        {myUndatedCases.map((c) => (
-                          <li key={c.recordId}>
-                            {renderUndatedCaseButton(c)}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                ) : null}
-              </div>
-              {selectedCaseRecordId ? (
-                <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-[12px] font-semibold text-emerald-900 ring-1 ring-emerald-100">
-                  選択中: {caseSearchInput}
-                  <button
-                    type="button"
-                    className="ml-2 text-[11px] font-bold text-emerald-700 underline"
-                    disabled={submitting}
-                    onClick={() => {
-                      setSelectedCaseRecordId("");
-                      setCaseSearchInput("");
-                    }}
-                  >
-                    選び直す
-                  </button>
-                </p>
-              ) : null}
-              {undatedListStatus === "err" && undatedListError ? (
-                <p className="mt-2 text-[12px] font-semibold text-red-700">
-                  {undatedListError}
-                </p>
-              ) : null}
+              <UndatedCasePicker
+                state={undatedCasesState}
+                disabled={submitting || !canSubmit}
+                searchInput={caseSearchInput}
+                onSearchInputChange={(v) => {
+                  setCaseSearchInput(v);
+                  setSelectedCaseRecordId("");
+                }}
+                selectedRecordId={selectedCaseRecordId}
+                onSelectCase={(c) => {
+                  setSelectedCaseRecordId(c.recordId);
+                  setCaseSearchInput(undatedCaseOptionLabel(c));
+                }}
+                onClearSelection={resetUndatedCaseSelection}
+              />
               <button
                 type="button"
                 className="mt-4 w-full rounded-xl bg-slate-800 py-3 text-[14px] font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
@@ -1998,11 +1771,8 @@ function NewConstructionRecordPanel({
   const [appSettingsDayDate, setAppSettingsDayDate] = useState("");
   const [scheduledStartDate, setScheduledStartDate] = useState("");
   const [contractor, setContractor] = useState("");
-  const [contractorOptions, setContractorOptions] = useState<string[]>([]);
-  const [contractorOptionsLoading, setContractorOptionsLoading] =
-    useState(false);
-  const [contractorOptionsConfigured, setContractorOptionsConfigured] =
-    useState(false);
+  /** タスクS: 新規作成 / 未定案件を割り当て の切り替え */
+  const [panelMode, setPanelMode] = useState<"new" | "assign">("new");
 
   const canSubmit = Boolean(idToken);
 
@@ -2018,50 +1788,17 @@ function NewConstructionRecordPanel({
     }
   }, [housingStatus]);
 
-  useEffect(() => {
-    if (!idToken || !open) {
-      setContractorOptions([]);
-      setContractorOptionsLoading(false);
-      setContractorOptionsConfigured(false);
-      return;
-    }
-    let cancelled = false;
-    setContractorOptionsLoading(true);
-    void (async () => {
-      try {
-        const res = await fetch("/api/calendar/construction-contractors", {
-          headers: { Authorization: `Bearer ${idToken}` },
-        });
-        const data = (await res.json()) as {
-          options?: string[];
-          configured?: boolean;
-          error?: string;
-        };
-        if (cancelled) return;
-        if (!res.ok) {
-          setContractorOptions([]);
-          setContractorOptionsConfigured(false);
-          return;
-        }
-        setContractorOptions(data.options ?? []);
-        setContractorOptionsConfigured(data.configured !== false);
-      } catch {
-        if (!cancelled) {
-          setContractorOptions([]);
-          setContractorOptionsConfigured(false);
-        }
-      } finally {
-        if (!cancelled) setContractorOptionsLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [idToken, open]);
+  // 施工会社の候補は「未定案件を割り当て」タブと共通のフックで取る
+  const contractorOptionsState = useConstructionContractorOptions(
+    idToken,
+    open && panelMode === "new",
+  );
+  const contractorOptionsLoading = contractorOptionsState.loading;
+  const contractorOptionsConfigured = contractorOptionsState.configured;
 
   const contractorSelectOptions = useMemo(
-    () => mergeStaffNameOptions(contractorOptions, contractor),
-    [contractorOptions, contractor],
+    () => mergeStaffNameOptions(contractorOptionsState.options, contractor),
+    [contractorOptionsState.options, contractor],
   );
 
   async function handleSubmit() {
@@ -2201,6 +1938,61 @@ function NewConstructionRecordPanel({
 
       {open ? (
         <div className="mt-4 min-w-0 border-t border-slate-200/90 pt-4">
+          {/* 空き枠カードと同じ形のタブ。利用者が別物と感じないよう見た目も揃える */}
+          <div
+            className="mb-3 flex rounded-xl border border-slate-200 bg-white p-1 shadow-inner"
+            role="tablist"
+            aria-label="登録のしかた"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={panelMode === "new"}
+              className={`min-h-[44px] flex-1 rounded-lg px-2 py-2 text-[12px] font-bold transition ${
+                panelMode === "new"
+                  ? "bg-slate-800 text-white shadow-sm"
+                  : "text-slate-600"
+              }`}
+              disabled={submitting}
+              onClick={() => {
+                setPanelMode("new");
+                setFeedback(null);
+                setSaveWarning(null);
+              }}
+            >
+              新規作成
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={panelMode === "assign"}
+              className={`min-h-[44px] flex-1 rounded-lg px-2 py-2 text-[12px] font-bold transition ${
+                panelMode === "assign"
+                  ? "bg-slate-800 text-white shadow-sm"
+                  : "text-slate-600"
+              }`}
+              disabled={submitting}
+              onClick={() => {
+                setPanelMode("assign");
+                setFeedback(null);
+                setSaveWarning(null);
+              }}
+            >
+              未定案件を割り当て
+            </button>
+          </div>
+
+          {panelMode === "assign" ? (
+            <CalendarAssignUndatedCaseForm
+              idToken={idToken}
+              active={open}
+              viewYear={viewYear}
+              viewMonth={viewMonth}
+              onSaved={onSaved}
+              onSessionExpired={onSessionExpired}
+            />
+          ) : (
+            <>
           <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
             工事日未定案件や、工事日程を都度調整する案件をここから登録します。住宅ステータス・お客様名は必須です。施工予定日・施工会社は任意です。
             {isNewBuildHousing
@@ -2371,6 +2163,8 @@ function NewConstructionRecordPanel({
           >
             {submitting ? "登録中…" : "登録してカレンダーを更新"}
           </button>
+            </>
+          )}
         </div>
       ) : null}
 
