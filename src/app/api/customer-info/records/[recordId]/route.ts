@@ -43,6 +43,12 @@ import {
 import { computeAuditChanges } from "@/lib/audit-log-changes";
 import { auditLogEnabled, recordAuditLog } from "@/lib/audit-log";
 import {
+  contractNotificationExtraFieldIdList,
+  notifyContractCompleted,
+  readContractNotificationExtraValues,
+  resolveContractNotificationExtraFieldIds,
+} from "@/lib/contract-notification-server";
+import {
   applyDropboxFolderRenameToPayload,
   resolveCustomerInfoDropboxLinkFieldId,
 } from "@/lib/customer-info-dropbox-link";
@@ -76,25 +82,40 @@ function readTargetTNumber(
 }
 
 /**
- * 保存前の AP/CL担当者を @pocket から読む。
+ * 保存前の値を @pocket から読む。
  *
  * AP所属支店・CL所属支店は画面に出ない列で、担当者名から名簿を引いて
  * 自動で入れている。担当者が変わっていないなら引き直す必要が無いので、
  * その判定材料としてだけ使う。取得できなければ null を返し、呼び出し側は
  * 従来どおり引き直す（引けなければ書かないので値は潰れない）。
+ *
+ * 契約速報（タスクR）も「保存前の入力ステータス」と、フォームに出ない
+ * T番号・蓄電池設置箇所を必要とする。読む対象が同じレコードなので、
+ * 取得回数を増やさずにこの1回へ相乗りさせ、レコードそのものも返す。
  */
-async function readCustomerInfoApClStaffNames(
+async function readCustomerInfoPreSaveSnapshot(
   appId: string,
   recordId: string,
   pocketAuth: AtPocketFetchAuth,
   resolved: Awaited<ReturnType<typeof resolveCustomerInfoFormFields>>["resolved"],
-): Promise<{ apStaff?: string; clStaff?: string } | null> {
+  extraFieldIds: string[] = [],
+): Promise<
+  | {
+      apStaff?: string;
+      clStaff?: string;
+      /** 読み取れたレコード本体（契約速報が使う） */
+      record: Record<string, unknown>;
+    }
+  | null
+> {
   const apFieldId = resolved.find((f) => f.key === "apStaff")?.fieldId;
   const clFieldId = resolved.find((f) => f.key === "clStaff")?.fieldId;
   if (!apFieldId && !clFieldId) return null;
 
   try {
-    const csv = [apFieldId, clFieldId].filter(Boolean).join(",");
+    const csv = [...new Set([apFieldId, clFieldId, ...extraFieldIds])]
+      .filter(Boolean)
+      .join(",");
     let row = await fetchRecordById(appId, recordId, pocketAuth, csv);
     if (!row?.record) {
       row = await fetchRecordById(appId, recordId, pocketAuth);
@@ -105,6 +126,7 @@ async function readCustomerInfoApClStaffNames(
     return {
       apStaff: apFieldId ? readCustomerInfoFieldValue(recObj, apFieldId) : undefined,
       clStaff: clFieldId ? readCustomerInfoFieldValue(recObj, clFieldId) : undefined,
+      record: recObj,
     };
   } catch (e) {
     console.warn(
@@ -471,14 +493,34 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         );
       }
 
+      // 契約速報（タスクR）が使う列。フォームに無いので別に解決する
+      const notificationFieldIds =
+        resolveContractNotificationExtraFieldIds(appFields);
+      const inputStatusFieldId =
+        resolved.find((f) => f.key === "inputStatus")?.fieldId ?? "";
+
       // AP/CL所属支店を引き直すかの判定に使う。担当者が変わっていなければ
       // 支店は触らない（引けないときに "-" で潰さないため）。
       // 取得に失敗しても保存は続ける（従来どおり引き直す動きに戻るだけ）
-      const loadedStaff = await readCustomerInfoApClStaffNames(
+      const loadedStaff = await readCustomerInfoPreSaveSnapshot(
         cfg.appId,
         recordId,
         readAuth,
         resolved,
+        [
+          ...(inputStatusFieldId ? [inputStatusFieldId] : []),
+          ...contractNotificationExtraFieldIdList(notificationFieldIds),
+        ],
+      );
+
+      // 保存前の入力ステータス。読めていなければ null＝契約速報は送らない
+      const beforeInputStatus =
+        loadedStaff && inputStatusFieldId
+          ? readCustomerInfoFieldValue(loadedStaff.record, inputStatusFieldId)
+          : null;
+      const notificationExtras = readContractNotificationExtraValues(
+        loadedStaff?.record ?? null,
+        notificationFieldIds,
       );
 
       const payload = await formPayloadFromValues(
@@ -510,7 +552,18 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       // 古いままだと、保存したはずの案件が未入力に残り続ける
       invalidateCustomerInfoPendingCache();
       invalidateCustomerInfoKeyLookupCache();
-      return NextResponse.json({ ok: true });
+
+      // 契約速報（タスクR）は @pocket への保存が済んでから送る。
+      // 送信に失敗しても保存は成功のまま、warning だけ画面へ返す
+      const notified = await notifyContractCompleted({
+        values,
+        beforeInputStatus,
+        extras: notificationExtras,
+      });
+      return NextResponse.json({
+        ok: true,
+        ...(notified.kind === "failed" ? { warning: notified.warning } : {}),
+      });
     }
 
     const editableResolved = resolveCustomerInfoFieldIds(
