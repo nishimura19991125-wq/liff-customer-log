@@ -1,3 +1,5 @@
+import "server-only";
+
 import type { AtPocketCreateRecordResult, AtPocketFetchAuth, AtPocketRecordRow } from "@/lib/atpocket";
 import { fetchRecordById, fetchRecordsList } from "@/lib/atpocket";
 import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
