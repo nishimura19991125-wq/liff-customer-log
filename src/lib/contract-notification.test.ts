@@ -159,20 +159,28 @@ describe("★ 複合する項目", () => {
     ).toBe("設置住所：");
   });
 
-  it("太陽光は（品番① + 品番②）枚数① + 枚数②", () => {
-    expect(line(build(), "太陽光：")).toBe("太陽光：（AAA-100 + BBB-200）12 + 6");
+  it("太陽光は（品番① + 品番②）枚数①枚 + 枚数②枚", () => {
+    expect(line(build(), "太陽光：")).toBe(
+      "太陽光：（AAA-100 + BBB-200）12枚 + 6枚",
+    );
   });
 
   it("太陽光は②が無ければ①だけ", () => {
     expect(
       line(build({ panelModel2: "", panelCount2: "" }), "太陽光："),
-    ).toBe("太陽光：（AAA-100）12");
+    ).toBe("太陽光：（AAA-100）12枚");
+  });
+
+  it("★ 枚数②が 0 なら「+」も②も出さない（実機の「10 + 0」対策）", () => {
+    expect(
+      line(build({ panelModel2: "", panelCount1: "10", panelCount2: "0" }), "太陽光："),
+    ).toBe("太陽光：（AAA-100）10枚");
   });
 
   it("太陽光は品番が無ければ（）ごと出さない", () => {
     expect(
       line(build({ panelModel1: "", panelModel2: "" }), "太陽光："),
-    ).toBe("太陽光：12 + 6");
+    ).toBe("太陽光：12枚 + 6枚");
     expect(
       line(
         build({
@@ -209,6 +217,12 @@ describe("★ 複合する項目", () => {
     ).toBe("蓄電池：全負荷");
   });
 
+  it("★ 蓄電池容量②が 0 なら「+」も②も出さない", () => {
+    expect(
+      line(build({ batteryCapacity2: "0" }), "蓄電池："),
+    ).toBe("蓄電池：全負荷、5.6kWh、屋内");
+  });
+
   it("創蓄or蓄単or太単は設置種別の値をそのまま出す", () => {
     expect(line(build(), "創蓄or蓄単or太単：")).toBe(
       "創蓄or蓄単or太単：太陽光パネル+蓄電池",
@@ -223,25 +237,51 @@ describe("★ 複合する項目", () => {
   });
 });
 
-describe("★ 金額の3桁区切り", () => {
+describe("★ 金額の3桁区切りと「円」", () => {
   it("契約金額・現金・ローン金額・追加部材の金額", () => {
     const text = build();
-    expect(line(text, "契約金額：")).toBe("契約金額：3,500,000");
-    expect(line(text, "現金：")).toBe("現金：500,000");
-    expect(line(text, "ローン金額：")).toBe("ローン金額：3,000,000");
-    expect(line(text, "追加部材の金額：")).toBe("追加部材の金額：120,000");
+    expect(line(text, "契約金額：")).toBe("契約金額：3,500,000円");
+    expect(line(text, "現金：")).toBe("現金：500,000円");
+    expect(line(text, "ローン金額：")).toBe("ローン金額：3,000,000円");
+    expect(line(text, "追加部材の金額：")).toBe("追加部材の金額：120,000円");
   });
 
   it("APPT・CLPT は computePtTransfer の結果を3桁区切りで出す", () => {
     // AP と CL が別人なので PT を折半（1200 → 600 / 600）
     const text = build({ pt: "1,200" });
-    expect(line(text, "APPT：")).toBe("APPT：600");
-    expect(line(text, "CLPT：")).toBe("CLPT：600");
+    expect(line(text, "APPT：")).toBe("APPT：600円");
+    expect(line(text, "CLPT：")).toBe("CLPT：600円");
 
     // 同一担当なら CLPT に全額・APPT は 0
     const same = build({ apStaff: "西村太郎", clStaff: "西村太郎", pt: "12000" });
-    expect(line(same, "APPT：")).toBe("APPT：0");
-    expect(line(same, "CLPT：")).toBe("CLPT：12,000");
+    expect(line(same, "APPT：")).toBe("APPT：0円");
+    expect(line(same, "CLPT：")).toBe("CLPT：12,000円");
+  });
+
+  it("★ 0 は「0円」と出す（@pocket の 0 と未入力は別物）", () => {
+    const zero = build({
+      contractAmount: "0",
+      cashAmount: "0",
+      loanAmount: "0",
+      extraPartsAmount: "0",
+    });
+    expect(line(zero, "契約金額：")).toBe("契約金額：0円");
+    expect(line(zero, "現金：")).toBe("現金：0円");
+    expect(line(zero, "ローン金額：")).toBe("ローン金額：0円");
+    expect(line(zero, "追加部材の金額：")).toBe("追加部材の金額：0円");
+  });
+
+  it("★ @pocket が未入力なら空欄。単位も付けない", () => {
+    const empty = build({
+      contractAmount: "",
+      cashAmount: "-",
+      loanAmount: "",
+      extraPartsAmount: "",
+    });
+    expect(line(empty, "契約金額：")).toBe("契約金額：");
+    expect(line(empty, "現金：")).toBe("現金：");
+    expect(line(empty, "ローン金額：")).toBe("ローン金額：");
+    expect(line(empty, "追加部材の金額：")).toBe("追加部材の金額：");
   });
 
   it("PT が未入力なら APPT・CLPT は空欄（@pocket の \"-\" は出さない）", () => {
@@ -250,12 +290,80 @@ describe("★ 金額の3桁区切り", () => {
     expect(line(text, "CLPT：")).toBe("CLPT：");
   });
 
-  it("数字以外が混ざる自由入力は加工しない", () => {
+  it("数字以外が混ざる自由入力は加工しない（単位も付けない）", () => {
     expect(formatContractAmount("一式")).toBe("一式");
     expect(formatContractAmount("50,000円")).toBe("50,000円");
     expect(formatContractAmount("")).toBe("");
     expect(formatContractAmount("-")).toBe("");
-    expect(formatContractAmount("50000")).toBe("50,000");
+    expect(formatContractAmount("50000")).toBe("50,000円");
+    expect(formatContractAmount("0")).toBe("0円");
+  });
+});
+
+describe("★ 単位（値があるときだけ付ける）", () => {
+  it("パワコン台数は「台」", () => {
+    expect(line(build(), "パワコン台数：")).toBe("パワコン台数：2台");
+  });
+
+  it("空欄なら単位も付けない", () => {
+    const empty = build({
+      powerConCount: "",
+      panelCount1: "",
+      panelCount2: "",
+      panelModel1: "",
+      panelModel2: "",
+    });
+    expect(line(empty, "パワコン台数：")).toBe("パワコン台数：");
+    expect(line(empty, "太陽光：")).toBe("太陽光：");
+  });
+
+  it("@pocket の「-」でも単位を付けない", () => {
+    const dash = build({ powerConCount: "-", panelCount1: "-", panelCount2: "-" });
+    expect(line(dash, "パワコン台数：")).toBe("パワコン台数：");
+    expect(line(dash, "太陽光：")).toBe("太陽光：（AAA-100 + BBB-200）");
+  });
+
+  it("分電盤アンペアの A は @pocket の値のまま（重ねて付けない）", () => {
+    expect(line(build(), "分電盤アンペア：")).toBe("分電盤アンペア：60A");
+  });
+});
+
+describe("実機で出た表記の修正", () => {
+  /**
+   * 実機（T00003372）で出た本文の指摘箇所をまとめて確認する。
+   * 修正前は「10 + 0」「パワコン台数：1」「契約金額：80,000」だった。
+   */
+  it("★ 単位・0要素の省略・0円がまとめて直っている", () => {
+    const text = build(
+      {
+        panelModel1: "NU-244AT",
+        panelModel2: "",
+        panelCount1: "10",
+        panelCount2: "0",
+        powerConCount: "1",
+        powerConModel1: "JH-55NF3",
+        powerConModel2: "",
+        batteryCapacity1: "7.7",
+        batteryCapacity2: "0",
+        breakerAmps: "50A",
+        contractAmount: "80000",
+        cashAmount: "80000",
+        loanAmount: "0",
+        extraPartsAmount: "0",
+      },
+      { tNumber: "T00003372", batteryLocation: "屋外" },
+    );
+
+    expect(line(text, "T番号：")).toBe("T番号：T00003372");
+    expect(line(text, "太陽光：")).toBe("太陽光：（NU-244AT）10枚");
+    expect(line(text, "パワコン台数：")).toBe("パワコン台数：1台");
+    expect(line(text, "パワコン品番：")).toBe("パワコン品番：JH-55NF3");
+    expect(line(text, "蓄電池：")).toBe("蓄電池：全負荷、7.7kWh、屋外");
+    expect(line(text, "分電盤アンペア：")).toBe("分電盤アンペア：50A");
+    expect(line(text, "契約金額：")).toBe("契約金額：80,000円");
+    expect(line(text, "現金：")).toBe("現金：80,000円");
+    expect(line(text, "ローン金額：")).toBe("ローン金額：0円");
+    expect(line(text, "追加部材の金額：")).toBe("追加部材の金額：0円");
   });
 });
 
@@ -267,17 +375,17 @@ describe("通知本文の実例", () => {
         "T番号：T-1483",
         "契約日：2026/08/18",
         "AP担当者：西村太郎",
-        "APPT：600",
+        "APPT：600円",
         "CL担当者：冨田菜摘",
-        "CLPT：600",
+        "CLPT：600円",
         "お客様名：山田太郎",
         "フリガナ：ヤマダタロウ",
         "郵便番号：〒123-4567",
         "設置住所：愛知県名古屋市中区栄1-2-3",
         "契約者電話番号：090-1234-5678",
         "導入経緯：紹介",
-        "太陽光：（AAA-100 + BBB-200）12 + 6",
-        "パワコン台数：2",
+        "太陽光：（AAA-100 + BBB-200）12枚 + 6枚",
+        "パワコン台数：2台",
         "パワコン品番：PC-1 + PC-2",
         "蓄電池：全負荷、5.6kWh + 5.6kWh、屋内",
         "屋根材：和瓦",
@@ -289,12 +397,12 @@ describe("通知本文の実例", () => {
         "分電盤アンペア：60A",
         "支払方法：ローン",
         "信販会社：ジャックス",
-        "契約金額：3,500,000",
-        "現金：500,000",
-        "ローン金額：3,000,000",
+        "契約金額：3,500,000円",
+        "現金：500,000円",
+        "ローン金額：3,000,000円",
         "追加部材：架台",
         "追加部材URL：https://example.test/parts",
-        "追加部材の金額：120,000",
+        "追加部材の金額：120,000円",
         "創蓄or蓄単or太単：太陽光パネル+蓄電池",
         "補助金：有",
         "事前申請有無：無",
@@ -356,9 +464,9 @@ describe("通知本文の実例", () => {
         "T番号：T-2001",
         "契約日：2026/09/01",
         "AP担当者：西村太郎",
-        "APPT：0",
+        "APPT：0円",
         "CL担当者：西村太郎",
-        "CLPT：800",
+        "CLPT：800円",
         "お客様名：鈴木花子",
         "フリガナ：スズキハナコ",
         "郵便番号：〒",
@@ -366,7 +474,7 @@ describe("通知本文の実例", () => {
         "契約者電話番号：058-000-0000",
         "導入経緯：",
         "太陽光：",
-        "パワコン台数：1",
+        "パワコン台数：1台",
         "パワコン品番：PC-1",
         "蓄電池：全負荷、16.6kWh",
         "屋根材：",
@@ -378,8 +486,8 @@ describe("通知本文の実例", () => {
         "分電盤アンペア：60A",
         "支払方法：現金",
         "信販会社：",
-        "契約金額：1,980,000",
-        "現金：1,980,000",
+        "契約金額：1,980,000円",
+        "現金：1,980,000円",
         "ローン金額：",
         "追加部材：",
         "追加部材URL：",

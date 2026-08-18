@@ -80,18 +80,49 @@ function plain(raw: string | null | undefined): string {
   return t === "-" ? "" : t;
 }
 
+const AMOUNT_UNIT = "円";
+const PANEL_COUNT_UNIT = "枚";
+const POWER_CON_COUNT_UNIT = "台";
+
+/** 値があるときだけ単位を付ける。空欄には単位も付けない */
+function withUnit(value: string, unit: string): string {
+  return value ? `${value}${unit}` : "";
+}
+
 /**
- * 金額を3桁区切りにする。
+ * ①②を連結する項目の要素を取り出す。空と 0 は要素ごと省く。
+ *
+ * 「10 + 0」「5.6kWh + 0kWh」のように、設置していない②が 0 で
+ * 埋まっている案件があるため、0 は未設定と同じ扱いにする。
+ * 品番のような数値でない値はそのまま通す（末尾の単位表記は無視して判定）。
+ */
+function composedPart(raw: string | null | undefined): string {
+  const t = plain(raw);
+  if (!t) return "";
+  const numeric = t
+    .normalize("NFKC")
+    .replace(/[,\s]/g, "")
+    .replace(/[a-z]+$/i, "");
+  const n = Number(numeric);
+  if (numeric !== "" && Number.isFinite(n) && n === 0) return "";
+  return t;
+}
+
+/**
+ * 金額を3桁区切りにして「円」を付ける。
+ *
+ * 0 は「0円」と出す。@pocket に 0 が入っているのと未入力は別物で、
+ * 未入力（空・"-"）のときだけ空欄にする。
  *
  * 追加部材の金額は自由入力（text 列）で「一式」等が入りうる。
- * 数字だけの値のときに限ってカンマを入れ、それ以外は加工せず通す。
+ * 数字だけの値のときに限ってカンマと単位を付け、それ以外は加工せず通す。
  */
 export function formatContractAmount(raw: string | null | undefined): string {
   const t = plain(raw);
   if (!t) return "";
   const digits = t.normalize("NFKC").replace(/[,\s]/g, "");
   if (!/^\d+$/.test(digits)) return t;
-  return formatCommaInteger(digits);
+  return `${formatCommaInteger(digits)}${AMOUNT_UNIT}`;
 }
 
 /** 契約日は表示用 yyyy/mm/dd。解釈できない値はそのまま通す */
@@ -112,12 +143,16 @@ function buildInstallationAddress(values: CustomerInfoFormValues): string {
     .join("");
 }
 
-/** （パネル品番① + パネル品番②）パネル枚数① + パネル枚数② */
+/** （パネル品番① + パネル品番②）パネル枚数①枚 + パネル枚数②枚 */
 function buildSolarLine(values: CustomerInfoFormValues): string {
-  const models = [plain(values.panelModel1), plain(values.panelModel2)]
+  const models = [
+    composedPart(values.panelModel1),
+    composedPart(values.panelModel2),
+  ]
     .filter(Boolean)
     .join(" + ");
-  const counts = [plain(values.panelCount1), plain(values.panelCount2)]
+  const counts = [values.panelCount1, values.panelCount2]
+    .map((c) => withUnit(composedPart(c), PANEL_COUNT_UNIT))
     .filter(Boolean)
     .join(" + ");
   return `${models ? `（${models}）` : ""}${counts}`;
@@ -125,7 +160,10 @@ function buildSolarLine(values: CustomerInfoFormValues): string {
 
 /** パワコン品番① + パワコン品番② */
 function buildPowerConModelLine(values: CustomerInfoFormValues): string {
-  return [plain(values.powerConModel1), plain(values.powerConModel2)]
+  return [
+    composedPart(values.powerConModel1),
+    composedPart(values.powerConModel2),
+  ]
     .filter(Boolean)
     .join(" + ");
 }
@@ -137,7 +175,10 @@ function buildBatteryLine(
 ): string {
   return [
     CONTRACT_NOTIFICATION_BATTERY_LOAD_TYPE,
-    formatBatteryCapacityLine(values.batteryCapacity1, values.batteryCapacity2),
+    formatBatteryCapacityLine(
+      composedPart(values.batteryCapacity1),
+      composedPart(values.batteryCapacity2),
+    ),
     plain(batteryLocation),
   ]
     .filter(Boolean)
@@ -166,7 +207,7 @@ export function buildContractNotificationText(
     `契約者電話番号：${plain(values.phone)}`,
     `導入経緯：${plain(values.introduction)}`,
     `太陽光：${buildSolarLine(values)}`,
-    `パワコン台数：${plain(values.powerConCount)}`,
+    `パワコン台数：${withUnit(plain(values.powerConCount), POWER_CON_COUNT_UNIT)}`,
     `パワコン品番：${buildPowerConModelLine(values)}`,
     `蓄電池：${buildBatteryLine(values, input.batteryLocation)}`,
     `屋根材：${plain(values.roofMaterial)}`,
