@@ -93,6 +93,23 @@ export type UndatedConstructionCase = {
   isMyApCl?: boolean;
 };
 
+/** 同じ日・同じ施工会社の空き枠（タスクS-2） */
+export type CalendarEmptySlotMatch = {
+  recordId: string;
+  dayKey: string;
+  contractorName: string;
+};
+
+export type CalendarEmptySlotMatchPayload = {
+  configured: boolean;
+  /** 採用する空き枠。無ければ null */
+  slot: CalendarEmptySlotMatch | null;
+  /** 条件に一致した空き枠の総数。複数でも利用者には選ばせない */
+  matchCount: number;
+  disabled?: boolean;
+  error?: string;
+};
+
 export type UndatedConstructionCasesPayload = {
   configured: boolean;
   items: UndatedConstructionCase[];
