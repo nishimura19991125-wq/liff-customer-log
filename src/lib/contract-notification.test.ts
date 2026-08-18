@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildContractNotificationText,
   formatContractAmount,
+  formatContractPt,
   shouldSendContractNotification,
 } from "@/lib/contract-notification";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
@@ -246,18 +247,6 @@ describe("★ 金額の3桁区切りと「円」", () => {
     expect(line(text, "追加部材の金額：")).toBe("追加部材の金額：120,000円");
   });
 
-  it("APPT・CLPT は computePtTransfer の結果を3桁区切りで出す", () => {
-    // AP と CL が別人なので PT を折半（1200 → 600 / 600）
-    const text = build({ pt: "1,200" });
-    expect(line(text, "APPT：")).toBe("APPT：600円");
-    expect(line(text, "CLPT：")).toBe("CLPT：600円");
-
-    // 同一担当なら CLPT に全額・APPT は 0
-    const same = build({ apStaff: "西村太郎", clStaff: "西村太郎", pt: "12000" });
-    expect(line(same, "APPT：")).toBe("APPT：0円");
-    expect(line(same, "CLPT：")).toBe("CLPT：12,000円");
-  });
-
   it("★ 0 は「0円」と出す（@pocket の 0 と未入力は別物）", () => {
     const zero = build({
       contractAmount: "0",
@@ -284,12 +273,6 @@ describe("★ 金額の3桁区切りと「円」", () => {
     expect(line(empty, "追加部材の金額：")).toBe("追加部材の金額：");
   });
 
-  it("PT が未入力なら APPT・CLPT は空欄（@pocket の \"-\" は出さない）", () => {
-    const text = build({ pt: "" });
-    expect(line(text, "APPT：")).toBe("APPT：");
-    expect(line(text, "CLPT：")).toBe("CLPT：");
-  });
-
   it("数字以外が混ざる自由入力は加工しない（単位も付けない）", () => {
     expect(formatContractAmount("一式")).toBe("一式");
     expect(formatContractAmount("50,000円")).toBe("50,000円");
@@ -297,6 +280,40 @@ describe("★ 金額の3桁区切りと「円」", () => {
     expect(formatContractAmount("-")).toBe("");
     expect(formatContractAmount("50000")).toBe("50,000円");
     expect(formatContractAmount("0")).toBe("0円");
+  });
+});
+
+describe("★ APPT・CLPT の単位は「PT」（金額ではない）", () => {
+  it("computePtTransfer の結果を3桁区切り＋PT で出す", () => {
+    // AP と CL が別人なので PT を折半（1200 → 600 / 600）
+    const text = build({ pt: "1,200" });
+    expect(line(text, "APPT：")).toBe("APPT：600PT");
+    expect(line(text, "CLPT：")).toBe("CLPT：600PT");
+  });
+
+  it("同一担当なら CLPT に全量・APPT は 0PT", () => {
+    const same = build({ apStaff: "西村太郎", clStaff: "西村太郎", pt: "12000" });
+    expect(line(same, "APPT：")).toBe("APPT：0PT");
+    expect(line(same, "CLPT：")).toBe("CLPT：12,000PT");
+  });
+
+  it("PT が未入力なら空欄。単位も付けない（computePtTransfer の \"-\"）", () => {
+    const text = build({ pt: "" });
+    expect(line(text, "APPT：")).toBe("APPT：");
+    expect(line(text, "CLPT：")).toBe("CLPT：");
+  });
+
+  it("「円」は付けない", () => {
+    const text = build({ pt: "1,200" });
+    expect(line(text, "APPT：")).not.toContain("円");
+    expect(line(text, "CLPT：")).not.toContain("円");
+  });
+
+  it("formatContractPt 単体", () => {
+    expect(formatContractPt("0")).toBe("0PT");
+    expect(formatContractPt("12000")).toBe("12,000PT");
+    expect(formatContractPt("")).toBe("");
+    expect(formatContractPt("-")).toBe("");
   });
 });
 
@@ -375,9 +392,9 @@ describe("通知本文の実例", () => {
         "T番号：T-1483",
         "契約日：2026/08/18",
         "AP担当者：西村太郎",
-        "APPT：600円",
+        "APPT：600PT",
         "CL担当者：冨田菜摘",
-        "CLPT：600円",
+        "CLPT：600PT",
         "お客様名：山田太郎",
         "フリガナ：ヤマダタロウ",
         "郵便番号：〒123-4567",
@@ -464,9 +481,9 @@ describe("通知本文の実例", () => {
         "T番号：T-2001",
         "契約日：2026/09/01",
         "AP担当者：西村太郎",
-        "APPT：0円",
+        "APPT：0PT",
         "CL担当者：西村太郎",
-        "CLPT：800円",
+        "CLPT：800PT",
         "お客様名：鈴木花子",
         "フリガナ：スズキハナコ",
         "郵便番号：〒",

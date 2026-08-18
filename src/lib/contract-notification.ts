@@ -81,6 +81,8 @@ function plain(raw: string | null | undefined): string {
 }
 
 const AMOUNT_UNIT = "円";
+/** APPT・CLPT は金額ではなく営業の評価指標（ポイント） */
+const PT_UNIT = "PT";
 const PANEL_COUNT_UNIT = "枚";
 const POWER_CON_COUNT_UNIT = "台";
 
@@ -109,20 +111,38 @@ function composedPart(raw: string | null | undefined): string {
 }
 
 /**
- * 金額を3桁区切りにして「円」を付ける。
+ * 数値を3桁区切りにして単位を付ける。
  *
- * 0 は「0円」と出す。@pocket に 0 が入っているのと未入力は別物で、
+ * 0 は「0円」「0PT」と出す。@pocket に 0 が入っているのと未入力は別物で、
  * 未入力（空・"-"）のときだけ空欄にする。
  *
  * 追加部材の金額は自由入力（text 列）で「一式」等が入りうる。
  * 数字だけの値のときに限ってカンマと単位を付け、それ以外は加工せず通す。
  */
-export function formatContractAmount(raw: string | null | undefined): string {
+function formatNumberWithUnit(
+  raw: string | null | undefined,
+  unit: string,
+): string {
   const t = plain(raw);
   if (!t) return "";
   const digits = t.normalize("NFKC").replace(/[,\s]/g, "");
   if (!/^\d+$/.test(digits)) return t;
-  return `${formatCommaInteger(digits)}${AMOUNT_UNIT}`;
+  return `${formatCommaInteger(digits)}${unit}`;
+}
+
+/** 契約金額・現金・ローン金額・追加部材の金額 */
+export function formatContractAmount(raw: string | null | undefined): string {
+  return formatNumberWithUnit(raw, AMOUNT_UNIT);
+}
+
+/**
+ * APPT・CLPT。金額ではなく営業の評価指標なので単位は「PT」。
+ *
+ * computePtTransfer は PT が未入力のとき "-" を返す。plain がそれを
+ * 空文字にするので、未入力の案件は単位ごと空欄になる。
+ */
+export function formatContractPt(raw: string | null | undefined): string {
+  return formatNumberWithUnit(raw, PT_UNIT);
 }
 
 /** 契約日は表示用 yyyy/mm/dd。解釈できない値はそのまま通す */
@@ -196,9 +216,9 @@ export function buildContractNotificationText(
     `T番号：${plain(input.tNumber)}`,
     `契約日：${formatContractDate(values.contractDate)}`,
     `AP担当者：${plain(values.apStaff)}`,
-    `APPT：${formatContractAmount(pt.appt)}`,
+    `APPT：${formatContractPt(pt.appt)}`,
     `CL担当者：${plain(values.clStaff)}`,
-    `CLPT：${formatContractAmount(pt.clpt)}`,
+    `CLPT：${formatContractPt(pt.clpt)}`,
     `お客様名：${plain(values.customerName)}`,
     `フリガナ：${plain(values.furigana)}`,
     // 〒 は固定で付ける。値が空なら「郵便番号：〒」だけ残る
