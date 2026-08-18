@@ -561,7 +561,12 @@ function CustomerInfoPageContent() {
           ),
         },
       );
-      const data = (await res.json()) as { error?: string; ok?: boolean };
+      const data = (await res.json()) as {
+        error?: string;
+        ok?: boolean;
+        /** 保存は成功したが契約速報の送信に失敗した等（タスクR） */
+        warning?: string;
+      };
       if (res.status === 401 && isLineSessionExpiredPayload(data)) {
         setPhase("session-expired");
         return;
@@ -586,6 +591,7 @@ function CustomerInfoPageContent() {
         kind: "ok",
         text: "お客様情報を @pocket に保存しました",
         savedAt,
+        warning: data.warning?.trim() || undefined,
       });
       await openRecord(detail.recordId, { clearSaveFeedback: false });
     } catch {

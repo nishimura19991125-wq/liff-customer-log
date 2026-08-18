@@ -9,6 +9,11 @@ export type CustomerInfoSaveFeedback = {
   kind: "ok" | "err";
   text: string;
   savedAt?: string;
+  /**
+   * 保存自体は成功したが、付随処理に失敗したときの警告（タスクR の契約速報など）。
+   * 緑の成功メッセージとは別枠・別色で出す。
+   */
+  warning?: string;
 };
 
 type CustomerInfoSaveBarProps = {
@@ -142,6 +147,23 @@ export const CustomerInfoSaveBar = forwardRef<
           <p className="mt-1 text-[13px] font-semibold leading-relaxed text-emerald-800">
             {feedback.text}
             {feedback.savedAt ? `（${feedback.savedAt}）` : ""}
+          </p>
+        </div>
+      ) : null}
+
+      {/*
+        保存は成功したが付随処理に失敗したときの警告（タスクR）。
+        緑の成功メッセージに紛れ込ませると気づかれないため、別枠・別色で
+        直後に出す。読み上げも成功（polite）とは分けて assertive にする。
+      */}
+      {!saving && feedback?.warning ? (
+        <div
+          className="mb-3 rounded-xl border-2 border-amber-400 bg-amber-50 px-4 py-3.5"
+          role="alert"
+          aria-live="assertive"
+        >
+          <p className="text-[14px] font-bold leading-relaxed text-amber-900">
+            ⚠ {feedback.warning}
           </p>
         </div>
       ) : null}
