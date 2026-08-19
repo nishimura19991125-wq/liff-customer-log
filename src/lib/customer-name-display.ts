@@ -41,3 +41,26 @@ export function formatCustomerNameForDisplay(
   if (!name) return "";
   return name.endsWith(HONORIFIC) ? name : `${name}${HONORIFIC}`;
 }
+
+/**
+ * 姓名の間の空白を**詰めた**表示名（タスクU の一行サマリ用）。
+ *
+ * 一行サマリは項目の区切りに半角スペースを使うため、名前の中に空白が
+ * 残っていると項目の切れ目が分からなくなる。そのため
+ * formatCustomerNameForDisplay（全角スペースに揃える）とは別扱いにする。
+ * 新規施工依頼（タスクH）の表記は従来どおりで、こちらは使わない。
+ *
+ * - 全角・半角どちらの空白も落とす
+ * - 既に「様」で終わっていれば二重に付けない
+ * - 名前が空なら「様」も付けず空文字を返す
+ */
+export function formatCustomerNameCompactWithHonorific(
+  raw: string | undefined | null,
+): string {
+  const t = (raw ?? "").trim();
+  // @pocket の「未入力」表現
+  if (!t || t === "-") return "";
+  const compact = t.replace(/\s+/g, "");
+  if (!compact) return "";
+  return compact.endsWith(HONORIFIC) ? compact : `${compact}${HONORIFIC}`;
+}
