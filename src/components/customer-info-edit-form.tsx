@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ConstructionRequestCopyPanel } from "@/components/construction-request-copy-panel";
+import { ContractorSummaryCopyPanel } from "@/components/contractor-summary-copy-panel";
 import { CustomerDocumentUploadPanel } from "@/components/customer-document-upload-panel";
 import { KatakanaAwareTextInput } from "@/components/katakana-aware-text-input";
 import { StaffNameSuggestCombobox } from "@/components/staff-name-suggest-combobox";
@@ -1176,6 +1177,12 @@ export function CustomerInfoEditForm({
           }
         />
       ) : null}
+      {/*
+        施工会社への一行サマリ（タスクU）。新規施工依頼の下に並べる。
+        こちらは @pocket を一切更新しないので、レコードIDが無くても出せる。
+        施工依頼ステータスによる出し分けもしない
+      */}
+      <ContractorSummaryCopyPanel values={displayValues} disabled={saving} />
     </div>
   );
 }
