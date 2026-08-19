@@ -1,7 +1,9 @@
 "use client";
 
-import { useId, useMemo, useRef, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
+import { ManualCopyFallback } from "@/components/manual-copy-fallback";
+import { writeToClipboard } from "@/lib/clipboard-copy";
 import {
   buildConstructionRequestTemplate,
   CONSTRUCTION_REQUEST_STATUS_DONE,
@@ -27,24 +29,6 @@ type CopyOutcome =
   | { kind: "ok-status-failed" }
   | { kind: "error"; message: string };
 
-/**
- * クリップボードへ書き込む。
- *
- * LIFF は WebView 上で動き、navigator.clipboard が無い / 権限が無い環境がある。
- * 失敗したら false を返し、呼び出し側が手動選択用のテキストエリアへ切り替える。
- */
-async function writeToClipboard(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // 権限拒否・非セキュアコンテキストなど。フォールバックへ落とす
-  }
-  return false;
-}
-
 export function ConstructionRequestCopyPanel({
   recordId,
   values,
@@ -67,7 +51,6 @@ export function ConstructionRequestCopyPanel({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<CopyOutcome | null>(null);
   const [showManualCopy, setShowManualCopy] = useState(false);
-  const manualRef = useRef<HTMLTextAreaElement | null>(null);
   const bodyId = useId();
 
   const template = useMemo(
@@ -226,33 +209,7 @@ export function ConstructionRequestCopyPanel({
               </button>
 
               {showManualCopy ? (
-                <div className="mt-2">
-                  <label
-                    htmlFor={`manual-copy-${recordId}`}
-                    className="block text-[11px] font-bold text-slate-600"
-                  >
-                    手動コピー用（長押しで全選択してください）
-                  </label>
-                  <textarea
-                    id={`manual-copy-${recordId}`}
-                    ref={manualRef}
-                    readOnly
-                    rows={12}
-                    value={template.text}
-                    onFocus={(e) => e.currentTarget.select()}
-                    className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-[12px] leading-relaxed text-slate-800"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      manualRef.current?.focus();
-                      manualRef.current?.select();
-                    }}
-                    className="mt-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-[12px] font-semibold text-slate-600"
-                  >
-                    全選択する
-                  </button>
-                </div>
+                <ManualCopyFallback text={template.text} />
               ) : null}
             </>
           ) : (
