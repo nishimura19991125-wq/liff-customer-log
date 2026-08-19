@@ -8,7 +8,7 @@ import { buildContractorSummaryLine } from "@/lib/contractor-summary-line";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 
 /**
- * 施工会社向け一行サマリのコピー（タスクU）。
+ * 施工会社向け一行サマリのコピー（タスクU）。画面の見出しは「タイムツリー登録用」。
  *
  * customer-info-edit-form.tsx が1,000行を超えているため、新規施工依頼
  * （construction-request-copy-panel.tsx）と同じ形で別コンポーネントにする。
@@ -67,9 +67,7 @@ export function ContractorSummaryCopyPanel({
 
   return (
     <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
-      <p className="text-[12px] font-bold text-slate-700">
-        施工会社への一行サマリ
-      </p>
+      <p className="text-[12px] font-bold text-slate-700">タイムツリー登録用</p>
 
       {/* 開閉のトグル。新規施工依頼と同じ形に揃える */}
       <button
