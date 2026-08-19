@@ -1,6 +1,11 @@
 import "server-only";
 
-import { createRecord, fetchAppFields } from "@/lib/atpocket";
+import {
+  createRecord,
+  fetchAppFields,
+  isPocketHttpRateLimitError,
+  pocketRetryAfterMsFromError,
+} from "@/lib/atpocket";
 import type { AuditLogFieldChange } from "@/lib/audit-log-changes";
 import {
   AUDIT_DEFAULT_VALUE_MAX_LENGTH,
@@ -89,6 +94,14 @@ type AuditLogStats = {
   lastFailureAt: string | null;
   lastFailureTarget: string | null;
   lastFailureMessage: string | null;
+  /** 再試行して成功した件数（初回で成功した分は含まない） */
+  succeededAfterRetry: number;
+  /** 429 が理由で失敗した件数（クールダウン中の即失敗も含む） */
+  failedRateLimited: number;
+  /** 429 以外の理由で失敗した件数 */
+  failedOther: number;
+  /** failedRateLimited のうち、クールダウン中で再試行せずに失敗した件数 */
+  skippedByCooldown: number;
 };
 
 const stats: AuditLogStats = {
@@ -98,6 +111,10 @@ const stats: AuditLogStats = {
   lastFailureAt: null,
   lastFailureTarget: null,
   lastFailureMessage: null,
+  succeededAfterRetry: 0,
+  failedRateLimited: 0,
+  failedOther: 0,
+  skippedByCooldown: 0,
 };
 
 /**
@@ -311,21 +328,149 @@ function noteFailure(target: string, message: string, cause?: unknown): void {
   );
 }
 
-/** 1レコード書き込む。1回だけ即時リトライする（A-5） */
+// ─────────────────────────────── 429 の再試行（タスクT）
+
+/**
+ * @pocket の 429 は **サイト（テナント）単位**で 100 秒あたり 100 回。
+ * API キーを増やしても分散しないので、待って出し直す以外に手がない。
+ *
+ * ただし監査ログはベストエフォートで、業務処理を長く止めてはいけない。
+ * Netlify Functions の実行時間（Free で10秒）を超えると業務処理そのものが
+ * 失敗するため、**回数と合計待機時間の両方**に上限を置く。
+ *
+ * 既存の markPocketApiRateLimited / isPocketApiRateLimited とは意図的に
+ * つないでいない。createRecord はそもそもあの機構を通らない（実リクエストを
+ * 出す）ため二重ブロックは起きず、逆にここから mark すると読み取り系が
+ * 100秒間まとめて合成429になってしまう。詳細は完了報告に記載。
+ */
+
+const AUDIT_RETRY_BASE_MS = 450;
+const AUDIT_RETRY_MAX_WAIT_MS = 14_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** 指数バックオフ + フルジッター。同時に詰まった要求が揃って再突入しないように散らす */
+export function auditLogBackoffMs(attempt: number, random = Math.random): number {
+  const base = AUDIT_RETRY_BASE_MS * 2 ** attempt;
+  return Math.round(
+    Math.min(AUDIT_RETRY_MAX_WAIT_MS, base) * (0.5 + random()),
+  );
+}
+
+/** 初回を含む総試行回数。既定3（＝再試行は最大2回） */
+function retryMaxAttempts(): number {
+  const raw = process.env.AUDIT_LOG_RETRY_MAX_ATTEMPTS?.trim();
+  const n = raw ? Number(raw) : 3;
+  if (!Number.isFinite(n) || n < 1) return 3;
+  return Math.min(10, Math.floor(n));
+}
+
+/**
+ * 1レコードあたりの合計待機時間の上限。
+ * Netlify Free の実行時間は10秒。超えると業務処理ごと落ちるので既定は8秒。
+ */
+function retryBudgetMs(): number {
+  const raw = process.env.AUDIT_LOG_RETRY_BUDGET_MS?.trim();
+  const n = raw ? Number(raw) : 8_000;
+  if (!Number.isFinite(n) || n < 0) return 8_000;
+  return Math.min(30_000, Math.floor(n));
+}
+
+/** 再試行を諦めている間の長さ（サーキットブレーカー） */
+function retryCooldownMs(): number {
+  const raw = process.env.AUDIT_LOG_RETRY_COOLDOWN_MS?.trim();
+  const n = raw ? Number(raw) : 30_000;
+  if (!Number.isFinite(n) || n < 0) return 30_000;
+  return Math.min(300_000, Math.floor(n));
+}
+
+/**
+ * 一括処理で 429 が続くとき、再試行を繰り返しても待つだけ無駄になる
+ * （100秒ウィンドウがサイト単位で埋まっているため）。
+ * 一度使い切ったらしばらく再試行を諦め、初回の1回だけ投げて失敗を記録する。
+ * 時間が経てば自然に復帰する。
+ */
+let retryCooldownUntil = 0;
+
+function retryCooldownActive(): boolean {
+  return Date.now() < retryCooldownUntil;
+}
+
+function openRetryCooldown(target: string): void {
+  const ms = retryCooldownMs();
+  if (ms <= 0) return;
+  retryCooldownUntil = Date.now() + ms;
+  console.error(
+    `[audit-log] 429 の再試行を使い切りました。次の ${Math.round(ms / 1000)} 秒は再試行しません target=${target}`,
+  );
+}
+
+/** 運用での手動復帰とテスト用 */
+export function resetAuditLogRetryCooldown(): void {
+  retryCooldownUntil = 0;
+}
+
+type AuditRowWriteOutcome =
+  | { ok: true; retried: boolean }
+  | {
+      ok: false;
+      /** rate-limited: 429 で諦めた / cooldown: クールダウン中 / other: 429 以外 */
+      reason: "rate-limited" | "cooldown" | "other";
+      message: string;
+      cause: unknown;
+    };
+
+/**
+ * 1レコード書き込む。429 のときだけ待って再試行する。
+ *
+ * 429 以外（列の設定ミス・ペイロードの誤り等）は再送しても直らないので
+ * 1回で諦める。throw はせず、結果を呼び出し側へ返す。
+ */
 async function createRowWithRetry(
   appId: string,
   apiKey: string,
   row: Record<string, unknown>,
   target: string,
-): Promise<void> {
-  try {
-    await createRecord(appId, row, { apiKey });
-  } catch (firstError) {
-    console.warn(
-      `[audit-log] 記録に失敗。1度だけ再試行します target=${target}`,
-      firstError,
-    );
-    await createRecord(appId, row, { apiKey });
+): Promise<AuditRowWriteOutcome> {
+  const maxAttempts = retryMaxAttempts();
+  const budgetMs = retryBudgetMs();
+  const startedAt = Date.now();
+
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await createRecord(appId, row, { apiKey });
+      return { ok: true, retried: attempt > 0 };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+
+      if (!isPocketHttpRateLimitError(e)) {
+        return { ok: false, reason: "other", message, cause: e };
+      }
+
+      if (retryCooldownActive()) {
+        return { ok: false, reason: "cooldown", message, cause: e };
+      }
+
+      if (attempt + 1 >= maxAttempts) {
+        openRetryCooldown(target);
+        return { ok: false, reason: "rate-limited", message, cause: e };
+      }
+
+      // Retry-After があれば自前の計算より優先する
+      const wait =
+        pocketRetryAfterMsFromError(e) ?? auditLogBackoffMs(attempt);
+      if (Date.now() - startedAt + wait > budgetMs) {
+        openRetryCooldown(target);
+        return { ok: false, reason: "rate-limited", message, cause: e };
+      }
+
+      console.warn(
+        `[audit-log] 429 のため ${wait}ms 待って再試行します target=${target} attempt=${attempt + 1}/${maxAttempts}`,
+      );
+      await sleep(wait);
+    }
   }
 }
 
@@ -397,11 +542,25 @@ export async function recordAuditLog(
   for (const content of contents) {
     const row = buildRow(ids, entry, actor, executedAt, content);
     try {
-      await createRowWithRetry(appId, apiKey, row, target);
-      written++;
-      stats.succeeded++;
+      const outcome = await createRowWithRetry(appId, apiKey, row, target);
+      if (outcome.ok) {
+        written++;
+        stats.succeeded++;
+        if (outcome.retried) stats.succeededAfterRetry++;
+        continue;
+      }
+      if (outcome.reason === "other") {
+        stats.failedOther++;
+      } else {
+        stats.failedRateLimited++;
+        if (outcome.reason === "cooldown") stats.skippedByCooldown++;
+      }
+      lastError = outcome.message;
+      noteFailure(target, lastError, outcome.cause);
     } catch (e) {
+      // createRowWithRetry は投げない設計だが、想定外でも業務処理は止めない
       lastError = e instanceof Error ? e.message : String(e);
+      stats.failedOther++;
       noteFailure(target, lastError, e);
     }
   }
