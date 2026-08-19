@@ -867,6 +867,39 @@ export function isPocketHttpRateLimitError(error: unknown): boolean {
   return msg.includes("429") || msg.includes("Too Many Request");
 }
 
+/**
+ * 書き込み系が投げるエラーに載せる追加情報。
+ *
+ * message の形（`@pocket create record failed: 429 ...`）は
+ * formatConstructionCreateRecordError などが見ているので変えない。
+ * 再試行の間隔に使う Retry-After だけをプロパティで足す。
+ */
+export type PocketHttpError = Error & {
+  status?: number;
+  /** 429 応答の Retry-After（ミリ秒）。ヘッダが無ければ未設定 */
+  retryAfterMs?: number;
+};
+
+/** 429 のエラーに載っている Retry-After（ミリ秒）。無ければ null */
+export function pocketRetryAfterMsFromError(error: unknown): number | null {
+  if (!error || typeof error !== "object") return null;
+  const v = (error as { retryAfterMs?: unknown }).retryAfterMs;
+  if (typeof v === "number" && Number.isFinite(v) && v >= 0) return v;
+  return null;
+}
+
+function pocketHttpError(
+  message: string,
+  status: number,
+  headers: Headers,
+): PocketHttpError {
+  const err: PocketHttpError = new Error(message);
+  err.status = status;
+  const retryAfterMs = parseRetryAfterMs(headers);
+  if (retryAfterMs != null) err.retryAfterMs = retryAfterMs;
+  return err;
+}
+
 export type PocketListFetchOptions = {
   /** 429 時の最大再試行回数（既定 5）。サブキー2本以上のときは同一キー再試行せず次キーへ */
   maxRetries?: number;
@@ -1408,7 +1441,13 @@ export async function createRecord(
     recordIdFromHttpLocationHeader(location) ??
     recordIdFromHttpLocationHeader(contentLocation);
   if (!res.ok) {
-    throw new Error(`@pocket create record failed: ${res.status} ${text}`);
+    // 監査ログの再試行（タスクT）が Retry-After を使うため、
+    // メッセージはそのままにプロパティだけ足したエラーを投げる
+    throw pocketHttpError(
+      `@pocket create record failed: ${res.status} ${text}`,
+      res.status,
+      res.headers,
+    );
   }
   let row: AtPocketRecordRow = {};
   if (text) {
