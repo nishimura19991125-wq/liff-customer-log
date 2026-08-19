@@ -114,7 +114,7 @@ export function ContractorSummaryCopyPanel({
               className="rounded-lg border border-amber-400 bg-amber-50 px-2.5 py-2 text-[12px] font-bold leading-relaxed text-amber-900"
             >
               施工会社・市区郡・お客様名・メーカー・パネル容量・蓄電池容量のいずれも入力されていないため、
-              サマリを作成できません。
+              タイムツリー登録用の文章を作成できません。
             </p>
           )}
 
