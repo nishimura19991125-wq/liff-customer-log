@@ -61,6 +61,17 @@ vi.mock("@/lib/staff-department-lookup", () => ({
   ) => items.map((i) => ({ ...i, department: "DX事業部" })),
 }));
 
+vi.mock("@/lib/staff-workplace-lookup", () => ({
+  // 名簿の列定義・行・マップはいずれもキャッシュ済みで、
+  // 打刻のたびに @pocket を叩き直さない
+  resolveStaffWorkplaceLookupConfig: async () => ({
+    staffAppId: "1",
+    nameFieldId: "n",
+    workplaceFieldId: "w",
+  }),
+  lookupStaffWorkplaceByStaffName: async () => "奈良本社",
+}));
+
 vi.mock("@/lib/attendance-notification", () => ({
   notifyAttendanceClockIn: async (input: Record<string, unknown>) => {
     h.notifyCalls.push(input);
@@ -113,12 +124,14 @@ describe("★ ① 出勤打刻で通知される", () => {
     expect(h.notifyCalls).toHaveLength(1);
   });
 
-  it("★ ⑥ 氏名はサーバで解決した値。部署も名簿から入る", async () => {
+  it("★ ⑥ 氏名はサーバで解決した値。部署・支社も名簿から入る", async () => {
     await punchAttendanceForLineUser("U-test", "in");
 
     expect(h.notifyCalls[0]).toMatchObject({
       staffName: "西村直也",
       department: "DX事業部",
+      branch: "奈良本社",
+      workDate: todayJst(),
     });
     expect(String(h.notifyCalls[0].clockIn)).toMatch(/^\d{2}:\d{2}$/);
   });

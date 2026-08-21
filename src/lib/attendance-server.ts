@@ -40,6 +40,10 @@ import {
 import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
 import { notifyAttendanceClockIn } from "@/lib/attendance-notification";
 import { enrichStaffNamesWithDepartments } from "@/lib/staff-department-lookup";
+import {
+  lookupStaffWorkplaceByStaffName,
+  resolveStaffWorkplaceLookupConfig,
+} from "@/lib/staff-workplace-lookup";
 import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
 import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
 import {
@@ -804,8 +808,13 @@ export async function punchAttendanceForLineUser(
    * 出勤打刻の Google Chat 通知（タスクW）。
    *
    * @pocket への書き込みが済んでから呼ぶ。失敗しても打刻は成功のままにし、
-   * warning だけ画面へ返す。部署は publishPunchStatus が名簿から引き終えた
-   * 出勤者一覧から拾うので、@pocket への呼び出しは増えない。
+   * warning だけ画面へ返す。
+   *
+   * ■ @pocket への呼び出しは増やさない
+   * 部署は publishPunchStatus が名簿から引き終えた出勤者一覧から拾う。
+   * 支社（勤務場所）も同じスタッフ名簿の**キャッシュ済みの行**から引く
+   * （列定義・名簿行・氏名→勤務場所のマップがいずれもキャッシュ済み）。
+   * 引けなかったときは支社の行を省くだけで、打刻は止めない。
    */
   const notifyClockIn = async (
     status: AttendancePublicStatus,
@@ -813,10 +822,21 @@ export async function punchAttendanceForLineUser(
     const me = status.todayAttendees?.find(
       (a) => nfkcName(a.staffName) === nfkcName(staffName),
     );
+    let branch: string | null = null;
+    try {
+      const workplaceCfg = await resolveStaffWorkplaceLookupConfig();
+      if (workplaceCfg) {
+        branch = await lookupStaffWorkplaceByStaffName(staffName, workplaceCfg);
+      }
+    } catch {
+      // 支社が引けなくても通知は出す（行が1つ減るだけ）
+    }
     const outcome = await notifyAttendanceClockIn({
       staffName,
       clockIn: nowIn,
+      workDate: today,
       department: me?.department,
+      branch: branch ?? undefined,
     });
     return outcome.kind === "failed" ? outcome.warning : undefined;
   };

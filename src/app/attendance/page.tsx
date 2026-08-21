@@ -261,6 +261,7 @@ export default function AttendancePage() {
     }
     setPunching("out-report");
     setFeedback(null);
+    setPunchWarning(null);
     try {
       const res = await fetch("/api/attendance/punch", {
         method: "POST",
