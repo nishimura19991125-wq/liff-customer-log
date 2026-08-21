@@ -104,6 +104,8 @@ export default function AttendancePage() {
     null,
   );
   const [feedback, setFeedback] = useState<string | null>(null);
+  /** 打刻は成功したが Google Chat 通知に失敗したとき（タスクW） */
+  const [punchWarning, setPunchWarning] = useState<string | null>(null);
   const [workEndForm, setWorkEndForm] = useState(emptyWorkEndReportForm);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
@@ -212,6 +214,7 @@ export default function AttendancePage() {
     if (!idToken || punching) return;
     setPunching(kind);
     setFeedback(null);
+    setPunchWarning(null);
     try {
       const res = await fetch("/api/attendance/punch", {
         method: "POST",
@@ -221,7 +224,11 @@ export default function AttendancePage() {
         },
         body: JSON.stringify({ kind }),
       });
-      const data = (await res.json()) as AttendanceStatus & { ok?: boolean };
+      const data = (await res.json()) as AttendanceStatus & {
+        ok?: boolean;
+        /** 打刻は成功したが通知に失敗したとき（タスクW） */
+        warning?: string;
+      };
       if (res.status === 401 && isLineSessionExpiredPayload(data)) {
         setPhase("session-expired");
         return;
@@ -240,6 +247,7 @@ export default function AttendancePage() {
         requestMeetingScheduleAlertCheckAfterPunch();
       }
       setFeedback(kind === "in" ? "出勤を打刻しました" : "退勤を打刻しました");
+      setPunchWarning(data.warning?.trim() || null);
     } catch {
       setFeedback("打刻に失敗しました");
     } finally {
@@ -529,6 +537,20 @@ export default function AttendancePage() {
                 }`}
               >
                 {feedback}
+              </p>
+            ) : null}
+
+            {/*
+              打刻は成功したが Google Chat 通知に失敗したとき（タスクW）。
+              成功メッセージに紛れ込ませると気づかれないので別枠・別色で出す
+            */}
+            {punchWarning ? (
+              <p
+                role="alert"
+                aria-live="assertive"
+                className="mt-3 rounded-xl border-2 border-amber-400 bg-amber-50 px-3 py-2.5 text-[13px] font-bold leading-relaxed text-amber-900"
+              >
+                ⚠ {punchWarning}
               </p>
             ) : null}
 
