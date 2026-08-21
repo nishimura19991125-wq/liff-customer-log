@@ -18,8 +18,8 @@ import { NextResponse } from "next/server";
  *   { "mode": "clock-in", "send": true }      実際に Google Chat へ送る
  *
  * ── 安全策 ────────────────────────────────────────────────
- *   - PROBE_ENABLED=1 のときだけ動作。未設定なら 404（存在しないルートと
- *     区別が付かないよう、認証より前に判定する）
+ *   - ATTENDANCE_SCHEDULE_PROBE_ENABLED=1 のときだけ動作。未設定なら 404
+ *     （存在しないルートと区別が付かないよう、認証より前に判定する）
  *   - LINE 認証必須（401）。スタッフ名簿への紐付け必須（403）
  *   - **既定は送信しない。** send:true を明示したときだけ送る
  *   - Webhook URL は返さない。設定の有無も返さない
@@ -46,8 +46,10 @@ function parseMode(raw: unknown): AttendanceListNotifyMode | null {
 }
 
 export async function POST(request: Request) {
-  // 無効時は存在しないルートと同じ見え方にする。認証より前に判定する
-  if (process.env.PROBE_ENABLED?.trim() !== "1") {
+  // 無効時は存在しないルートと同じ見え方にする。認証より前に判定する。
+  // 既存の調査ルートの PROBE_ENABLED とは別の変数にして、
+  // 片方を開けたらもう片方も開く、という事故を避ける
+  if (process.env.ATTENDANCE_SCHEDULE_PROBE_ENABLED?.trim() !== "1") {
     return NextResponse.json({ error: "Not Found" }, { status: 404 });
   }
 
@@ -94,6 +96,6 @@ export async function POST(request: Request) {
     listedCount: outcome.listedCount,
     // 本文そのもの。null なら「送らない」と判定されたということ
     text: outcome.text ?? null,
-    note: "一時的な確認用ルートです。運用に乗ったら削除し、PROBE_ENABLED を外してください",
+    note: "一時的な確認用ルートです。運用に乗ったら削除し、ATTENDANCE_SCHEDULE_PROBE_ENABLED を外してください",
   });
 }
