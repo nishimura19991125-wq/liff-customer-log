@@ -5,9 +5,20 @@
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
-# Next.js の API（工事日未定登録など）の実行上限（秒）。Pro で最大26。Free は10固定。
+# 実行上限（変更不可）：同期60秒／スケジュール30秒／バックグラウンド15分
 [functions]
   node_bundler = "esbuild"
+
+# タスクY: 勤怠の定時リスト送信。
+# cron は **UTC 固定**でタイムゾーンを指定できない。日本には夏時間が無いので
+# JST = UTC+9 の固定換算でよい。関数の中身は薄い引き金で、集計と送信は
+# Next.js 側（/api/attendance/list-notify）が行う。
+# 9:32 JST = 0:32 UTC
+[functions."attendance-list-morning"]
+  schedule = "32 0 * * *"
+# 19:55 JST = 10:55 UTC
+[functions."attendance-list-evening"]
+  schedule = "55 10 * * *"
 
 [build.environment]
   NODE_VERSION = "20"
