@@ -12,6 +12,10 @@ import {
   readCustomerInfoFieldValue,
 } from "@/lib/customer-info-record";
 import {
+  recordIsCustomerStatusCancelled,
+  resolveCrmCustomerStatusFieldId,
+} from "@/lib/customer-crm-status";
+import {
   customerInfoFormFieldsCsv,
   readCustomerInfoFormValuesFromRecord,
   resolveCustomerInfoFormFields,
@@ -232,6 +236,13 @@ export async function fetchCustomerInfoPendingSnapshot(): Promise<CustomerInfoPe
     ) ??
     resolveCustomerInfoFormFieldId("inputStatus", "入力ステータス", appFields);
 
+  /**
+   * 顧客ステータス。キャンセル案件を未入力一覧から外すために読む。
+   * 解決は既存の resolveCrmCustomerStatusFieldId をそのまま使う
+   * （CUSTOMER_INFO_CUSTOMER_STATUS_FIELD_ID → 見出し「顧客ステータス」）。
+   */
+  const customerStatusFieldId = resolveCrmCustomerStatusFieldId(appFields);
+
   const apFieldId = resolveCustomerInfoFormFieldId(
     "apStaff",
     "AP担当者",
@@ -264,6 +275,7 @@ export async function fetchCustomerInfoPendingSnapshot(): Promise<CustomerInfoPe
     ...(apFieldId ? [apFieldId] : []),
     ...(clFieldId ? [clFieldId] : []),
     ...(statusFieldId ? [statusFieldId] : []),
+    ...(customerStatusFieldId ? [customerStatusFieldId] : []),
     ...(subtitleField ? [subtitleField] : []),
     ...(creatorFieldId ? [creatorFieldId] : []),
   ]);
@@ -304,6 +316,14 @@ export async function fetchCustomerInfoPendingSnapshot(): Promise<CustomerInfoPe
       const recObj = rec as Record<string, unknown>;
       const customerName = readCustomerInfoFieldValue(recObj, nameField);
       if (!customerName) continue;
+
+      /**
+       * キャンセル案件は「入力が必要」ではないので一覧に出さない。
+       * 書類未回収（crmEffectiveDocumentMissing）と同じ扱いに揃えている。
+       */
+      if (recordIsCustomerStatusCancelled(recObj, customerStatusFieldId)) {
+        continue;
+      }
 
       // 担当者に依存しない条件だけをここで適用する
       if (useStatusFilter && statusFieldId) {
