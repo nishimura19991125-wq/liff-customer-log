@@ -30,12 +30,15 @@ const {
   ATTENDANCE_NOTIFICATION_FAILURE_WARNING,
   buildAttendanceClockInMessage,
   notifyAttendanceClockIn,
+  resetAttendanceNotifiedMarks,
 } = await import("@/lib/attendance-notification");
 
 const BASE = {
   staffName: "西村直也",
   clockIn: "09:15",
+  workDate: "2026-08-21",
   department: "DX事業部",
+  branch: "奈良本社",
 };
 
 beforeEach(() => {
@@ -43,6 +46,7 @@ beforeEach(() => {
   h.sentTexts = [];
   h.result = { kind: "sent" };
   h.throwOnSend = false;
+  resetAttendanceNotifiedMarks();
 });
 
 afterEach(() => {
@@ -50,19 +54,53 @@ afterEach(() => {
 });
 
 describe("★ 通知本文", () => {
-  it("氏名・部署・時刻が並ぶ", () => {
+  it("★ 氏名・部署・支社・時刻が並ぶ", () => {
     expect(buildAttendanceClockInMessage(BASE)).toBe(
-      ["🕘 出勤", "氏名：西村直也", "部署：DX事業部", "時刻：09:15"].join("\n"),
+      [
+        "🕘 出勤",
+        "氏名：西村直也",
+        "部署：DX事業部",
+        "支社：奈良本社",
+        "時刻：09:15",
+      ].join("\n"),
     );
   });
 
-  it("部署が無ければ行ごと省く", () => {
+  it("★ 部署が無ければ行ごと省く", () => {
     expect(buildAttendanceClockInMessage({ ...BASE, department: "" })).toBe(
-      ["🕘 出勤", "氏名：西村直也", "時刻：09:15"].join("\n"),
+      ["🕘 出勤", "氏名：西村直也", "支社：奈良本社", "時刻：09:15"].join("\n"),
     );
     expect(
       buildAttendanceClockInMessage({ ...BASE, department: undefined }),
     ).not.toContain("部署");
+  });
+
+  it("★ 支社が無ければ行ごと省く", () => {
+    expect(buildAttendanceClockInMessage({ ...BASE, branch: "" })).toBe(
+      ["🕘 出勤", "氏名：西村直也", "部署：DX事業部", "時刻：09:15"].join("\n"),
+    );
+    expect(
+      buildAttendanceClockInMessage({ ...BASE, branch: undefined }),
+    ).not.toContain("支社");
+  });
+
+  it("部署と支社が同じ値なら支社の行を出さない", () => {
+    // 名簿に「部署」列が無いと、部署が勤務場所へフォールバックして同じ値になる
+    expect(
+      buildAttendanceClockInMessage({
+        ...BASE,
+        department: "奈良本社",
+        branch: "奈良本社",
+      }),
+    ).toBe(
+      ["🕘 出勤", "氏名：西村直也", "部署：奈良本社", "時刻：09:15"].join("\n"),
+    );
+  });
+
+  it("部署も支社も無ければ氏名と時刻だけ", () => {
+    expect(
+      buildAttendanceClockInMessage({ ...BASE, department: "", branch: "" }),
+    ).toBe(["🕘 出勤", "氏名：西村直也", "時刻：09:15"].join("\n"));
   });
 
   it("@pocket の「-」は空として扱う", () => {
@@ -87,9 +125,67 @@ describe("★ 通知本文", () => {
   });
 
   it("時刻が読めなければ行ごと省く", () => {
-    expect(
-      buildAttendanceClockInMessage({ ...BASE, clockIn: "" }),
-    ).toBe(["🕘 出勤", "氏名：西村直也", "部署：DX事業部"].join("\n"));
+    expect(buildAttendanceClockInMessage({ ...BASE, clockIn: "" })).toBe(
+      ["🕘 出勤", "氏名：西村直也", "部署：DX事業部", "支社：奈良本社"].join(
+        "\n",
+      ),
+    );
+  });
+});
+
+describe("★ 同じ日の2回目以降は送らない", () => {
+  it("2回目は送信されない", async () => {
+    const first = await notifyAttendanceClockIn(BASE);
+    const second = await notifyAttendanceClockIn(BASE);
+
+    expect(first).toEqual({ kind: "sent" });
+    expect(second).toEqual({ kind: "skipped", reason: "already-notified" });
+    expect(h.sentTexts).toHaveLength(1);
+  });
+
+  it("日付が変われば送られる", async () => {
+    await notifyAttendanceClockIn(BASE);
+    const next = await notifyAttendanceClockIn({
+      ...BASE,
+      workDate: "2026-08-22",
+    });
+
+    expect(next).toEqual({ kind: "sent" });
+    expect(h.sentTexts).toHaveLength(2);
+  });
+
+  it("別の人なら同じ日でも送られる", async () => {
+    await notifyAttendanceClockIn(BASE);
+    const other = await notifyAttendanceClockIn({
+      ...BASE,
+      staffName: "冨田菜摘",
+    });
+
+    expect(other).toEqual({ kind: "sent" });
+    expect(h.sentTexts).toHaveLength(2);
+  });
+
+  it("氏名の全角・空白のゆれは同じ人として扱う", async () => {
+    await notifyAttendanceClockIn(BASE);
+    const again = await notifyAttendanceClockIn({
+      ...BASE,
+      staffName: " 西村直也 ",
+    });
+
+    expect(again).toEqual({ kind: "skipped", reason: "already-notified" });
+    expect(h.sentTexts).toHaveLength(1);
+  });
+
+  it("送信に失敗した回も「送信済み」として扱う（連打で溢れさせない）", async () => {
+    h.result = { kind: "failed", reason: "http", status: 500 };
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const first = await notifyAttendanceClockIn(BASE);
+    const second = await notifyAttendanceClockIn(BASE);
+
+    expect(first.kind).toBe("failed");
+    expect(second).toEqual({ kind: "skipped", reason: "already-notified" });
+    expect(h.sentTexts).toHaveLength(1);
   });
 });
 

@@ -28,8 +28,12 @@ export type AttendanceClockInNotification = {
   staffName: string;
   /** @pocket へ書き込んだ出勤時刻（形式は列の型による） */
   clockIn: string;
+  /** 勤怠日（YYYY-MM-DD）。同じ日の2回目以降を送らない判定に使う */
+  workDate: string;
   /** スタッフ名簿の部署。無ければ行ごと省く */
   department?: string;
+  /** スタッフ名簿の勤務場所（＝支社）。無ければ行ごと省く */
+  branch?: string;
 };
 
 /** @pocket の「未入力」表現（"-"）は通知に出さない */
@@ -44,9 +48,10 @@ function plain(raw: string | null | undefined): string {
  *   🕘 出勤
  *   氏名：西村直也
  *   部署：DX事業部
+ *   支社：奈良本社
  *   時刻：09:15
  *
- * 値が空の行は**行ごと省く**（契約速報は行を残すが、こちらは3行しかなく
+ * 値が空の行は**行ごと省く**（契約速報は行を残すが、こちらは数行しかなく
  * 空行が目立つため）。時刻は列の型に関わらず HH:mm へ揃える。
  */
 export function buildAttendanceClockInMessage(
@@ -60,6 +65,14 @@ export function buildAttendanceClockInMessage(
   const department = plain(input.department);
   if (department) lines.push(`部署：${department}`);
 
+  /**
+   * 名簿に「部署」列が無い環境では、部署が勤務場所へフォールバックする
+   * （staff-department-lookup の既存仕様）。そのとき支社と同じ値になるので、
+   * 同じ行を2つ並べない。
+   */
+  const branch = plain(input.branch);
+  if (branch && branch !== department) lines.push(`支社：${branch}`);
+
   // "2026/08/21 09:15:30" も "09:15" も HH:mm に揃える
   const clockIn = extractDisplayHHmm(plain(input.clockIn));
   if (clockIn) lines.push(`時刻：${clockIn}`);
@@ -67,9 +80,45 @@ export function buildAttendanceClockInMessage(
   return lines.join("\n");
 }
 
+/**
+ * 同じ日に2回目以降の通知を送らないための記録（プロセス内）。
+ *
+ * 出勤打刻は2回目が 409 で弾かれるので通常は起きないが、ほぼ同時に
+ * 2回叩かれると両方が「未打刻」を読んで通り抜けうる。@pocket への
+ * 取得を増やさずに防ぐため、送信済みの氏名を日付ごとに覚えておく。
+ *
+ * 日付が変わったら丸ごと捨てるので、際限なく溜まることはない。
+ */
+let notifiedDayKey = "";
+const notifiedStaffNames = new Set<string>();
+
+/** テストと運用（手動リセット）用 */
+export function resetAttendanceNotifiedMarks(): void {
+  notifiedDayKey = "";
+  notifiedStaffNames.clear();
+}
+
+/** 新たに記録できたら true。既に送信済みなら false */
+function markNotifiedOnce(staffName: string, workDate: string): boolean {
+  const day = plain(workDate);
+  const name = plain(staffName).normalize("NFKC").replace(/\s+/g, " ");
+  if (!day || !name) return true;
+
+  if (notifiedDayKey !== day) {
+    notifiedDayKey = day;
+    notifiedStaffNames.clear();
+  }
+  if (notifiedStaffNames.has(name)) return false;
+  notifiedStaffNames.add(name);
+  return true;
+}
+
 export type AttendanceNotifyOutcome =
   | { kind: "sent" }
-  | { kind: "skipped"; reason: "not-configured" | "no-staff-name" }
+  | {
+      kind: "skipped";
+      reason: "not-configured" | "no-staff-name" | "already-notified";
+    }
   | { kind: "failed"; warning: string };
 
 /**
@@ -89,6 +138,11 @@ export async function notifyAttendanceClockIn(
     // 環境変数が未設定なら送信をスキップし、エラーにしない
     if (!googleChatAttendanceWebhookConfigured()) {
       return { kind: "skipped", reason: "not-configured" };
+    }
+
+    // 同じ日の2回目以降は送らない
+    if (!markNotifiedOnce(input.staffName, input.workDate)) {
+      return { kind: "skipped", reason: "already-notified" };
     }
 
     const result = await sendGoogleChatAttendanceMessage(
