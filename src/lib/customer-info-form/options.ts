@@ -24,8 +24,21 @@ export const INDOOR_SURVEY_STATUS_OPTIONS = ["未実施", "実施済み"] as con
 /** お客様情報の入力ステータス（@pocket リスト式） */
 export const INPUT_STATUS_OPTIONS = ["未入力", "入力完了"] as const;
 
-/** 顧客ステータス（@pocket リスト式） */
-export const CUSTOMER_STATUS_OPTIONS = ["工事待ち", "キャンセル"] as const;
+/**
+ * 顧客ステータス（@pocket リスト式）。
+ *
+ * **@pocket の実物と並び・値を一致させること。** 選択肢がズレていると、
+ * 画面のリストが未選択に見えるのに値だけが入る状態になり、タスクG の
+ * 書類16項目と同じ事故が起きる。customer-info-form-options.test.ts で
+ * 既定値・キャンセル値が選択肢に含まれることを固定している。
+ */
+export const CUSTOMER_STATUS_OPTIONS = [
+  "工事待ち",
+  "完工",
+  "残工",
+  "完了",
+  "キャンセル",
+] as const;
 
 /** 顧客ステータスの初期値（未設定のレコードを開いたときの既定選択） */
 export const CUSTOMER_STATUS_DEFAULT = "工事待ち" as const;
