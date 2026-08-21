@@ -147,6 +147,29 @@ export async function enrichStaffNamesWithDepartments<
   }));
 }
 
+/**
+ * 部署名を**名簿の登録順**で返す（タスクY: 定時リストの並び順）。
+ *
+ * 順番を環境変数で持つと、部署が増減するたびに設定変更が要る。
+ * 名簿の行順から決めれば運用の手が要らない。
+ * `staffNameToDepartmentMap` の Map は名簿の行順に詰めてあるので、
+ * その値を順に拾って重複を落とすだけでよい。**@pocket への追加取得は無い。**
+ */
+export async function listStaffDepartmentsInRosterOrder(): Promise<string[]> {
+  const cfg = await resolveStaffDepartmentLookupConfig();
+  if (!cfg) return [];
+  const map = await staffNameToDepartmentMap(cfg);
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const raw of map.values()) {
+    const dept = raw.trim();
+    if (!dept || seen.has(dept)) continue;
+    seen.add(dept);
+    ordered.push(dept);
+  }
+  return ordered;
+}
+
 export function invalidateStaffDepartmentLookupCache(): void {
   cachedMap = null;
   cachedMapKey = "";
