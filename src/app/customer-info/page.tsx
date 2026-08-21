@@ -67,7 +67,16 @@ import {
   findMissingRequiredCustomerInfoFields,
   formatCustomerInfoRequiredValidationError,
 } from "@/lib/customer-info-form/validate";
-import { isCustomerStatusCancelled } from "@/lib/customer-status-label";
+import { CustomerCancelConfirmDialog } from "@/components/customer-cancel-confirm-dialog";
+import {
+  buildCustomerCancelPlan,
+  todayJstDayKey,
+  type CustomerCancelPlan,
+} from "@/lib/customer-cancel-plan";
+import {
+  isCustomerStatusCancelled,
+  isCustomerStatusCancelledExact,
+} from "@/lib/customer-status-label";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -159,6 +168,14 @@ function CustomerInfoPageContent() {
     cl: string[];
   }>({ ap: [], cl: [] });
   const saveBarRef = useRef<HTMLDivElement>(null);
+  /**
+   * 確認待ちのキャンセル保存（タスクV-6）。
+   * null なら確認画面を出していない。「やめる」で null に戻し、保存しない。
+   */
+  const [pendingCancel, setPendingCancel] = useState<{
+    values: CustomerInfoFormValues;
+    plan: CustomerCancelPlan;
+  } | null>(null);
 
   // タスクJ: 入力内容の自動退避。
   // 退避先の顧客・退避時に読み込んだレコードの状態を、レンダーに影響しない
@@ -464,82 +481,10 @@ function CustomerInfoPageContent() {
     return () => clearTimeout(timer);
   }, [view, detail, editValues, draftPrompt]);
 
-  const handleSave = useCallback(async () => {
+  const performSave = useCallback(
+    async (formValuesToSave: CustomerInfoFormValues) => {
     const token = idToken;
     if (!token || !detail) return;
-
-    let formValuesToSave = syncCombinedNameFields(
-      expandNamePartsInValues(editValues),
-    );
-
-    if (detail.usesFormSchema && formFields.length > 0) {
-      /**
-       * AP/CL担当者は、**読み込んだ値から変わっていなければそのまま送る**。
-       * 以前は保存のたびに名簿へ突き合わせて確定していたため、名簿の候補
-       * （AP/CL稼働が「稼働」の人だけ）に入っていない担当者が、利用者が
-       * 何も触っていなくても別の人へすり替わるか空になっていた。
-       */
-      const apCommit = commitApClStaffForSave({
-        loaded: loadedApClRef.current.apStaff,
-        current: editValues.apStaff,
-        options: apClStaffOptions.ap,
-      });
-      const clCommit = commitApClStaffForSave({
-        loaded: loadedApClRef.current.clStaff,
-        current: editValues.clStaff,
-        options: apClStaffOptions.cl,
-      });
-
-      formValuesToSave = syncCombinedNameFields(
-        expandNamePartsInValues({
-          ...editValues,
-          apStaff: apCommit.value,
-          clStaff: clCommit.value,
-        }),
-      );
-
-      if (
-        formValuesToSave.apStaff !== editValues.apStaff ||
-        formValuesToSave.clStaff !== editValues.clStaff
-      ) {
-        setEditValues((prev) => ({
-          ...prev,
-          apStaff: formValuesToSave.apStaff ?? "",
-          clStaff: formValuesToSave.clStaff ?? "",
-        }));
-      }
-
-      const missing = findMissingRequiredCustomerInfoFields(
-        formFields.map((f) => ({
-          key: f.key,
-          label: f.label,
-          type: f.type,
-          required: f.required,
-        })),
-        formValuesToSave,
-      );
-
-      // 名簿と一致しないことを知らせるのは、利用者が触った項目だけ。
-      // 触っていない既存値で保存を止めると、退職者が担当の案件を
-      // いつまでも保存できなくなる
-      const staffMismatch: string[] = [];
-      if (apCommit.mismatch) staffMismatch.push("apStaff");
-      if (clCommit.mismatch) staffMismatch.push("clStaff");
-
-      if (missing.length > 0 || staffMismatch.length > 0) {
-        setRequiredFieldErrors(
-          new Set([...missing.map((f) => f.key), ...staffMismatch]),
-        );
-        setSaveFeedback({
-          kind: "err",
-          text:
-            staffMismatch.length > 0
-              ? "AP/CL担当者はスタッフ名簿の氏名と完全一致で選択してください（例: 「冨田」不可 → 「冨田菜摘」）"
-              : formatCustomerInfoRequiredValidationError(missing),
-        });
-        return;
-      }
-    }
 
     setRequiredFieldErrors(new Set());
     setSaving(true);
@@ -601,13 +546,128 @@ function CustomerInfoPageContent() {
       // 失敗した場合は退避を残したまま再開する
       draftSuppressedRef.current = false;
     }
+    },
+    [idToken, detail, editValues, openRecord],
+  );
+
+  const handleSave = useCallback(async () => {
+    const token = idToken;
+    if (!token || !detail) return;
+
+    let formValuesToSave = syncCombinedNameFields(
+      expandNamePartsInValues(editValues),
+    );
+
+    if (detail.usesFormSchema && formFields.length > 0) {
+      /**
+       * AP/CL担当者は、**読み込んだ値から変わっていなければそのまま送る**。
+       * 以前は保存のたびに名簿へ突き合わせて確定していたため、名簿の候補
+       * （AP/CL稼働が「稼働」の人だけ）に入っていない担当者が、利用者が
+       * 何も触っていなくても別の人へすり替わるか空になっていた。
+       */
+      const apCommit = commitApClStaffForSave({
+        loaded: loadedApClRef.current.apStaff,
+        current: editValues.apStaff,
+        options: apClStaffOptions.ap,
+      });
+      const clCommit = commitApClStaffForSave({
+        loaded: loadedApClRef.current.clStaff,
+        current: editValues.clStaff,
+        options: apClStaffOptions.cl,
+      });
+
+      formValuesToSave = syncCombinedNameFields(
+        expandNamePartsInValues({
+          ...editValues,
+          apStaff: apCommit.value,
+          clStaff: clCommit.value,
+        }),
+      );
+
+      if (
+        formValuesToSave.apStaff !== editValues.apStaff ||
+        formValuesToSave.clStaff !== editValues.clStaff
+      ) {
+        setEditValues((prev) => ({
+          ...prev,
+          apStaff: formValuesToSave.apStaff ?? "",
+          clStaff: formValuesToSave.clStaff ?? "",
+        }));
+      }
+
+      /**
+       * V-5: キャンセルにするときは必須チェックを通す。
+       * サーバ側でも保存する顧客ステータスの値を見て同じ判断をするので、
+       * ここを外しても未入力のまま通るのはキャンセルのときだけ。
+       */
+      const savingCancelled = isCustomerStatusCancelledExact(
+        formValuesToSave.customerStatus,
+      );
+
+      const missing = savingCancelled
+        ? []
+        : findMissingRequiredCustomerInfoFields(
+            formFields.map((f) => ({
+              key: f.key,
+              label: f.label,
+              type: f.type,
+              required: f.required,
+            })),
+            formValuesToSave,
+          );
+
+      // 名簿と一致しないことを知らせるのは、利用者が触った項目だけ。
+      // 触っていない既存値で保存を止めると、退職者が担当の案件を
+      // いつまでも保存できなくなる
+      const staffMismatch: string[] = [];
+      if (apCommit.mismatch) staffMismatch.push("apStaff");
+      if (clCommit.mismatch) staffMismatch.push("clStaff");
+
+      if (missing.length > 0 || staffMismatch.length > 0) {
+        setRequiredFieldErrors(
+          new Set([...missing.map((f) => f.key), ...staffMismatch]),
+        );
+        setSaveFeedback({
+          kind: "err",
+          text:
+            staffMismatch.length > 0
+              ? "AP/CL担当者はスタッフ名簿の氏名と完全一致で選択してください（例: 「冨田」不可 → 「冨田菜摘」）"
+              : formatCustomerInfoRequiredValidationError(missing),
+        });
+        return;
+      }
+
+      /**
+       * V-6: 「キャンセル以外 → キャンセル」に変えたときは確認を挟む。
+       * 元に戻せない処理なので、ここで止めて内容を見せる。
+       * 「やめる」を選べば保存自体を行わない。
+       */
+      const beforeCancelled = isCustomerStatusCancelledExact(
+        detail.formValues?.customerStatus,
+      );
+      if (savingCancelled && !beforeCancelled) {
+        setRequiredFieldErrors(new Set());
+        setSaveFeedback(null);
+        setPendingCancel({
+          values: formValuesToSave,
+          plan: buildCustomerCancelPlan({
+            todayDayKey: todayJstDayKey(),
+            constructionDate: formValuesToSave.constructionDate,
+            contractor: formValuesToSave.constructionContractor,
+          }),
+        });
+        return;
+      }
+    }
+
+    await performSave(formValuesToSave);
   }, [
     idToken,
     detail,
     editValues,
     formFields,
     apClStaffOptions,
-    openRecord,
+    performSave,
   ]);
 
   if (phase === "init" || phase === "loading") {
@@ -992,6 +1052,22 @@ function CustomerInfoPageContent() {
           ) : null}
         </div>
       </main>
+
+      {/*
+        キャンセル保存の確認（タスクV-6）。「やめる」を選んだら
+        pendingCancel を捨てるだけで、保存自体を行わない
+      */}
+      <CustomerCancelConfirmDialog
+        open={Boolean(pendingCancel)}
+        plan={pendingCancel?.plan ?? null}
+        busy={saving}
+        onConfirm={() => {
+          const target = pendingCancel;
+          setPendingCancel(null);
+          if (target) void performSave(target.values);
+        }}
+        onDismiss={() => setPendingCancel(null)}
+      />
     </LiffScreen>
   );
 }
