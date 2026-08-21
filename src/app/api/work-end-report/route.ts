@@ -62,7 +62,11 @@ export async function POST(request: Request) {
         { status: result.status },
       );
     }
-    return NextResponse.json(result.status);
+    // 報告は成功。退勤打刻（タスクX）の失敗は warning として別に返す
+    return NextResponse.json({
+      ...result.status,
+      ...(result.warning ? { warning: result.warning } : {}),
+    });
   } catch (e) {
     return pocketErrorResponse(e, {
       scope: "api/work-end-report POST",

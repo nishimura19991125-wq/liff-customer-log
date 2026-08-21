@@ -13,6 +13,7 @@ import {
 import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
 import { pickRecordValueByFieldAliases, ymdKey } from "@/lib/calendar-kojo";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
+import { punchAttendanceForLineUser } from "@/lib/attendance-server";
 import { lookupStaffDepartmentByStaffName } from "@/lib/staff-department-lookup";
 import { resolveWorkEndReportAppId } from "@/lib/work-end-report-config";
 import {
@@ -303,11 +304,74 @@ export async function getWorkEndReportStatusForLineUser(
   };
 }
 
+/** 打刻の失敗を画面へ伝える文言。手動で復旧できることを必ず添える */
+export const WORK_END_REPORT_CLOCK_OUT_WARNING =
+  "稼働終了報告は提出されましたが、退勤打刻に失敗しました。勤怠画面から打刻してください。";
+
+/** 打刻が応答しないと報告の応答まで返らなくなるため既定6秒で打ち切る */
+const CLOCK_OUT_TIMEOUT_MS = 6_000;
+
+function clockOutTimeoutMs(): number {
+  const raw = process.env.WORK_END_REPORT_CLOCK_OUT_TIMEOUT_MS?.trim();
+  const n = raw ? Number(raw) : CLOCK_OUT_TIMEOUT_MS;
+  if (!Number.isFinite(n) || n <= 0) return CLOCK_OUT_TIMEOUT_MS;
+  return Math.min(15_000, Math.floor(n));
+}
+
+/**
+ * 稼働終了報告に続けて退勤を打刻する（タスクX）。
+ *
+ * ■ 既存の打刻経路をそのまま使う
+ * 新しい書き込み口は作らず punchAttendanceForLineUser を呼ぶ。
+ * 既に退勤打刻があっても上書きする（後から操作したほうが勝つ）。
+ *
+ * ■ 報告の提出は止めない
+ * 失敗・タイムアウト・例外のいずれでも投げ返さず、warning を返すだけ。
+ * 利用者は勤怠画面から手動で打刻すれば復旧できる。
+ */
+async function clockOutAfterWorkEndReport(
+  lineUserId: string,
+): Promise<string | undefined> {
+  try {
+    const timeout = new Promise<"timeout">((resolve) =>
+      setTimeout(() => resolve("timeout"), clockOutTimeoutMs()),
+    );
+    const result = await Promise.race([
+      punchAttendanceForLineUser(lineUserId, "out", {
+        overwriteClockOut: true,
+      }),
+      timeout,
+    ]);
+
+    if (result === "timeout") {
+      console.error(
+        "[work-end-report] 退勤打刻がタイムアウトしました",
+        JSON.stringify({ timeoutMs: clockOutTimeoutMs() }),
+      );
+      return WORK_END_REPORT_CLOCK_OUT_WARNING;
+    }
+    if (result.ok) return undefined;
+
+    // 出してよいのは HTTP ステータスまで。氏名などの個人情報は出さない
+    console.error(
+      "[work-end-report] 退勤打刻に失敗しました",
+      JSON.stringify({ status: result.status }),
+    );
+    return WORK_END_REPORT_CLOCK_OUT_WARNING;
+  } catch (e) {
+    console.error(
+      "[work-end-report] 退勤打刻で想定外の例外",
+      JSON.stringify({ name: e instanceof Error ? e.name : "unknown" }),
+    );
+    return WORK_END_REPORT_CLOCK_OUT_WARNING;
+  }
+}
+
 export async function submitWorkEndReportForLineUser(
   lineUserId: string,
   input: WorkEndReportFormValues,
 ): Promise<
-  | { ok: true; status: WorkEndReportStatus }
+  | { ok: true; status: WorkEndReportStatus; warning?: string }
   | { ok: false; status: number; error: string; needsStaffBind?: boolean }
 > {
   const today = todayYmdJst();
@@ -406,6 +470,10 @@ export async function submitWorkEndReportForLineUser(
     };
   }
 
+  // X-3: 報告の保存が成功してから打刻する。
+  // 失敗しても報告は成功のままで、warning だけ画面へ返す
+  const clockOutWarning = await clockOutAfterWorkEndReport(lineUserId);
+
   const status = await getWorkEndReportStatusForLineUser(lineUserId);
 
   return {
@@ -416,5 +484,6 @@ export async function submitWorkEndReportForLineUser(
       reportedAt: today,
       canReport: false,
     },
+    ...(clockOutWarning ? { warning: clockOutWarning } : {}),
   };
 }
