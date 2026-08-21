@@ -32,6 +32,7 @@ function candidate(
     combinedSubsidyName: null,
     isConstructionDateUnset: false,
     isCancelled: false,
+    isCompleted: false,
     sortKey: Number(recordId),
     audience,
   };

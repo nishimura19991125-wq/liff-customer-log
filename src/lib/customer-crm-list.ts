@@ -35,6 +35,7 @@ import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve
 import {
   crmEffectiveDocumentMissing,
   recordIsCustomerStatusCancelled,
+  recordIsCustomerStatusCompleted,
   resolveCrmCustomerStatusFieldId,
 } from "@/lib/customer-crm-status";
 import { customerInfoCustomerStatusFieldId } from "@/lib/customer-info-config";
@@ -52,7 +53,9 @@ export type CustomerCrmFilter =
   | "missing_docs"
   | "no_construction_date"
   | "subsidy"
-  | "cancelled";
+  | "cancelled"
+  /** 申請も工事もすべて完了。完工・残工は含めない */
+  | "completed";
 
 export type CustomerCrmListItem = {
   recordId: string;
@@ -65,6 +68,8 @@ export type CustomerCrmListItem = {
   combinedSubsidyName: string | null;
   isConstructionDateUnset: boolean;
   isCancelled: boolean;
+  /** 顧客ステータスが「完了」。完工・残工は含めない */
+  isCompleted: boolean;
 };
 
 const PAGE_LIMIT = 1000;
@@ -164,6 +169,8 @@ function passesCrmFilter(
       return item.isSubsidyTarget;
     case "cancelled":
       return item.isCancelled;
+    case "completed":
+      return item.isCompleted;
     default:
       return true;
   }
@@ -344,6 +351,10 @@ async function fetchAllCustomerCrmCandidatesFromPocket(): Promise<CrmSnapshot> {
         recObj,
         ctx.customerStatusFieldId,
       );
+      const isCompleted = recordIsCustomerStatusCompleted(
+        recObj,
+        ctx.customerStatusFieldId,
+      );
       const { isDocumentMissing: rawDocumentMissing } = evaluateCrmDocuments(
         recObj,
         ctx.docFields,
@@ -375,6 +386,7 @@ async function fetchAllCustomerCrmCandidatesFromPocket(): Promise<CrmSnapshot> {
         combinedSubsidyName,
         isConstructionDateUnset,
         isCancelled,
+        isCompleted,
         sortKey: crmSortKeyFromRecord(recObj, recordId, ctx.sortFieldId),
         audience,
       });
@@ -404,6 +416,7 @@ function toCustomerCrmListItem(c: CrmCandidate): CustomerCrmListItem {
     combinedSubsidyName: c.combinedSubsidyName,
     isConstructionDateUnset: c.isConstructionDateUnset,
     isCancelled: c.isCancelled,
+    isCompleted: c.isCompleted,
   };
 }
 

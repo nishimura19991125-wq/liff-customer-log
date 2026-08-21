@@ -3,7 +3,10 @@ import "server-only";
 import type { AtPocketFieldRow } from "@/lib/atpocket";
 import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
 import { customerInfoCustomerStatusFieldId } from "@/lib/customer-info-config";
-import { isCustomerStatusCancelled } from "@/lib/customer-status-label";
+import {
+  isCustomerStatusCancelled,
+  isCustomerStatusCompleted,
+} from "@/lib/customer-status-label";
 import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
 import { readCustomerInfoFieldValue } from "@/lib/customer-info-record";
 
@@ -38,6 +41,16 @@ export function recordIsCustomerStatusCancelled(
   fieldId: string | null,
 ): boolean {
   return isCustomerStatusCancelled(
+    readCustomerStatusFromRecord(recObj, fieldId),
+  );
+}
+
+/** 顧客ステータスが「完了」か（完工・残工は含めない） */
+export function recordIsCustomerStatusCompleted(
+  recObj: Record<string, unknown>,
+  fieldId: string | null,
+): boolean {
+  return isCustomerStatusCompleted(
     readCustomerStatusFromRecord(recObj, fieldId),
   );
 }
