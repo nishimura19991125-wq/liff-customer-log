@@ -171,7 +171,7 @@ export function buildMissingClockOutListMessage(
   if (input.attendeeCount <= 0) return null;
 
   const header = [
-    "▼退勤打刻の確認▼",
+    "▼退勤打刻もれ▼",
     formatAttendanceListDate(input.workDate),
   ];
 
