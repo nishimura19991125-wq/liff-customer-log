@@ -49,6 +49,20 @@ export function googleChatAttendanceWebhookConfigured(): boolean {
   return attendanceWebhookUrl() !== "";
 }
 
+function attendanceListWebhookUrl(): string {
+  return process.env.GOOGLE_CHAT_ATTENDANCE_LIST_WEBHOOK_URL?.trim() ?? "";
+}
+
+/**
+ * 定時リストの Webhook が設定されているか（タスクY）。
+ *
+ * 打刻通知（GOOGLE_CHAT_ATTENDANCE_WEBHOOK_URL）とは**別の Webhook**。
+ * 未設定でもエラーにしない（定時実行が落ちないようにする）。
+ */
+export function googleChatAttendanceListWebhookConfigured(): boolean {
+  return attendanceListWebhookUrl() !== "";
+}
+
 /**
  * 契約速報を Google Chat へ送る。
  *
@@ -71,6 +85,19 @@ export async function sendGoogleChatAttendanceMessage(
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<GoogleChatSendResult> {
   return sendGoogleChatMessage(attendanceWebhookUrl(), text, timeoutMs);
+}
+
+/**
+ * 勤怠の定時リストを Google Chat へ送る（タスクY）。
+ *
+ * 例外は投げない。定時実行は結果を返す相手がいないので、
+ * 呼び出し側は結果を console に残すだけでよい。
+ */
+export async function sendGoogleChatAttendanceListMessage(
+  text: string,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<GoogleChatSendResult> {
+  return sendGoogleChatMessage(attendanceListWebhookUrl(), text, timeoutMs);
 }
 
 /** 送信の実体。URL の出どころだけが違うので1本にまとめている */
