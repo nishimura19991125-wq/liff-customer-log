@@ -1,7 +1,7 @@
 import "server-only";
 
 /**
- * Google Chat の Incoming Webhook 送信（タスクR）。
+ * Google Chat の Incoming Webhook 送信（タスクR: 契約速報／タスクW: 出勤打刻）。
  *
  * ── Webhook URL の扱い ─────────────────────────────────────
  * URL 自体が認証情報を兼ねる。漏れると誰でもそのスペースへ投稿できるため、
@@ -34,6 +34,21 @@ export type GoogleChatSendResult =
   /** status は HTTP 応答があったときだけ入る。URL は含めない */
   | { kind: "failed"; reason: "http" | "timeout" | "network"; status?: number };
 
+function attendanceWebhookUrl(): string {
+  return process.env.GOOGLE_CHAT_ATTENDANCE_WEBHOOK_URL?.trim() ?? "";
+}
+
+/**
+ * 出勤打刻の Webhook が設定されているか（タスクW）。
+ *
+ * 契約速報とは**別の Webhook**。同じスペースへ送りたい場合は、
+ * 運用側で同じ URL を両方に設定すればよい。
+ * 未設定でもエラーにしない（打刻が止まらないようにする）。
+ */
+export function googleChatAttendanceWebhookConfigured(): boolean {
+  return attendanceWebhookUrl() !== "";
+}
+
 /**
  * 契約速報を Google Chat へ送る。
  *
@@ -43,7 +58,27 @@ export async function sendGoogleChatContractMessage(
   text: string,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<GoogleChatSendResult> {
-  const url = contractWebhookUrl();
+  return sendGoogleChatMessage(contractWebhookUrl(), text, timeoutMs);
+}
+
+/**
+ * 出勤打刻を Google Chat へ送る。
+ *
+ * 例外は投げない。呼び出し側は打刻を成功させたまま warning を出す。
+ */
+export async function sendGoogleChatAttendanceMessage(
+  text: string,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<GoogleChatSendResult> {
+  return sendGoogleChatMessage(attendanceWebhookUrl(), text, timeoutMs);
+}
+
+/** 送信の実体。URL の出どころだけが違うので1本にまとめている */
+async function sendGoogleChatMessage(
+  url: string,
+  text: string,
+  timeoutMs: number,
+): Promise<GoogleChatSendResult> {
   if (!url) return { kind: "skipped", reason: "not-configured" };
   if (!text.trim()) return { kind: "skipped", reason: "empty-text" };
 
