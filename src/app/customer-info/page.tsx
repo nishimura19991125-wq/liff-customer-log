@@ -68,11 +68,7 @@ import {
   formatCustomerInfoRequiredValidationError,
 } from "@/lib/customer-info-form/validate";
 import { CustomerCancelConfirmDialog } from "@/components/customer-cancel-confirm-dialog";
-import {
-  buildCustomerCancelPlan,
-  todayJstDayKey,
-  type CustomerCancelPlan,
-} from "@/lib/customer-cancel-plan";
+import type { CustomerCancelPlan } from "@/lib/customer-cancel-plan";
 import {
   isCustomerStatusCancelled,
   isCustomerStatusCancelledExact,
@@ -176,6 +172,8 @@ function CustomerInfoPageContent() {
     values: CustomerInfoFormValues;
     plan: CustomerCancelPlan;
   } | null>(null);
+  /** 実行内容をサーバへ問い合わせている間 */
+  const [cancelPlanLoading, setCancelPlanLoading] = useState(false);
 
   // タスクJ: 入力内容の自動退避。
   // 退避先の顧客・退避時に読み込んだレコードの状態を、レンダーに影響しない
@@ -648,14 +646,42 @@ function CustomerInfoPageContent() {
       if (savingCancelled && !beforeCancelled) {
         setRequiredFieldErrors(new Set());
         setSaveFeedback(null);
-        setPendingCancel({
-          values: formValuesToSave,
-          plan: buildCustomerCancelPlan({
-            todayDayKey: todayJstDayKey(),
-            constructionDate: formValuesToSave.constructionDate,
-            contractor: formValuesToSave.constructionContractor,
-          }),
-        });
+        // 祝日は外部APIを使うためサーバでしか引けない。
+        // 実行内容の判断はサーバに一本化し、画面はその結果を出すだけにする
+        setCancelPlanLoading(true);
+        try {
+          const params = new URLSearchParams({
+            constructionDate: formValuesToSave.constructionDate ?? "",
+            contractor: formValuesToSave.constructionContractor ?? "",
+          });
+          const res = await fetch(
+            `/api/customer-info/cancel-plan?${params.toString()}`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          const data = (await res.json()) as {
+            ok?: boolean;
+            plan?: CustomerCancelPlan;
+          };
+          if (res.status === 401 && isLineSessionExpiredPayload(data)) {
+            setPhase("session-expired");
+            return;
+          }
+          if (!res.ok || !data.plan) {
+            setSaveFeedback({
+              kind: "err",
+              text: "実行内容を確認できませんでした。通信状態を確かめて、もう一度お試しください。",
+            });
+            return;
+          }
+          setPendingCancel({ values: formValuesToSave, plan: data.plan });
+        } catch {
+          setSaveFeedback({
+            kind: "err",
+            text: "実行内容を確認できませんでした。通信状態を確かめて、もう一度お試しください。",
+          });
+        } finally {
+          setCancelPlanLoading(false);
+        }
         return;
       }
     }
@@ -1037,7 +1063,8 @@ function CustomerInfoPageContent() {
 
                 <CustomerInfoSaveBar
                   ref={saveBarRef}
-                  saving={saving}
+                  // 実行内容の問い合わせ中も「保存中」として押せなくする
+                  saving={saving || cancelPlanLoading}
                   disabled={
                     needsStaffBind ||
                     (detail.usesFormSchema
