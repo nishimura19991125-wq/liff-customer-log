@@ -43,6 +43,8 @@ export default function WorkEndReportPage() {
   const [idToken, setIdToken] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  /** 報告は提出できたが退勤打刻に失敗したとき（タスクX） */
+  const [clockOutWarning, setClockOutWarning] = useState<string | null>(null);
   const [form, setForm] = useState(emptyWorkEndReportForm);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
@@ -128,6 +130,7 @@ export default function WorkEndReportPage() {
     if (!idToken || submitting || !status?.canReport) return;
     setSubmitting(true);
     setFeedback(null);
+    setClockOutWarning(null);
     try {
       const result = await submitWorkEndReport(idToken, form);
       if (!result.ok) {
@@ -140,6 +143,7 @@ export default function WorkEndReportPage() {
       }
       await mutateStatus(result.status, { revalidate: false });
       setFeedback("稼働終了を報告しました");
+      setClockOutWarning(result.warning ?? null);
     } catch {
       setFeedback("稼働終了報告に失敗しました");
     } finally {
@@ -310,6 +314,21 @@ export default function WorkEndReportPage() {
                 }`}
               >
                 {feedback}
+              </p>
+            ) : null}
+
+            {/*
+              報告は出せたが退勤打刻に失敗したとき（タスクX）。
+              提出成功の緑メッセージに紛れ込ませると気づかれないので別枠で出す。
+              手動で復旧できることを必ず伝える
+            */}
+            {clockOutWarning ? (
+              <p
+                role="alert"
+                aria-live="assertive"
+                className="rounded-xl border-2 border-amber-400 bg-amber-50 px-4 py-3 text-[13px] font-bold leading-relaxed text-amber-900"
+              >
+                ⚠ {clockOutWarning}
               </p>
             ) : null}
 

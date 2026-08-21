@@ -31,7 +31,12 @@ export async function submitWorkEndReport(
   idToken: string,
   form: WorkEndReportFormValues,
 ): Promise<
-  | { ok: true; status: WorkEndReportStatus }
+  | {
+      ok: true;
+      status: WorkEndReportStatus;
+      /** 報告は提出できたが退勤打刻に失敗したとき（タスクX） */
+      warning?: string;
+    }
   | { ok: false; status: number; error: string; sessionExpired?: boolean }
 > {
   const res = await fetch("/api/work-end-report", {
@@ -42,7 +47,10 @@ export async function submitWorkEndReport(
     },
     body: JSON.stringify(form),
   });
-  const data = (await res.json()) as WorkEndReportStatus & { error?: string };
+  const data = (await res.json()) as WorkEndReportStatus & {
+    error?: string;
+    warning?: string;
+  };
   if (res.status === 401 && isLineSessionExpiredPayload(data)) {
     return {
       ok: false,
@@ -62,5 +70,9 @@ export async function submitWorkEndReport(
           : "稼働終了報告に失敗しました"),
     };
   }
-  return { ok: true, status: data };
+  return {
+    ok: true,
+    status: data,
+    ...(data.warning?.trim() ? { warning: data.warning.trim() } : {}),
+  };
 }
