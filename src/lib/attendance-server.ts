@@ -38,6 +38,7 @@ import {
   type AttendanceTodayAttendee,
 } from "@/lib/attendance-fields";
 import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
+import { notifyAttendanceClockIn } from "@/lib/attendance-notification";
 import { enrichStaffNamesWithDepartments } from "@/lib/staff-department-lookup";
 import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
 import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
@@ -722,7 +723,12 @@ export async function punchAttendanceForLineUser(
   lineUserId: string,
   kind: "in" | "out",
 ): Promise<
-  | { ok: true; status: AttendancePublicStatus }
+  | {
+      ok: true;
+      status: AttendancePublicStatus;
+      /** 打刻は成功したが Google Chat 通知に失敗したとき（タスクW） */
+      warning?: string;
+    }
   | { ok: false; status: number; error: string; rateLimited?: boolean }
 > {
   const loaded = await loadAttendanceFieldIds();
@@ -793,6 +799,27 @@ export async function punchAttendanceForLineUser(
   const hasDataOnPocket = pocketRowHasAttendanceData(recObj, ids);
   const clockIn = hasDataOnPocket ? readFieldText(recObj, ids.clockIn) : "";
   const clockOut = hasDataOnPocket ? readFieldText(recObj, ids.clockOut) : "";
+
+  /**
+   * 出勤打刻の Google Chat 通知（タスクW）。
+   *
+   * @pocket への書き込みが済んでから呼ぶ。失敗しても打刻は成功のままにし、
+   * warning だけ画面へ返す。部署は publishPunchStatus が名簿から引き終えた
+   * 出勤者一覧から拾うので、@pocket への呼び出しは増えない。
+   */
+  const notifyClockIn = async (
+    status: AttendancePublicStatus,
+  ): Promise<string | undefined> => {
+    const me = status.todayAttendees?.find(
+      (a) => nfkcName(a.staffName) === nfkcName(staffName),
+    );
+    const outcome = await notifyAttendanceClockIn({
+      staffName,
+      clockIn: nowIn,
+      department: me?.department,
+    });
+    return outcome.kind === "failed" ? outcome.warning : undefined;
+  };
 
   const publishPunchStatus = async (
     punchedRow: AtPocketRecordRow | null,
@@ -881,7 +908,8 @@ export async function punchAttendanceForLineUser(
           atPocketRecordIdFromRow(r) === recordId ? punchedRow : r,
         );
         const status = await publishPunchStatus(punchedRow, rosterRows);
-        return { ok: true, status };
+        const warning = await notifyClockIn(status);
+        return { ok: true, status, ...(warning ? { warning } : {}) };
       }
 
       const createPayload = applyAttendanceAutoNumberOnCreate(
@@ -915,7 +943,8 @@ export async function punchAttendanceForLineUser(
       );
       const rosterRows = [...rows, punchedRow];
       const status = await publishPunchStatus(punchedRow, rosterRows);
-      return { ok: true, status };
+      const warning = await notifyClockIn(status);
+      return { ok: true, status, ...(warning ? { warning } : {}) };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return {

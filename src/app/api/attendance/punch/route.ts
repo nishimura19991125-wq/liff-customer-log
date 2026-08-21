@@ -48,7 +48,12 @@ export async function POST(request: Request) {
         { status: result.status },
       );
     }
-    return NextResponse.json({ ok: true, ...result.status });
+    // 打刻は成功。通知の失敗（タスクW）は warning として別に返す
+    return NextResponse.json({
+      ok: true,
+      ...result.status,
+      ...(result.warning ? { warning: result.warning } : {}),
+    });
   } catch (e) {
     return pocketErrorResponse(e, {
       scope: "api/attendance/punch",
