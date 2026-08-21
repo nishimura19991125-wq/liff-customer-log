@@ -48,6 +48,12 @@ import {
   readContractNotificationExtraValues,
   resolveContractNotificationExtraFieldIds,
 } from "@/lib/contract-notification-server";
+import { todayJstDayKey } from "@/lib/customer-cancel-plan";
+import {
+  applyCustomerCancelToPayload,
+  runCustomerCancelSideEffects,
+} from "@/lib/customer-cancel-server";
+import { isCustomerStatusCancelledExact } from "@/lib/customer-status-label";
 import {
   applyDropboxFolderRenameToPayload,
   resolveCustomerInfoDropboxLinkFieldId,
@@ -473,17 +479,28 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       }
       const values = syncCombinedNameFields(expandNamePartsInValues(parsed));
 
-      const missingRequired = findMissingRequiredCustomerInfoFields(
-        resolved
-          .filter((f) => !f.hiddenInForm)
-          .map((f) => ({
-            key: f.key,
-            label: f.label,
-            type: f.type,
-            required: f.required,
-          })),
-        values,
+      /**
+       * V-5: キャンセルにするときだけ必須チェックを通す。
+       * クライアントの申告（フラグ）ではなく、**これから保存する
+       * 顧客ステータスの値そのもの**をサーバで見て判断する。
+       */
+      const savingCancelled = isCustomerStatusCancelledExact(
+        values.customerStatus,
       );
+
+      const missingRequired = savingCancelled
+        ? []
+        : findMissingRequiredCustomerInfoFields(
+            resolved
+              .filter((f) => !f.hiddenInForm)
+              .map((f) => ({
+                key: f.key,
+                label: f.label,
+                type: f.type,
+                required: f.required,
+              })),
+            values,
+          );
       if (missingRequired.length > 0) {
         return NextResponse.json(
           {
@@ -498,6 +515,9 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         resolveContractNotificationExtraFieldIds(appFields);
       const inputStatusFieldId =
         resolved.find((f) => f.key === "inputStatus")?.fieldId ?? "";
+      // キャンセル処理（タスクV）のトリガー判定に使う保存前の顧客ステータス
+      const customerStatusFieldId =
+        resolved.find((f) => f.key === "customerStatus")?.fieldId ?? "";
 
       // AP/CL所属支店を引き直すかの判定に使う。担当者が変わっていなければ
       // 支店は触らない（引けないときに "-" で潰さないため）。
@@ -509,6 +529,7 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         resolved,
         [
           ...(inputStatusFieldId ? [inputStatusFieldId] : []),
+          ...(customerStatusFieldId ? [customerStatusFieldId] : []),
           ...contractNotificationExtraFieldIdList(notificationFieldIds),
         ],
       );
@@ -523,6 +544,36 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         notificationFieldIds,
       );
 
+      // V-1: 「キャンセル以外 → キャンセル」に変わったときだけ実行する。
+      // 保存前の値を読めていなければ実行しない（元に戻せない処理なので、
+      // 判定できないときは動かさない側に倒す）
+      const beforeCustomerStatus =
+        loadedStaff && customerStatusFieldId
+          ? readCustomerInfoFieldValue(loadedStaff.record, customerStatusFieldId)
+          : null;
+      const cancelTriggered =
+        savingCancelled &&
+        beforeCustomerStatus !== null &&
+        !isCustomerStatusCancelledExact(beforeCustomerStatus);
+
+      // 空き枠の判定は**消す前**の施工予定日・施工会社で行う。
+      // 画面の確認ダイアログが見ている値と同じものを使う
+      const cancelSource = cancelTriggered
+        ? {
+            constructionDate: values.constructionDate ?? "",
+            contractor: values.constructionContractor ?? "",
+          }
+        : null;
+
+      if (cancelTriggered) {
+        // V-2: PT を 0 にし、4項目のうちフォームにある3項目を空にする。
+        // 工事対応者はフォーム外の列なので payload 側で消す
+        values.pt = "0";
+        values.constructionDate = "";
+        values.firstConstructionDate = "";
+        values.constructionContractor = "";
+      }
+
       const payload = await formPayloadFromValues(
         values,
         resolved,
@@ -530,6 +581,9 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         writeAuth,
         loadedStaff,
       );
+      if (cancelTriggered) {
+        applyCustomerCancelToPayload(payload, appFields);
+      }
       if (Object.keys(payload).length === 0) {
         return NextResponse.json(
           { error: "更新する項目がありません" },
@@ -553,6 +607,31 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       invalidateCustomerInfoPendingCache();
       invalidateCustomerInfoKeyLookupCache();
 
+      // V-7: お客様情報の更新が成功してから、工事登録アプリの更新と
+      // 空き枠の作成を行う。ここで失敗しても保存は成功のまま warning を返す
+      const warnings: string[] = [];
+      let cancelResult: Awaited<
+        ReturnType<typeof runCustomerCancelSideEffects>
+      > | null = null;
+      if (cancelTriggered && cancelSource) {
+        try {
+          cancelResult = await runCustomerCancelSideEffects({
+            tNumber: notificationExtras.tNumber,
+            constructionDate: cancelSource.constructionDate,
+            contractor: cancelSource.contractor,
+            todayDayKey: todayJstDayKey(),
+            lineUserId: auth.lineUserId,
+          });
+          warnings.push(...cancelResult.warnings);
+        } catch (e) {
+          // ここで投げるとお客様情報の更新が済んでいるのにエラー応答になる
+          console.error("[api/customer-info] キャンセル処理の後段で例外", e);
+          warnings.push(
+            "キャンセル処理は完了しましたが、工事登録アプリの更新に失敗しました。DX事業部へ連絡してください。",
+          );
+        }
+      }
+
       // 契約速報（タスクR）は @pocket への保存が済んでから送る。
       // 送信に失敗しても保存は成功のまま、warning だけ画面へ返す
       const notified = await notifyContractCompleted({
@@ -560,9 +639,19 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         beforeInputStatus,
         extras: notificationExtras,
       });
+      if (notified.kind === "failed") warnings.push(notified.warning);
+
       return NextResponse.json({
         ok: true,
-        ...(notified.kind === "failed" ? { warning: notified.warning } : {}),
+        ...(warnings.length > 0 ? { warning: warnings.join("\n") } : {}),
+        ...(cancelResult
+          ? {
+              cancelled: {
+                constructionUpdated: cancelResult.constructionUpdated,
+                emptySlotCreated: cancelResult.emptySlotCreated,
+              },
+            }
+          : {}),
       });
     }
 
