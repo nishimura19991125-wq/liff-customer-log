@@ -14,9 +14,13 @@ import { invalidateCalendarConstructionRecordsCache } from "@/lib/calendar-const
 import {
   collectConstructionFieldsCsv,
   pickRecordValueByFieldAliases,
+  pocketFieldUniqueIdByCaption,
+  resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
   resolveConstructionTNumberFieldId,
 } from "@/lib/calendar-kojo";
+import { fetchJapanHolidayKeysForRange } from "@/lib/japan-holidays-api";
+import { CUSTOMER_STATUS_DEFAULT } from "@/lib/customer-info-form/options";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { buildCustomerCancelPlan } from "@/lib/customer-cancel-plan";
 import type { CustomerCancelPlan } from "@/lib/customer-cancel-plan";
@@ -80,16 +84,56 @@ function coercePlainString(raw: unknown): string {
   return String(raw).trim();
 }
 
-function extraHolidayKeys(): string[] {
-  const raw = process.env.CALENDAR_EXTRA_HOLIDAYS?.trim();
-  if (!raw) return [];
-  return raw.split(",").map((s) => s.trim()).filter(Boolean);
+/**
+ * 空き枠に入れる顧客ステータス。
+ * @pocket の既存の空き枠が「工事待ち」なので、作る枠もそれに合わせる。
+ */
+const EMPTY_SLOT_CUSTOMER_STATUS = CUSTOMER_STATUS_DEFAULT;
+
+/** 工事登録アプリの顧客ステータス列。環境変数優先・未設定なら見出し完全一致 */
+export function resolveConstructionCustomerStatusFieldId(
+  constructionFields: Awaited<ReturnType<typeof fetchAppFields>>,
+): string | null {
+  const env = process.env.CALENDAR_CUSTOMER_STATUS_FIELD_ID?.trim();
+  if (env) {
+    return resolveConfiguredFieldToSchemaUniqueId(env, constructionFields);
+  }
+  return pocketFieldUniqueIdByCaption(constructionFields, "顧客ステータス");
 }
 
-function includeSandwich(): boolean {
-  return (
-    process.env.CALENDAR_INCLUDE_SANDWICH_NATIONAL_HOLIDAY?.trim() === "true"
-  );
+/**
+ * 空き枠の判定に使う祝日。外部APIから取り、失敗したら**土日のみ**に落ちる。
+ * 外部依存で保存そのものが止まらないようにする。
+ */
+export async function resolveCancelPlanWithHolidays(input: {
+  todayDayKey: string;
+  constructionDate: string;
+  contractor: string;
+}): Promise<CustomerCancelPlan> {
+  const target = (input.constructionDate ?? "").trim();
+  let holidayKeys: ReadonlySet<string> = new Set<string>();
+  let degraded = false;
+  if (target) {
+    const lookup = await fetchJapanHolidayKeysForRange(
+      input.todayDayKey,
+      target,
+    );
+    holidayKeys = lookup.keys;
+    degraded = lookup.degraded;
+  }
+  if (degraded) {
+    console.warn(
+      "[customer-cancel] 祝日を取得できなかったため土日のみで営業日を数えます",
+      JSON.stringify({ todayDayKey: input.todayDayKey, target }),
+    );
+  }
+  return buildCustomerCancelPlan({
+    todayDayKey: input.todayDayKey,
+    constructionDate: input.constructionDate,
+    contractor: input.contractor,
+    holidayKeys,
+    holidaysDegraded: degraded,
+  });
 }
 
 /** 工事レコードを T番号 で引く。既存の一覧キャッシュに相乗りする */
@@ -161,12 +205,10 @@ export async function runCustomerCancelSideEffects(opts: {
   todayDayKey: string;
   lineUserId: string;
 }): Promise<CustomerCancelSideEffectResult> {
-  const plan = buildCustomerCancelPlan({
+  const plan = await resolveCancelPlanWithHolidays({
     todayDayKey: opts.todayDayKey,
     constructionDate: opts.constructionDate,
     contractor: opts.contractor,
-    extraHolidayKeys: extraHolidayKeys(),
-    includeSandwichNationalHoliday: includeSandwich(),
   });
 
   const base: CustomerCancelSideEffectResult = {
@@ -290,12 +332,23 @@ export async function runCustomerCancelSideEffects(opts: {
       );
       warnings.push(EMPTY_SLOT_FAILED);
     } else {
-      // お客様名は入れない。入れないことで空き枠として扱われる。
+      // 既存の空き枠と同じ構成にする（@pocket で確認済み）:
+      //   顧客ステータス = 工事待ち / お客様名 = 空 / 施工予定日・施工会社のみ
+      // お客様名を入れないことで空き枠として扱われる。
       // T番号は @pocket の自動採番に任せる（payload に載せない）
       const slotPayload: Record<string, unknown> = {
         [startId]: plan.emptySlotDayKey,
         [contractorId]: plan.emptySlotContractor,
       };
+      const slotStatusId =
+        resolveConstructionCustomerStatusFieldId(constructionFields);
+      if (slotStatusId) {
+        slotPayload[slotStatusId] = EMPTY_SLOT_CUSTOMER_STATUS;
+      } else {
+        console.warn(
+          "[customer-cancel] 工事アプリの顧客ステータス列を解決できません。空き枠はステータス無しで作成します",
+        );
+      }
       try {
         const created = await writePocketRecordWithImportKey({
           appId: calAppId,

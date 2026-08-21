@@ -1,11 +1,10 @@
-import { japanHolidayKeysForRange } from "@/lib/japan-holidays";
-
 /**
  * 顧客ステータスを「キャンセル」にしたときに何が起きるかを決める（タスクV）。
  *
- * **元に戻せない操作**なので、確認画面（クライアント）とサーバの実処理が
- * 同じ判断を使えるよう、純粋関数としてここに寄せている。
- * 画面が「空き枠を作ります」と言ったのにサーバが作らない（逆も）を防ぐ。
+ * **元に戻せない操作**なので、判断はここ1か所に集約する。
+ * 祝日はここでは取りに行かず、呼び出し側から渡してもらう
+ * （サーバは外部APIから、失敗時は空集合＝土日のみ）。こうすることで
+ * この関数自体は純粋なままテストでき、画面はサーバが出した結果だけを見る。
  */
 
 /** 空き枠を作るかどうかの境目。これを**超える**ときだけ作る */
@@ -88,24 +87,6 @@ export function countBusinessDaysBetween(
   return count;
 }
 
-/** 2つの日付をまたぐ年の祝日を集める */
-export function holidayKeysForDayKeys(
-  fromDayKey: string,
-  toDayKey_: string,
-  extraHolidayKeys: string[] = [],
-  includeSandwich = false,
-): Set<string> {
-  const from = parseDayKey(fromDayKey);
-  const to = parseDayKey(toDayKey_);
-  if (!from || !to) return new Set<string>();
-  return japanHolidayKeysForRange(
-    from.getFullYear(),
-    to.getFullYear(),
-    extraHolidayKeys,
-    includeSandwich,
-  );
-}
-
 /** 空き枠を作らない理由 */
 export type EmptySlotSkipReason =
   /** 施工予定日が入っていない */
@@ -128,6 +109,8 @@ export type CustomerCancelPlan = {
   skipReason: EmptySlotSkipReason | null;
   /** 今日から施工予定日までの営業日数（表示・ログ用） */
   businessDays: number;
+  /** 祝日を取得できず土日のみで数えたか（ログ・警告用） */
+  holidaysDegraded: boolean;
 };
 
 /**
@@ -143,17 +126,24 @@ export function buildCustomerCancelPlan(input: {
   constructionDate: string | null | undefined;
   /** キャンセルする案件の施工会社 */
   contractor: string | null | undefined;
-  extraHolidayKeys?: string[];
-  includeSandwichNationalHoliday?: boolean;
+  /** 祝日キー。取得できなかったときは空集合を渡す（＝土日のみで判定） */
+  holidayKeys: ReadonlySet<string>;
+  /** 祝日を取得できなかったか */
+  holidaysDegraded?: boolean;
 }): CustomerCancelPlan {
   const dayKey = (input.constructionDate ?? "").trim();
   const contractor = (input.contractor ?? "").trim();
-  const none = (skipReason: EmptySlotSkipReason, businessDays = 0) => ({
+  const holidaysDegraded = input.holidaysDegraded ?? false;
+  const none = (
+    skipReason: EmptySlotSkipReason,
+    businessDays = 0,
+  ): CustomerCancelPlan => ({
     createsEmptySlot: false,
     emptySlotDayKey: "",
     emptySlotContractor: "",
     skipReason,
     businessDays,
+    holidaysDegraded,
   });
 
   const target = parseDayKey(dayKey);
@@ -164,16 +154,10 @@ export function buildCustomerCancelPlan(input: {
   if (target.getTime() <= today.getTime()) return none("past");
   if (!contractor || contractor === "-") return none("no-contractor");
 
-  const holidays = holidayKeysForDayKeys(
-    input.todayDayKey,
-    dayKey,
-    input.extraHolidayKeys ?? [],
-    input.includeSandwichNationalHoliday ?? false,
-  );
   const businessDays = countBusinessDaysBetween(
     input.todayDayKey,
     dayKey,
-    holidays,
+    input.holidayKeys,
   );
   if (businessDays <= EMPTY_SLOT_MIN_BUSINESS_DAYS) {
     return none("too-soon", businessDays);
@@ -185,5 +169,6 @@ export function buildCustomerCancelPlan(input: {
     emptySlotContractor: contractor,
     skipReason: null,
     businessDays,
+    holidaysDegraded,
   };
 }

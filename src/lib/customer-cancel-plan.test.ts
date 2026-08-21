@@ -4,9 +4,9 @@ import {
   EMPTY_SLOT_MIN_BUSINESS_DAYS,
   buildCustomerCancelPlan,
   countBusinessDaysBetween,
-  holidayKeysForDayKeys,
   isBusinessDay,
 } from "@/lib/customer-cancel-plan";
+import { japanHolidayKeysForRange } from "@/lib/japan-holidays";
 import {
   isCustomerStatusCancelled,
   isCustomerStatusCancelledExact,
@@ -18,9 +18,31 @@ import {
  * 元に戻せない処理なので、「実行しない側」に倒れることを厚めに見る。
  */
 
-/** 2026年の祝日を含む集合（テスト用） */
+/**
+ * テスト用の祝日集合。
+ * 本番は外部APIから取るが、営業日計算そのものを固定したいのでここでは
+ * 組み込みの計算表（japan-holidays.ts）から作る。
+ */
 function holidays(from: string, to: string): Set<string> {
-  return holidayKeysForDayKeys(from, to);
+  return japanHolidayKeysForRange(
+    Number(from.slice(0, 4)),
+    Number(to.slice(0, 4)),
+  );
+}
+
+/** 祝日を注入して plan を作る。既定は 2026 年の祝日 */
+function makePlan(input: {
+  todayDayKey: string;
+  constructionDate: string;
+  contractor: string;
+  holidayKeys?: ReadonlySet<string>;
+}) {
+  return buildCustomerCancelPlan({
+    ...input,
+    holidayKeys:
+      input.holidayKeys ??
+      holidays(input.todayDayKey, input.constructionDate || input.todayDayKey),
+  });
 }
 
 describe("★ ⑤ 営業日の計算（土日祝を除く）", () => {
@@ -102,7 +124,7 @@ describe("仕様書の例で検算する（今日 = 2026-09-01 月曜）", () =>
 
   it("★ ⑥ 4営業日先（7営業日以内）なら作らない", () => {
     // 2026-09-01(火) → 09-04(金) は 9/2,3,4 の3営業日
-    const plan = buildCustomerCancelPlan({
+    const plan = makePlan({
       todayDayKey: TODAY,
       constructionDate: "2026-09-04",
       contractor: "ピュアライフ",
@@ -113,7 +135,7 @@ describe("仕様書の例で検算する（今日 = 2026-09-01 月曜）", () =>
   });
 
   it("★ ⑦ 7営業日を超えるなら作る", () => {
-    const plan = buildCustomerCancelPlan({
+    const plan = makePlan({
       todayDayKey: TODAY,
       constructionDate: "2026-09-30",
       contractor: "ピュアライフ",
@@ -134,7 +156,7 @@ describe("仕様書の例で検算する（今日 = 2026-09-01 月曜）", () =>
       const key = `2026-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(
         cursor.getDate(),
       ).padStart(2, "0")}`;
-      const plan = buildCustomerCancelPlan({
+      const plan = makePlan({
         todayDayKey: TODAY,
         constructionDate: key,
         contractor: "ピュアライフ",
@@ -145,7 +167,7 @@ describe("仕様書の例で検算する（今日 = 2026-09-01 月曜）", () =>
       }
     }
     expect(target).not.toBe("");
-    const plan = buildCustomerCancelPlan({
+    const plan = makePlan({
       todayDayKey: TODAY,
       constructionDate: target,
       contractor: "ピュアライフ",
@@ -157,7 +179,7 @@ describe("仕様書の例で検算する（今日 = 2026-09-01 月曜）", () =>
 
 describe("★ ⑧ 過去の日付なら作らない", () => {
   it("今日より前は past", () => {
-    const plan = buildCustomerCancelPlan({
+    const plan = makePlan({
       todayDayKey: "2026-09-01",
       constructionDate: "2026-08-25",
       contractor: "ピュアライフ",
@@ -167,7 +189,7 @@ describe("★ ⑧ 過去の日付なら作らない", () => {
   });
 
   it("今日そのものも作らない", () => {
-    const plan = buildCustomerCancelPlan({
+    const plan = makePlan({
       todayDayKey: "2026-09-01",
       constructionDate: "2026-09-01",
       contractor: "ピュアライフ",
@@ -179,7 +201,7 @@ describe("★ ⑧ 過去の日付なら作らない", () => {
 
 describe("★ ⑨ 施工会社が空なら作らない", () => {
   it("空文字なら no-contractor", () => {
-    const plan = buildCustomerCancelPlan({
+    const plan = makePlan({
       todayDayKey: "2026-09-01",
       constructionDate: "2026-09-30",
       contractor: "",
@@ -189,7 +211,7 @@ describe("★ ⑨ 施工会社が空なら作らない", () => {
   });
 
   it("@pocket の「-」でも作らない", () => {
-    const plan = buildCustomerCancelPlan({
+    const plan = makePlan({
       todayDayKey: "2026-09-01",
       constructionDate: "2026-09-30",
       contractor: "-",
@@ -199,7 +221,7 @@ describe("★ ⑨ 施工会社が空なら作らない", () => {
   });
 
   it("日数が足りていても施工会社が無ければ作らない", () => {
-    const plan = buildCustomerCancelPlan({
+    const plan = makePlan({
       todayDayKey: "2026-09-01",
       constructionDate: "2026-12-01",
       contractor: "   ",
@@ -212,7 +234,7 @@ describe("★ ⑨ 施工会社が空なら作らない", () => {
 describe("施工予定日が無い場合", () => {
   it("空なら no-date", () => {
     expect(
-      buildCustomerCancelPlan({
+      makePlan({
         todayDayKey: "2026-09-01",
         constructionDate: "",
         contractor: "ピュアライフ",
@@ -222,7 +244,7 @@ describe("施工予定日が無い場合", () => {
 
   it("「-」なら no-date", () => {
     expect(
-      buildCustomerCancelPlan({
+      makePlan({
         todayDayKey: "2026-09-01",
         constructionDate: "-",
         contractor: "ピュアライフ",
