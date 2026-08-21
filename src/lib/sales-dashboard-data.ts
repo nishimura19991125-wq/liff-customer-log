@@ -16,6 +16,7 @@ import type {
   ApoDashboardKpi,
   ApoDashboardRankingRow,
 } from "@/lib/sales-dashboard-apo-aggregate";
+import { CUSTOMER_STATUS_CANCELLED } from "@/lib/customer-status-label";
 import { buildApoAndTenkaSections } from "@/lib/sales-dashboard-apo-tenka-bundle";
 import {
   resolveContractCountFieldMap,
@@ -310,7 +311,8 @@ function buildContractCountByMonth(
         recObj,
         fieldMap.customerStatus,
       );
-      if (status === "キャンセル") continue;
+      // 値の直書きをやめ、顧客ステータスの定義と1か所で揃える
+      if (status === CUSTOMER_STATUS_CANCELLED) continue;
     }
 
     const name = normApClStaffName(
