@@ -8,12 +8,15 @@
  *
  * ── 認証 ──────────────────────────────────────────────────
  * 定時実行に利用者はいないので LINE 認証は通らない。
- * 代わりに ATTENDANCE_LIST_NOTIFY_SECRET を突き合わせる。
- * Netlify の環境変数は Functions の実行時にも読めるため、秘密を
- * 外部に置かずに渡せる（外部の cron サービスは不要）。
+ * 代わりに ATTENDANCE_SCHEDULE_TOKEN を Bearer トークンとして送る。
+ * Netlify の環境変数は Functions の実行時にも読めるため、この経路では
+ * トークンを外部に置かずに渡せる。
+ *
+ * 呼び出し先は cron サービスからでも同じ形で叩ける（GET でも POST でも、
+ * mode はクエリでも本文でも受ける）。この関数はその一実装でしかない。
  *
  * ── ログ ──────────────────────────────────────────────────
- * 秘密も氏名も出さない。出すのはモードと HTTP ステータスまで。
+ * トークンも氏名も出さない。出すのはモードと HTTP ステータスまで。
  */
 
 export type AttendanceListMode = "clock-in" | "missing-clock-out";
@@ -44,16 +47,16 @@ export async function triggerAttendanceList(
   mode: AttendanceListMode,
 ): Promise<Response> {
   const origin = siteOrigin();
-  const secret = process.env.ATTENDANCE_LIST_NOTIFY_SECRET?.trim() ?? "";
+  const token = process.env.ATTENDANCE_SCHEDULE_TOKEN?.trim() ?? "";
 
-  if (!origin || !secret) {
+  if (!origin || !token) {
     // 未設定は異常だが、ここで投げても誰も受け取らない。事実だけ残す
     console.error(
       "[attendance-list] 定時送信の設定が足りません",
       JSON.stringify({
         mode,
         hasOrigin: Boolean(origin),
-        hasSecret: Boolean(secret),
+        hasToken: Boolean(token),
       }),
     );
     return new Response("not configured", { status: 200 });
@@ -66,7 +69,7 @@ export async function triggerAttendanceList(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-attendance-list-secret": secret,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ mode }),
       signal: controller.signal,
