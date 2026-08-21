@@ -1,9 +1,9 @@
 import "server-only";
 
 import {
-  apiKeyForCalendarPocket,
   apiKeyForCalendarPocket1,
   apiKeyForCalendarWrite,
+  createRecord,
   fetchAppFields,
 } from "@/lib/atpocket";
 import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
@@ -89,6 +89,43 @@ function coercePlainString(raw: unknown): string {
  * @pocket の既存の空き枠が「工事待ち」なので、作る枠もそれに合わせる。
  */
 const EMPTY_SLOT_CUSTOMER_STATUS = CUSTOMER_STATUS_DEFAULT;
+
+/**
+ * 空き枠レコードの中身を組み立てる。
+ *
+ * ■ 取込キー（T番号）の列を**空文字で載せる**理由
+ * @pocket の作成APIは、取込キーの列がレコード本文に無いと
+ * 「取込設定にキー項目を追加してください」で 400 を返す。値は空でよく、
+ * 空なら自動採番される。他の新規作成も同じことをしている:
+ *   - buildConstructionFillPatch（create-record）… tNumberValue: "" を載せる
+ *   - applyAttendanceAutoNumberOnCreate（勤怠）… 取込キー列に "" を入れる
+ * 載せるのは列だけで、できあがるレコードの中身は
+ * 「顧客ステータス=工事待ち・施工予定日・施工会社」のみになる。
+ *
+ * ■ お客様名は載せない
+ * 空のままにすることで空き枠として扱われる（constructionTitleFieldIsEmpty）。
+ */
+export function buildEmptySlotPayload(input: {
+  /** 工事登録アプリの T番号（取込キー）列 */
+  tNumberFieldId: string;
+  startDateFieldId: string;
+  contractorFieldId: string;
+  /** 解決できないときは null。その場合ステータス無しで作る */
+  customerStatusFieldId: string | null;
+  dayKey: string;
+  contractor: string;
+}): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    // 値は入れない。@pocket が自動採番する
+    [input.tNumberFieldId]: "",
+    [input.startDateFieldId]: input.dayKey,
+    [input.contractorFieldId]: input.contractor,
+  };
+  if (input.customerStatusFieldId) {
+    payload[input.customerStatusFieldId] = EMPTY_SLOT_CUSTOMER_STATUS;
+  }
+  return payload;
+}
 
 /** 工事登録アプリの顧客ステータス列。環境変数優先・未設定なら見出し完全一致 */
 export function resolveConstructionCustomerStatusFieldId(
@@ -230,9 +267,8 @@ export async function runCustomerCancelSideEffects(opts: {
   }
 
   const readAuth = { apiKey: apiKeyForCalendarPocket1() };
-  const listAuth = { apiKey: apiKeyForCalendarPocket() };
+  // 書き込みキーは create-record ルートと同じ（工事登録アプリへの書き込み権限）
   const writeAuth = { apiKey: apiKeyForCalendarWrite() };
-  void listAuth;
 
   let constructionFields: Awaited<ReturnType<typeof fetchAppFields>>;
   try {
@@ -332,33 +368,29 @@ export async function runCustomerCancelSideEffects(opts: {
       );
       warnings.push(EMPTY_SLOT_FAILED);
     } else {
-      // 既存の空き枠と同じ構成にする（@pocket で確認済み）:
-      //   顧客ステータス = 工事待ち / お客様名 = 空 / 施工予定日・施工会社のみ
-      // お客様名を入れないことで空き枠として扱われる。
-      // T番号は @pocket の自動採番に任せる（payload に載せない）
-      const slotPayload: Record<string, unknown> = {
-        [startId]: plan.emptySlotDayKey,
-        [contractorId]: plan.emptySlotContractor,
-      };
       const slotStatusId =
         resolveConstructionCustomerStatusFieldId(constructionFields);
-      if (slotStatusId) {
-        slotPayload[slotStatusId] = EMPTY_SLOT_CUSTOMER_STATUS;
-      } else {
+      if (!slotStatusId) {
         console.warn(
           "[customer-cancel] 工事アプリの顧客ステータス列を解決できません。空き枠はステータス無しで作成します",
         );
       }
+      const slotPayload = buildEmptySlotPayload({
+        tNumberFieldId,
+        startDateFieldId: startId,
+        contractorFieldId: contractorId,
+        customerStatusFieldId: slotStatusId,
+        dayKey: plan.emptySlotDayKey,
+        contractor: plan.emptySlotContractor,
+      });
       try {
-        const created = await writePocketRecordWithImportKey({
-          appId: calAppId,
-          payload: slotPayload,
-          writeAuth,
-        });
+        // 新規作成なので取込キーで既存を探す必要が無い。
+        // create-record ルート・勤怠の打刻と同じく createRecord を直接使う
+        const created = await createRecord(calAppId, slotPayload, writeAuth);
         emptySlotCreated = true;
         emptySlotRecordId =
-          created?.recordIdHint?.trim() ||
-          (created?.row?.recordId != null
+          created.recordIdHint?.trim() ||
+          (created.row?.recordId != null
             ? String(created.row.recordId)
             : null);
 
