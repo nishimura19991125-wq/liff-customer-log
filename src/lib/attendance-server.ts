@@ -402,6 +402,14 @@ async function fetchTodayRosterRows(
   const query = dateFieldId ? `${dateFieldId}="${today}"` : null;
   const pageCap = attendanceRosterMaxPages();
   const all: AtPocketRecordRow[] = [];
+  /**
+   * 最終ページに到達せず、上限で打ち切ったか。
+   *
+   * 勤怠アプリは年 7,000 件ほどのペースで増える。日付クエリが効いている
+   * 限り1ページで収まるが、列が変わってクエリが外れると静かに欠落する。
+   * 集計値が黙って狂うのが最も危ないので、事実だけ残す。
+   */
+  let truncated = false;
 
   for (let page = 1; page <= pageCap; page++) {
     const auth = page % 2 === 1 ? readAuth : readAuth1;
@@ -422,6 +430,7 @@ async function fetchTodayRosterRows(
       const recs = data.records ?? [];
       all.push(...recs);
       if (recs.length < 100) break;
+      if (page === pageCap) truncated = true;
     } catch (e) {
       if (isPocketHttpRateLimitError(e)) {
         markPocketApiRateLimited(auth);
@@ -431,6 +440,14 @@ async function fetchTodayRosterRows(
       if (page === 1) throw e;
       break;
     }
+  }
+
+  if (truncated) {
+    // レコードの中身は出さない。上限に当たった事実と規模だけを残す
+    console.warn(
+      "[attendance-roster] ページ上限に達したため取得を打ち切りました。以降の勤怠レコードは取得できていません" +
+        ` maxPages=${pageCap} fetched=${all.length} query=${query ? "on" : "off"}`,
+    );
   }
 
   return all;
@@ -694,6 +711,76 @@ export async function getAttendanceStatusForLineUser(
   }
 
   return getAttendanceStatusCached(key, loader);
+}
+
+export type AttendanceTodayRosterResult =
+  | {
+      ok: true;
+      /** JST の yyyy-mm-dd */
+      workDate: string;
+      /** 出勤打刻がある人だけ（打刻が無い人は最初から入らない） */
+      attendees: AttendanceTodayAttendee[];
+    }
+  | {
+      ok: false;
+      reason: "not-configured" | "rate-limited" | "error";
+      error: string;
+    };
+
+/**
+ * 本日の出勤者一覧（タスクY: 定時リスト用・LINE 利用者に紐付かない入口）。
+ *
+ * 定時実行には打刻した本人がいないため、既存の
+ * `getAttendanceStatusForLineUser` は使えない（担当者の紐付けを要求する）。
+ * 取得と集計そのものは打刻画面と同じ経路を通す。
+ *
+ * @pocket への取得は**1回の実行につき1回**。勤怠日で絞り込むので、
+ * レコードが増えても1ページで収まる。
+ */
+export async function getTodayAttendanceRoster(options?: {
+  bypassCache?: boolean;
+}): Promise<AttendanceTodayRosterResult> {
+  const loaded = await loadAttendanceFieldIds();
+  if (!loaded.ok) {
+    return {
+      ok: false,
+      reason:
+        loaded.status === 429 || loaded.rateLimited
+          ? "rate-limited"
+          : loaded.configured === false
+            ? "not-configured"
+            : "error",
+      error: loaded.error,
+    };
+  }
+
+  const today = todayYmdJst();
+  try {
+    const bundle = await getTodayRosterBundleCached(
+      today,
+      async () => {
+        const rows = await fetchTodayRosterRows(loaded.appId, loaded.ids, today);
+        const built = buildTodayAttendees(rows, loaded.ids, today);
+        const { attendees, byDepartment } = await finalizeTodayAttendees(built);
+        return { rows, attendees, byDepartment };
+      },
+      options?.bypassCache,
+    );
+    return { ok: true, workDate: today, attendees: bundle.attendees };
+  } catch (e) {
+    if (e instanceof Error && e.message === "ATTENDANCE_RATE_LIMIT") {
+      return {
+        ok: false,
+        reason: "rate-limited",
+        error: ATTENDANCE_RATE_LIMIT_MESSAGE,
+      };
+    }
+    return {
+      ok: false,
+      reason: "error",
+      error: e instanceof Error ? e.message : "勤怠の取得に失敗しました",
+    };
+  }
 }
 
 function syntheticRowAfterPunch(
