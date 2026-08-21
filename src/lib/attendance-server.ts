@@ -723,9 +723,20 @@ function syntheticRowAfterPunch(
   };
 }
 
+export type PunchAttendanceOptions = {
+  /**
+   * 既に退勤打刻があっても上書きする（タスクX: 稼働終了報告からの退勤）。
+   *
+   * 勤怠画面からの手動打刻では**渡さない**。手動は従来どおり
+   * 「本日はすでに退勤打刻済みです」で 409 にして、誤操作の二度押しを防ぐ。
+   */
+  overwriteClockOut?: boolean;
+};
+
 export async function punchAttendanceForLineUser(
   lineUserId: string,
   kind: "in" | "out",
+  options?: PunchAttendanceOptions,
 ): Promise<
   | {
       ok: true;
@@ -982,7 +993,8 @@ export async function punchAttendanceForLineUser(
       error: "出勤打刻がありません。先に出勤を打刻してください",
     };
   }
-  if (clockOut) {
+  // 稼働終了報告からの退勤は上書きする（後から操作したほうが勝つ）
+  if (clockOut && !options?.overwriteClockOut) {
     return {
       ok: false,
       status: 409,
@@ -1001,7 +1013,8 @@ export async function punchAttendanceForLineUser(
   }
 
   try {
-    // 退勤時刻が空白のときだけ埋める（出勤時刻など既存値は上書きしない）
+    // 書き込むのは退勤時刻だけ。出勤時刻など他の既存値には触れない
+    // （稼働終了報告からのときは、既に入っている退勤時刻を新しい時刻で上書きする）
     await writePocketRecordWithImportKey({
       appId,
       recordId,
