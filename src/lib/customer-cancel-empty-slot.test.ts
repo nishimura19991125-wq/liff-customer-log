@@ -21,6 +21,10 @@ const h = vi.hoisted(() => ({
   records: [] as Array<{ recordId: number; record: Record<string, unknown> }>,
   /** true のとき createRecord が @pocket の 400 を投げる */
   failCreate: false,
+  /** true のとき recordAuditLog が ok:false を返す */
+  auditFails: false,
+  /** true のとき recordAuditLog が投げる */
+  auditThrows: false,
 }));
 
 const APP_FIELDS = [
@@ -75,6 +79,12 @@ vi.mock("@/lib/audit-log", () => ({
   auditLogEnabled: () => true,
   recordAuditLog: async (opts: { operation: string }) => {
     h.auditOps.push(opts.operation);
+    if (h.auditThrows) {
+      throw new Error("[audit-log] 更新履歴アプリの列を解決できません");
+    }
+    if (h.auditFails) {
+      return { ok: false, error: "更新履歴アプリの列を解決できません" };
+    }
     return { ok: true, written: 1 };
   },
 }));
@@ -99,6 +109,8 @@ beforeEach(() => {
   h.updateCalls = [];
   h.auditOps = [];
   h.failCreate = false;
+  h.auditFails = false;
+  h.auditThrows = false;
   h.records = [
     {
       recordId: 5001,
@@ -238,6 +250,42 @@ describe("★ 空き枠の書き込み経路", () => {
     expect(result.emptySlotCreated).toBe(false);
     expect(h.createCalls).toHaveLength(0);
     expect(h.auditOps).toEqual(["update"]);
+  });
+
+  it("★ 監査ログが失敗しても、作成は成功として扱う", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    h.auditFails = true;
+
+    const result = await runCustomerCancelSideEffects(FAR_FUTURE);
+
+    // 作成は済んでいる。「作成に失敗」と表示してはいけない
+    expect(result.emptySlotCreated).toBe(true);
+    expect(result.emptySlotRecordId).toBe("9001");
+    expect(result.warnings).toEqual([]);
+    // 失敗はサーバログに留める
+    const logged = errorSpy.mock.calls.flat().join(" ");
+    expect(logged).toContain("監査ログを残せませんでした");
+  });
+
+  it("★ 監査ログが例外を投げても、作成は成功として扱う", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    h.auditThrows = true;
+
+    const result = await runCustomerCancelSideEffects(FAR_FUTURE);
+
+    expect(result.emptySlotCreated).toBe(true);
+    expect(result.warnings).toEqual([]);
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  it("★ 工事レコードの更新も、監査ログの失敗では失敗扱いにしない", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    h.auditFails = true;
+
+    const result = await runCustomerCancelSideEffects(FAR_FUTURE);
+
+    expect(result.constructionUpdated).toBe(true);
+    expect(result.warnings).toEqual([]);
   });
 
   it("作成に失敗しても投げず、警告を返す", async () => {

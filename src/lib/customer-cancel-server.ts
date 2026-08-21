@@ -91,6 +91,41 @@ function coercePlainString(raw: unknown): string {
 const EMPTY_SLOT_CUSTOMER_STATUS = CUSTOMER_STATUS_DEFAULT;
 
 /**
+ * 監査ログはベストエフォート（A-5）。**書き込みの成否に影響させない。**
+ *
+ * 以前は書き込みと同じ try に入れていたため、記録に失敗しただけで
+ * 「空き枠の作成に失敗しました」と表示されていた（実際には作成済み）。
+ * 記録は書き込みが済んでから行い、失敗はサーバログに留める。
+ *
+ * ここを「失敗したら止める」に変えないこと。止めてよいのは削除だけで、
+ * それは assign-case-to-slot 側で deletionLog.ok を見る形で担保している。
+ */
+async function recordAuditLogBestEffort(
+  entry: Parameters<typeof recordAuditLog>[0],
+  scope: string,
+): Promise<void> {
+  try {
+    const logged = await recordAuditLog(entry);
+    if (!logged.ok) {
+      console.error(
+        `[customer-cancel] ${scope}は成功しましたが、監査ログを残せませんでした`,
+        JSON.stringify({
+          targetRecordId: entry.targetRecordId,
+          targetTNumber: entry.targetTNumber,
+          error: logged.error,
+        }),
+      );
+    }
+  } catch (e) {
+    // recordAuditLog は投げない設計だが、想定外でも業務処理は止めない
+    console.error(
+      `[customer-cancel] ${scope}の監査ログで想定外の例外`,
+      e,
+    );
+  }
+}
+
+/**
  * 空き枠レコードの中身を組み立てる。
  *
  * ■ 取込キー（T番号）の列を**空文字で載せる**理由
@@ -338,21 +373,27 @@ export async function runCustomerCancelSideEffects(opts: {
         writeAuth,
       });
       constructionUpdated = true;
-
-      await recordAuditLog({
-        lineUserId: opts.lineUserId,
-        operation: "update",
-        targetAppId: calAppId,
-        targetRecordId: constructionRecordId,
-        targetTNumber: tNumber,
-        changes: computeAuditChanges(null, clearPatch, {
-          labelOf: (fieldId) =>
-            fieldCaptionByUniqueId(constructionFields, fieldId),
-        }),
-      });
     } catch (e) {
       console.error("[customer-cancel] 工事レコードの更新に失敗", e);
       warnings.push(CONSTRUCTION_UPDATE_FAILED);
+    }
+
+    // 記録は書き込みが済んでから。失敗しても更新は成功のまま
+    if (constructionUpdated) {
+      await recordAuditLogBestEffort(
+        {
+          lineUserId: opts.lineUserId,
+          operation: "update",
+          targetAppId: calAppId,
+          targetRecordId: constructionRecordId,
+          targetTNumber: tNumber,
+          changes: computeAuditChanges(null, clearPatch, {
+            labelOf: (fieldId) =>
+              fieldCaptionByUniqueId(constructionFields, fieldId),
+          }),
+        },
+        "工事レコードの更新",
+      );
     }
   }
 
@@ -393,38 +434,44 @@ export async function runCustomerCancelSideEffects(opts: {
           (created.row?.recordId != null
             ? String(created.row.recordId)
             : null);
-
-        // V-8: 「なぜこの空き枠ができたか」を後から追えるようにする
-        await recordAuditLog({
-          lineUserId: opts.lineUserId,
-          operation: "create",
-          targetAppId: calAppId,
-          targetRecordId: emptySlotRecordId ?? "",
-          targetTNumber: tNumber,
-          changes: [
-            {
-              fieldId: "__cancel_empty_slot__",
-              label: "空き枠の自動作成",
-              before: "",
-              after: `T番号 ${tNumber} のキャンセルにより作成（${plan.emptySlotDayKey} / ${plan.emptySlotContractor} / ${plan.businessDays}営業日先）`,
-            },
-            {
-              fieldId: startId,
-              label: fieldCaptionByUniqueId(constructionFields, startId),
-              before: "",
-              after: plan.emptySlotDayKey,
-            },
-            {
-              fieldId: contractorId,
-              label: fieldCaptionByUniqueId(constructionFields, contractorId),
-              before: "",
-              after: plan.emptySlotContractor,
-            },
-          ],
-        });
       } catch (e) {
         console.error("[customer-cancel] 空き枠の作成に失敗", e);
         warnings.push(EMPTY_SLOT_FAILED);
+      }
+
+      // V-8: 「なぜこの空き枠ができたか」を後から追えるようにする。
+      // 作成が済んでから記録し、記録の失敗は作成の成否に影響させない
+      if (emptySlotCreated) {
+        await recordAuditLogBestEffort(
+          {
+            lineUserId: opts.lineUserId,
+            operation: "create",
+            targetAppId: calAppId,
+            targetRecordId: emptySlotRecordId ?? "",
+            targetTNumber: tNumber,
+            changes: [
+              {
+                fieldId: "__cancel_empty_slot__",
+                label: "空き枠の自動作成",
+                before: "",
+                after: `T番号 ${tNumber} のキャンセルにより作成（${plan.emptySlotDayKey} / ${plan.emptySlotContractor} / ${plan.businessDays}営業日先）`,
+              },
+              {
+                fieldId: startId,
+                label: fieldCaptionByUniqueId(constructionFields, startId),
+                before: "",
+                after: plan.emptySlotDayKey,
+              },
+              {
+                fieldId: contractorId,
+                label: fieldCaptionByUniqueId(constructionFields, contractorId),
+                before: "",
+                after: plan.emptySlotContractor,
+              },
+            ],
+          },
+          "空き枠の作成",
+        );
       }
     }
   }
