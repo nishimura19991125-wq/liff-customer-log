@@ -20,6 +20,7 @@ import {
   resolveCustomerInfoCreatorFieldId,
 } from "@/lib/customer-info-creator-field";
 import {
+  crmEffectiveDocumentItems,
   crmEffectiveDocumentMissing,
   recordIsCustomerStatusCancelled,
   resolveCrmCustomerStatusFieldId,
@@ -156,12 +157,15 @@ export async function fetchCustomerCrmDetail(
     recObj,
     customerStatusFieldId,
   );
-  const { isDocumentMissing: rawDocumentMissing, documents } =
+  const { isDocumentMissing: rawDocumentMissing, documents: rawDocuments } =
     evaluateCrmDocuments(recObj, docFields);
   const isDocumentMissing = crmEffectiveDocumentMissing(
     rawDocumentMissing,
     isCancelled,
   );
+  // 総合バッジだけ消して行が赤いままだと、キャンセル案件で
+  // 「書類が足りません」と言われ続けているように見える
+  const documents = crmEffectiveDocumentItems(rawDocuments, isCancelled);
   const {
     isSubsidyTarget,
     combinedSubsidyName,
