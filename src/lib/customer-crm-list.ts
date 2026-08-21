@@ -34,6 +34,7 @@ import {
 import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
 import {
   crmEffectiveDocumentMissing,
+  crmEffectiveSubsidyTarget,
   recordIsCustomerStatusCancelled,
   recordIsCustomerStatusCompleted,
   resolveCrmCustomerStatusFieldId,
@@ -363,9 +364,11 @@ async function fetchAllCustomerCrmCandidatesFromPocket(): Promise<CrmSnapshot> {
         rawDocumentMissing,
         isCancelled,
       );
-      const { isSubsidyTarget, combinedSubsidyName } = buildCrmSubsidyInfo(
-        recObj,
-        ctx.subsidyFieldIds,
+      const { isSubsidyTarget: rawSubsidyTarget, combinedSubsidyName } =
+        buildCrmSubsidyInfo(recObj, ctx.subsidyFieldIds);
+      const isSubsidyTarget = crmEffectiveSubsidyTarget(
+        rawSubsidyTarget,
+        isCancelled,
       );
       const isConstructionDateUnset = isCrmConstructionDateUnset(
         recObj,

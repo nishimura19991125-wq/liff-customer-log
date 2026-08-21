@@ -71,6 +71,22 @@ export function crmEffectiveDocumentMissing(
 }
 
 /**
+ * キャンセル案件は補助金対象のアラートにも出さない。
+ *
+ * 書類未回収・入力ステータスと同じ扱いに揃える。判定が一部にしか
+ * 入っていないと、後から片方だけ直してズレる。
+ *
+ * 補助金名（combinedSubsidyName）は消さない。書類の value と同じで、
+ * 実際の内容はキャンセル案件でも確認できる。
+ */
+export function crmEffectiveSubsidyTarget(
+  isSubsidyTarget: boolean,
+  isCancelled: boolean,
+): boolean {
+  return isSubsidyTarget && !isCancelled;
+}
+
+/**
  * 書類チェックリストの行ごとの未回収バッジにも、同じキャンセル判定を効かせる。
  *
  * 総合バッジ（⚠️ 書類未回収）だけ消して行が赤いままだと、キャンセルした案件で

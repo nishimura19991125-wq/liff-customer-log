@@ -4,6 +4,7 @@ import type { CrmDocumentCheckItem } from "@/lib/customer-crm-documents";
 import {
   crmEffectiveDocumentItems,
   crmEffectiveDocumentMissing,
+  crmEffectiveSubsidyTarget,
 } from "@/lib/customer-crm-status";
 
 /**
@@ -73,6 +74,47 @@ describe("★ 行ごとのバッジ（書類チェックリスト）", () => {
 
   it("空の一覧でも壊れない", () => {
     expect(crmEffectiveDocumentItems([], true)).toEqual([]);
+  });
+});
+
+describe("★ 補助金対象", () => {
+  it("キャンセルなら補助金対象でもアラートにしない", () => {
+    expect(crmEffectiveSubsidyTarget(true, true)).toBe(false);
+  });
+
+  it("★ キャンセル以外は従来どおりアラートになる", () => {
+    expect(crmEffectiveSubsidyTarget(true, false)).toBe(true);
+  });
+
+  it("そもそも補助金対象でなければアラートにならない", () => {
+    expect(crmEffectiveSubsidyTarget(false, false)).toBe(false);
+    expect(crmEffectiveSubsidyTarget(false, true)).toBe(false);
+  });
+});
+
+describe("★ 3つのアラートでキャンセルの扱いが揃っている", () => {
+  /**
+   * 同じ判定が一部にしか入っていないと、後から片方だけ直してズレる。
+   * 書類（総合・行）と補助金を同じ入力で並べて確認する。
+   */
+  it("キャンセルなら、どのアラートも出ない", () => {
+    const isCancelled = true;
+
+    expect(crmEffectiveDocumentMissing(true, isCancelled)).toBe(false);
+    expect(
+      crmEffectiveDocumentItems(DOCUMENTS, isCancelled).some((d) => d.isMissing),
+    ).toBe(false);
+    expect(crmEffectiveSubsidyTarget(true, isCancelled)).toBe(false);
+  });
+
+  it("キャンセル以外なら、どのアラートも従来どおり出る", () => {
+    const isCancelled = false;
+
+    expect(crmEffectiveDocumentMissing(true, isCancelled)).toBe(true);
+    expect(
+      crmEffectiveDocumentItems(DOCUMENTS, isCancelled).some((d) => d.isMissing),
+    ).toBe(true);
+    expect(crmEffectiveSubsidyTarget(true, isCancelled)).toBe(true);
   });
 });
 

@@ -22,6 +22,7 @@ import {
 import {
   crmEffectiveDocumentItems,
   crmEffectiveDocumentMissing,
+  crmEffectiveSubsidyTarget,
   recordIsCustomerStatusCancelled,
   resolveCrmCustomerStatusFieldId,
 } from "@/lib/customer-crm-status";
@@ -167,10 +168,14 @@ export async function fetchCustomerCrmDetail(
   // 「書類が足りません」と言われ続けているように見える
   const documents = crmEffectiveDocumentItems(rawDocuments, isCancelled);
   const {
-    isSubsidyTarget,
+    isSubsidyTarget: rawSubsidyTarget,
     combinedSubsidyName,
     subsidyPresence,
   } = buildCrmSubsidyInfo(recObj, subsidyFieldIds);
+  const isSubsidyTarget = crmEffectiveSubsidyTarget(
+    rawSubsidyTarget,
+    isCancelled,
+  );
   const constructionDate = constructionDateFieldId
     ? readCustomerInfoFieldValue(recObj, constructionDateFieldId)
     : "";
