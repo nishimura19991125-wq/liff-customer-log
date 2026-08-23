@@ -33,6 +33,7 @@ import {
   applyCustomerInfoHiddenDefaultsToValues,
   isCustomerInfoFormFieldVisible,
 } from "@/lib/customer-info-form/rules";
+import { isCustomerInfoFieldRequired } from "@/lib/customer-info-form/validate";
 import type {
   CustomerInfoFieldType,
   CustomerInfoFormValues,
@@ -948,7 +949,7 @@ export function CustomerInfoEditForm({
         <label key={field.key} className="block">
           <span className="mb-1 block text-[12px] font-semibold text-slate-700">
             {nameSplitGroup?.groupLabel ?? field.label}
-            {field.required !== false ? (
+            {isCustomerInfoFieldRequired(field, displayValues) ? (
               <span className="ml-1 text-[11px] font-bold text-red-600">
                 必須
               </span>

@@ -13,6 +13,17 @@ import type {
   CustomerInfoFieldType,
   CustomerInfoFormValues,
 } from "@/lib/customer-info-form/types";
+import { isCustomerStatusCancelled } from "@/lib/customer-status-label";
+
+/** 室内現地調査「未実施」のときだけ必須を外す項目 */
+const INDOOR_SURVEY_NOT_DONE_RELAXED_KEYS = new Set([
+  "cosmeticCover",
+  "breakerAmps",
+]);
+
+function isIndoorSurveyNotDone(values: CustomerInfoFormValues): boolean {
+  return (values.indoorSurveyStatus ?? "").trim() === "未実施";
+}
 
 export type CustomerInfoFormFieldForValidate = {
   key: string;
@@ -34,6 +45,22 @@ function isBlankText(raw: string): boolean {
   return t === "" || t === "-";
 }
 
+/** フォーム値に応じて必須か（schema の required:false は常に任意） */
+export function isCustomerInfoFieldRequired(
+  field: Pick<CustomerInfoFormFieldForValidate, "key" | "required">,
+  values: CustomerInfoFormValues,
+): boolean {
+  if (field.required === false) return false;
+  if (isCustomerStatusCancelled(values.customerStatus)) return false;
+  if (
+    isIndoorSurveyNotDone(values) &&
+    INDOOR_SURVEY_NOT_DONE_RELAXED_KEYS.has(field.key)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 /** 表示中の項目が未入力か（非表示・自動算出の契約金額は対象外） */
 export function isCustomerInfoVisibleFieldValueMissing(
   field: CustomerInfoFormFieldForValidate,
@@ -41,7 +68,7 @@ export function isCustomerInfoVisibleFieldValueMissing(
 ): boolean {
   const synced = syncContractAmountFromPayment(values);
   if (!isCustomerInfoFormFieldVisible(field.key, synced)) return false;
-  if (field.required === false) return false;
+  if (!isCustomerInfoFieldRequired(field, synced)) return false;
 
   if (
     field.key === "contractAmount" &&
