@@ -5,6 +5,7 @@ import {
 } from "@/lib/customer-info-form/form-change";
 import { hasDecimalKwValue } from "@/lib/customer-info-form/decimal-kw";
 import { parseCommaIntegerDigits } from "@/lib/customer-info-form/numeric-comma";
+import { isIndoorSurveyStatusNotDone } from "@/lib/customer-info-form/options";
 import { isValidPhoneNumberFormat } from "@/lib/customer-info-form/phone-number";
 import { isValidPostalCodeFormat } from "@/lib/customer-info-form/postal-code";
 import { parsePtDigitsOnly } from "@/lib/customer-info-form/pt-transfer";
@@ -13,6 +14,26 @@ import type {
   CustomerInfoFieldType,
   CustomerInfoFormValues,
 } from "@/lib/customer-info-form/types";
+import { isCustomerStatusCancelledExact } from "@/lib/customer-status-label";
+
+/** 室内現地調査「未実施」のときだけ必須を外す項目 */
+const INDOOR_SURVEY_NOT_DONE_RELAXED_KEYS = new Set([
+  "cosmeticCover",
+  "breakerAmps",
+]);
+
+export type CustomerInfoRequiredCheckContext = {
+  /** キャンセル案件など、フォーム全体の必須を外す（顧客ステータス未反映時の UI 用） */
+  treatAllRequiredAsOptional?: boolean;
+};
+
+function isCustomerInfoCancelledForRequiredCheck(
+  values: CustomerInfoFormValues,
+  context?: CustomerInfoRequiredCheckContext,
+): boolean {
+  if (context?.treatAllRequiredAsOptional) return true;
+  return isCustomerStatusCancelledExact(values.customerStatus);
+}
 
 export type CustomerInfoFormFieldForValidate = {
   key: string;
@@ -34,14 +55,32 @@ function isBlankText(raw: string): boolean {
   return t === "" || t === "-";
 }
 
+/** フォーム値に応じて必須か（schema の required:false は常に任意） */
+export function isCustomerInfoFieldRequired(
+  field: Pick<CustomerInfoFormFieldForValidate, "key" | "required">,
+  values: CustomerInfoFormValues,
+  context?: CustomerInfoRequiredCheckContext,
+): boolean {
+  if (field.required === false) return false;
+  if (isCustomerInfoCancelledForRequiredCheck(values, context)) return false;
+  if (
+    isIndoorSurveyStatusNotDone(values.indoorSurveyStatus) &&
+    INDOOR_SURVEY_NOT_DONE_RELAXED_KEYS.has(field.key)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 /** 表示中の項目が未入力か（非表示・自動算出の契約金額は対象外） */
 export function isCustomerInfoVisibleFieldValueMissing(
   field: CustomerInfoFormFieldForValidate,
   values: CustomerInfoFormValues,
+  context?: CustomerInfoRequiredCheckContext,
 ): boolean {
   const synced = syncContractAmountFromPayment(values);
   if (!isCustomerInfoFormFieldVisible(field.key, synced)) return false;
-  if (field.required === false) return false;
+  if (!isCustomerInfoFieldRequired(field, synced, context)) return false;
 
   if (
     field.key === "contractAmount" &&
@@ -78,11 +117,16 @@ export function isCustomerInfoVisibleFieldValueMissing(
 export function findMissingRequiredCustomerInfoFields(
   fields: readonly CustomerInfoFormFieldForValidate[],
   values: CustomerInfoFormValues,
+  context?: CustomerInfoRequiredCheckContext,
 ): CustomerInfoFormFieldForValidate[] {
   return fields.filter((f) =>
-    isCustomerInfoVisibleFieldValueMissing(f, values),
+    isCustomerInfoVisibleFieldValueMissing(f, values, context),
   );
 }
+
+export {
+  isIndoorSurveyStatusNotDone,
+} from "@/lib/customer-info-form/options";
 
 const MAX_LABELS_IN_MESSAGE = 8;
 

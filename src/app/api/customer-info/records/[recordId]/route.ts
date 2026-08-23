@@ -488,19 +488,18 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         values.customerStatus,
       );
 
-      const missingRequired = savingCancelled
-        ? []
-        : findMissingRequiredCustomerInfoFields(
-            resolved
-              .filter((f) => !f.hiddenInForm)
-              .map((f) => ({
-                key: f.key,
-                label: f.label,
-                type: f.type,
-                required: f.required,
-              })),
-            values,
-          );
+      const missingRequired = findMissingRequiredCustomerInfoFields(
+        resolved
+          .filter((f) => !f.hiddenInForm)
+          .map((f) => ({
+            key: f.key,
+            label: f.label,
+            type: f.type,
+            required: f.required,
+          })),
+        values,
+        { treatAllRequiredAsOptional: savingCancelled },
+      );
       if (missingRequired.length > 0) {
         return NextResponse.json(
           {

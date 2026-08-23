@@ -45,6 +45,10 @@ import {
   applyCustomerInfoHiddenDefaultsToValues,
   isCustomerInfoFormFieldVisible,
 } from "@/lib/customer-info-form/rules";
+import {
+  isCustomerInfoFieldRequired,
+  type CustomerInfoRequiredCheckContext,
+} from "@/lib/customer-info-form/validate";
 import type {
   CustomerInfoFieldType,
   CustomerInfoFormValues,
@@ -127,6 +131,8 @@ export type CustomerInfoFormFieldApi = {
   liffOnly?: boolean;
   required?: boolean;
   value: string;
+  /** UI 用: 現在のフォーム値に応じた必須表示 */
+  showRequired?: boolean;
 };
 
 function parseCheckboxValue(raw: string): Set<string> {
@@ -533,6 +539,7 @@ export function CustomerInfoEditForm({
   saving,
   missingCaptions,
   requiredFieldErrors,
+  requirementContext,
   idToken,
   recordId,
   dropboxFolderConfigured = false,
@@ -546,6 +553,7 @@ export function CustomerInfoEditForm({
   saving: boolean;
   missingCaptions?: string[];
   requiredFieldErrors?: ReadonlySet<string>;
+  requirementContext?: CustomerInfoRequiredCheckContext;
   idToken: string | null;
   /** 書類アップロードの送信先。未指定ならアップロード欄を出さない */
   recordId?: string;
@@ -906,10 +914,19 @@ export function CustomerInfoEditForm({
           options: catalogOptions[kind],
           optionsPending: false,
         };
-      });
+      })
+      .map((f) => ({
+        ...f,
+        showRequired: isCustomerInfoFieldRequired(
+          f,
+          displayValues,
+          requirementContext,
+        ),
+      }));
   }, [
     formFields,
     displayValues,
+    requirementContext,
     manufacturer,
     catalogOptions,
     catalogLoading,
@@ -1020,7 +1037,7 @@ export function CustomerInfoEditForm({
         <label key={field.key} className="block">
           <span className="mb-1 block text-[12px] font-semibold text-slate-700">
             {nameSplitGroup?.groupLabel ?? field.label}
-            {field.required !== false ? (
+            {field.showRequired ? (
               <span className="ml-1 text-[11px] font-bold text-red-600">
                 必須
               </span>

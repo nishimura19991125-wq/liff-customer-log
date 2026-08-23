@@ -7,6 +7,7 @@ import {
   INSTALLATION_TYPES_WITH_SOLAR_PANEL,
   installationTypeHidesBatterySection,
   installationTypeHidesPanelSection,
+  isIndoorSurveyStatusNotDone,
   PAYMENT_METHODS_WITH_CASH,
   PAYMENT_METHODS_WITH_LOAN,
   introductionRequiresBuilderName,
@@ -183,7 +184,7 @@ export function isCustomerInfoFormFieldVisible(
   const extraParts = norm(values.extraParts);
   const paymentMethod = norm(values.paymentMethod);
   const subsidy = norm(values.subsidy);
-  const indoorSurveyStatus = norm(values.indoorSurveyStatus);
+  const indoorSurveyStatus = values.indoorSurveyStatus;
   const preApplication = norm(values.preApplication);
   const introduction = norm(values.introduction);
 
@@ -244,7 +245,7 @@ export function isCustomerInfoFormFieldVisible(
     case "otherSubsidy":
       return subsidyIncludesOther(subsidy);
     case "indoorSurveyScheduledDate":
-      return indoorSurveyStatus === "未実施";
+      return isIndoorSurveyStatusNotDone(indoorSurveyStatus);
     case "feedInBankAccountForm":
     case "powerOfAttorneyStorage":
     case "equipmentCertConsent":

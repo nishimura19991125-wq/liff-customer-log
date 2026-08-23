@@ -67,10 +67,10 @@ import {
   findMissingRequiredCustomerInfoFields,
   formatCustomerInfoRequiredValidationError,
 } from "@/lib/customer-info-form/validate";
+import type { CustomerInfoRequiredCheckContext } from "@/lib/customer-info-form/validate";
 import { CustomerCancelConfirmDialog } from "@/components/customer-cancel-confirm-dialog";
 import type { CustomerCancelPlan } from "@/lib/customer-cancel-plan";
 import {
-  isCustomerStatusCancelled,
   isCustomerStatusCancelledExact,
 } from "@/lib/customer-status-label";
 
@@ -204,11 +204,14 @@ function CustomerInfoPageContent() {
 
   const editIsCancelled = useMemo(() => {
     if (view !== "edit" || !detail) return false;
-    const fromForm = editValues.customerStatus?.trim();
-    if (fromForm) return isCustomerStatusCancelled(fromForm);
+    if (isCustomerStatusCancelledExact(editValues.customerStatus)) return true;
     const row = detail.display.find((r) => r.label.trim() === "顧客ステータス");
-    return isCustomerStatusCancelled(row?.value);
+    return isCustomerStatusCancelledExact(row?.value);
   }, [view, detail, editValues.customerStatus]);
+
+  const requirementContext = useMemo((): CustomerInfoRequiredCheckContext => {
+    return { treatAllRequiredAsOptional: editIsCancelled };
+  }, [editIsCancelled]);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -593,26 +596,20 @@ function CustomerInfoPageContent() {
         }));
       }
 
-      /**
-       * V-5: キャンセルにするときは必須チェックを通す。
-       * サーバ側でも保存する顧客ステータスの値を見て同じ判断をするので、
-       * ここを外しても未入力のまま通るのはキャンセルのときだけ。
-       */
       const savingCancelled = isCustomerStatusCancelledExact(
         formValuesToSave.customerStatus,
       );
 
-      const missing = savingCancelled
-        ? []
-        : findMissingRequiredCustomerInfoFields(
-            formFields.map((f) => ({
-              key: f.key,
-              label: f.label,
-              type: f.type,
-              required: f.required,
-            })),
-            formValuesToSave,
-          );
+      const missing = findMissingRequiredCustomerInfoFields(
+        formFields.map((f) => ({
+          key: f.key,
+          label: f.label,
+          type: f.type,
+          required: f.required,
+        })),
+        formValuesToSave,
+        { treatAllRequiredAsOptional: savingCancelled },
+      );
 
       // 名簿と一致しないことを知らせるのは、利用者が触った項目だけ。
       // 触っていない既存値で保存を止めると、退職者が担当の案件を
@@ -944,6 +941,7 @@ function CustomerInfoPageContent() {
                     saving={saving}
                     missingCaptions={missingCaptions}
                     requiredFieldErrors={requiredFieldErrors}
+                    requirementContext={requirementContext}
                     idToken={idToken}
                     recordId={detail.recordId}
                     dropboxFolderConfigured={detail.dropboxFolderConfigured}
