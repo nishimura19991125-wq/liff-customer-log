@@ -58,6 +58,7 @@ import {
   findMissingRequiredCustomerInfoFields,
   formatCustomerInfoRequiredValidationError,
 } from "@/lib/customer-info-form/validate";
+import type { CustomerInfoRequiredCheckContext } from "@/lib/customer-info-form/validate";
 import { isCustomerStatusCancelled } from "@/lib/customer-status-label";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
@@ -149,11 +150,14 @@ function CustomerInfoPageContent() {
 
   const editIsCancelled = useMemo(() => {
     if (view !== "edit" || !detail) return false;
-    const fromForm = editValues.customerStatus?.trim();
-    if (fromForm) return isCustomerStatusCancelled(fromForm);
+    if (isCustomerStatusCancelled(editValues.customerStatus)) return true;
     const row = detail.display.find((r) => r.label.trim() === "顧客ステータス");
     return isCustomerStatusCancelled(row?.value);
   }, [view, detail, editValues.customerStatus]);
+
+  const requirementContext = useMemo((): CustomerInfoRequiredCheckContext => {
+    return { treatAllRequiredAsOptional: editIsCancelled };
+  }, [editIsCancelled]);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -395,6 +399,7 @@ function CustomerInfoPageContent() {
           required: f.required,
         })),
         formValuesToSave,
+        requirementContext,
       );
 
       const staffMismatch: string[] = [];
@@ -481,6 +486,7 @@ function CustomerInfoPageContent() {
     formFields,
     apClStaffOptions,
     openRecord,
+    requirementContext,
   ]);
 
   if (phase === "init" || phase === "loading") {
@@ -708,6 +714,7 @@ function CustomerInfoPageContent() {
                     saving={saving}
                     missingCaptions={missingCaptions}
                     requiredFieldErrors={requiredFieldErrors}
+                    requirementContext={requirementContext}
                     idToken={idToken}
                     onApClStaffOptionsChange={setApClStaffOptions}
                     onChange={(key, value) => {

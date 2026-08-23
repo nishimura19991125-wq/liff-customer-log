@@ -29,11 +29,15 @@ import {
   parsePtDigitsOnly,
 } from "@/lib/customer-info-form/pt-transfer";
 import { inferPanelComboFromValues } from "@/lib/customer-info-form/panel-combo";
+import { isIndoorSurveyStatusNotDone } from "@/lib/customer-info-form/options";
 import {
   applyCustomerInfoHiddenDefaultsToValues,
   isCustomerInfoFormFieldVisible,
 } from "@/lib/customer-info-form/rules";
-import { isCustomerInfoFieldRequired } from "@/lib/customer-info-form/validate";
+import {
+  isCustomerInfoFieldRequired,
+  type CustomerInfoRequiredCheckContext,
+} from "@/lib/customer-info-form/validate";
 import type {
   CustomerInfoFieldType,
   CustomerInfoFormValues,
@@ -116,6 +120,8 @@ export type CustomerInfoFormFieldApi = {
   liffOnly?: boolean;
   required?: boolean;
   value: string;
+  /** UI 用: 現在のフォーム値に応じた必須表示 */
+  showRequired?: boolean;
 };
 
 function parseCheckboxValue(raw: string): Set<string> {
@@ -522,6 +528,7 @@ export function CustomerInfoEditForm({
   saving,
   missingCaptions,
   requiredFieldErrors,
+  requirementContext,
   idToken,
   onChange,
   onApClStaffOptionsChange,
@@ -531,6 +538,7 @@ export function CustomerInfoEditForm({
   saving: boolean;
   missingCaptions?: string[];
   requiredFieldErrors?: ReadonlySet<string>;
+  requirementContext?: CustomerInfoRequiredCheckContext;
   idToken: string | null;
   onChange: (key: string, value: string) => void;
   /** AP/CL候補名簿（保存時の完全一致チェック用） */
@@ -858,10 +866,19 @@ export function CustomerInfoEditForm({
           options: catalogOptions[kind],
           optionsPending: false,
         };
-      });
+      })
+      .map((f) => ({
+        ...f,
+        showRequired: isCustomerInfoFieldRequired(
+          f,
+          displayValues,
+          requirementContext,
+        ),
+      }));
   }, [
     formFields,
     displayValues,
+    requirementContext,
     manufacturer,
     catalogOptions,
     catalogLoading,
@@ -949,7 +966,7 @@ export function CustomerInfoEditForm({
         <label key={field.key} className="block">
           <span className="mb-1 block text-[12px] font-semibold text-slate-700">
             {nameSplitGroup?.groupLabel ?? field.label}
-            {isCustomerInfoFieldRequired(field, displayValues) ? (
+            {field.showRequired ? (
               <span className="ml-1 text-[11px] font-bold text-red-600">
                 必須
               </span>

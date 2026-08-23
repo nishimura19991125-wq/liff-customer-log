@@ -21,6 +21,12 @@ export const SUBSIDY_OR_PREAPPLICATION_OPTIONS = [
 
 export const INDOOR_SURVEY_STATUS_OPTIONS = ["未実施", "実施済み"] as const;
 
+export function isIndoorSurveyStatusNotDone(
+  value: string | null | undefined,
+): boolean {
+  return (value ?? "").normalize("NFKC").trim() === "未実施";
+}
+
 /** お客様情報の入力ステータス（@pocket リスト式） */
 export const INPUT_STATUS_OPTIONS = ["未入力", "入力完了"] as const;
 

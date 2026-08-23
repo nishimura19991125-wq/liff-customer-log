@@ -5,6 +5,7 @@ import {
   isCustomerInfoFieldRequired,
   isCustomerInfoVisibleFieldValueMissing,
 } from "@/lib/customer-info-form/validate";
+import { isIndoorSurveyStatusNotDone } from "@/lib/customer-info-form/options";
 
 const breakerField = {
   key: "breakerAmps",
@@ -54,6 +55,28 @@ describe("isCustomerInfoFieldRequired", () => {
     };
     expect(isCustomerInfoFieldRequired(breakerField, values)).toBe(false);
     expect(isCustomerInfoFieldRequired(otherRequiredField, values)).toBe(false);
+  });
+
+  it("relaxes all fields when treatAllRequiredAsOptional is set", () => {
+    const values = {
+      customerStatus: "工事待ち",
+      indoorSurveyStatus: "実施済み",
+    };
+    expect(
+      isCustomerInfoFieldRequired(breakerField, values, {
+        treatAllRequiredAsOptional: true,
+      }),
+    ).toBe(false);
+    expect(
+      isCustomerInfoFieldRequired(otherRequiredField, values, {
+        treatAllRequiredAsOptional: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("matches 未実施 with NFKC normalization", () => {
+    expect(isIndoorSurveyStatusNotDone("未実施")).toBe(true);
+    expect(isIndoorSurveyStatusNotDone("未\u3000実施")).toBe(false);
   });
 });
 
