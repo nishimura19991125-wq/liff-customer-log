@@ -263,6 +263,17 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   { key: "ihModel", caption: "IH型番", type: "text" },
   { key: "v2hModel", caption: "V2H型番", type: "text" },
   {
+    key: "indoorSurveyStatus",
+    caption: "室内現地調査実施状況",
+    type: "select",
+    options: [...INDOOR_SURVEY_STATUS_OPTIONS],
+  },
+  {
+    key: "indoorSurveyScheduledDate",
+    caption: "室内現調予定日",
+    type: "date",
+  },
+  {
     key: "breakerAmps",
     caption: "分電盤アンペア数",
     type: "select",
@@ -344,17 +355,6 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     formLabel: "事前申請",
     type: "select",
     options: [...SUBSIDY_OR_PREAPPLICATION_OPTIONS],
-  },
-  {
-    key: "indoorSurveyStatus",
-    caption: "室内現地調査実施状況",
-    type: "select",
-    options: [...INDOOR_SURVEY_STATUS_OPTIONS],
-  },
-  {
-    key: "indoorSurveyScheduledDate",
-    caption: "室内現調予定日",
-    type: "date",
   },
   {
     key: "constructionContractor",
