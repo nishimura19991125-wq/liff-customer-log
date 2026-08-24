@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildMeetingScheduleSaveConfirm,
   canEditMeetingScheduleNegotiationStatus,
+  findMissingMeetingScheduleRequiredInput,
+  isMeetingScheduleInputLocked,
+  isMeetingScheduleInputNewlyEntered,
+  requiresMeetingScheduleMeetingInput,
+  requiresMeetingScheduleResponseDate,
+  showsMeetingScheduleHenmachiForm,
+  MEETING_SCHEDULE_INPUT_FIELDS_BY_FORM,
+  MEETING_SCHEDULE_INPUT_FIELD_LABELS,
   canTransitionMeetingScheduleNegotiationStatus,
   keepsMeetingScheduleAlert,
   meetingScheduleNegotiationConfirmMessage,
@@ -236,5 +245,266 @@ describe("確認ダイアログの本文", () => {
         "元に戻せません",
       );
     }
+  });
+});
+
+describe("必須の要否（商談ステータス基準）", () => {
+  /** 仕様: この5件では3項目を必須にしない */
+  const NOT_REQUIRED = [
+    "商談待ち",
+    "資料送付回答待ち",
+    "資料送付成約",
+    "資料送付否",
+    "アポキャン",
+  ];
+
+  it("★ 5件では必須にしない", () => {
+    for (const s of NOT_REQUIRED) {
+      expect(requiresMeetingScheduleMeetingInput(s), s).toBe(false);
+    }
+  });
+
+  it("★ 残り9件では必須にする", () => {
+    const required = MEETING_SCHEDULE_NEGOTIATION_STATUSES.filter(
+      (s) => !NOT_REQUIRED.includes(s),
+    );
+    expect(required).toHaveLength(9);
+    for (const s of required) {
+      expect(requiresMeetingScheduleMeetingInput(s), s).toBe(true);
+    }
+  });
+
+  it("★ 返待ち回答日が必須なのは「返待ち」のときだけ", () => {
+    for (const s of MEETING_SCHEDULE_NEGOTIATION_STATUSES) {
+      expect(requiresMeetingScheduleResponseDate(s), s).toBe(s === "返待ち");
+    }
+  });
+
+  it("14件の外・空欄では必須にしない（既存案件を編集不能にしない）", () => {
+    for (const s of ["", "   ", "未知のステータス"]) {
+      expect(requiresMeetingScheduleMeetingInput(s)).toBe(false);
+      expect(requiresMeetingScheduleResponseDate(s)).toBe(false);
+    }
+  });
+});
+
+describe("入力済みなら変更不可", () => {
+  it("★ 項目ごとに個別に判定する", () => {
+    expect(isMeetingScheduleInputLocked("2026-09-10")).toBe(true);
+    expect(isMeetingScheduleInputLocked("自宅")).toBe(true);
+    expect(isMeetingScheduleInputLocked("")).toBe(false);
+    expect(isMeetingScheduleInputLocked("   ")).toBe(false);
+  });
+
+  it("空だった項目に値を入れるときだけ「新規入力」とみなす", () => {
+    expect(isMeetingScheduleInputNewlyEntered("", "自宅")).toBe(true);
+    expect(isMeetingScheduleInputNewlyEntered("", "")).toBe(false);
+    // 入力済みの項目は画面に入力欄が出ないので、ここは通常起きない
+    expect(isMeetingScheduleInputNewlyEntered("自宅", "店舗")).toBe(false);
+  });
+});
+
+describe("必須の検証範囲（触っていない空欄では止めない）", () => {
+  const blank = {
+    meetingDate: "",
+    closeType: "",
+    meetingPlace: "",
+    responseDate: "",
+  };
+
+  it("★★ 触っていない空欄では止めない（既存の空データを編集不能にしない）", () => {
+    expect(
+      findMissingMeetingScheduleRequiredInput({
+        server: blank,
+        draft: blank,
+        serverNegotiationStatus: "再商談",
+        draftNegotiationStatus: "再商談",
+      }),
+    ).toBeNull();
+  });
+
+  it("1つ入力すると、他の必須項目も求められる", () => {
+    expect(
+      findMissingMeetingScheduleRequiredInput({
+        server: blank,
+        draft: { ...blank, meetingPlace: "自宅" },
+        serverNegotiationStatus: "再商談",
+        draftNegotiationStatus: "再商談",
+      }),
+    ).toBe("meetingDate");
+  });
+
+  it("既存値があれば埋まっているとみなす", () => {
+    expect(
+      findMissingMeetingScheduleRequiredInput({
+        server: { ...blank, meetingDate: "2026-09-10", closeType: "両クロ" },
+        draft: {
+          ...blank,
+          meetingDate: "2026-09-10",
+          closeType: "両クロ",
+          meetingPlace: "自宅",
+        },
+        serverNegotiationStatus: "再商談",
+        draftNegotiationStatus: "再商談",
+      }),
+    ).toBeNull();
+  });
+
+  it("必須にしない5件なら、1つ入力しても他を求めない", () => {
+    expect(
+      findMissingMeetingScheduleRequiredInput({
+        server: blank,
+        draft: { ...blank, meetingPlace: "自宅" },
+        serverNegotiationStatus: "商談待ち",
+        draftNegotiationStatus: "商談待ち",
+      }),
+    ).toBeNull();
+  });
+
+  it("商談ステータスを必須の値へ変えると、3項目を求める", () => {
+    expect(
+      findMissingMeetingScheduleRequiredInput({
+        server: blank,
+        draft: blank,
+        serverNegotiationStatus: "商談待ち",
+        draftNegotiationStatus: "再商談",
+      }),
+    ).toBe("meetingDate");
+  });
+
+  it("★ 商談ステータスを返待ちへ変えると、返待ち回答日も求める", () => {
+    const filled = {
+      meetingDate: "2026-09-10",
+      closeType: "両クロ",
+      meetingPlace: "自宅",
+      responseDate: "",
+    };
+    expect(
+      findMissingMeetingScheduleRequiredInput({
+        server: filled,
+        draft: filled,
+        serverNegotiationStatus: "商談待ち",
+        draftNegotiationStatus: "返待ち",
+      }),
+    ).toBe("responseDate");
+  });
+});
+
+describe("入力枠の表示", () => {
+  it("★ 返待ち回答日の枠は、見積ステータスか商談ステータスが返待ちなら出す", () => {
+    expect(
+      showsMeetingScheduleHenmachiForm({
+        estimateStatusIsHenmachi: true,
+        negotiationStatus: "商談待ち",
+      }),
+    ).toBe(true);
+    expect(
+      showsMeetingScheduleHenmachiForm({
+        estimateStatusIsHenmachi: false,
+        negotiationStatus: "返待ち",
+      }),
+    ).toBe(true);
+    expect(
+      showsMeetingScheduleHenmachiForm({
+        estimateStatusIsHenmachi: false,
+        negotiationStatus: "商談待ち",
+      }),
+    ).toBe(false);
+  });
+
+  /**
+   * ★「必須ならば必ず入力できる」の構造保証。
+   * 必須になる条件が表示条件の部分集合であることを全14件で確認する
+   */
+  it("★★ 返待ち回答日が必須なら、必ず入力枠が出る", () => {
+    for (const s of MEETING_SCHEDULE_NEGOTIATION_STATUSES) {
+      if (!requiresMeetingScheduleResponseDate(s)) continue;
+      expect(
+        showsMeetingScheduleHenmachiForm({
+          estimateStatusIsHenmachi: false,
+          negotiationStatus: s,
+        }),
+        s,
+      ).toBe(true);
+    }
+  });
+
+  it("★ 同じ項目が2つの枠に現れない（二重描画の防止）", () => {
+    const setCreated = MEETING_SCHEDULE_INPUT_FIELDS_BY_FORM.setCreated;
+    const henmachi = MEETING_SCHEDULE_INPUT_FIELDS_BY_FORM.henmachi;
+    for (const key of setCreated) {
+      expect(henmachi).not.toContain(key);
+    }
+    expect([...setCreated, ...henmachi].sort()).toEqual(
+      Object.keys(MEETING_SCHEDULE_INPUT_FIELD_LABELS).sort(),
+    );
+  });
+});
+
+describe("確認ダイアログの組み立て", () => {
+  it("★ 新たに入力される項目だけを並べる", () => {
+    const c = buildMeetingScheduleSaveConfirm({
+      serverNegotiationStatus: "商談待ち",
+      draftNegotiationStatus: "商談待ち",
+      newlyEntered: [
+        { label: "初回商談実施日", value: "2026/06/12" },
+        { label: "商談場所", value: "宅内テーブル商談" },
+      ],
+    });
+    expect(c.needed).toBe(true);
+    expect(c.title).toBe("入力内容の確定");
+    expect(c.blocks).toHaveLength(1);
+    expect(c.blocks[0]).toBe(
+      [
+        "以下の項目を保存します。保存後は変更できません。",
+        "・初回商談実施日: 2026/06/12",
+        "・商談場所: 宅内テーブル商談",
+      ].join("\n"),
+    );
+    expect(c.blocks[0]).not.toContain("片クロor両クロ");
+    expect(c.blocks[0]).not.toContain("返待ち回答日");
+  });
+
+  it("★ 商談ステータスの確認と同時でも、ダイアログは1つにまとまる", () => {
+    const c = buildMeetingScheduleSaveConfirm({
+      serverNegotiationStatus: "商談待ち",
+      draftNegotiationStatus: "否",
+      newlyEntered: [{ label: "商談場所", value: "宅内テーブル商談" }],
+    });
+    expect(c.needed).toBe(true);
+    expect(c.title).toBe("商談ステータスの変更と入力の確定");
+    expect(c.blocks).toHaveLength(2);
+    expect(c.blocks[0]).toContain("商談ステータスを「否」に変更します");
+    expect(c.blocks[1]).toContain("保存後は変更できません");
+  });
+
+  it("商談ステータスの変更だけなら、その1ブロックだけ", () => {
+    const c = buildMeetingScheduleSaveConfirm({
+      serverNegotiationStatus: "商談待ち",
+      draftNegotiationStatus: "否",
+      newlyEntered: [],
+    });
+    expect(c.title).toBe("商談ステータスの変更");
+    expect(c.blocks).toHaveLength(1);
+  });
+
+  it("どちらも無ければ確認しない", () => {
+    const c = buildMeetingScheduleSaveConfirm({
+      serverNegotiationStatus: "商談待ち",
+      draftNegotiationStatus: "商談待ち",
+      newlyEntered: [],
+    });
+    expect(c.needed).toBe(false);
+    expect(c.blocks).toEqual([]);
+  });
+
+  it("アラートに残る値への変更＋新規入力なら、入力の確定だけ出す", () => {
+    const c = buildMeetingScheduleSaveConfirm({
+      serverNegotiationStatus: "商談待ち",
+      draftNegotiationStatus: "再商談",
+      newlyEntered: [{ label: "商談場所", value: "宅内テーブル商談" }],
+    });
+    expect(c.title).toBe("入力内容の確定");
+    expect(c.blocks).toHaveLength(1);
   });
 });
