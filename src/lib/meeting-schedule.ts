@@ -40,7 +40,13 @@ import {
 } from "@/lib/meeting-schedule-locked-fields";
 import {
   canTransitionMeetingScheduleNegotiationStatus,
+  findMissingMeetingScheduleRequiredInput,
+  isMeetingScheduleInputLocked,
   normalizeMeetingScheduleNegotiationStatus,
+  MEETING_SCHEDULE_INPUT_FIELD_LABELS,
+  MEETING_SCHEDULE_INPUT_REQUIRED_ERRORS,
+  type MeetingScheduleInputFieldKey,
+  type MeetingScheduleInputValues,
 } from "@/lib/meeting-schedule-negotiation-status";
 import { isWritableAtPocketField } from "@/lib/customer-info-form/pocket-writable-fields";
 import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
@@ -621,44 +627,103 @@ export async function updateMeetingScheduleStatusForStaff(
       [fieldMap.estimateStatus]: normalizedStatus,
     };
 
-    if (meetingDate && fieldMap.meetingDate) {
-      payload[fieldMap.meetingDate] = meetingDate;
-    } else if (meetingDate && !fieldMap.meetingDate) {
+    const currentNegotiationStatusForInput = fieldMap.negotiationStatus
+      ? coerceCustomerInfoDisplayString(
+          readCustomerInfoFieldValue(recObj, fieldMap.negotiationStatus),
+        ).trim()
+      : "";
+
+    /** @pocket 側の現在値。日付は YMD に揃えてから突き合わせる */
+    const currentInputs: MeetingScheduleInputValues = {
+      meetingDate: resolveFirstMeetingDateYmd(recObj, fieldMap),
+      closeType: fieldMap.closeType
+        ? coerceCustomerInfoDisplayString(
+            readCustomerInfoFieldValue(recObj, fieldMap.closeType),
+          ).trim()
+        : "",
+      meetingPlace: fieldMap.meetingPlace
+        ? coerceCustomerInfoDisplayString(
+            readCustomerInfoFieldValue(recObj, fieldMap.meetingPlace),
+          ).trim()
+        : "",
+      responseDate: resolveResponseDateYmd(recObj, fieldMap),
+    };
+
+    const incomingInputs: MeetingScheduleInputValues = {
+      meetingDate: (meetingDate ?? "").trim(),
+      closeType: (closeType ?? "").trim(),
+      meetingPlace: (meetingPlace ?? "").trim(),
+      responseDate: (responseDate ?? "").trim(),
+    };
+
+    /**
+     * 必須の検証。基準は商談ステータス。
+     *
+     * 「@pocket の既存値 または 今回の新規入力」で埋まっているかを見るため、
+     * レコードを読んだこの場所で行う。触っていない空欄では止めない
+     * （対象項目が空のまま残っている既存案件を編集不能にしないため）。
+     */
+    const missingRequired = findMissingMeetingScheduleRequiredInput({
+      server: currentInputs,
+      draft: incomingInputs,
+      serverNegotiationStatus: currentNegotiationStatusForInput,
+      // 商談ステータスが送られてこない経路（返待ちの入力枠だけ出ている画面など）
+      // では現在値を使う。空を「変更あり」と誤判定しないため
+      draftNegotiationStatus:
+        (negotiationStatus ?? "").trim() || currentNegotiationStatusForInput,
+    });
+    if (missingRequired) {
       return {
         ok: false,
-        status: 503,
-        error: "初回商談実施日列を特定できません",
+        status: 400,
+        error: MEETING_SCHEDULE_INPUT_REQUIRED_ERRORS[missingRequired],
       };
     }
 
-    if (closeType && fieldMap.closeType) {
-      payload[fieldMap.closeType] = closeType;
-    } else if (closeType && !fieldMap.closeType) {
-      return {
-        ok: false,
-        status: 503,
-        error: "片クロor両クロ列を特定できません",
-      };
-    }
+    /**
+     * 一度入力した項目は変更できない。判定は項目ごとに個別で、
+     * 正は @pocket 側の現在値。画面から入力欄を消しても API を直接
+     * 呼べば書けてしまうため、ここで確実に塞ぐ。
+     *
+     * 現在値と同じ値が送られてくるのは通常の保存（画面は入力済みの項目も
+     * そのまま送り返す）なので、拒否せず黙って書き込み対象から外す。
+     */
+    const inputFieldIds: Record<MeetingScheduleInputFieldKey, string | null> = {
+      meetingDate: fieldMap.meetingDate,
+      closeType: fieldMap.closeType,
+      meetingPlace: fieldMap.meetingPlace,
+      responseDate: fieldMap.responseDate,
+    };
 
-    if (meetingPlace && fieldMap.meetingPlace) {
-      payload[fieldMap.meetingPlace] = meetingPlace;
-    } else if (meetingPlace && !fieldMap.meetingPlace) {
-      return {
-        ok: false,
-        status: 503,
-        error: "商談場所列を特定できません",
-      };
-    }
+    for (const key of [
+      "meetingDate",
+      "closeType",
+      "meetingPlace",
+      "responseDate",
+    ] as const) {
+      const incoming = incomingInputs[key];
+      if (!incoming) continue;
 
-    if (responseDate && fieldMap.responseDate) {
-      payload[fieldMap.responseDate] = responseDate;
-    } else if (responseDate && !fieldMap.responseDate) {
-      return {
-        ok: false,
-        status: 503,
-        error: "返待ち回答日列を特定できません",
-      };
+      const current = currentInputs[key];
+      if (incoming === current) continue;
+
+      if (isMeetingScheduleInputLocked(current)) {
+        return {
+          ok: false,
+          status: 400,
+          error: `${MEETING_SCHEDULE_INPUT_FIELD_LABELS[key]}は入力済みのため変更できません`,
+        };
+      }
+
+      const fieldId = inputFieldIds[key];
+      if (!fieldId) {
+        return {
+          ok: false,
+          status: 503,
+          error: `${MEETING_SCHEDULE_INPUT_FIELD_LABELS[key]}列を特定できません`,
+        };
+      }
+      payload[fieldId] = incoming;
     }
 
     /**
@@ -670,11 +735,7 @@ export async function updateMeetingScheduleStatusForStaff(
      * 選択欄を出さず現在値をそのまま送り返してくる。この if を通らないので
      * 検証そのものが走らず、付随項目だけの保存は素通りする。
      */
-    const currentNegotiationStatus = fieldMap.negotiationStatus
-      ? coerceCustomerInfoDisplayString(
-          readCustomerInfoFieldValue(recObj, fieldMap.negotiationStatus),
-        ).trim()
-      : "";
+    const currentNegotiationStatus = currentNegotiationStatusForInput;
 
     if (negotiationStatus && negotiationStatus !== currentNegotiationStatus) {
       if (!fieldMap.negotiationStatus) {

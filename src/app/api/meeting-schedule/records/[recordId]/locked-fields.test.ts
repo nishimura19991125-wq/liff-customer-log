@@ -12,6 +12,11 @@ const h = vi.hoisted(() => ({
   updateCalls: [] as Array<Record<string, unknown>>,
   /** レコードの現在の商談ステータス。テストごとに差し替える */
   negotiationStatus: "商談待ち",
+  /** 付随項目の現在値。既定は空（未入力なので入力できる） */
+  meetingDate: "",
+  closeType: "",
+  meetingPlace: "",
+  responseDate: "",
   /** 商談ステータス列の @pocket 上の列タイプ。空なら更新可 */
   negotiationFieldType: "",
 }));
@@ -40,9 +45,10 @@ function record(): Record<string, unknown> {
     [FIELD.clPerson]: "西村太郎",
     [FIELD.salesperson]: "西村太郎",
     [FIELD.estimateStatus]: "商談セット作成済み",
-    [FIELD.meetingDate]: "2026-09-10",
-    [FIELD.closeType]: "両クロ",
-    [FIELD.meetingPlace]: "自宅",
+    [FIELD.meetingDate]: h.meetingDate,
+    [FIELD.closeType]: h.closeType,
+    [FIELD.meetingPlace]: h.meetingPlace,
+    [FIELD.responseDate]: h.responseDate,
     [FIELD.scheduledDate]: "2026-09-05 10:00:00",
     [FIELD.negotiationStatus]: h.negotiationStatus,
     [IMPORT_KEY_FIELD_ID]: "APO-001",
@@ -119,6 +125,10 @@ beforeEach(() => {
   h.updateCalls.length = 0;
   h.negotiationStatus = "商談待ち";
   h.negotiationFieldType = "";
+  h.meetingDate = "";
+  h.closeType = "";
+  h.meetingPlace = "";
+  h.responseDate = "";
 });
 
 describe("PATCH .../status（見積ステータスは payload から落とす）", () => {
@@ -432,5 +442,212 @@ describe("PATCH .../status（商談ステータスの書き込み）", () => {
     ]) {
       expect(body.error).not.toContain(secret);
     }
+  });
+});
+
+describe("PATCH .../status（入力済みの項目は変更不可）", () => {
+  const body = (over: Record<string, unknown> = {}) => ({
+    status: "商談セット作成済み",
+    negotiationStatus: "商談待ち",
+    ...over,
+  });
+
+  it("★ 既に値がある項目への書き込みは 400 で拒否する", async () => {
+    h.meetingPlace = "自宅";
+
+    const res = await statusPatch(
+      patchRequest(body({ meetingPlace: "店舗" })),
+      ctx,
+    );
+
+    expect(res.status).toBe(400);
+    expect(h.updateCalls).toHaveLength(0);
+    await expect(res.json()).resolves.toMatchObject({
+      error: "商談場所は入力済みのため変更できません",
+    });
+  });
+
+  it("★ 4項目それぞれで拒否する", async () => {
+    // 見積ステータスごとに受け取る項目が違うため、項目に合う値を使う
+    const cases = [
+      ["meetingDate", "商談セット作成済み", "2026-09-10", "2026-09-11", "初回商談実施日"],
+      ["closeType", "商談セット作成済み", "両クロ", "片クロ", "片クロor両クロ"],
+      ["meetingPlace", "商談セット作成済み", "自宅", "店舗", "商談場所"],
+      ["responseDate", "返待ち", "2026-09-12", "2026-09-20", "返待ち回答日"],
+    ] as const;
+
+    for (const [key, estimateStatus, current, next, label] of cases) {
+      h.updateCalls.length = 0;
+      h.meetingDate = "";
+      h.closeType = "";
+      h.meetingPlace = "";
+      h.responseDate = "";
+      h[key] = current;
+
+      const res = await statusPatch(
+        patchRequest(body({ status: estimateStatus, [key]: next })),
+        ctx,
+      );
+
+      expect(res.status, label).toBe(400);
+      expect(h.updateCalls, label).toHaveLength(0);
+      await expect(res.json(), label).resolves.toMatchObject({
+        error: `${label}は入力済みのため変更できません`,
+      });
+    }
+  });
+
+  it("★ 現在値と同じ値なら拒否せず、黙って書き込み対象から外す", async () => {
+    // 画面は入力済みの項目も現在値のまま送り返してくる
+    h.meetingDate = "2026-09-10";
+    h.closeType = "両クロ";
+
+    const res = await statusPatch(
+      patchRequest(
+        body({
+          meetingDate: "2026-09-10",
+          closeType: "両クロ",
+          meetingPlace: "自宅",
+        }),
+      ),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    // 空だった商談場所だけが書かれる
+    expect(h.updateCalls[0]).toEqual({
+      [IMPORT_KEY_FIELD_ID]: "APO-001",
+      [FIELD.meetingPlace]: "自宅",
+    });
+  });
+
+  it("★ 項目ごとに個別。1つ入力済みでも他項目は入力できる", async () => {
+    h.meetingDate = "2026-09-10";
+
+    const res = await statusPatch(
+      patchRequest(
+        body({
+          meetingDate: "2026-09-10",
+          closeType: "片クロ",
+          meetingPlace: "店舗",
+        }),
+      ),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(h.updateCalls[0]).toEqual({
+      [IMPORT_KEY_FIELD_ID]: "APO-001",
+      [FIELD.closeType]: "片クロ",
+      [FIELD.meetingPlace]: "店舗",
+    });
+  });
+
+  it("日付の表記ゆれ（スラッシュ・時刻付き）を変更とみなさない", async () => {
+    h.meetingDate = "2026/09/10 00:00:00";
+
+    const res = await statusPatch(
+      patchRequest(body({ meetingDate: "2026-09-10" })),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(h.updateCalls).toHaveLength(0);
+  });
+});
+
+describe("PATCH .../status（必須の検証）", () => {
+  it("★★ 触っていない空欄では止めない（既存の空データを編集不能にしない）", async () => {
+    // 商談ステータスは必須の値だが、3項目には触れていない
+    h.negotiationStatus = "再商談";
+
+    const res = await statusPatch(
+      patchRequest({ status: "商談セット作成済み", negotiationStatus: "再商談" }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+  });
+
+  it("必須の値のとき、1つ入力すると他の必須項目も求める", async () => {
+    h.negotiationStatus = "再商談";
+
+    const res = await statusPatch(
+      patchRequest({
+        status: "商談セット作成済み",
+        negotiationStatus: "再商談",
+        meetingPlace: "店舗",
+      }),
+      ctx,
+    );
+
+    expect(res.status).toBe(400);
+    expect(h.updateCalls).toHaveLength(0);
+    await expect(res.json()).resolves.toMatchObject({
+      error: "初回商談実施日を入力してください",
+    });
+  });
+
+  it("必須にしない5件なら、1つだけ入力しても通る", async () => {
+    h.negotiationStatus = "商談待ち";
+
+    const res = await statusPatch(
+      patchRequest({
+        status: "商談セット作成済み",
+        negotiationStatus: "商談待ち",
+        meetingPlace: "店舗",
+      }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(h.updateCalls[0]).toMatchObject({ [FIELD.meetingPlace]: "店舗" });
+  });
+
+  it("★ 商談ステータスを返待ちへ変えると、返待ち回答日も求める", async () => {
+    h.meetingDate = "2026-09-10";
+    h.closeType = "両クロ";
+    h.meetingPlace = "自宅";
+
+    const res = await statusPatch(
+      patchRequest({
+        status: "商談セット作成済み",
+        negotiationStatus: "返待ち",
+        meetingDate: "2026-09-10",
+        closeType: "両クロ",
+        meetingPlace: "自宅",
+      }),
+      ctx,
+    );
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: "返待ち回答日を入力してください",
+    });
+  });
+
+  it("★ 返待ち回答日を入れれば通り、商談ステータスと同時に書き込まれる", async () => {
+    h.meetingDate = "2026-09-10";
+    h.closeType = "両クロ";
+    h.meetingPlace = "自宅";
+
+    const res = await statusPatch(
+      patchRequest({
+        status: "商談セット作成済み",
+        negotiationStatus: "返待ち",
+        meetingDate: "2026-09-10",
+        closeType: "両クロ",
+        meetingPlace: "自宅",
+        responseDate: "2026-09-20",
+      }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(h.updateCalls[0]).toEqual({
+      [IMPORT_KEY_FIELD_ID]: "APO-001",
+      [FIELD.negotiationStatus]: "返待ち",
+      [FIELD.responseDate]: "2026-09-20",
+    });
   });
 });
