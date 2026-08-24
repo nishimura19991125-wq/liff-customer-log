@@ -10,6 +10,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   updateCalls: [] as Array<Record<string, unknown>>,
+  /** レコードの現在の商談ステータス。テストごとに差し替える */
+  negotiationStatus: "商談待ち",
+  /** 商談ステータス列の @pocket 上の列タイプ。空なら更新可 */
+  negotiationFieldType: "",
 }));
 
 const FIELD = {
@@ -31,16 +35,19 @@ const FIELD = {
 const IMPORT_KEY_FIELD_ID = "f_apo_no";
 
 /** 担当者が一致し、現在ステータスは「商談セット作成済み」 */
-const RECORD = {
-  [FIELD.clPerson]: "西村太郎",
-  [FIELD.salesperson]: "西村太郎",
-  [FIELD.estimateStatus]: "商談セット作成済み",
-  [FIELD.meetingDate]: "2026-09-10",
-  [FIELD.closeType]: "両クロ",
-  [FIELD.meetingPlace]: "自宅",
-  [FIELD.scheduledDate]: "2026-09-05 10:00:00",
-  [IMPORT_KEY_FIELD_ID]: "APO-001",
-};
+function record(): Record<string, unknown> {
+  return {
+    [FIELD.clPerson]: "西村太郎",
+    [FIELD.salesperson]: "西村太郎",
+    [FIELD.estimateStatus]: "商談セット作成済み",
+    [FIELD.meetingDate]: "2026-09-10",
+    [FIELD.closeType]: "両クロ",
+    [FIELD.meetingPlace]: "自宅",
+    [FIELD.scheduledDate]: "2026-09-05 10:00:00",
+    [FIELD.negotiationStatus]: h.negotiationStatus,
+    [IMPORT_KEY_FIELD_ID]: "APO-001",
+  };
+}
 
 vi.mock("@/lib/request-auth", () => ({
   resolveCallerLineAuth: async () => ({ ok: true, lineUserId: "U-test" }),
@@ -59,8 +66,10 @@ vi.mock("@/lib/atpocket", () => ({
   apiKeyForSalesDashboardApoPocket: () => "dummy",
   apiKeyForSalesDashboardApoWrite: () => "dummy",
   salesDashboardApoWriteConfigured: () => true,
-  fetchAppFields: async () => [],
-  fetchRecordById: async () => ({ record: RECORD }),
+  fetchAppFields: async () => [
+    { uniqueId: FIELD.negotiationStatus, caption: "商談ステータス", fieldType: h.negotiationFieldType },
+  ],
+  fetchRecordById: async () => ({ record: record() }),
   updateRecord: async (
     _appId: string,
     _recordId: string,
@@ -108,6 +117,8 @@ const ctx = { params: Promise.resolve({ recordId: "123" }) };
 
 beforeEach(() => {
   h.updateCalls.length = 0;
+  h.negotiationStatus = "商談待ち";
+  h.negotiationFieldType = "";
 });
 
 describe("PATCH .../status（見積ステータスは payload から落とす）", () => {
@@ -203,5 +214,102 @@ describe("PATCH .../schedule（日時は 403 で拒否）", () => {
     await schedulePatch(patchRequest({ scheduledYmd: "2026-09-30" }), ctx);
 
     expect(h.updateCalls).toHaveLength(0);
+  });
+});
+
+describe("PATCH .../status（商談ステータスの書き込み）", () => {
+  const setCreatedBody = {
+    status: "商談セット作成済み",
+    meetingDate: "2026-09-10",
+    closeType: "両クロ",
+    meetingPlace: "自宅",
+  };
+
+  it("★ 現在値から変わったときだけ書き込む", async () => {
+    const res = await statusPatch(
+      patchRequest({ ...setCreatedBody, negotiationStatus: "否" }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(h.updateCalls[0]).toMatchObject({ [FIELD.negotiationStatus]: "否" });
+  });
+
+  it("現在値と同じなら書き込まない", async () => {
+    const res = await statusPatch(
+      patchRequest({ ...setCreatedBody, negotiationStatus: "商談待ち" }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(h.updateCalls[0]).not.toHaveProperty(FIELD.negotiationStatus);
+  });
+
+  it("★ 現在値が6件の外でも、同じ値なら弾かず他項目を保存できる", async () => {
+    // 「資料送付成約」は LIFF から選べないが、画面は現在値を送り返してくる。
+    // ここで 400 にすると付随項目の保存まで巻き込む
+    h.negotiationStatus = "資料送付成約";
+
+    const res = await statusPatch(
+      patchRequest({
+        ...setCreatedBody,
+        meetingPlace: "店舗",
+        negotiationStatus: "資料送付成約",
+      }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(h.updateCalls[0]).toMatchObject({ [FIELD.meetingPlace]: "店舗" });
+    expect(h.updateCalls[0]).not.toHaveProperty(FIELD.negotiationStatus);
+  });
+
+  it("6件の外へ変更しようとしたら 400 で弾く", async () => {
+    const res = await statusPatch(
+      patchRequest({ ...setCreatedBody, negotiationStatus: "資料送付成約" }),
+      ctx,
+    );
+
+    expect(res.status).toBe(400);
+    expect(h.updateCalls).toHaveLength(0);
+  });
+
+  it("見積ステータスは相変わらず payload から落ちる", async () => {
+    await statusPatch(
+      patchRequest({ ...setCreatedBody, negotiationStatus: "即決成約" }),
+      ctx,
+    );
+
+    expect(h.updateCalls[0]).not.toHaveProperty(FIELD.estimateStatus);
+    expect(h.updateCalls[0]).toMatchObject({
+      [FIELD.negotiationStatus]: "即決成約",
+    });
+  });
+
+  it("更新できない列タイプなら 503。内部情報は出さない", async () => {
+    h.negotiationFieldType = "Calc";
+
+    const res = await statusPatch(
+      patchRequest({ ...setCreatedBody, negotiationStatus: "否" }),
+      ctx,
+    );
+
+    expect(res.status).toBe(503);
+    expect(h.updateCalls).toHaveLength(0);
+
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe(
+      "商談ステータスはこの画面から変更できない設定になっています",
+    );
+    // 列名・列ID・アプリ名・環境変数名を漏らさない
+    for (const secret of [
+      FIELD.negotiationStatus,
+      IMPORT_KEY_FIELD_ID,
+      "SALES_DASHBOARD",
+      "MEETING_SCHEDULE_",
+      "Calc",
+    ]) {
+      expect(body.error).not.toContain(secret);
+    }
   });
 });

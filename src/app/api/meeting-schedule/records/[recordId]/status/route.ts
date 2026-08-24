@@ -48,6 +48,7 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
     closeType?: string;
     meetingPlace?: string;
     responseDate?: string;
+    negotiationStatus?: string;
   };
   try {
     body = (await request.json()) as {
@@ -56,6 +57,7 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
       closeType?: string;
       meetingPlace?: string;
       responseDate?: string;
+      negotiationStatus?: string;
     };
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
@@ -83,6 +85,7 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
         closeType: body.closeType,
         meetingPlace: body.meetingPlace,
         responseDate: body.responseDate,
+        negotiationStatus: body.negotiationStatus,
       },
     );
     if (!result.ok) {

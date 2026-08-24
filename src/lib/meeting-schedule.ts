@@ -38,6 +38,8 @@ import {
   stripLockedMeetingScheduleFieldsFromPayload,
   MEETING_SCHEDULE_LOCKED_FIELD_LABELS,
 } from "@/lib/meeting-schedule-locked-fields";
+import { normalizeSelectableNegotiationStatus } from "@/lib/meeting-schedule-negotiation-status";
+import { isWritableAtPocketField } from "@/lib/customer-info-form/pocket-writable-fields";
 import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
 import { validateMeetingScheduleScheduledUpdate } from "@/lib/meeting-schedule-scheduled-update";
 import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
@@ -495,8 +497,14 @@ export async function updateMeetingScheduleStatusForStaff(
   if (!validated.ok) {
     return { ok: false, status: 400, error: validated.error };
   }
-  const { status: nextStatus, meetingDate, closeType, meetingPlace, responseDate } =
-    validated.normalized;
+  const {
+    status: nextStatus,
+    meetingDate,
+    closeType,
+    meetingPlace,
+    responseDate,
+    negotiationStatus,
+  } = validated.normalized;
   if (!recordId) {
     return { ok: false, status: 400, error: "recordId が必要です" };
   }
@@ -567,6 +575,8 @@ export async function updateMeetingScheduleStatusForStaff(
       fieldMap.closeType,
       fieldMap.meetingPlace,
       fieldMap.responseDate,
+      // 商談ステータスは現在値との突き合わせに使う（変更時のみ書き込む）
+      fieldMap.negotiationStatus,
       importKeyFieldId,
       ...importKeySources,
     ]
@@ -646,6 +656,59 @@ export async function updateMeetingScheduleStatusForStaff(
         status: 503,
         error: "返待ち回答日列を特定できません",
       };
+    }
+
+    /**
+     * 商談ステータス。**現在値から変わったときだけ**書き込む。
+     *
+     * 画面は現在値をそのまま送り返してくることがあり、その現在値は
+     * LIFF の選択肢6件の外（例: 資料送付成約）のこともある。
+     * 常に書き込む造りにすると、変更していない案件で選択肢の検証に
+     * 引っかかり、付随項目の保存まで巻き込んで止まる。
+     */
+    const currentNegotiationStatus = fieldMap.negotiationStatus
+      ? coerceCustomerInfoDisplayString(
+          readCustomerInfoFieldValue(recObj, fieldMap.negotiationStatus),
+        ).trim()
+      : "";
+
+    if (negotiationStatus && negotiationStatus !== currentNegotiationStatus) {
+      if (!fieldMap.negotiationStatus) {
+        return {
+          ok: false,
+          status: 503,
+          error: "商談ステータスを変更できない状態です。管理者にご連絡ください",
+        };
+      }
+
+      const nextNegotiationStatus =
+        normalizeSelectableNegotiationStatus(negotiationStatus);
+      if (!nextNegotiationStatus) {
+        return {
+          ok: false,
+          status: 400,
+          error: "変更できない商談ステータスです",
+        };
+      }
+
+      /**
+       * @pocket 側が更新を受け付けない列タイプ（計算列・関連レコードなど）
+       * だと、PUT がそのまま失敗して 502 になる。手元に列定義があるので
+       * 事前に見て、利用者に伝わる文言で止める。
+       * エラー文には列名・列ID・アプリ名・環境変数名を出さない
+       */
+      const negotiationField = apoFields.find(
+        (f) => f.uniqueId?.trim() === fieldMap.negotiationStatus,
+      );
+      if (negotiationField && !isWritableAtPocketField(negotiationField)) {
+        return {
+          ok: false,
+          status: 503,
+          error: "商談ステータスはこの画面から変更できない設定になっています",
+        };
+      }
+
+      payload[fieldMap.negotiationStatus] = nextNegotiationStatus;
     }
 
     /**
