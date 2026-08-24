@@ -16,10 +16,14 @@ import {
 } from "@/lib/meeting-schedule-card-save";
 import { resolveMeetingScheduleCardEditability } from "@/lib/meeting-schedule-locked-fields";
 import {
-  meetingScheduleNegotiationConfirmMessage,
+  buildMeetingScheduleSaveConfirm,
+  isMeetingScheduleInputLocked,
+  isMeetingScheduleInputNewlyEntered,
   meetingScheduleNegotiationOptionsFor,
-  needsMeetingScheduleNegotiationConfirm,
+  showsMeetingScheduleHenmachiForm,
+  MEETING_SCHEDULE_INPUT_FIELD_LABELS,
 } from "@/lib/meeting-schedule-negotiation-status";
+import { formatDisplayYmd } from "@/lib/format-display-ymd";
 import { MeetingScheduleNegotiationConfirmDialog } from "@/components/meeting-schedule-negotiation-confirm-dialog";
 import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
 import { buildMapNavigation } from "@/lib/map-navigation";
@@ -103,6 +107,22 @@ const readOnlyNoteClass =
 
 /** 誤タップ防止で編集不可にした項目の補足文言 */
 const lockedFieldNote = "この項目は @pocket 側で変更してください";
+
+/**
+ * 入力済みで変更できなくなった項目。ラベルは残し、値だけをテキストで見せる。
+ * 見積ステータス・商談ステータスの編集不可表示と同じ形にそろえる
+ */
+function LockedInputRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+        {label}
+      </span>
+      <p className={readOnlyValueClass}>{value || "未設定"}</p>
+      <p className={readOnlyNoteClass}>保存済みのため変更できません</p>
+    </div>
+  );
+}
 
 export function MeetingScheduleItemCard({
   item,
@@ -247,8 +267,25 @@ export function MeetingScheduleItemCard({
 
   const showSetCreatedForm =
     canEditStatusDetails && isMeetingScheduleSetCreatedStatus(draftStatus);
+  /**
+   * 返待ち回答日の枠は、見積ステータスが返待ちのときに加えて
+   * 商談ステータスが返待ちのときも出す。必須の基準を商談ステータスへ
+   * 移したため、広げないと「必須なのに入力欄が無い」状態になる
+   */
   const showHenmachiForm =
-    canEditStatusDetails && isMeetingScheduleHenmachiStatus(draftStatus);
+    canEditStatusDetails &&
+    showsMeetingScheduleHenmachiForm({
+      estimateStatusIsHenmachi: isMeetingScheduleHenmachiStatus(draftStatus),
+      negotiationStatus,
+    });
+
+  /** 入力済みで変更できない項目。@pocket 側の現在値で項目ごとに判定する */
+  const lockedInputs = {
+    meetingDate: isMeetingScheduleInputLocked(server.meetingDate),
+    closeType: isMeetingScheduleInputLocked(server.closeType),
+    meetingPlace: isMeetingScheduleInputLocked(server.meetingPlace),
+    responseDate: isMeetingScheduleInputLocked(server.responseDate),
+  };
 
   const draft: MeetingScheduleCardValues = {
     estimateStatus: draftStatus,
@@ -268,27 +305,62 @@ export function MeetingScheduleItemCard({
 
   const canSave = plan.dirty && !plan.blockedReason && !saving;
 
+  /**
+   * 触れる項目が1つでもあるか。
+   * すべて入力済みで商談ステータスも変更不可だと、この枠は表示専用になる。
+   * 保存ボタンは（消さずに）無効のまま残し、文言だけ実態に合わせる
+   */
+  const hasEditableField =
+    canEditStatus ||
+    canEditSchedule ||
+    (showSetCreatedForm &&
+      (canEditNegotiation ||
+        !lockedInputs.meetingDate ||
+        !lockedInputs.closeType ||
+        !lockedInputs.meetingPlace)) ||
+    (showHenmachiForm && !lockedInputs.responseDate);
+
   /** 押せない理由。保存中は出さない（ボタンの文言で分かる） */
   const saveHint = saving
     ? ""
     : plan.dirty
       ? plan.blockedReason
-      : canEditStatus || canEditSchedule
-        ? "ステータスか日時を変更すると保存できます"
-        : "入力項目を変更すると保存できます";
+      : !hasEditableField
+        ? "変更できる項目はありません"
+        : canEditStatus || canEditSchedule
+          ? "ステータスか日時を変更すると保存できます"
+          : "入力項目を変更すると保存できます";
 
   /** 入力のたびに前回の保存結果を消す。古い成否が残ると読み違える */
   const clearFeedback = () => setFeedback(null);
 
+  /** 今回はじめて値が入る項目。確認ダイアログに並べる */
+  const newlyEnteredEntries = (
+    [
+      ["meetingDate", server.meetingDate, meetingDate, true],
+      ["closeType", server.closeType, closeType, false],
+      ["meetingPlace", server.meetingPlace, meetingPlace, false],
+      ["responseDate", server.responseDate, responseDate, true],
+    ] as const
+  )
+    .filter(([, current, next]) =>
+      isMeetingScheduleInputNewlyEntered(current, next),
+    )
+    .map(([key, , next, isDate]) => ({
+      label: MEETING_SCHEDULE_INPUT_FIELD_LABELS[key],
+      value: isDate ? formatDisplayYmd(next) : next,
+    }));
+
   /**
-   * 商談ステータスが実際に変わり、かつ変更後の値で出勤後アラートから
-   * 消える場合だけ、保存前に確認する。現在値のまま保存するときは出さない。
-   * 判定は src/lib 側（filterPendingMeetingAlerts と同じ関数を参照）
+   * 保存前の確認。商談ステータスの変更と入力の確定は同時に起こり得るので、
+   * ダイアログを2つ続けて出さずに1つへまとめる。
+   * 本文の組み立ては src/lib 側の純粋関数が持つ
    */
-  const needsNegotiationConfirm = needsMeetingScheduleNegotiationConfirm(
-    server.negotiationStatus,
-    negotiationStatus,
-  );
+  const saveConfirm = buildMeetingScheduleSaveConfirm({
+    serverNegotiationStatus: server.negotiationStatus,
+    draftNegotiationStatus: negotiationStatus,
+    newlyEntered: newlyEnteredEntries,
+  });
 
   const handleSave = async () => {
     if (!onSave || !canSave) return;
@@ -480,63 +552,84 @@ export function MeetingScheduleItemCard({
                   </p>
                 </div>
               )}
-              <label className="block">
-                <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
-                  初回商談実施日
-                </span>
-                <input
-                  type="date"
-                  className={dateTimeInputClass}
-                  value={meetingDate}
-                  disabled={saving}
-                  onChange={(e) => {
-                    clearFeedback();
-                    setMeetingDate(e.target.value);
-                  }}
+              {lockedInputs.meetingDate ? (
+                <LockedInputRow
+                  label={MEETING_SCHEDULE_INPUT_FIELD_LABELS.meetingDate}
+                  value={formatDisplayYmd(server.meetingDate)}
                 />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
-                  片クロor両クロ
-                </span>
-                <select
-                  className={inputClass}
-                  value={closeType}
-                  disabled={saving}
-                  onChange={(e) => {
-                    clearFeedback();
-                    setCloseType(e.target.value);
-                  }}
-                >
-                  <option value="">選択してください</option>
-                  {closeOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
-                  商談場所
-                </span>
-                <select
-                  className={inputClass}
-                  value={meetingPlace}
-                  disabled={saving}
-                  onChange={(e) => {
-                    clearFeedback();
-                    setMeetingPlace(e.target.value);
-                  }}
-                >
-                  <option value="">選択してください</option>
-                  {placeOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              ) : (
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                    {MEETING_SCHEDULE_INPUT_FIELD_LABELS.meetingDate}
+                  </span>
+                  <input
+                    type="date"
+                    className={dateTimeInputClass}
+                    value={meetingDate}
+                    disabled={saving}
+                    onChange={(e) => {
+                      clearFeedback();
+                      setMeetingDate(e.target.value);
+                    }}
+                  />
+                </label>
+              )}
+              {lockedInputs.closeType ? (
+                <LockedInputRow
+                  label={MEETING_SCHEDULE_INPUT_FIELD_LABELS.closeType}
+                  value={server.closeType}
+                />
+              ) : (
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                    {MEETING_SCHEDULE_INPUT_FIELD_LABELS.closeType}
+                  </span>
+                  <select
+                    className={inputClass}
+                    value={closeType}
+                    disabled={saving}
+                    onChange={(e) => {
+                      clearFeedback();
+                      setCloseType(e.target.value);
+                    }}
+                  >
+                    <option value="">選択してください</option>
+                    {closeOptions.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {lockedInputs.meetingPlace ? (
+                <LockedInputRow
+                  label={MEETING_SCHEDULE_INPUT_FIELD_LABELS.meetingPlace}
+                  value={server.meetingPlace}
+                />
+              ) : (
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                    {MEETING_SCHEDULE_INPUT_FIELD_LABELS.meetingPlace}
+                  </span>
+                  <select
+                    className={inputClass}
+                    value={meetingPlace}
+                    disabled={saving}
+                    onChange={(e) => {
+                      clearFeedback();
+                      setMeetingPlace(e.target.value);
+                    }}
+                  >
+                    <option value="">選択してください</option>
+                    {placeOptions.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
           ) : null}
 
@@ -545,21 +638,28 @@ export function MeetingScheduleItemCard({
               <p className="text-[12px] font-semibold text-violet-800 dark:text-violet-200">
                 返待ちの入力項目
               </p>
-              <label className="block">
-                <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
-                  返待ち回答日
-                </span>
-                <input
-                  type="date"
-                  className={dateTimeInputClass}
-                  value={responseDate}
-                  disabled={saving}
-                  onChange={(e) => {
-                    clearFeedback();
-                    setResponseDate(e.target.value);
-                  }}
+              {lockedInputs.responseDate ? (
+                <LockedInputRow
+                  label={MEETING_SCHEDULE_INPUT_FIELD_LABELS.responseDate}
+                  value={formatDisplayYmd(server.responseDate)}
                 />
-              </label>
+              ) : (
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                    {MEETING_SCHEDULE_INPUT_FIELD_LABELS.responseDate}
+                  </span>
+                  <input
+                    type="date"
+                    className={dateTimeInputClass}
+                    value={responseDate}
+                    disabled={saving}
+                    onChange={(e) => {
+                      clearFeedback();
+                      setResponseDate(e.target.value);
+                    }}
+                  />
+                </label>
+              )}
             </div>
           ) : null}
 
@@ -602,7 +702,7 @@ export function MeetingScheduleItemCard({
             disabled={!canSave}
             onClick={() => {
               // 確認が要る変更は、ダイアログで承諾されるまで保存しない
-              if (needsNegotiationConfirm) {
+              if (saveConfirm.needed) {
                 setConfirmingNegotiation(true);
                 return;
               }
@@ -659,7 +759,8 @@ export function MeetingScheduleItemCard({
 
       <MeetingScheduleNegotiationConfirmDialog
         open={confirmingNegotiation}
-        message={meetingScheduleNegotiationConfirmMessage(negotiationStatus)}
+        title={saveConfirm.title}
+        message={saveConfirm.blocks.join("\n\n")}
         onConfirm={() => void handleSave()}
         onCancel={() => setConfirmingNegotiation(false)}
       />

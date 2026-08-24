@@ -12,7 +12,9 @@ import { useEffect, useRef } from "react";
 
 type Props = {
   open: boolean;
-  /** 確認する変更後の値。本文の組み立ては呼び出し側 */
+  /** 見出し。何を確認するかで変わる */
+  title: string;
+  /** 本文。組み立ては呼び出し側（buildMeetingScheduleSaveConfirm） */
   message: string;
   onConfirm: () => void;
   onCancel: () => void;
@@ -27,6 +29,7 @@ const buttonBase =
 
 export function MeetingScheduleNegotiationConfirmDialog({
   open,
+  title,
   message,
   onConfirm,
   onCancel,
@@ -65,7 +68,7 @@ export function MeetingScheduleNegotiationConfirmDialog({
           id="meeting-negotiation-confirm-title"
           className="text-[15px] font-bold text-slate-900 dark:text-white"
         >
-          商談ステータスの変更
+          {title}
         </p>
         <p
           id="meeting-negotiation-confirm-body"
