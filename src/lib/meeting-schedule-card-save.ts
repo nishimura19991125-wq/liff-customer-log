@@ -46,12 +46,33 @@ export type MeetingScheduleCardSavePlan = {
   patch: MeetingScheduleCardPatch;
 };
 
+export type MeetingScheduleCardSaveOptions = {
+  /** 見積ステータスそのものを変更できるか */
+  statusEditable: boolean;
+  /**
+   * 付随項目（初回商談実施日・片クロor両クロ・商談場所・返待ち回答日）を
+   * 変更できるか。省略時は statusEditable に従う。
+   *
+   * 見積ステータスと同じルートで保存するが、編集可否は別の軸。
+   * statusEditable にぶら下げたままだと、見積ステータスを編集不可にした瞬間に
+   * 付随項目の変更まで保存対象から外れ、保存ボタンが永久に押せなくなる
+   */
+  statusDetailsEditable?: boolean;
+  /** 商談・資料送付予定日時を変更できるか */
+  scheduleEditable: boolean;
+};
+
 export function planMeetingScheduleCardSave(
   server: MeetingScheduleCardValues,
   draft: MeetingScheduleCardValues,
-  opts: { statusEditable: boolean; scheduleEditable: boolean },
+  opts: MeetingScheduleCardSaveOptions,
 ): MeetingScheduleCardSavePlan {
-  // 付随項目の要否は「選び直した後の」ステータスで決まる
+  const statusDetailsEditable =
+    opts.statusDetailsEditable ?? opts.statusEditable;
+
+  // 付随項目の要否は「選び直した後の」ステータスで決まる。
+  // 見積ステータスが編集不可のあいだ draft.estimateStatus は常に
+  // server.estimateStatus と同じ値なので、実質「現在のステータス」で決まる
   const needsSetCreated = isMeetingScheduleSetCreatedStatus(draft.estimateStatus);
   const needsHenmachi = isMeetingScheduleHenmachiStatus(draft.estimateStatus);
 
@@ -60,14 +81,14 @@ export function planMeetingScheduleCardSave(
 
   // ステータスを変えずに付随項目だけ直す場合も status 側の保存対象にする
   const setCreatedChanged =
-    opts.statusEditable &&
+    statusDetailsEditable &&
     needsSetCreated &&
     (draft.meetingDate !== server.meetingDate ||
       draft.closeType !== server.closeType ||
       draft.meetingPlace !== server.meetingPlace);
 
   const henmachiChanged =
-    opts.statusEditable &&
+    statusDetailsEditable &&
     needsHenmachi &&
     draft.responseDate !== server.responseDate;
 
@@ -83,7 +104,10 @@ export function planMeetingScheduleCardSave(
   if (scheduleDirty && !draft.scheduledYmd.trim()) {
     blockedReason = "日付を入力すると保存できます";
   } else if (statusDirty) {
-    if (!draft.estimateStatus.trim()) {
+    // 見積ステータスが編集不可のときは、この必須チェックを行わない。
+    // 画面に選択欄が無く選び直しようがないため、ここで止めると
+    // 付随項目だけの保存を永久にブロックしてしまう
+    if (opts.statusEditable && !draft.estimateStatus.trim()) {
       blockedReason = "見積ステータスを選ぶと保存できます";
     } else if (needsSetCreated) {
       if (!draft.meetingDate.trim()) {
@@ -107,6 +131,9 @@ export function planMeetingScheduleCardSave(
       };
     }
     if (statusDirty) {
+      // status は PATCH .../status の必須項目なので、見積ステータスが
+      // 編集不可でも現在値をそのまま載せる。サーバ側は受け取った status を
+      // 付随項目の必須判定にだけ使い、@pocket へは書き込まない
       patch.status = needsSetCreated
         ? {
             status: draft.estimateStatus,

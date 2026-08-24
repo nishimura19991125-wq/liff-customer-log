@@ -161,6 +161,21 @@ describe("planMeetingScheduleCardSave", () => {
     expect(scheduleOnly.patch.status).toBeUndefined();
   });
 
+  it("statusDetailsEditable を省略したら statusEditable に従う", () => {
+    const server = values({
+      estimateStatus: "商談セット作成済み",
+      meetingDate: "2026-09-10",
+      closeType: "両クロ",
+      meetingPlace: "自宅",
+    });
+    const plan = planMeetingScheduleCardSave(
+      server,
+      { ...server, meetingPlace: "店舗" },
+      { statusEditable: false, scheduleEditable: false },
+    );
+    expect(plan.dirty).toBe(false);
+  });
+
   it("片方が保存済みになると、残った側だけが再送対象になる", () => {
     // status は成功、schedule は失敗した直後の再取得を想定
     const serverAfter = values({ estimateStatus: "見積提出済み" });
@@ -172,5 +187,122 @@ describe("planMeetingScheduleCardSave", () => {
       scheduledYmd: "2026-09-05",
       scheduledTime: "14:30",
     });
+  });
+});
+
+/**
+ * 見積ステータス・日時を編集不可にしたときの回帰防止。
+ * 「他の編集項目が保存できなくなる」「保存ボタンが押せなくなる」が
+ * 最優先の回帰ポイント。
+ */
+describe("見積ステータス・日時が編集不可のとき", () => {
+  /** 画面の実際の呼び出しと同じ組み合わせ */
+  const LOCKED = {
+    statusEditable: false,
+    statusDetailsEditable: true,
+    scheduleEditable: false,
+  };
+
+  const setCreated = values({
+    estimateStatus: "商談セット作成済み",
+    meetingDate: "2026-09-10",
+    closeType: "両クロ",
+    meetingPlace: "自宅",
+  });
+
+  it("【回帰防止】商談場所だけ直しても保存が通る", () => {
+    const plan = planMeetingScheduleCardSave(
+      setCreated,
+      { ...setCreated, meetingPlace: "店舗" },
+      LOCKED,
+    );
+    expect(plan.dirty).toBe(true);
+    expect(plan.blockedReason).toBe("");
+    expect(plan.patch.status).toEqual({
+      status: "商談セット作成済み",
+      meetingDate: "2026-09-10",
+      closeType: "両クロ",
+      meetingPlace: "店舗",
+    });
+  });
+
+  it("【回帰防止】初回商談実施日・片クロor両クロだけ直しても保存が通る", () => {
+    const plan = planMeetingScheduleCardSave(
+      setCreated,
+      { ...setCreated, meetingDate: "2026-09-11", closeType: "片クロ" },
+      LOCKED,
+    );
+    expect(plan.blockedReason).toBe("");
+    expect(plan.patch.status?.meetingDate).toBe("2026-09-11");
+    expect(plan.patch.status?.closeType).toBe("片クロ");
+  });
+
+  it("【回帰防止】返待ち回答日だけ直しても保存が通る", () => {
+    const henmachi = values({
+      estimateStatus: "返待ち",
+      responseDate: "2026-09-12",
+    });
+    const plan = planMeetingScheduleCardSave(
+      henmachi,
+      { ...henmachi, responseDate: "2026-09-20" },
+      LOCKED,
+    );
+    expect(plan.blockedReason).toBe("");
+    expect(plan.patch.status).toEqual({
+      status: "返待ち",
+      responseDate: "2026-09-20",
+    });
+  });
+
+  it("見積ステータスが空でも「選ぶと保存できます」でブロックしない", () => {
+    // 選択欄が無い以上、選び直してブロックを解除することができないため、
+    // このガードは絶対に立ってはいけない。
+    // （現状 statusDirty が立つには非空のステータスが要るので構造上到達しないが、
+    //   将来の変更で到達可能になったときの歯止めとして残す）
+    const blank = values({
+      estimateStatus: "",
+      meetingDate: "2026-09-10",
+      closeType: "両クロ",
+      meetingPlace: "自宅",
+    });
+    const plan = planMeetingScheduleCardSave(
+      blank,
+      { ...blank, meetingPlace: "店舗" },
+      LOCKED,
+    );
+    expect(plan.blockedReason).not.toBe("見積ステータスを選ぶと保存できます");
+  });
+
+  it("付随項目の必須チェックは従来どおり効く", () => {
+    const plan = planMeetingScheduleCardSave(
+      setCreated,
+      { ...setCreated, meetingPlace: "" },
+      LOCKED,
+    );
+    expect(plan.dirty).toBe(true);
+    expect(plan.blockedReason).toBe("商談場所を選ぶと保存できます");
+    expect(plan.patch).toEqual({});
+  });
+
+  it("見積ステータスを書き換えようとしても送らない", () => {
+    const plan = planMeetingScheduleCardSave(
+      values(),
+      values({ estimateStatus: "即決成約" }),
+      LOCKED,
+    );
+    expect(plan.statusDirty).toBe(false);
+    expect(plan.dirty).toBe(false);
+    expect(plan.patch).toEqual({});
+  });
+
+  it("日時を書き換えようとしても送らない", () => {
+    const plan = planMeetingScheduleCardSave(
+      values(),
+      values({ scheduledYmd: "2026-09-30", scheduledTime: "14:30" }),
+      LOCKED,
+    );
+    expect(plan.scheduleDirty).toBe(false);
+    expect(plan.dirty).toBe(false);
+    expect(plan.patch.schedule).toBeUndefined();
   });
 });
