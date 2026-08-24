@@ -15,6 +15,12 @@ import {
   type MeetingScheduleCardValues,
 } from "@/lib/meeting-schedule-card-save";
 import { resolveMeetingScheduleCardEditability } from "@/lib/meeting-schedule-locked-fields";
+import {
+  meetingScheduleNegotiationConfirmMessage,
+  needsMeetingScheduleNegotiationConfirm,
+  MEETING_SCHEDULE_NEGOTIATION_STATUS_OPTIONS,
+} from "@/lib/meeting-schedule-negotiation-status";
+import { MeetingScheduleNegotiationConfirmDialog } from "@/components/meeting-schedule-negotiation-confirm-dialog";
 import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
 import { buildMapNavigation } from "@/lib/map-navigation";
 
@@ -119,6 +125,7 @@ export function MeetingScheduleItemCard({
       closeType: item.closeType,
       meetingPlace: item.meetingPlace,
       responseDate: item.responseDateYmd,
+      negotiationStatus: item.negotiationStatus,
     }),
     [
       item.estimateStatus,
@@ -128,6 +135,7 @@ export function MeetingScheduleItemCard({
       item.closeType,
       item.meetingPlace,
       item.responseDateYmd,
+      item.negotiationStatus,
     ],
   );
 
@@ -138,6 +146,11 @@ export function MeetingScheduleItemCard({
   const [closeType, setCloseType] = useState(server.closeType);
   const [meetingPlace, setMeetingPlace] = useState(server.meetingPlace);
   const [responseDate, setResponseDate] = useState(server.responseDate);
+  const [negotiationStatus, setNegotiationStatus] = useState(
+    server.negotiationStatus,
+  );
+  /** 確認ダイアログを出しているか */
+  const [confirmingNegotiation, setConfirmingNegotiation] = useState(false);
   const [feedback, setFeedback] = useState<
     { kind: "ok"; message: string } | { kind: "error"; messages: string[] } | null
   >(null);
@@ -159,6 +172,8 @@ export function MeetingScheduleItemCard({
       setCloseType(server.closeType);
       setMeetingPlace(server.meetingPlace);
       setResponseDate(server.responseDate);
+      setNegotiationStatus(server.negotiationStatus);
+      setConfirmingNegotiation(false);
       setFeedback(null);
       return;
     }
@@ -183,6 +198,9 @@ export function MeetingScheduleItemCard({
     if (prev.responseDate !== server.responseDate) {
       setResponseDate(server.responseDate);
     }
+    if (prev.negotiationStatus !== server.negotiationStatus) {
+      setNegotiationStatus(server.negotiationStatus);
+    }
   }, [server, item.recordId]);
 
   const selectOptions = useMemo(
@@ -196,6 +214,19 @@ export function MeetingScheduleItemCard({
   const placeOptions = useMemo(
     () => mergeSelectOptions(meetingPlaceOptions, meetingPlace),
     [meetingPlaceOptions, meetingPlace],
+  );
+  /**
+   * 選べるのは固定の6件。ただし現在値が6件の外（例: 資料送付成約）の
+   * こともあるため、その値を選択肢に足して表示が壊れないようにする。
+   * 足した値を選び直すことはできる（サーバ側が6件で検証する）
+   */
+  const negotiationOptions = useMemo(
+    () =>
+      mergeSelectOptions(
+        [...MEETING_SCHEDULE_NEGOTIATION_STATUS_OPTIONS],
+        item.negotiationStatus,
+      ),
+    [item.negotiationStatus],
   );
 
   /**
@@ -229,6 +260,7 @@ export function MeetingScheduleItemCard({
     closeType,
     meetingPlace,
     responseDate,
+    negotiationStatus,
   };
   const plan = planMeetingScheduleCardSave(server, draft, {
     statusEditable: canEditStatus,
@@ -250,8 +282,19 @@ export function MeetingScheduleItemCard({
   /** 入力のたびに前回の保存結果を消す。古い成否が残ると読み違える */
   const clearFeedback = () => setFeedback(null);
 
+  /**
+   * 商談ステータスを変更していて、かつ変更後の値で出勤後アラートから
+   * 消える場合だけ、保存前に確認する。
+   * 判定は src/lib 側（filterPendingMeetingAlerts と同じ関数を参照）
+   */
+  const negotiationChanged = negotiationStatus !== server.negotiationStatus;
+  const needsNegotiationConfirm =
+    negotiationChanged &&
+    needsMeetingScheduleNegotiationConfirm(negotiationStatus);
+
   const handleSave = async () => {
     if (!onSave || !canSave) return;
+    setConfirmingNegotiation(false);
     setFeedback(null);
     const result = await onSave(item.recordId, plan.patch);
     if (result.errors.length > 0) {
@@ -405,6 +448,30 @@ export function MeetingScheduleItemCard({
               </p>
               <label className="block">
                 <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                  商談ステータス
+                </span>
+                {/* 選んだ時点では保存しない。カード下部の「保存」でまとめて送る */}
+                <select
+                  className={inputClass}
+                  value={negotiationStatus}
+                  disabled={saving}
+                  onChange={(e) => {
+                    clearFeedback();
+                    setNegotiationStatus(e.target.value);
+                  }}
+                >
+                  {!negotiationStatus ? (
+                    <option value="">選択してください</option>
+                  ) : null}
+                  {negotiationOptions.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
                   初回商談実施日
                 </span>
                 <input
@@ -523,7 +590,14 @@ export function MeetingScheduleItemCard({
           <button
             type="button"
             disabled={!canSave}
-            onClick={() => void handleSave()}
+            onClick={() => {
+              // 確認が要る変更は、ダイアログで承諾されるまで保存しない
+              if (needsNegotiationConfirm) {
+                setConfirmingNegotiation(true);
+                return;
+              }
+              void handleSave();
+            }}
             className={saveButtonClass}
           >
             {saving ? "保存中…" : "保存"}
@@ -572,6 +646,13 @@ export function MeetingScheduleItemCard({
           />
         </div>
       ) : null}
+
+      <MeetingScheduleNegotiationConfirmDialog
+        open={confirmingNegotiation}
+        message={meetingScheduleNegotiationConfirmMessage(negotiationStatus)}
+        onConfirm={() => void handleSave()}
+        onCancel={() => setConfirmingNegotiation(false)}
+      />
     </LiffCard>
   );
 }
