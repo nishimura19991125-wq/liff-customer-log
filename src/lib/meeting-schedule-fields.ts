@@ -59,6 +59,8 @@ export type MeetingScheduleFieldMap = {
   closeType: string | null;
   /** 返待ち回答日 */
   responseDate: string | null;
+  /** 商談ステータス（アラート表示用） */
+  negotiationStatus: string | null;
 };
 
 export function meetingScheduleCloseTypeOptions(): string[] {
@@ -169,6 +171,12 @@ export function resolveMeetingScheduleFieldMap(
     ["返待ち回答日", "回答日"],
     ["返待ち回答日"],
   );
+  const negotiationStatus = pickByEnvOrKeywords(
+    "MEETING_SCHEDULE_NEGOTIATION_STATUS_FIELD_ID",
+    fields,
+    ["商談ステータス", "商談ｽﾃｰﾀｽ", "商談ステータス区分"],
+    ["商談ステータス"],
+  );
 
   return {
     clPerson,
@@ -183,6 +191,7 @@ export function resolveMeetingScheduleFieldMap(
     meetingDate,
     closeType,
     responseDate,
+    negotiationStatus,
   };
 }
 

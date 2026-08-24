@@ -7,6 +7,8 @@ export type MeetingScheduleItem = {
   scheduledTime: string;
   apoTypeLabel: string;
   estimateStatus: string;
+  /** 商談ステータス（@pocket） */
+  negotiationStatus: string;
   meetingPlace: string;
   /** 初回商談実施日（YYYY-MM-DD） */
   firstMeetingDateYmd: string;
@@ -27,7 +29,7 @@ export type MeetingScheduleItem = {
   responseDateLabel: string;
 };
 
-export type MeetingScheduleAlertKind = "set-created" | "henmachi";
+export type MeetingScheduleAlertKind = "waiting" | "re-negotiation";
 
 export type MeetingScheduleAlertItem = MeetingScheduleItem & {
   alertKind: MeetingScheduleAlertKind;

@@ -1,7 +1,6 @@
 import {
-  isMeetingScheduleSetCreatedStatus,
-  isScheduledBeforeToday,
-  needsMeetingScheduleHenmachiAlert,
+  isMeetingScheduleNegotiationWaitingStatus,
+  isMeetingScheduleReNegotiationStatus,
 } from "@/lib/meeting-schedule-shared";
 import type {
   MeetingScheduleAlertItem,
@@ -19,7 +18,7 @@ function sortPendingAlertItems(
   items: MeetingScheduleAlertItem[],
 ): MeetingScheduleAlertItem[] {
   return [...items].sort((a, b) => {
-    const kindOrder = { "set-created": 0, henmachi: 1 };
+    const kindOrder = { waiting: 0, "re-negotiation": 1 };
     if (kindOrder[a.alertKind] !== kindOrder[b.alertKind]) {
       return kindOrder[a.alertKind] - kindOrder[b.alertKind];
     }
@@ -35,20 +34,17 @@ function sortPendingAlertItems(
 
 export function filterPendingMeetingAlerts(
   items: MeetingScheduleItem[],
-  todayYmd = todayYmdJst(),
 ): MeetingScheduleAlertItem[] {
   const alerts: MeetingScheduleAlertItem[] = [];
 
   for (const item of items) {
-    if (
-      isMeetingScheduleSetCreatedStatus(item.estimateStatus) &&
-      isScheduledBeforeToday(item.scheduledYmd, todayYmd)
-    ) {
-      alerts.push({ ...item, alertKind: "set-created" });
+    const negotiationStatus = item.negotiationStatus.trim();
+    if (isMeetingScheduleNegotiationWaitingStatus(negotiationStatus)) {
+      alerts.push({ ...item, alertKind: "waiting" });
       continue;
     }
-    if (needsMeetingScheduleHenmachiAlert(item, todayYmd)) {
-      alerts.push({ ...item, alertKind: "henmachi" });
+    if (isMeetingScheduleReNegotiationStatus(negotiationStatus)) {
+      alerts.push({ ...item, alertKind: "re-negotiation" });
     }
   }
 
@@ -58,11 +54,8 @@ export function filterPendingMeetingAlerts(
 /** @deprecated filterPendingMeetingAlerts を使用してください */
 export function filterPendingSetCreatedMeetings(
   items: MeetingScheduleItem[],
-  todayYmd = todayYmdJst(),
 ): MeetingScheduleItem[] {
-  return filterPendingMeetingAlerts(items, todayYmd).filter(
-    (item) => item.alertKind === "set-created",
-  );
+  return filterPendingMeetingAlerts(items).map(({ alertKind: _k, ...item }) => item);
 }
 
 /** 出勤後アラート対象の商談進捗案件 */
@@ -89,8 +82,7 @@ export async function fetchPendingMeetingAlerts(
 export async function fetchPastSetCreatedMeetings(
   idToken: string,
 ): Promise<MeetingScheduleItem[]> {
-  const alerts = await fetchPendingMeetingAlerts(idToken);
-  return alerts.filter((item) => item.alertKind === "set-created");
+  return fetchPendingMeetingAlerts(idToken);
 }
 
 export const MEETING_SET_CREATED_ALERT_CHECK_EVENT =

@@ -14,20 +14,10 @@ type Props = {
 };
 
 function alertKindLabel(kind: MeetingScheduleAlertItem["alertKind"]): string {
-  return kind === "set-created" ? "商談セット作成済み" : "返待ち";
+  return kind === "waiting" ? "商談待ち" : "再商談";
 }
 
 function alertItemDetail(item: MeetingScheduleAlertItem): string {
-  if (item.alertKind === "henmachi") {
-    return [
-      item.responseDateLabel,
-      item.scheduledDateLabel,
-      item.scheduledTime || item.meetingTime,
-      item.city,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  }
   return [
     item.scheduledDateLabel,
     item.scheduledTime || item.meetingTime,
@@ -45,18 +35,16 @@ export function MeetingSetCreatedInputAlert({
   const [mounted, setMounted] = useState(false);
 
   const summary = useMemo(() => {
-    const setCreatedCount = items.filter(
-      (item) => item.alertKind === "set-created",
-    ).length;
-    const henmachiCount = items.filter(
-      (item) => item.alertKind === "henmachi",
+    const waitingCount = items.filter((item) => item.alertKind === "waiting").length;
+    const reCount = items.filter(
+      (item) => item.alertKind === "re-negotiation",
     ).length;
     const parts: string[] = [];
-    if (setCreatedCount > 0) {
-      parts.push(`商談セット作成済み ${setCreatedCount}件`);
+    if (waitingCount > 0) {
+      parts.push(`商談待ち ${waitingCount}件`);
     }
-    if (henmachiCount > 0) {
-      parts.push(`返待ち ${henmachiCount}件`);
+    if (reCount > 0) {
+      parts.push(`再商談 ${reCount}件`);
     }
     return parts.join(" · ");
   }, [items]);
@@ -93,7 +81,7 @@ export function MeetingSetCreatedInputAlert({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
         <p className="text-[15px] leading-relaxed text-slate-700 dark:text-slate-200">
-          対応が必要な商談進捗があります。商談進捗情報から入力・更新してください。
+          商談ステータスが「商談待ち」または「再商談」の案件があります。商談進捗情報から入力・更新してください。
         </p>
         <ul className="mt-4 space-y-2">
           {items.map((item) => (
@@ -112,15 +100,9 @@ export function MeetingSetCreatedInputAlert({
               <p className="mt-0.5 text-[13px] text-slate-600 dark:text-slate-400">
                 {alertItemDetail(item)}
               </p>
-              {item.alertKind === "set-created" ? (
-                <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-                  初回商談実施日・片クロor両クロ・商談場所を入力してください
-                </p>
-              ) : (
-                <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-                  返待ち回答日が未設定、または期限を過ぎています
-                </p>
-              )}
+              <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
+                商談進捗情報から内容を入力・更新してください
+              </p>
             </li>
           ))}
         </ul>

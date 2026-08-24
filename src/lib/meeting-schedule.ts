@@ -335,6 +335,7 @@ function meetingScheduleWantedFieldCsv(
     fieldMap.meetingDate,
     fieldMap.closeType,
     fieldMap.responseDate,
+    fieldMap.negotiationStatus,
     ...collectMapAddressFieldsCsv(mapAddressIds),
   ]) {
     if (id?.trim()) ids.add(id.trim());
@@ -394,6 +395,11 @@ function buildMeetingItemFromRecord(
         readCustomerInfoFieldValue(recObj, fieldMap.closeType),
       )
     : "";
+  const negotiationStatus = fieldMap.negotiationStatus
+    ? coerceCustomerInfoDisplayString(
+        readCustomerInfoFieldValue(recObj, fieldMap.negotiationStatus),
+      )
+    : "";
   const firstMeetingDateYmd = resolveFirstMeetingDateYmd(recObj, fieldMap);
   const responseDateYmd = resolveResponseDateYmd(recObj, fieldMap);
   const apPerson = fieldMap.salesperson
@@ -420,6 +426,7 @@ function buildMeetingItemFromRecord(
     scheduledTime,
     apoTypeLabel: apoTypeDisplayLabel(apoType),
     estimateStatus: estimateStatusStr,
+    negotiationStatus: negotiationStatus.trim(),
     meetingPlace: meetingPlace.trim(),
     firstMeetingDateYmd,
     closeType: closeType.trim(),

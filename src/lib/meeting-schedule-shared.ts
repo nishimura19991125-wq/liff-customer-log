@@ -1,12 +1,30 @@
 export const MEETING_SCHEDULE_SET_CREATED_STATUS = "商談セット作成済み";
 export const MEETING_SCHEDULE_HENMACHI_STATUS = "返待ち";
 export const MEETING_SCHEDULE_ESTIMATE_REQUESTED_STATUS = "見積依頼済み";
+export const MEETING_SCHEDULE_NEGOTIATION_WAITING_STATUS = "商談待ち";
+export const MEETING_SCHEDULE_NEGOTIATION_RE_STATUS = "再商談";
 
 export function isMeetingScheduleSetCreatedStatus(statusRaw: string): boolean {
   return statusRaw
     .normalize("NFKC")
     .trim()
     .includes(MEETING_SCHEDULE_SET_CREATED_STATUS);
+}
+
+export function isMeetingScheduleNegotiationWaitingStatus(
+  statusRaw: string,
+): boolean {
+  return statusRaw
+    .normalize("NFKC")
+    .trim()
+    .includes(MEETING_SCHEDULE_NEGOTIATION_WAITING_STATUS);
+}
+
+export function isMeetingScheduleReNegotiationStatus(statusRaw: string): boolean {
+  const status = statusRaw.normalize("NFKC").trim();
+  if (!status.includes(MEETING_SCHEDULE_NEGOTIATION_RE_STATUS)) return false;
+  if (status.includes("再商談否") || status.includes("再商談成約")) return false;
+  return true;
 }
 
 export function isMeetingScheduleHenmachiStatus(statusRaw: string): boolean {
