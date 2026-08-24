@@ -38,7 +38,10 @@ import {
   stripLockedMeetingScheduleFieldsFromPayload,
   MEETING_SCHEDULE_LOCKED_FIELD_LABELS,
 } from "@/lib/meeting-schedule-locked-fields";
-import { normalizeSelectableNegotiationStatus } from "@/lib/meeting-schedule-negotiation-status";
+import {
+  canTransitionMeetingScheduleNegotiationStatus,
+  normalizeMeetingScheduleNegotiationStatus,
+} from "@/lib/meeting-schedule-negotiation-status";
 import { isWritableAtPocketField } from "@/lib/customer-info-form/pocket-writable-fields";
 import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
 import { validateMeetingScheduleScheduledUpdate } from "@/lib/meeting-schedule-scheduled-update";
@@ -659,12 +662,13 @@ export async function updateMeetingScheduleStatusForStaff(
     }
 
     /**
-     * 商談ステータス。**現在値から変わったときだけ**書き込む。
+     * 商談ステータス。**現在値から変わったときだけ**検証し、書き込む。
      *
-     * 画面は現在値をそのまま送り返してくることがあり、その現在値は
-     * LIFF の選択肢6件の外（例: 資料送付成約）のこともある。
-     * 常に書き込む造りにすると、変更していない案件で選択肢の検証に
-     * 引っかかり、付随項目の保存まで巻き込んで止まる。
+     * これが付随項目（初回商談実施日・片クロor両クロ・商談場所・
+     * 返待ち回答日）の保存を巻き込まないための要。
+     * 変更不可の9件（遷移先が空）や遷移表に無い値の案件では、画面は
+     * 選択欄を出さず現在値をそのまま送り返してくる。この if を通らないので
+     * 検証そのものが走らず、付随項目だけの保存は素通りする。
      */
     const currentNegotiationStatus = fieldMap.negotiationStatus
       ? coerceCustomerInfoDisplayString(
@@ -681,13 +685,26 @@ export async function updateMeetingScheduleStatusForStaff(
         };
       }
 
+      /**
+       * 遷移ルールの検証。現在値から到達できない値は受け付けない。
+       *
+       * ここまで来るのは「実際に商談ステータスを変更しようとしている」
+       * 場合だけ。画面は遷移先しか出さないので、通常の操作では起きない。
+       * 古いキャッシュの画面や API の直叩きが該当する
+       */
       const nextNegotiationStatus =
-        normalizeSelectableNegotiationStatus(negotiationStatus);
-      if (!nextNegotiationStatus) {
+        normalizeMeetingScheduleNegotiationStatus(negotiationStatus);
+      if (
+        !nextNegotiationStatus ||
+        !canTransitionMeetingScheduleNegotiationStatus(
+          currentNegotiationStatus,
+          nextNegotiationStatus,
+        )
+      ) {
         return {
           ok: false,
           status: 400,
-          error: "変更できない商談ステータスです",
+          error: "この商談ステータスには変更できません",
         };
       }
 

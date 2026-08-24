@@ -245,9 +245,9 @@ describe("PATCH .../status（商談ステータスの書き込み）", () => {
     expect(h.updateCalls[0]).not.toHaveProperty(FIELD.negotiationStatus);
   });
 
-  it("★ 現在値が6件の外でも、同じ値なら弾かず他項目を保存できる", async () => {
-    // 「資料送付成約」は LIFF から選べないが、画面は現在値を送り返してくる。
-    // ここで 400 にすると付随項目の保存まで巻き込む
+  it("★ 変更不可の現在値でも、同じ値なら弾かず他項目を保存できる", async () => {
+    // 「資料送付成約」は遷移先が空で変更不可。画面は選択欄を出さず
+    // 現在値を送り返してくる。ここで 400 にすると付随項目の保存まで巻き込む
     h.negotiationStatus = "資料送付成約";
 
     const res = await statusPatch(
@@ -264,7 +264,8 @@ describe("PATCH .../status（商談ステータスの書き込み）", () => {
     expect(h.updateCalls[0]).not.toHaveProperty(FIELD.negotiationStatus);
   });
 
-  it("6件の外へ変更しようとしたら 400 で弾く", async () => {
+  it("★ 遷移ルール外への変更は 400 で弾く", async () => {
+    // 商談待ち → 資料送付成約 は遷移表に無い
     const res = await statusPatch(
       patchRequest({ ...setCreatedBody, negotiationStatus: "資料送付成約" }),
       ctx,
@@ -272,6 +273,126 @@ describe("PATCH .../status（商談ステータスの書き込み）", () => {
 
     expect(res.status).toBe(400);
     expect(h.updateCalls).toHaveLength(0);
+  });
+
+  it("★ 変更不可の現在値からは、どの値へも変更できない", async () => {
+    h.negotiationStatus = "否";
+
+    const res = await statusPatch(
+      patchRequest({ ...setCreatedBody, negotiationStatus: "商談待ち" }),
+      ctx,
+    );
+
+    expect(res.status).toBe(400);
+    expect(h.updateCalls).toHaveLength(0);
+  });
+
+  it("遷移表にある値どうしでも、行き先が違えば弾く", async () => {
+    h.negotiationStatus = "返待ち";
+
+    // 返待ち の遷移先は 返待ち成約 / 返待ち否 / 再商談 のみ
+    const res = await statusPatch(
+      patchRequest({ ...setCreatedBody, negotiationStatus: "即決成約" }),
+      ctx,
+    );
+
+    expect(res.status).toBe(400);
+    expect(h.updateCalls).toHaveLength(0);
+  });
+
+  it("遷移表どおりなら通る（返待ち → 再商談）", async () => {
+    h.negotiationStatus = "返待ち";
+
+    const res = await statusPatch(
+      patchRequest({ ...setCreatedBody, negotiationStatus: "再商談" }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(h.updateCalls[0]).toMatchObject({
+      [FIELD.negotiationStatus]: "再商談",
+    });
+  });
+
+  /**
+   * 最大の回帰ポイント。
+   * 商談ステータスが変更不可であることが、付随項目の保存を巻き込まないこと
+   */
+  it("★★ 変更不可9件すべてで、付随項目4つの保存が通る", async () => {
+    const terminal = [
+      "即決成約",
+      "再商談成約",
+      "返待ち成約",
+      "否",
+      "再商談否",
+      "返待ち否",
+      "アポキャン",
+      "資料送付成約",
+      "資料送付否",
+    ];
+
+    for (const current of terminal) {
+      h.updateCalls.length = 0;
+      h.negotiationStatus = current;
+
+      // 画面は選択欄を出さないので、現在値をそのまま送り返してくる
+      const res = await statusPatch(
+        patchRequest({
+          status: "商談セット作成済み",
+          meetingDate: "2026-09-11",
+          closeType: "片クロ",
+          meetingPlace: "店舗",
+          negotiationStatus: current,
+        }),
+        ctx,
+      );
+
+      expect(res.status, current).toBe(200);
+      expect(h.updateCalls[0], current).toEqual({
+        [IMPORT_KEY_FIELD_ID]: "APO-001",
+        [FIELD.meetingDate]: "2026-09-11",
+        [FIELD.closeType]: "片クロ",
+        [FIELD.meetingPlace]: "店舗",
+      });
+    }
+  });
+
+  it("★ 遷移表に無い現在値でも、付随項目の保存が通る", async () => {
+    h.negotiationStatus = "@pocket で増えた未知のステータス";
+
+    const res = await statusPatch(
+      patchRequest({
+        status: "商談セット作成済み",
+        meetingDate: "2026-09-11",
+        closeType: "片クロ",
+        meetingPlace: "店舗",
+        negotiationStatus: "@pocket で増えた未知のステータス",
+      }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(h.updateCalls[0]).toMatchObject({ [FIELD.meetingPlace]: "店舗" });
+    expect(h.updateCalls[0]).not.toHaveProperty(FIELD.negotiationStatus);
+  });
+
+  it("★ 商談ステータスが空欄でも、付随項目の保存が通る", async () => {
+    h.negotiationStatus = "";
+
+    const res = await statusPatch(
+      patchRequest({
+        status: "商談セット作成済み",
+        meetingDate: "2026-09-11",
+        closeType: "片クロ",
+        meetingPlace: "店舗",
+        negotiationStatus: "",
+      }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(h.updateCalls[0]).toMatchObject({ [FIELD.meetingPlace]: "店舗" });
+    expect(h.updateCalls[0]).not.toHaveProperty(FIELD.negotiationStatus);
   });
 
   it("見積ステータスは相変わらず payload から落ちる", async () => {
