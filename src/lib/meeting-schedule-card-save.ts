@@ -26,6 +26,11 @@ export type MeetingScheduleCardValues = {
   closeType: string;
   meetingPlace: string;
   responseDate: string;
+  /**
+   * 商談ステータス。「商談セット作成済みの入力項目」の枠内で編集する。
+   * 現在値が LIFF の選択肢6件の外（例: 資料送付成約）のこともある
+   */
+  negotiationStatus: string;
 };
 
 export type MeetingScheduleCardPatch = {
@@ -85,7 +90,8 @@ export function planMeetingScheduleCardSave(
     needsSetCreated &&
     (draft.meetingDate !== server.meetingDate ||
       draft.closeType !== server.closeType ||
-      draft.meetingPlace !== server.meetingPlace);
+      draft.meetingPlace !== server.meetingPlace ||
+      draft.negotiationStatus !== server.negotiationStatus);
 
   const henmachiChanged =
     statusDetailsEditable &&
@@ -140,6 +146,9 @@ export function planMeetingScheduleCardSave(
             meetingDate: draft.meetingDate,
             closeType: draft.closeType,
             meetingPlace: draft.meetingPlace,
+            // 現在値のまま送られることもある。サーバ側は現在値と同じなら
+            // 書き込まないので、6件の外の値でも弾かれない
+            negotiationStatus: draft.negotiationStatus,
           }
         : needsHenmachi
           ? { status: draft.estimateStatus, responseDate: draft.responseDate }

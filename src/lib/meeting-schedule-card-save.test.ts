@@ -18,6 +18,7 @@ function values(
     closeType: "",
     meetingPlace: "",
     responseDate: "",
+    negotiationStatus: "商談待ち",
     ...over,
   };
 }
@@ -84,6 +85,8 @@ describe("planMeetingScheduleCardSave", () => {
       meetingDate: "2026-09-10",
       closeType: "両クロ",
       meetingPlace: "自宅",
+      // 変更していなくても現在値を載せる（サーバ側が現在値なら書かない）
+      negotiationStatus: "商談待ち",
     });
   });
 
@@ -223,6 +226,7 @@ describe("見積ステータス・日時が編集不可のとき", () => {
       meetingDate: "2026-09-10",
       closeType: "両クロ",
       meetingPlace: "店舗",
+      negotiationStatus: "商談待ち",
     });
   });
 
@@ -304,5 +308,85 @@ describe("見積ステータス・日時が編集不可のとき", () => {
     expect(plan.scheduleDirty).toBe(false);
     expect(plan.dirty).toBe(false);
     expect(plan.patch.schedule).toBeUndefined();
+  });
+});
+
+/** 商談ステータスは「商談セット作成済みの入力項目」の一部として保存する */
+describe("商談ステータスの保存", () => {
+  const LOCKED = {
+    statusEditable: false,
+    statusDetailsEditable: true,
+    scheduleEditable: false,
+  };
+
+  const setCreated = values({
+    estimateStatus: "商談セット作成済み",
+    meetingDate: "2026-09-10",
+    closeType: "両クロ",
+    meetingPlace: "自宅",
+    negotiationStatus: "商談待ち",
+  });
+
+  it("★ 商談ステータスだけ変えても保存が通る", () => {
+    const plan = planMeetingScheduleCardSave(
+      setCreated,
+      { ...setCreated, negotiationStatus: "否" },
+      LOCKED,
+    );
+    expect(plan.dirty).toBe(true);
+    expect(plan.blockedReason).toBe("");
+    expect(plan.patch.status?.negotiationStatus).toBe("否");
+  });
+
+  it("他の付随項目と同時に変えても1回の status に載る", () => {
+    const plan = planMeetingScheduleCardSave(
+      setCreated,
+      { ...setCreated, negotiationStatus: "再商談", meetingPlace: "店舗" },
+      LOCKED,
+    );
+    expect(plan.patch.status).toEqual({
+      status: "商談セット作成済み",
+      meetingDate: "2026-09-10",
+      closeType: "両クロ",
+      meetingPlace: "店舗",
+      negotiationStatus: "再商談",
+    });
+  });
+
+  it("変えなければ dirty にならない", () => {
+    const plan = planMeetingScheduleCardSave(setCreated, { ...setCreated }, LOCKED);
+    expect(plan.dirty).toBe(false);
+    expect(plan.patch).toEqual({});
+  });
+
+  it("現在値が6件の外でも、変えなければ何も送らない", () => {
+    const outside = { ...setCreated, negotiationStatus: "資料送付成約" };
+    const plan = planMeetingScheduleCardSave(outside, { ...outside }, LOCKED);
+    expect(plan.dirty).toBe(false);
+  });
+
+  it("現在値が6件の外から6件のいずれかへは変更できる", () => {
+    const outside = { ...setCreated, negotiationStatus: "資料送付成約" };
+    const plan = planMeetingScheduleCardSave(
+      outside,
+      { ...outside, negotiationStatus: "商談待ち" },
+      LOCKED,
+    );
+    expect(plan.blockedReason).toBe("");
+    expect(plan.patch.status?.negotiationStatus).toBe("商談待ち");
+  });
+
+  it("商談セット作成済み以外では送らない（枠の外なので編集 UI が無い）", () => {
+    const henmachi = values({
+      estimateStatus: "返待ち",
+      responseDate: "2026-09-12",
+      negotiationStatus: "商談待ち",
+    });
+    const plan = planMeetingScheduleCardSave(
+      henmachi,
+      { ...henmachi, negotiationStatus: "否" },
+      LOCKED,
+    );
+    expect(plan.dirty).toBe(false);
   });
 });

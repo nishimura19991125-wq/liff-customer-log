@@ -9,6 +9,12 @@ export type MeetingScheduleStatusUpdateInput = {
   closeType?: string | null;
   meetingPlace?: string | null;
   responseDate?: string | null;
+  /**
+   * 商談ステータス。現在値と同じなら書き込まないため、
+   * LIFF の選択肢6件の外の値がそのまま返ってくることもある。
+   * 選択肢の検証は「変更されたとき」だけサーバ側で行う
+   */
+  negotiationStatus?: string | null;
 };
 
 function normalizeYmd(raw: string | null | undefined): string {
@@ -61,6 +67,11 @@ export function validateMeetingScheduleStatusUpdate(
         meetingDate,
         closeType,
         meetingPlace,
+        // 選択肢の検証はここでは行わない。現在値が LIFF の選択肢6件の
+        // 外（例: 資料送付成約）のまま返ってくることがあり、ここで弾くと
+        // 付随項目の保存まで巻き込む。実際に変更されたときだけ、
+        // レコードの現在値と突き合わせられるサーバ側で検証する
+        negotiationStatus: (input.negotiationStatus ?? "").trim(),
       },
     };
   }
