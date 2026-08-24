@@ -14,6 +14,7 @@ import {
   type MeetingScheduleCardPatch,
   type MeetingScheduleCardValues,
 } from "@/lib/meeting-schedule-card-save";
+import { resolveMeetingScheduleCardEditability } from "@/lib/meeting-schedule-locked-fields";
 import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
 import { buildMapNavigation } from "@/lib/map-navigation";
 
@@ -24,7 +25,16 @@ export type MeetingScheduleCardSaveResult = {
   /** 見積ステータスを保存したか。送っていないときは undefined */
   statusOk?: boolean;
   errors: string[];
-  /** 日時の更新に伴い @pocket 側で見積ステータスが変わったときの値 */
+  /**
+   * 日時の更新に伴い見積ステータスが自動で変わったときの値。
+   *
+   * 【現在は到達不能】商談・資料送付予定日時が LIFF から編集不可になったため、
+   * これを立てる唯一の経路（PATCH .../schedule）が塞がっている。
+   * 日時編集を復活させる場合は、meeting-schedule-locked-fields.ts の
+   * MEETING_SCHEDULE_LOCKED_FIELDS から "scheduledDateTime" を外すのと同時に、
+   * この通知経路（page.tsx の handleSave と meeting-schedule.ts の
+   * scheduleDateChanged 周辺の自動リセット）も同時に有効化すること。
+   */
   autoEstimateStatus?: string;
 };
 
@@ -73,6 +83,20 @@ const saveButtonClass =
 /** 無効な理由。押せる条件が分かるよう、ボタンの下に小さく出す */
 const saveHintClass =
   "mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400";
+
+/**
+ * 編集不可な項目の値。入力欄と同じ高さ・余白にして行の並びを崩さないが、
+ * 枠線と白背景は外し、触れないことが見た目で分かるようにする
+ */
+const readOnlyValueClass =
+  "w-full min-w-0 max-w-full rounded-xl bg-slate-100 px-3 py-2.5 text-[14px] text-slate-900 dark:bg-slate-800 dark:text-white";
+
+/** なぜ触れないのかの補足。値の下に小さく出す */
+const readOnlyNoteClass =
+  "mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400";
+
+/** 誤タップ防止で編集不可にした項目の補足文言 */
+const lockedFieldNote = "この項目は @pocket 側で変更してください";
 
 export function MeetingScheduleItemCard({
   item,
@@ -174,13 +198,28 @@ export function MeetingScheduleItemCard({
     [meetingPlaceOptions, meetingPlace],
   );
 
-  const canEditStatus =
-    statusEditable && selectOptions.length > 0 && Boolean(onSave);
-  const canEditSchedule = scheduleEditable && Boolean(onSave);
+  /**
+   * どの UI を出すかは src/lib 側の純粋関数に寄せてある。
+   * 見積ステータス・日時が編集不可でも、付随項目の入力欄と保存ボタンは残る
+   */
+  const {
+    canEditStatus,
+    canEditSchedule,
+    canEditStatusDetails,
+    showStatusText,
+    showScheduleText,
+    showSaveBar,
+  } = resolveMeetingScheduleCardEditability({
+    statusEditable,
+    scheduleEditable,
+    savable: Boolean(onSave),
+    hasStatusOptions: selectOptions.length > 0,
+  });
+
   const showSetCreatedForm =
-    canEditStatus && isMeetingScheduleSetCreatedStatus(draftStatus);
+    canEditStatusDetails && isMeetingScheduleSetCreatedStatus(draftStatus);
   const showHenmachiForm =
-    canEditStatus && isMeetingScheduleHenmachiStatus(draftStatus);
+    canEditStatusDetails && isMeetingScheduleHenmachiStatus(draftStatus);
 
   const draft: MeetingScheduleCardValues = {
     estimateStatus: draftStatus,
@@ -193,10 +232,10 @@ export function MeetingScheduleItemCard({
   };
   const plan = planMeetingScheduleCardSave(server, draft, {
     statusEditable: canEditStatus,
+    statusDetailsEditable: canEditStatusDetails,
     scheduleEditable: canEditSchedule,
   });
 
-  const showSaveBar = canEditStatus || canEditSchedule;
   const canSave = plan.dirty && !plan.blockedReason && !saving;
 
   /** 押せない理由。保存中は出さない（ボタンの文言で分かる） */
@@ -204,7 +243,9 @@ export function MeetingScheduleItemCard({
     ? ""
     : plan.dirty
       ? plan.blockedReason
-      : "ステータスか日時を変更すると保存できます";
+      : canEditStatus || canEditSchedule
+        ? "ステータスか日時を変更すると保存できます"
+        : "入力項目を変更すると保存できます";
 
   /** 入力のたびに前回の保存結果を消す。古い成否が残ると読み違える */
   const clearFeedback = () => setFeedback(null);
@@ -258,7 +299,7 @@ export function MeetingScheduleItemCard({
                 {item.apoTypeLabel}
               </span>
             ) : null}
-            {!canEditStatus && item.estimateStatus ? (
+            {!canEditStatusDetails && item.estimateStatus ? (
               <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[12px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                 {item.estimateStatus}
               </span>
@@ -290,6 +331,19 @@ export function MeetingScheduleItemCard({
                 ))}
               </select>
             </label>
+          ) : null}
+
+          {/* 編集不可。ラベルは残し、値だけをテキストで見せる */}
+          {showStatusText ? (
+            <div className="mt-3">
+              <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                見積ステータス
+              </span>
+              <p className={readOnlyValueClass}>
+                {item.estimateStatus || "未設定"}
+              </p>
+              <p className={readOnlyNoteClass}>{lockedFieldNote}</p>
+            </div>
           ) : null}
 
           {canEditSchedule ? (
@@ -327,6 +381,20 @@ export function MeetingScheduleItemCard({
                   }}
                 />
               </label>
+            </div>
+          ) : null}
+
+          {/* 編集不可。緑枠は残さず、日付・時刻を値のテキストで見せる */}
+          {showScheduleText ? (
+            <div className="mt-3">
+              <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                商談・資料送付予定日時
+              </span>
+              <p className={readOnlyValueClass}>
+                {item.scheduledDateLabel || "日付未定"}
+                {item.scheduledTime ? ` ${item.scheduledTime}` : ""}
+              </p>
+              <p className={readOnlyNoteClass}>{lockedFieldNote}</p>
             </div>
           ) : null}
 
@@ -418,22 +486,22 @@ export function MeetingScheduleItemCard({
             </div>
           ) : null}
 
-          {!canEditStatus && item.meetingPlace ? (
+          {!canEditStatusDetails && item.meetingPlace ? (
             <p className="mt-2 text-[13px] text-slate-600 dark:text-slate-400">
               商談場所: {item.meetingPlace}
             </p>
           ) : null}
-          {!canEditStatus && item.closeType ? (
+          {!canEditStatusDetails && item.closeType ? (
             <p className="mt-1 text-[13px] text-slate-600 dark:text-slate-400">
               片クロor両クロ: {item.closeType}
             </p>
           ) : null}
-          {!canEditStatus && item.firstMeetingDateYmd ? (
+          {!canEditStatusDetails && item.firstMeetingDateYmd ? (
             <p className="mt-1 text-[13px] text-slate-600 dark:text-slate-400">
               初回商談実施日: {item.firstMeetingDateYmd}
             </p>
           ) : null}
-          {!canEditStatus && item.responseDateYmd ? (
+          {!canEditStatusDetails && item.responseDateYmd ? (
             <p className="mt-1 text-[13px] text-slate-600 dark:text-slate-400">
               返待ち回答日: {item.responseDateLabel}
             </p>
