@@ -2,6 +2,11 @@ import {
   isMeetingScheduleHenmachiStatus,
   isMeetingScheduleSetCreatedStatus,
 } from "@/lib/meeting-schedule-shared";
+import {
+  findMissingMeetingScheduleRequiredInput,
+  requiresMeetingScheduleResponseDate,
+  MEETING_SCHEDULE_INPUT_BLOCKED_HINTS,
+} from "@/lib/meeting-schedule-negotiation-status";
 import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
 import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
 
@@ -93,9 +98,20 @@ export function planMeetingScheduleCardSave(
       draft.meetingPlace !== server.meetingPlace ||
       draft.negotiationStatus !== server.negotiationStatus);
 
+  /**
+   * 返待ち回答日を保存対象に含めるか。
+   *
+   * 見積ステータスが「返待ち」のときに加えて、商談ステータスが「返待ち」の
+   * ときも含める。必須の基準を商談ステータスへ移したため、こちらも広げないと
+   * 「必須なのに送る経路が無い」状態になり保存が永久にできなくなる。
+   * 画面の入力枠の表示条件（showsMeetingScheduleHenmachiForm）と対にする
+   */
+  const includesResponseDate =
+    needsHenmachi || requiresMeetingScheduleResponseDate(draft.negotiationStatus);
+
   const henmachiChanged =
     statusDetailsEditable &&
-    needsHenmachi &&
+    includesResponseDate &&
     draft.responseDate !== server.responseDate;
 
   const statusDirty = statusChanged || setCreatedChanged || henmachiChanged;
@@ -104,7 +120,7 @@ export function planMeetingScheduleCardSave(
     (draft.scheduledYmd !== server.scheduledYmd ||
       draft.scheduledTime !== server.scheduledTime);
 
-  // サーバ側（validateMeetingScheduleStatusUpdate）と同じ必須条件を先に見て、
+  // サーバ側と同じ必須条件を先に見て、
   // 400 が返ることが分かっている送信をボタンの時点で止める
   let blockedReason = "";
   if (scheduleDirty && !draft.scheduledYmd.trim()) {
@@ -115,16 +131,30 @@ export function planMeetingScheduleCardSave(
     // 付随項目だけの保存を永久にブロックしてしまう
     if (opts.statusEditable && !draft.estimateStatus.trim()) {
       blockedReason = "見積ステータスを選ぶと保存できます";
-    } else if (needsSetCreated) {
-      if (!draft.meetingDate.trim()) {
-        blockedReason = "初回商談実施日を入力すると保存できます";
-      } else if (!draft.closeType.trim()) {
-        blockedReason = "片クロor両クロを選ぶと保存できます";
-      } else if (!draft.meetingPlace.trim()) {
-        blockedReason = "商談場所を選ぶと保存できます";
-      }
-    } else if (needsHenmachi && !draft.responseDate.trim()) {
-      blockedReason = "返待ち回答日を入力すると保存できます";
+    } else {
+      /**
+       * 必須の判定は**商談ステータス基準**。
+       * 以前は見積ステータスが「商談セット作成済み」なら3項目を常に必須に
+       * していたが、対象項目が空のまま残っている既存案件が編集不能になる。
+       * 判定は meeting-schedule-negotiation-status.ts に寄せてある
+       */
+      const missing = findMissingMeetingScheduleRequiredInput({
+        server: {
+          meetingDate: server.meetingDate,
+          closeType: server.closeType,
+          meetingPlace: server.meetingPlace,
+          responseDate: server.responseDate,
+        },
+        draft: {
+          meetingDate: draft.meetingDate,
+          closeType: draft.closeType,
+          meetingPlace: draft.meetingPlace,
+          responseDate: draft.responseDate,
+        },
+        serverNegotiationStatus: server.negotiationStatus,
+        draftNegotiationStatus: draft.negotiationStatus,
+      });
+      blockedReason = missing ? MEETING_SCHEDULE_INPUT_BLOCKED_HINTS[missing] : "";
     }
   }
 
@@ -137,22 +167,31 @@ export function planMeetingScheduleCardSave(
       };
     }
     if (statusDirty) {
-      // status は PATCH .../status の必須項目なので、見積ステータスが
-      // 編集不可でも現在値をそのまま載せる。サーバ側は受け取った status を
-      // 付随項目の必須判定にだけ使い、@pocket へは書き込まない
-      patch.status = needsSetCreated
-        ? {
-            status: draft.estimateStatus,
-            meetingDate: draft.meetingDate,
-            closeType: draft.closeType,
-            meetingPlace: draft.meetingPlace,
-            // 現在値のまま送られることもある。サーバ側は現在値と同じなら
-            // 書き込まないので、6件の外の値でも弾かれない
-            negotiationStatus: draft.negotiationStatus,
-          }
-        : needsHenmachi
-          ? { status: draft.estimateStatus, responseDate: draft.responseDate }
-          : { status: draft.estimateStatus };
+      /**
+       * status は PATCH .../status の必須項目なので、見積ステータスが
+       * 編集不可でも現在値をそのまま載せる。サーバ側は受け取った status を
+       * 付随項目の必須判定にだけ使い、@pocket へは書き込まない。
+       *
+       * 以前は「商談セット作成済み」と「返待ち」の排他分岐だったが、
+       * 見積ステータス＝商談セット作成済み かつ 商談ステータス＝返待ち で
+       * 両方が同時に成立するようになったため、積み上げる形に変えた。
+       * 排他のままだと返待ち回答日が patch に載らず、必須なのに送れない
+       */
+      const status: MeetingScheduleStatusUpdateInput = {
+        status: draft.estimateStatus,
+      };
+      if (needsSetCreated) {
+        status.meetingDate = draft.meetingDate;
+        status.closeType = draft.closeType;
+        status.meetingPlace = draft.meetingPlace;
+        // 現在値のまま送られることもある。サーバ側は現在値と同じなら
+        // 書き込まないので、遷移表の外の値でも弾かれない
+        status.negotiationStatus = draft.negotiationStatus;
+      }
+      if (includesResponseDate) {
+        status.responseDate = draft.responseDate;
+      }
+      patch.status = status;
     }
   }
 

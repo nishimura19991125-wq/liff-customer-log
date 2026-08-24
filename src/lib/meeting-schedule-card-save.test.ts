@@ -90,10 +90,26 @@ describe("planMeetingScheduleCardSave", () => {
     });
   });
 
-  it("商談セット作成済みで付随項目が欠けていたら保存させない", () => {
+  /**
+   * 【期待値を変更】以前は見積ステータスが「商談セット作成済み」なら
+   * 3項目を常に必須にしていた。必須の基準を商談ステータスへ移したため、
+   * 商談ステータスが「商談待ち」（必須にしない5件）なら止めない。
+   * 挙動の辻褄合わせではなく、意図した仕様変更。
+   */
+  it("見積ステータスだけでは必須にならない（基準は商談ステータス）", () => {
     const plan = planMeetingScheduleCardSave(
       values(),
       values({ estimateStatus: "商談セット作成済み" }),
+      BOTH_EDITABLE,
+    );
+    expect(plan.dirty).toBe(true);
+    expect(plan.blockedReason).toBe("");
+  });
+
+  it("商談ステータスが必須の値なら付随項目が欠けていると保存させない", () => {
+    const plan = planMeetingScheduleCardSave(
+      values({ estimateStatus: "商談セット作成済み" }),
+      values({ estimateStatus: "商談セット作成済み", negotiationStatus: "再商談" }),
       BOTH_EDITABLE,
     );
     expect(plan.dirty).toBe(true);
@@ -117,22 +133,61 @@ describe("planMeetingScheduleCardSave", () => {
     expect(plan.patch.status?.meetingPlace).toBe("店舗");
   });
 
-  it("返待ちは回答日が要る", () => {
-    const draft = values({ estimateStatus: "返待ち" });
+  /**
+   * 【期待値を変更】返待ち回答日の必須も、見積ステータス基準から
+   * 商談ステータス基準へ移した。見積ステータスが「返待ち」でも
+   * 商談ステータスが「返待ち」でなければ必須にしない。
+   * 挙動の辻褄合わせではなく、意図した仕様変更。
+   */
+  /**
+   * ★ 商談ステータスを返待ちに変えた案件。見積ステータスは
+   * 「商談セット作成済み」のままなので、以前は返待ち回答日が
+   * patch にも載らず必須も発火しなかった（＝保存が永久にできない）
+   */
+  it("★ 商談ステータスを返待ちに変えると回答日が要る", () => {
+    const server = values({
+      estimateStatus: "商談セット作成済み",
+      negotiationStatus: "商談待ち",
+      meetingDate: "2026-09-10",
+      closeType: "両クロ",
+      meetingPlace: "自宅",
+    });
+    const draft = { ...server, negotiationStatus: "返待ち" };
+
     expect(
-      planMeetingScheduleCardSave(values(), draft, BOTH_EDITABLE).blockedReason,
+      planMeetingScheduleCardSave(server, draft, BOTH_EDITABLE).blockedReason,
     ).toBe("返待ち回答日を入力すると保存できます");
 
     const filled = planMeetingScheduleCardSave(
-      values(),
+      server,
       { ...draft, responseDate: "2026-09-12" },
       BOTH_EDITABLE,
     );
+    // 回答日を入れれば保存できる（永久ブロックの回帰テスト）
     expect(filled.blockedReason).toBe("");
+    // 3項目と返待ち回答日の両方が同じ status に載る
     expect(filled.patch.status).toEqual({
-      status: "返待ち",
+      status: "商談セット作成済み",
+      meetingDate: "2026-09-10",
+      closeType: "両クロ",
+      meetingPlace: "自宅",
+      negotiationStatus: "返待ち",
       responseDate: "2026-09-12",
     });
+  });
+
+  it("見積ステータスが返待ちでも、商談ステータス次第では必須にしない", () => {
+    const server = values({
+      estimateStatus: "返待ち",
+      negotiationStatus: "資料送付回答待ち",
+    });
+    const plan = planMeetingScheduleCardSave(
+      server,
+      { ...server, responseDate: "2026-09-12" },
+      BOTH_EDITABLE,
+    );
+    expect(plan.blockedReason).toBe("");
+    expect(plan.patch.status?.responseDate).toBe("2026-09-12");
   });
 
   it("日付を空にしたら保存させない（サーバが 400 を返す送信を止める）", () => {
@@ -277,14 +332,27 @@ describe("見積ステータス・日時が編集不可のとき", () => {
     expect(plan.blockedReason).not.toBe("見積ステータスを選ぶと保存できます");
   });
 
-  it("付随項目の必須チェックは従来どおり効く", () => {
+  /**
+   * 【期待値を変更】以前は「入力済みの項目を空に戻したら止める」形だったが、
+   * 入力済みの項目は変更できなくなったのでその状況が起きない。
+   * 代わりに B 案（1つ入力したら他の必須項目も求める）を固定する。
+   * 挙動の辻褄合わせではなく、意図した仕様変更。
+   */
+  it("必須の値のとき、1つ入力すると他の必須項目も求められる", () => {
+    const blank = values({
+      estimateStatus: "商談セット作成済み",
+      negotiationStatus: "再商談",
+      meetingDate: "",
+      closeType: "",
+      meetingPlace: "",
+    });
     const plan = planMeetingScheduleCardSave(
-      setCreated,
-      { ...setCreated, meetingPlace: "" },
+      blank,
+      { ...blank, meetingDate: "2026-09-11" },
       LOCKED,
     );
     expect(plan.dirty).toBe(true);
-    expect(plan.blockedReason).toBe("商談場所を選ぶと保存できます");
+    expect(plan.blockedReason).toBe("片クロor両クロを選ぶと保存できます");
     expect(plan.patch).toEqual({});
   });
 
