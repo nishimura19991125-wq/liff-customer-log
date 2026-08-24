@@ -14,7 +14,20 @@ export const dynamic = "force-dynamic";
 
 type RouteCtx = { params: Promise<{ recordId: string }> };
 
-/** 商談進捗情報の見積ステータス更新 */
+/**
+ * 商談進捗情報の更新。
+ *
+ * 見積ステータスは LIFF から変更できない（@pocket 側で変更する）が、
+ * このルートは**付随項目**（初回商談実施日・片クロor両クロ・商談場所・
+ * 返待ち回答日）も運んでいるため、ここで 400 にすると他項目の保存まで
+ * 巻き込んで止めてしまう。
+ *
+ * そのため body の status は受け取り続け（付随項目の必須判定に使う）、
+ * @pocket へ送る payload から見積ステータスの列を落とす方式にしている。
+ * 実装は updateMeetingScheduleStatusForStaff の
+ * stripLockedMeetingScheduleFieldsFromPayload 周辺。
+ * 定義は src/lib/meeting-schedule-locked-fields.ts。
+ */
 export async function PATCH(request: Request, ctx: RouteCtx) {
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);

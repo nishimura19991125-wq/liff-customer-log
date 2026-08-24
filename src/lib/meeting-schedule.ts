@@ -33,6 +33,11 @@ import {
   resolveMeetingScheduleImportKeyFieldId,
   type MeetingScheduleFieldMap,
 } from "@/lib/meeting-schedule-fields";
+import {
+  isMeetingScheduleFieldLocked,
+  stripLockedMeetingScheduleFieldsFromPayload,
+  MEETING_SCHEDULE_LOCKED_FIELD_LABELS,
+} from "@/lib/meeting-schedule-locked-fields";
 import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
 import { validateMeetingScheduleScheduledUpdate } from "@/lib/meeting-schedule-scheduled-update";
 import type { MeetingScheduleStatusUpdateInput } from "@/lib/meeting-schedule-status-update";
@@ -495,7 +500,17 @@ export async function updateMeetingScheduleStatusForStaff(
   if (!recordId) {
     return { ok: false, status: 400, error: "recordId が必要です" };
   }
-  const normalizedStatus = normalizeEditableStatus(nextStatus);
+  /**
+   * normalizeEditableStatus は「LIFF から変更してよいステータスか」の門番。
+   * 見積ステータスが編集不可のあいだは、そもそも @pocket へ書き込まないので
+   * 門番の意味が無い。ここで 400 を返すと、同じルートに同居している付随項目
+   * （初回商談実施日・片クロor両クロ・商談場所・返待ち回答日）の保存まで
+   * 巻き込んで止めてしまうため、素通しにする。
+   */
+  const estimateStatusLocked = isMeetingScheduleFieldLocked("estimateStatus");
+  const normalizedStatus = estimateStatusLocked
+    ? nextStatus
+    : normalizeEditableStatus(nextStatus);
   if (!normalizedStatus) {
     return { ok: false, status: 400, error: "変更できないステータスです" };
   }
@@ -633,11 +648,51 @@ export async function updateMeetingScheduleStatusForStaff(
       };
     }
 
+    /**
+     * 編集不可な項目を @pocket へ送る直前に payload から落とす。
+     * 画面から欄を消しても、古いキャッシュの画面や API の直叩きで
+     * 書き込めてしまうため、ここで確実に塞ぐ。
+     * お客様情報の decideApClStaffPut と同じ考え方。
+     *
+     * なお、どの付随項目を必須とするかは
+     * validateMeetingScheduleStatusUpdate が**クライアントの申告した
+     * status** を基準に判定している。見積ステータスを書き込まなくなった今、
+     * 本来はレコードの実ステータス（下の currentEstimateStatus）を基準に
+     * すべきだが、今回のスコープ外。実ステータス基準への変更は別タスク。
+     */
+    const droppedFields = stripLockedMeetingScheduleFieldsFromPayload(payload, {
+      estimateStatus: fieldMap.estimateStatus,
+    });
+    if (droppedFields.length > 0) {
+      console.info(
+        `[meeting-schedule:status] ${droppedFields
+          .map((f) => MEETING_SCHEDULE_LOCKED_FIELD_LABELS[f])
+          .join("・")}は送信しません（LIFF から変更不可）`,
+      );
+    }
+
+    // 見積ステータスは書き換えていないので、レコードの現在値をそのまま返す
+    const currentEstimateStatus = coerceCustomerInfoDisplayString(
+      readCustomerInfoFieldValue(recObj, fieldMap.estimateStatus),
+    ).trim();
+
+    // 落とした結果、取込キーしか残らなかった＝書くものが無い。
+    // 古い画面からステータスだけ送られてきた場合がこれにあたる。
+    // 無駄な PUT を @pocket に投げず、成功として返す
+    if (Object.keys(payload).length <= 1) {
+      return { ok: true, estimateStatus: currentEstimateStatus };
+    }
+
     await updateRecord(apoAppId, recordId, payload, writeAuth);
     // 一覧のキャッシュを捨てる。保存直後に古い値を出さないため
     invalidateMeetingScheduleRecordsCache();
 
-    return { ok: true, estimateStatus: normalizedStatus };
+    return {
+      ok: true,
+      estimateStatus: estimateStatusLocked
+        ? currentEstimateStatus
+        : normalizedStatus,
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[meeting-schedule:status]", e);
@@ -804,6 +859,17 @@ export async function updateMeetingScheduleScheduledForStaff(
       payload[fieldMap.meetingTime] = scheduledTime;
     }
 
+    /**
+     * 予定日を動かしたら「商談セット作成済み」を「見積依頼済み」へ戻す。
+     *
+     * 【現在は到達不能】商談・資料送付予定日時が LIFF から編集不可になり、
+     * この関数を呼ぶ唯一の入口（PATCH .../schedule）が 403 で塞がっているため、
+     * ここには到達しない。ロジックは復活に備えて残してある。
+     * 日時編集を復活させる場合は、meeting-schedule-locked-fields.ts の
+     * MEETING_SCHEDULE_LOCKED_FIELDS から "scheduledDateTime" を外すのと同時に、
+     * この自動リセットと、その通知（MeetingScheduleCardSaveResult の
+     * autoEstimateStatus / page.tsx の handleSave）も同時に有効化すること。
+     */
     if (
       scheduleDateChanged &&
       isMeetingScheduleSetCreatedStatus(currentEstimateStatus) &&

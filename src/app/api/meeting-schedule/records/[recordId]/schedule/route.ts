@@ -5,6 +5,10 @@ import { pocketErrorResponse } from "@/lib/api-error-response";
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import { updateMeetingScheduleScheduledForStaff } from "@/lib/meeting-schedule";
 import {
+  isMeetingScheduleFieldLocked,
+  meetingScheduleLockedFieldMessage,
+} from "@/lib/meeting-schedule-locked-fields";
+import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
@@ -18,6 +22,23 @@ type RouteCtx = { params: Promise<{ recordId: string }> };
 export async function PATCH(request: Request, ctx: RouteCtx) {
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
+
+  /**
+   * 商談・資料送付予定日時は LIFF から変更できない（@pocket 側で変更する）。
+   * 画面から入力欄を消しても、古いキャッシュの画面や API の直叩きで
+   * 書き込めてしまうため、サーバ側でも塞ぐ。
+   *
+   * このルートは日時しか運んでいないので、拒否しても他項目の保存を
+   * 巻き込まない。黙って無視すると画面に「保存しました」と出て実際は
+   * 保存されない嘘の成功になるため、明示的に 403 で返す。
+   * （見積ステータス側は付随項目と同居しているので payload から落とす方式）
+   */
+  if (isMeetingScheduleFieldLocked("scheduledDateTime")) {
+    return NextResponse.json(
+      { error: meetingScheduleLockedFieldMessage("scheduledDateTime") },
+      { status: 403 },
+    );
+  }
 
   const cfg = customerInfoConfigReady();
   if (!cfg.ok) {

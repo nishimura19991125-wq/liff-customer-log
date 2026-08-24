@@ -21,6 +21,16 @@ function normalizeYmd(raw: string | null | undefined): string {
   return "";
 }
 
+/**
+ * 見積ステータスと付随項目の検証。
+ *
+ * 注意：どの付随項目を必須とするかは、**クライアントが申告した status** を
+ * 基準に判定している。見積ステータス自体が LIFF から編集不可になり
+ * @pocket へ書き込まれなくなった今、本来はレコードの実ステータスを基準に
+ * 判定するのが正しい（古い画面や API の直叩きが実態と違う status を申告すると、
+ * 実ステータスに対応しない付随項目を書けてしまう）。
+ * 実ステータス基準への変更は今回のスコープ外で、別タスクとする。
+ */
 export function validateMeetingScheduleStatusUpdate(
   input: MeetingScheduleStatusUpdateInput,
 ): { ok: true; normalized: MeetingScheduleStatusUpdateInput } | { ok: false; error: string } {
