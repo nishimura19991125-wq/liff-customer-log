@@ -406,3 +406,44 @@ export function buildMeetingScheduleSaveConfirm(input: {
 
   return { needed: blocks.length > 0, title, blocks };
 }
+
+/* ------------------------------------------------------------------ *
+ * ホーム画面「商談進捗」パネルの絞り込み。
+ * ------------------------------------------------------------------ */
+
+/**
+ * ホームの「商談進捗」パネルに出す案件か。
+ *
+ * 意味づけは「まだ変更の余地がある案件を表示する」。
+ * 対象は 商談待ち / 返待ち / 資料送付回答待ち / 再商談 / 再商談日調整中 の5件で、
+ * これは遷移表で**遷移先が空でない5件**とちょうど一致する。
+ * 値のリストを別に持たず canEditMeetingScheduleNegotiationStatus を参照する
+ * ので、遷移表を直せばこちらも自動で追従する。
+ *
+ * 【空欄の扱いが既存と逆】
+ * 遷移表に無い値・空欄は false になり、パネルから外れる。
+ * 見積ステータス側の絞り込み（buildMeetingItemFromRecord の
+ * matchesMeetingScheduleStatus）は空欄を**通す**ので、扱いが逆になっている。
+ * 商談ステータスが空欄になることは業務上ないと確認済みのため実害はない。
+ *
+ * 【出勤後アラートとは条件が違う（意図した仕様）】
+ * filterPendingMeetingAlerts が拾うのは 商談待ち / 再商談 / 再商談日調整中 の
+ * 3件で、こちらの5件とは一致しない。アラート側のラベルが
+ * waiting / re-negotiation の2値しかなく、5件に広げると
+ * 返待ち・資料送付回答待ちが「再商談」と誤表示されるため広げていない。
+ * パネル（5件）とアラート（3件）で条件が異なるのは承知のうえ。
+ */
+export function showsInMeetingScheduleHomePanel(
+  negotiationStatusRaw: string,
+): boolean {
+  return canEditMeetingScheduleNegotiationStatus(negotiationStatusRaw);
+}
+
+/** ホームの「商談進捗」パネルに出す案件だけに絞る */
+export function filterMeetingScheduleHomePanelItems<
+  T extends { negotiationStatus: string },
+>(items: readonly T[]): T[] {
+  return items.filter((item) =>
+    showsInMeetingScheduleHomePanel(item.negotiationStatus),
+  );
+}

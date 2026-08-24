@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildMeetingScheduleSaveConfirm,
   canEditMeetingScheduleNegotiationStatus,
+  filterMeetingScheduleHomePanelItems,
+  showsInMeetingScheduleHomePanel,
   findMissingMeetingScheduleRequiredInput,
   isMeetingScheduleInputLocked,
   isMeetingScheduleInputNewlyEntered,
@@ -506,5 +508,94 @@ describe("確認ダイアログの組み立て", () => {
     });
     expect(c.title).toBe("入力内容の確定");
     expect(c.blocks).toHaveLength(1);
+  });
+});
+
+describe("ホーム「商談進捗」パネルの絞り込み", () => {
+  /** 仕様: この5件だけ表示する */
+  const SHOWN = [
+    "商談待ち",
+    "返待ち",
+    "資料送付回答待ち",
+    "再商談",
+    "再商談日調整中",
+  ];
+
+  it("★ 5件の案件は表示する", () => {
+    for (const s of SHOWN) {
+      expect(showsInMeetingScheduleHomePanel(s), s).toBe(true);
+    }
+  });
+
+  it("★ 残り9件（結果が確定済み）は表示しない", () => {
+    const hidden = MEETING_SCHEDULE_NEGOTIATION_STATUSES.filter(
+      (s) => !SHOWN.includes(s),
+    );
+    expect(hidden).toHaveLength(9);
+    expect(hidden).toContain("即決成約");
+    expect(hidden).toContain("否");
+    expect(hidden).toContain("アポキャン");
+    for (const s of hidden) {
+      expect(showsInMeetingScheduleHomePanel(s), s).toBe(false);
+    }
+  });
+
+  it("★ 遷移表で「遷移先が空でない5件」と一致する（リストを二重に持たない）", () => {
+    for (const s of MEETING_SCHEDULE_NEGOTIATION_STATUSES) {
+      expect(showsInMeetingScheduleHomePanel(s), s).toBe(
+        canEditMeetingScheduleNegotiationStatus(s),
+      );
+    }
+  });
+
+  it("★ 商談ステータスが空欄・遷移表の外なら表示しない（見積ステータス側とは逆）", () => {
+    for (const s of ["", "   ", "未知のステータス"]) {
+      expect(showsInMeetingScheduleHomePanel(s)).toBe(false);
+    }
+  });
+
+  it("★ 件数は絞り込み後の件数になる", () => {
+    const items = [
+      { recordId: "1", negotiationStatus: "商談待ち" },
+      { recordId: "2", negotiationStatus: "即決成約" },
+      { recordId: "3", negotiationStatus: "返待ち" },
+      { recordId: "4", negotiationStatus: "アポキャン" },
+      { recordId: "5", negotiationStatus: "" },
+      { recordId: "6", negotiationStatus: "再商談日調整中" },
+    ];
+
+    const filtered = filterMeetingScheduleHomePanelItems(items);
+    expect(filtered).toHaveLength(3);
+    expect(filtered.map((i) => i.recordId)).toEqual(["1", "3", "6"]);
+  });
+
+  it("0件でも壊れない", () => {
+    expect(filterMeetingScheduleHomePanelItems([])).toEqual([]);
+    expect(
+      filterMeetingScheduleHomePanelItems([
+        { negotiationStatus: "即決成約" },
+      ]),
+    ).toEqual([]);
+  });
+
+  /**
+   * 意図した仕様。パネル（5件）とアラート（3件）で条件が違う。
+   * アラート側のラベルが waiting / re-negotiation の2値しかなく、
+   * 5件に広げると返待ち・資料送付回答待ちが「再商談」と誤表示されるため
+   */
+  it("★ 出勤後アラートの条件（3件）とは一致しない（意図した差）", () => {
+    const alertOnly = MEETING_SCHEDULE_NEGOTIATION_STATUSES.filter((s) =>
+      keepsMeetingScheduleAlert(s),
+    );
+    expect(alertOnly).toEqual(["商談待ち", "再商談", "再商談日調整中"]);
+
+    // パネルはアラートより広い（返待ち・資料送付回答待ちが増える）
+    for (const s of alertOnly) {
+      expect(showsInMeetingScheduleHomePanel(s), s).toBe(true);
+    }
+    expect(keepsMeetingScheduleAlert("返待ち")).toBe(false);
+    expect(showsInMeetingScheduleHomePanel("返待ち")).toBe(true);
+    expect(keepsMeetingScheduleAlert("資料送付回答待ち")).toBe(false);
+    expect(showsInMeetingScheduleHomePanel("資料送付回答待ち")).toBe(true);
   });
 });
