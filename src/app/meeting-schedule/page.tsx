@@ -211,6 +211,15 @@ export default function MeetingSchedulePage() {
       const result: MeetingScheduleCardSaveResult = { errors: [] };
       setUpdatingRecordId(recordId);
       try {
+        /**
+         * 【現在は到達不能】商談・資料送付予定日時が LIFF から編集不可のため、
+         * planMeetingScheduleCardSave が patch.schedule を組むことはなく、
+         * PATCH .../schedule も 403 を返す。
+         * 日時編集を復活させる場合は、meeting-schedule-locked-fields.ts の
+         * MEETING_SCHEDULE_LOCKED_FIELDS から "scheduledDateTime" を外すのと
+         * 同時に、ここ（autoEstimateStatus の拾い上げ）と
+         * meeting-schedule.ts の自動リセットも同時に有効化すること。
+         */
         if (patch.schedule) {
           const res = await patchMeetingSchedule(
             `/api/meeting-schedule/records/${encodeURIComponent(recordId)}/schedule`,
