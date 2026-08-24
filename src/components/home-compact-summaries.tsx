@@ -12,6 +12,7 @@ import {
   type BulletinListResponse,
 } from "@/lib/bulletin-types";
 import { LIFF_SWR_DEFAULT_OPTIONS } from "@/lib/liff-swr";
+import { filterMeetingScheduleHomePanelItems } from "@/lib/meeting-schedule-negotiation-status";
 import type { MeetingSchedulePayload } from "@/lib/meeting-schedule-types";
 
 type Props = {
@@ -102,7 +103,19 @@ export function HomeCompactSummaries({
   const bulletinPreview = bulletinItems.slice(0, PREVIEW_LIMIT);
   const bulletinRest = bulletinItems.length - bulletinPreview.length;
 
-  const meetingItems = meetingData?.items ?? [];
+  /**
+   * 商談ステータスで絞る。まだ変更の余地がある案件だけを出し、
+   * 商談結果が確定済みの案件（即決成約・否・アポキャン等）は載せない。
+   *
+   * API（/api/meeting-schedule?scope=list）は見積ステータスでしか
+   * 絞っていないので、ここで重ねる。同じ API を /meeting-schedule の
+   * 一覧ページも使っているため、サーバ側ではなくこちらで絞る。
+   * 件数表示もこの絞り込み後の件数になる。
+   */
+  const meetingItems = useMemo(
+    () => filterMeetingScheduleHomePanelItems(meetingData?.items ?? []),
+    [meetingData?.items],
+  );
   const meetingPreview = meetingItems.slice(0, PREVIEW_LIMIT);
   const meetingRest = meetingItems.length - meetingPreview.length;
 
