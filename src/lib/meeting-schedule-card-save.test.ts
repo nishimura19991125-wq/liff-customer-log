@@ -359,21 +359,44 @@ describe("商談ステータスの保存", () => {
     expect(plan.patch).toEqual({});
   });
 
-  it("現在値が6件の外でも、変えなければ何も送らない", () => {
-    const outside = { ...setCreated, negotiationStatus: "資料送付成約" };
-    const plan = planMeetingScheduleCardSave(outside, { ...outside }, LOCKED);
+  it("変更不可の現在値でも、変えなければ何も送らない", () => {
+    // 画面は選択欄を出さないので現在値のまま。dirty にならない
+    const terminal = { ...setCreated, negotiationStatus: "資料送付成約" };
+    const plan = planMeetingScheduleCardSave(terminal, { ...terminal }, LOCKED);
     expect(plan.dirty).toBe(false);
   });
 
-  it("現在値が6件の外から6件のいずれかへは変更できる", () => {
-    const outside = { ...setCreated, negotiationStatus: "資料送付成約" };
+  it("遷移表に無い現在値・空欄でも、変えなければ何も送らない", () => {
+    for (const current of ["@pocket で増えた未知のステータス", ""]) {
+      const outside = { ...setCreated, negotiationStatus: current };
+      const plan = planMeetingScheduleCardSave(outside, { ...outside }, LOCKED);
+      expect(plan.dirty, current).toBe(false);
+    }
+  });
+
+  it("変更不可の現在値でも、付随項目だけの変更は保存できる", () => {
+    const terminal = { ...setCreated, negotiationStatus: "否" };
     const plan = planMeetingScheduleCardSave(
-      outside,
-      { ...outside, negotiationStatus: "商談待ち" },
+      terminal,
+      { ...terminal, meetingPlace: "店舗" },
+      LOCKED,
+    );
+    expect(plan.dirty).toBe(true);
+    expect(plan.blockedReason).toBe("");
+    expect(plan.patch.status?.meetingPlace).toBe("店舗");
+    // 現在値のまま載る。サーバ側は現在値と同じなら書き込まない
+    expect(plan.patch.status?.negotiationStatus).toBe("否");
+  });
+
+  it("遷移表に従った変更は保存対象になる（返待ち → 再商談）", () => {
+    const henmachi = { ...setCreated, negotiationStatus: "返待ち" };
+    const plan = planMeetingScheduleCardSave(
+      henmachi,
+      { ...henmachi, negotiationStatus: "再商談" },
       LOCKED,
     );
     expect(plan.blockedReason).toBe("");
-    expect(plan.patch.status?.negotiationStatus).toBe("商談待ち");
+    expect(plan.patch.status?.negotiationStatus).toBe("再商談");
   });
 
   it("商談セット作成済み以外では送らない（枠の外なので編集 UI が無い）", () => {

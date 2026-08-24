@@ -17,8 +17,8 @@ import {
 import { resolveMeetingScheduleCardEditability } from "@/lib/meeting-schedule-locked-fields";
 import {
   meetingScheduleNegotiationConfirmMessage,
+  meetingScheduleNegotiationOptionsFor,
   needsMeetingScheduleNegotiationConfirm,
-  MEETING_SCHEDULE_NEGOTIATION_STATUS_OPTIONS,
 } from "@/lib/meeting-schedule-negotiation-status";
 import { MeetingScheduleNegotiationConfirmDialog } from "@/components/meeting-schedule-negotiation-confirm-dialog";
 import type { MeetingScheduleItem } from "@/lib/meeting-schedule-types";
@@ -216,18 +216,16 @@ export function MeetingScheduleItemCard({
     [meetingPlaceOptions, meetingPlace],
   );
   /**
-   * 選べるのは固定の6件。ただし現在値が6件の外（例: 資料送付成約）の
-   * こともあるため、その値を選択肢に足して表示が壊れないようにする。
-   * 足した値を選び直すことはできる（サーバ側が6件で検証する）
+   * 選べる値は現在値で決まる（遷移ルール）。現在値が先頭に入る。
+   *
+   * 空になるのは変更不可の9件と、遷移表に無い値・空欄のとき。
+   * その場合は選択欄を出さず値をテキストで見せる
    */
   const negotiationOptions = useMemo(
-    () =>
-      mergeSelectOptions(
-        [...MEETING_SCHEDULE_NEGOTIATION_STATUS_OPTIONS],
-        item.negotiationStatus,
-      ),
+    () => meetingScheduleNegotiationOptionsFor(item.negotiationStatus),
     [item.negotiationStatus],
   );
+  const canEditNegotiation = negotiationOptions.length > 0;
 
   /**
    * どの UI を出すかは src/lib 側の純粋関数に寄せてある。
@@ -283,14 +281,14 @@ export function MeetingScheduleItemCard({
   const clearFeedback = () => setFeedback(null);
 
   /**
-   * 商談ステータスを変更していて、かつ変更後の値で出勤後アラートから
-   * 消える場合だけ、保存前に確認する。
+   * 商談ステータスが実際に変わり、かつ変更後の値で出勤後アラートから
+   * 消える場合だけ、保存前に確認する。現在値のまま保存するときは出さない。
    * 判定は src/lib 側（filterPendingMeetingAlerts と同じ関数を参照）
    */
-  const negotiationChanged = negotiationStatus !== server.negotiationStatus;
-  const needsNegotiationConfirm =
-    negotiationChanged &&
-    needsMeetingScheduleNegotiationConfirm(negotiationStatus);
+  const needsNegotiationConfirm = needsMeetingScheduleNegotiationConfirm(
+    server.negotiationStatus,
+    negotiationStatus,
+  );
 
   const handleSave = async () => {
     if (!onSave || !canSave) return;
@@ -446,30 +444,42 @@ export function MeetingScheduleItemCard({
               <p className="text-[12px] font-semibold text-sky-800 dark:text-sky-200">
                 商談セット作成済みの入力項目
               </p>
-              <label className="block">
-                <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
-                  商談ステータス
-                </span>
-                {/* 選んだ時点では保存しない。カード下部の「保存」でまとめて送る */}
-                <select
-                  className={inputClass}
-                  value={negotiationStatus}
-                  disabled={saving}
-                  onChange={(e) => {
-                    clearFeedback();
-                    setNegotiationStatus(e.target.value);
-                  }}
-                >
-                  {!negotiationStatus ? (
-                    <option value="">選択してください</option>
-                  ) : null}
-                  {negotiationOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {canEditNegotiation ? (
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                    商談ステータス
+                  </span>
+                  {/* 選んだ時点では保存しない。カード下部の「保存」でまとめて送る */}
+                  <select
+                    className={inputClass}
+                    value={negotiationStatus}
+                    disabled={saving}
+                    onChange={(e) => {
+                      clearFeedback();
+                      setNegotiationStatus(e.target.value);
+                    }}
+                  >
+                    {negotiationOptions.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                /* 変更不可の9件と、遷移表に無い値・空欄。見積ステータスと同じ形 */
+                <div>
+                  <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                    商談ステータス
+                  </span>
+                  <p className={readOnlyValueClass}>
+                    {item.negotiationStatus || "未設定"}
+                  </p>
+                  <p className={readOnlyNoteClass}>
+                    この商談ステータスからは変更できません
+                  </p>
+                </div>
+              )}
               <label className="block">
                 <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
                   初回商談実施日
