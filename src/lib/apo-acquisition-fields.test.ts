@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { APO_ACQUISITION_FIELD_SPECS } from "@/lib/apo-acquisition-fields";
+import {
+  APO_ACQUISITION_FIELD_SPECS,
+  resolveApoAcquisitionFields,
+} from "@/lib/apo-acquisition-fields";
 import { APO_ACQUISITION_FIELD_KEYS } from "@/lib/apo-acquisition-types";
 
 /**
@@ -93,5 +96,74 @@ describe("入力項目の増減", () => {
     expect(Object.keys(APO_ACQUISITION_FIELD_SPECS).sort()).toEqual(
       [...APO_ACQUISITION_FIELD_KEYS].sort(),
     );
+  });
+});
+
+describe("★ オール電化orガスの選択肢", () => {
+  const spec = APO_ACQUISITION_FIELD_SPECS.electricOrGas;
+
+  /*
+   * @pocket の実物は「オール電化 / ガス住宅」。
+   * コード側が「ガス」だったため、それを選んだ登録が 400 で弾かれていた
+   *   オール電化 or ガス 「ガス」 は登録されていません
+   */
+  it("実物どおり オール電化 / ガス住宅", () => {
+    expect(spec.options).toEqual(["オール電化", "ガス住宅"]);
+  });
+
+  it("「ガス」単体は含まない（@pocket に無い値）", () => {
+    expect(spec.options).not.toContain("ガス");
+  });
+
+  it("★ 実際の列名「オール電化 or ガス」を完全一致で引ける", () => {
+    // 以前は部分一致で「オール電化」に引っかかっていただけだった
+    expect(spec.captions[0]).toBe("オール電化 or ガス");
+  });
+
+  it("既存の見出し候補は残す（解決先を変えない）", () => {
+    for (const c of ["オール電化orガス", "オール電化", "電化ガス", "電気ガス"]) {
+      expect(spec.captions).toContain(c);
+    }
+  });
+});
+
+describe("★ オール電化orガスの列の解決", () => {
+  const field = (uniqueId: string, caption: string) => ({
+    uniqueId,
+    caption,
+    fieldType: "SingleSelect",
+  });
+  /** 必須列が無いと他の解決に影響するので最低限そろえる */
+  const base = [
+    field("field-9", "お客様名"),
+    field("field-8", "商談・資料送付予定日時"),
+  ];
+
+  it("実際の列名「オール電化 or ガス」を引ける", () => {
+    const resolved = resolveApoAcquisitionFields([
+      ...base,
+      field("field-20", "オール電化 or ガス"),
+    ]);
+
+    expect(resolved.electricOrGas.uniqueId).toBe("field-20");
+  });
+
+  it("見出し候補の追加で解決先が変わらない（旧表記も従来どおり）", () => {
+    for (const caption of ["オール電化orガス", "オール電化", "電化ガス"]) {
+      const resolved = resolveApoAcquisitionFields([
+        ...base,
+        field("field-20", caption),
+      ]);
+      expect(resolved.electricOrGas.uniqueId).toBe("field-20");
+    }
+  });
+
+  it("該当する列が無ければ null（別の列を掴まない）", () => {
+    const resolved = resolveApoAcquisitionFields([
+      ...base,
+      field("field-21", "屋根形状"),
+    ]);
+
+    expect(resolved.electricOrGas.uniqueId).toBeNull();
   });
 });

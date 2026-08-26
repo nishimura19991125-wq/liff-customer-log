@@ -292,8 +292,20 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
     kind: "select",
     required: false,
     envKey: "APO_ACQUISITION_ELECTRIC_OR_GAS_FIELD_ID",
-    captions: ["オール電化orガス", "オール電化", "電化ガス", "電気ガス"],
-    options: ["オール電化", "ガス"],
+    /**
+     * 実際の列名は「オール電化 or ガス」（or の前後に半角スペース）。
+     * 以前はこれが無く、部分一致で「オール電化」に引っかかって
+     * 解決していただけだった。完全一致の候補を先頭に置く
+     */
+    captions: [
+      "オール電化 or ガス",
+      "オール電化orガス",
+      "オール電化",
+      "電化ガス",
+      "電気ガス",
+    ],
+    // @pocket の実物と突き合わせ済み。「ガス」ではなく「ガス住宅」
+    options: ["オール電化", "ガス住宅"],
   },
   existingEquipment: {
     key: "existingEquipment",
