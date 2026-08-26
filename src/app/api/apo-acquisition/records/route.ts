@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { createApoAcquisitionRecord } from "@/lib/apo-acquisition-server";
 import type {
   ApoAcquisitionCreateInput,
-  ApoAcquisitionFileAttachment,
   ApoAcquisitionValues,
 } from "@/lib/apo-acquisition-types";
 import { recordAuditLog } from "@/lib/audit-log";
@@ -19,7 +18,6 @@ export const dynamic = "force-dynamic";
 type Body = {
   apStaffName?: string;
   values?: ApoAcquisitionValues;
-  files?: Partial<Record<string, ApoAcquisitionFileAttachment[]>>;
 };
 
 /** アポ取得情報連携へ新規登録 */
@@ -42,10 +40,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  /**
+   * 添付は受け取らない。
+   * 立面図・平面図は /records/{recordId}/attachments へ multipart で送る
+   */
   const payload: ApoAcquisitionCreateInput = {
     apStaffName: body.apStaffName ?? boundStaffName,
     values: body.values ?? {},
-    files: body.files ?? {},
   };
 
   const result = await createApoAcquisitionRecord(boundStaffName, payload);

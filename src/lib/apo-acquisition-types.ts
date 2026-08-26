@@ -72,6 +72,11 @@ export type ApoAcquisitionFieldMeta = {
 export type ApoAcquisitionFormPayload = {
   configured: boolean;
   writeEnabled: boolean;
+  /**
+   * 添付（立面図・平面図）が使えるか。Dropbox の設定が揃っていないと false。
+   * false のとき画面は添付欄を出さない。レコード登録自体は可能
+   */
+  attachmentEnabled: boolean;
   configError?: string;
   defaults: {
     apStaffName: string;
@@ -85,16 +90,16 @@ export type ApoAcquisitionValues = Partial<
   Record<ApoAcquisitionFieldKey, string>
 >;
 
-export type ApoAcquisitionFileAttachment = {
-  name: string;
-  mimeType: string;
-  contentBase64: string;
-};
-
+/**
+ * 登録の入力。添付は含めない。
+ *
+ * 添付は Dropbox へ別リクエスト（multipart）で送る。
+ * base64 で本文に載せると 5MB×5件で 33MB ほどになり本文の上限に当たるため、
+ * ここでは扱わない。監査ログにファイル本体が載らない利点もある
+ */
 export type ApoAcquisitionCreateInput = {
   apStaffName: string;
   values: ApoAcquisitionValues;
-  files?: Partial<Record<ApoAcquisitionFieldKey, ApoAcquisitionFileAttachment[]>>;
 };
 
 /** 監査ログ用。書き込んだ内容と表示ラベル */
@@ -105,5 +110,10 @@ export type ApoAcquisitionCreateAudit = {
 };
 
 export type ApoAcquisitionCreateResult =
-  | { ok: true; recordId: string; audit: ApoAcquisitionCreateAudit }
+  | {
+      ok: true;
+      /** 添付の送信先。/records/{recordId}/attachments に使う */
+      recordId: string;
+      audit: ApoAcquisitionCreateAudit;
+    }
   | { ok: false; status: number; error: string };

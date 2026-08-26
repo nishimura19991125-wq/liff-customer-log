@@ -21,12 +21,10 @@ import {
   type ApoAcquisitionCreateResult,
   type ApoAcquisitionFieldKey,
   type ApoAcquisitionFieldMeta,
-  type ApoAcquisitionFileAttachment,
   type ApoAcquisitionFormPayload,
 } from "@/lib/apo-acquisition-types";
 import { atPocketRecordIdFromCreateResult } from "@/lib/atpocket-record-id";
 import type { AtPocketFieldRow } from "@/lib/atpocket";
-import { buildAtPocketFilePutPayload } from "@/lib/at-pocket-file-field";
 import {
   customerInfoPutValue,
   readCustomerInfoImportKeyFromRecord,
@@ -42,6 +40,7 @@ import {
   isWritableAtPocketField,
 } from "@/lib/customer-info-form/pocket-writable-fields";
 import { pocketFieldUniqueIdByCaption, resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
+import { dropboxApoConfigured } from "@/lib/dropbox";
 import { salesDashboardApoAppId } from "@/lib/sales-dashboard-fields";
 import {
   fetchApClStaffPickerPayload,
@@ -85,25 +84,6 @@ function dateValueForPocket(raw: string, withTime: boolean): string {
   if (!m) return slash;
   const hh = String(Number(m[1])).padStart(2, "0");
   return `${slash} ${hh}:${m[2]}`;
-}
-
-const APO_ACQUISITION_MAX_FILE_BYTES = 5 * 1024 * 1024;
-const APO_ACQUISITION_MAX_FILES_PER_FIELD = 5;
-
-function validateFileAttachments(
-  label: string,
-  files: ApoAcquisitionFileAttachment[],
-): string | null {
-  if (files.length > APO_ACQUISITION_MAX_FILES_PER_FIELD) {
-    return `${label}の添付は${APO_ACQUISITION_MAX_FILES_PER_FIELD}件までです`;
-  }
-  for (const file of files) {
-    const bytes = Buffer.byteLength(file.contentBase64, "base64");
-    if (bytes > APO_ACQUISITION_MAX_FILE_BYTES) {
-      return `${file.name}が大きすぎます（5MBまで）`;
-    }
-  }
-  return null;
 }
 
 function apStaffOptionsWithDefault(
@@ -175,6 +155,7 @@ export async function buildApoAcquisitionFormPayload(
     return {
       configured: false,
       writeEnabled: false,
+      attachmentEnabled: false,
       configError: "SALES_DASHBOARD_APO_APP_ID が未設定です",
       defaults: emptyDefaults(boundStaffName),
       fields: [],
@@ -202,6 +183,7 @@ export async function buildApoAcquisitionFormPayload(
     return {
       configured: false,
       writeEnabled: salesDashboardApoWriteConfigured(),
+      attachmentEnabled: dropboxApoConfigured(),
       configError:
         "アポ取得情報連携で必須列（お客様名・商談・資料送付予定日時）を特定できません。見出し名を確認してください。",
       defaults: emptyDefaults(boundStaffName),
@@ -212,6 +194,7 @@ export async function buildApoAcquisitionFormPayload(
   return {
     configured: true,
     writeEnabled: salesDashboardApoWriteConfigured(),
+    attachmentEnabled: dropboxApoConfigured(),
     defaults: emptyDefaults(boundStaffName),
     fields: buildFieldMeta(resolved, apStaff, clStaff),
   };
@@ -405,7 +388,6 @@ export async function createApoAcquisitionRecord(
   }
 
   const values = input.values ?? {};
-  const files = input.files ?? {};
   const apStaffName = nfkc(
     values.apStaff ?? input.apStaffName ?? boundStaffName,
   );
@@ -417,12 +399,8 @@ export async function createApoAcquisitionRecord(
   for (const key of APO_ACQUISITION_FIELD_KEYS) {
     const spec = APO_ACQUISITION_FIELD_SPECS[key];
     if (!spec.required) continue;
-    if (spec.kind === "file") {
-      if (!(files[key]?.length ?? 0)) {
-        return { ok: false, status: 400, error: `${spec.label}を添付してください` };
-      }
-      continue;
-    }
+    // 添付はレコードに載せない。必須にしない（現状 required: false）
+    if (spec.kind === "file") continue;
     const raw = key === "apStaff" ? apStaffName : nfkc(values[key] ?? "");
     if (!raw) {
       return { ok: false, status: 400, error: `${spec.label}を入力してください` };
@@ -442,14 +420,6 @@ export async function createApoAcquisitionRecord(
       status: 400,
       error: "その他メーカーを入力してください",
     };
-  }
-
-  for (const key of APO_ACQUISITION_FIELD_KEYS) {
-    const spec = APO_ACQUISITION_FIELD_SPECS[key];
-    if (spec.kind !== "file") continue;
-    const fieldFiles = files[key] ?? [];
-    const err = validateFileAttachments(spec.label, fieldFiles);
-    if (err) return { ok: false, status: 400, error: err };
   }
 
   const apoAcquiredYmd = normalizeYmd(values.apoAcquiredDate ?? "");
@@ -484,19 +454,6 @@ export async function createApoAcquisitionRecord(
       };
     }
 
-    for (const key of APO_ACQUISITION_FIELD_KEYS) {
-      const spec = APO_ACQUISITION_FIELD_SPECS[key];
-      if (spec.kind !== "file") continue;
-      if (!(files[key]?.length ?? 0)) continue;
-      if (!resolved[key].uniqueId) {
-        return {
-          ok: false,
-          status: 503,
-          error: `${spec.label}の添付列が@pocketで見つかりません。アポ取得情報連携に「${spec.label}」列（ファイルタイプ）を追加してください。`,
-        };
-      }
-    }
-
     const clStaffName = nfkc(values.clStaff ?? "");
     const apStaffRelation = await resolveStaffRelationPocketValue(apStaffName);
     if (!apStaffRelation.ok) {
@@ -516,10 +473,11 @@ export async function createApoAcquisitionRecord(
       if (!r.uniqueId || !r.writable) continue;
 
       if (r.spec.kind === "file") {
-        const payload = buildAtPocketFilePutPayload(files[key] ?? []);
-        if (payload.length > 0) {
-          record[r.uniqueId] = payload;
-        }
+        /**
+         * 添付は @pocket の列に入れず Dropbox へ置く。
+         * base64 をレコード本文に同梱すると 5MB×5件で 33MB ほどになり、
+         * 本文サイズの上限に当たる。ファイルは別リクエストで1件ずつ送る
+         */
         continue;
       }
 
@@ -679,3 +637,4 @@ export async function createApoAcquisitionRecord(
     };
   }
 }
+

@@ -20,10 +20,14 @@ import { useLiffSwr } from "@/hooks/use-liff-swr";
 import type {
   ApoAcquisitionFieldKey,
   ApoAcquisitionFieldMeta,
-  ApoAcquisitionFileAttachment,
   ApoAcquisitionFormPayload,
   ApoAcquisitionValues,
 } from "@/lib/apo-acquisition-types";
+import {
+  APO_ATTACHMENT_MAX_BYTES,
+  APO_ATTACHMENT_MAX_FILES,
+  apoAcquisitionFeedbackIsError,
+} from "@/lib/apo-attachment";
 import {
   hasApoDesiredManufacturerOther,
   APO_DESIRED_MANUFACTURER_OTHER,
@@ -49,8 +53,12 @@ const inputClass =
 /** その他メーカーの領域。「その他」チェックの aria-controls が指す */
 const OTHER_MANUFACTURER_REGION_ID = "apo-other-manufacturer";
 
-const MAX_FILE_BYTES = 5 * 1024 * 1024;
-const MAX_FILES_PER_FIELD = 5;
+/**
+ * 画面側の上限。サーバと同じ定数を見る。
+ * ここで弾くのは無駄な送信を減らすためで、判断はサーバが持つ
+ */
+const MAX_FILE_BYTES = APO_ATTACHMENT_MAX_BYTES;
+const MAX_FILES_PER_FIELD = APO_ATTACHMENT_MAX_FILES;
 
 function parseCheckboxValue(raw: string): Set<string> {
   return new Set(
@@ -65,23 +73,17 @@ function joinCheckboxValue(selected: Set<string>): string {
   return [...selected].join(",");
 }
 
-async function readFileAsAttachment(file: File): Promise<ApoAcquisitionFileAttachment> {
-  const contentBase64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result ?? "");
-      const match = /^data:[^;]+;base64,(.+)$/i.exec(result);
-      resolve(match?.[1] ?? "");
-    };
-    reader.onerror = () => reject(reader.error ?? new Error("ファイルの読み込みに失敗しました"));
-    reader.readAsDataURL(file);
-  });
-  return {
-    name: file.name,
-    mimeType: file.type || "application/octet-stream",
-    contentBase64,
-  };
-}
+/**
+ * 添付は base64 にせず File のまま持つ。
+ * レコード登録とは別のリクエストで、1件ずつ multipart で送る
+ * （まとめて JSON に載せると 5MB×5件で 33MB ほどになり本文の上限に当たる）
+ */
+type PendingAttachment = {
+  file: File;
+  /** 送信結果。未送信は null */
+  error: string | null;
+  done: boolean;
+};
 
 function ApoGlyph() {
   return (
@@ -260,10 +262,12 @@ function FieldRow({ field, value, disabled, onChange, onBlur }: FieldRowProps) {
 
 type FileFieldRowProps = {
   field: ApoAcquisitionFieldMeta;
-  files: ApoAcquisitionFileAttachment[];
+  files: PendingAttachment[];
   disabled: boolean;
-  onChange: (key: ApoAcquisitionFieldKey, files: ApoAcquisitionFileAttachment[]) => void;
+  onChange: (key: ApoAcquisitionFieldKey, files: PendingAttachment[]) => void;
   onError: (message: string) => void;
+  /** 失敗した1件だけを送り直す。登録前は null */
+  onRetry: ((key: ApoAcquisitionFieldKey, index: number) => void) | null;
 };
 
 function FileFieldRow({
@@ -272,10 +276,11 @@ function FileFieldRow({
   disabled,
   onChange,
   onError,
+  onRetry,
 }: FileFieldRowProps) {
   if (!field.present) return null;
 
-  const handleSelect = async (list: FileList | null) => {
+  const handleSelect = (list: FileList | null) => {
     if (!list?.length) return;
     const next = [...files];
     for (const file of Array.from(list)) {
@@ -287,11 +292,7 @@ function FileFieldRow({
         onError(`${file.name}が大きすぎます（5MBまで）`);
         continue;
       }
-      try {
-        next.push(await readFileAsAttachment(file));
-      } catch {
-        onError(`${file.name}の読み込みに失敗しました`);
-      }
+      next.push({ file, error: null, done: false });
     }
     onChange(field.key, next);
   };
@@ -309,7 +310,7 @@ function FileFieldRow({
         multiple
         disabled={disabled}
         onChange={(e) => {
-          void handleSelect(e.target.files);
+          handleSelect(e.target.files);
           e.target.value = "";
         }}
       />
@@ -324,12 +325,39 @@ function FileFieldRow({
       )}
       {files.length > 0 ? (
         <ul className="space-y-1">
-          {files.map((file, index) => (
+          {files.map((entry, index) => (
             <li
-              key={`${file.name}-${index}`}
+              key={`${entry.file.name}-${index}`}
               className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-[12px] text-slate-700 dark:bg-slate-800/60 dark:text-slate-200"
             >
-              <span className="truncate">{file.name}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{entry.file.name}</span>
+                {/* 送信済み・失敗が一目で分かるようにする */}
+                {entry.done ? (
+                  <span className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                    送信済み
+                  </span>
+                ) : entry.error ? (
+                  <span
+                    role="alert"
+                    aria-live="assertive"
+                    className="text-[11px] text-red-700 dark:text-red-400"
+                  >
+                    {entry.error}
+                  </span>
+                ) : null}
+              </span>
+              {/* 失敗した1件だけを送り直す。成功した分は送り直さない */}
+              {entry.error && !entry.done && onRetry ? (
+                <button
+                  type="button"
+                  className="shrink-0 font-medium text-orange-600 disabled:opacity-50 dark:text-orange-400"
+                  disabled={disabled}
+                  onClick={() => onRetry(field.key, index)}
+                >
+                  再送
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="shrink-0 text-red-600 disabled:opacity-50 dark:text-red-400"
@@ -363,8 +391,21 @@ export default function ApoAcquisitionPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [values, setValues] = useState<ApoAcquisitionValues>({});
   const [files, setFiles] = useState<
-    Partial<Record<ApoAcquisitionFieldKey, ApoAcquisitionFileAttachment[]>>
+    Partial<Record<ApoAcquisitionFieldKey, PendingAttachment[]>>
   >({});
+  /** 送信中のファイルの位置。何件目を送っているか画面に出すため */
+  const [uploadProgress, setUploadProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
+  /**
+   * 登録済みレコードの id。
+   * 添付だけ失敗したときに、レコードを作り直さず添付だけ送り直すため。
+   * 二重登録を防ぐので、ここが埋まっている間は登録要求を出さない
+   */
+  const [createdRecordId, setCreatedRecordId] = useState<string | null>(null);
+  /** 共有リンクの保存だけ落ちたか。貼り直しの導線を出す */
+  const [linkUnsaved, setLinkUnsaved] = useState(false);
 
   /**
    * その他メーカーを出すか。希望メーカーで「その他」を選んだときだけ。
@@ -373,6 +414,9 @@ export default function ApoAcquisitionPage() {
   const showsOtherManufacturer = hasApoDesiredManufacturerOther(
     values.desiredManufacturer,
   );
+
+  /** 通知文を赤字・alert で出すか。判定は src/lib 側 */
+  const feedbackIsError = apoAcquisitionFeedbackIsError(feedback ?? "");
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -433,11 +477,42 @@ export default function ApoAcquisitionPage() {
   );
 
   const setFieldFiles = useCallback(
-    (key: ApoAcquisitionFieldKey, next: ApoAcquisitionFileAttachment[]) => {
+    (key: ApoAcquisitionFieldKey, next: PendingAttachment[]) => {
       setFiles((prev) => ({ ...prev, [key]: next }));
     },
     [],
   );
+
+  /** 1件分の送信結果を書き戻す。他の行はそのまま */
+  const markAttachment = useCallback(
+    (
+      key: ApoAcquisitionFieldKey,
+      index: number,
+      patch: { done: boolean; error: string | null },
+    ) => {
+      setFiles((prev) => {
+        const list = prev[key];
+        const target = list?.[index];
+        if (!target) return prev;
+        const next = [...list];
+        next[index] = { ...target, ...patch };
+        return { ...prev, [key]: next };
+      });
+    },
+    [],
+  );
+
+  /** 登録が最後まで通ったときだけ入力を空にする */
+  const resetForm = useCallback(() => {
+    if (!form?.configured) return;
+    setValues({
+      apStaff: form.defaults.apStaffName,
+      apoAcquiredDate: form.defaults.apoAcquiredYmd,
+    });
+    setFiles({});
+    setCreatedRecordId(null);
+    setLinkUnsaved(false);
+  }, [form]);
 
   useEffect(() => {
     if (!form?.configured) return;
@@ -484,30 +559,200 @@ export default function ApoAcquisitionPage() {
     }
   }, [formError]);
 
+  /**
+   * 添付を1件だけ送る。
+   *
+   * まとめて送らないのは、5MB×5件を JSON に載せると 33MB ほどになり
+   * 本文の上限に当たるため。1件ずつなら1リクエストは 5MB 以内に収まる。
+   *
+   * Dropbox には削除権限が無く、上げたファイルは取り消せない。
+   * だから全体をまとめて成功・失敗にせず、1件ごとに結果を残す
+   */
+  const sendAttachment = useCallback(
+    async (
+      recordId: string,
+      token: string,
+      key: ApoAcquisitionFieldKey,
+      index: number,
+      file: File,
+    ): Promise<{ sent: boolean; linkSaved: boolean }> => {
+      const body = new FormData();
+      body.append("file", file);
+      try {
+        const res = await fetch(
+          `/api/apo-acquisition/records/${encodeURIComponent(recordId)}/attachments`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+            body,
+          },
+        );
+        const parsed = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          linkSaved?: boolean;
+        };
+        if (!res.ok) throw new Error(parsed.error ?? "送信に失敗しました");
+        markAttachment(key, index, { done: true, error: null });
+        // ファイルは上がったがリンクだけ落ちた場合がある
+        return { sent: true, linkSaved: parsed.linkSaved !== false };
+      } catch (e) {
+        markAttachment(key, index, {
+          done: false,
+          error: e instanceof Error ? e.message : "送信に失敗しました",
+        });
+        return { sent: false, linkSaved: true };
+      }
+    },
+    [markAttachment],
+  );
+
+  /** 未送信の添付をまとめて順に送る。送信済みは飛ばす */
+  const uploadAttachments = useCallback(
+    async (recordId: string, token: string): Promise<number> => {
+      const pending: {
+        key: ApoAcquisitionFieldKey;
+        index: number;
+        file: File;
+      }[] = [];
+      for (const key of Object.keys(files) as ApoAcquisitionFieldKey[]) {
+        (files[key] ?? []).forEach((entry, index) => {
+          if (!entry.done) pending.push({ key, index, file: entry.file });
+        });
+      }
+      if (pending.length === 0) return 0;
+
+      let failed = 0;
+      let linkMissing = false;
+      for (let i = 0; i < pending.length; i += 1) {
+        const item = pending[i]!;
+        setUploadProgress({ current: i + 1, total: pending.length });
+        const r = await sendAttachment(
+          recordId,
+          token,
+          item.key,
+          item.index,
+          item.file,
+        );
+        if (!r.sent) failed += 1;
+        if (!r.linkSaved) linkMissing = true;
+      }
+
+      setUploadProgress(null);
+      setLinkUnsaved(linkMissing);
+      return failed;
+    },
+    [files, sendAttachment],
+  );
+
+  /** 失敗した1件だけを送り直す */
+  const retryAttachment = useCallback(
+    (key: ApoAcquisitionFieldKey, index: number) => {
+      const entry = (files[key] ?? [])[index];
+      if (!idToken || !createdRecordId || !entry || entry.done) return;
+      void (async () => {
+        setSubmitting(true);
+        setFeedback(null);
+        setUploadProgress({ current: 1, total: 1 });
+        try {
+          const r = await sendAttachment(
+            createdRecordId,
+            idToken,
+            key,
+            index,
+            entry.file,
+          );
+          if (!r.linkSaved) setLinkUnsaved(true);
+          if (r.sent) setFeedback(`${entry.file.name}を送信しました`);
+        } finally {
+          setUploadProgress(null);
+          setSubmitting(false);
+        }
+      })();
+    },
+    [files, idToken, createdRecordId, sendAttachment],
+  );
+
+  /** 共有リンクだけを貼り直す */
+  const handleRetryLink = useCallback(async () => {
+    if (!idToken || !createdRecordId) return;
+    setSubmitting(true);
+    try {
+      await liffAuthedJsonFetch<{ ok?: boolean }>(
+        `/api/apo-acquisition/records/${encodeURIComponent(createdRecordId)}/attachments`,
+        idToken,
+        { method: "PUT" },
+      );
+      setLinkUnsaved(false);
+      setFeedback("共有リンクを保存しました");
+    } catch (e) {
+      setFeedback(
+        isLiffSwrError(e) ? e.message : "共有リンクの保存に失敗しました",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }, [idToken, createdRecordId]);
+
   const handleSubmit = useCallback(async () => {
     if (!idToken || !form?.configured || !form.writeEnabled) return;
     setSubmitting(true);
     setFeedback(null);
     try {
-      await liffAuthedJsonFetch<{ ok?: boolean }>(
-        "/api/apo-acquisition/records",
-        idToken,
-        {
+      /**
+       * 登録と添付を別のリクエストに分ける。
+       * 登録が通った時点で成功として確定させ、添付はそのあと1件ずつ送る。
+       *
+       * createdRecordId が埋まっているのは「登録は済んだが添付が残っている」
+       * 状態。ここで作り直すと二重登録になるので、添付だけ送り直す
+       */
+      let recordId = createdRecordId ?? "";
+      if (!recordId) {
+        const created = await liffAuthedJsonFetch<{
+          ok?: boolean;
+          recordId?: string;
+        }>("/api/apo-acquisition/records", idToken, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             apStaffName: values.apStaff ?? form.defaults.apStaffName,
             values,
-            files,
           }),
-        },
+        });
+        recordId = created.recordId?.trim() ?? "";
+      }
+
+      const pending = Object.values(files).reduce(
+        (n, list) => n + (list ?? []).filter((f) => !f.done).length,
+        0,
       );
+
+      if (pending === 0) {
+        setFeedback("アポ取得情報を登録しました");
+        resetForm();
+        return;
+      }
+      if (!recordId) {
+        // 登録は通ったが id が返らなかった。添付先を決められない
+        setCreatedRecordId(null);
+        setFeedback(
+          "アポ取得情報を登録しました。添付は送信できませんでした（登録番号を取得できませんでした）。",
+        );
+        return;
+      }
+
+      // 添付が残っている間は id を保持し、押し直しで再送できるようにする
+      setCreatedRecordId(recordId);
+      const failed = await uploadAttachments(recordId, idToken);
+      if (failed > 0) {
+        setFeedback(
+          `アポ取得情報を登録しました。添付${failed}件の送信に失敗しました。もう一度「登録」を押すと、失敗した分だけ送り直します。`,
+        );
+        return;
+      }
+
+      setCreatedRecordId(null);
       setFeedback("アポ取得情報を登録しました");
-      setValues({
-        apStaff: form.defaults.apStaffName,
-        apoAcquiredDate: form.defaults.apoAcquiredYmd,
-      });
-      setFiles({});
+      resetForm();
     } catch (e) {
       if (isLiffSwrError(e) && e.status === 401) {
         setPhase("session-expired");
@@ -516,8 +761,17 @@ export default function ApoAcquisitionPage() {
       setFeedback(isLiffSwrError(e) ? e.message : "通信に失敗しました");
     } finally {
       setSubmitting(false);
+      setUploadProgress(null);
     }
-  }, [idToken, form, values, files]);
+  }, [
+    idToken,
+    form,
+    values,
+    files,
+    createdRecordId,
+    uploadAttachments,
+    resetForm,
+  ]);
 
   if (phase === "init" || phase === "need-login") {
     return (
@@ -620,6 +874,11 @@ export default function ApoAcquisitionPage() {
                   (f) =>
                     f.key !== "otherManufacturer" || showsOtherManufacturer,
                 )
+                /**
+                 * 添付欄は保存先（DROPBOX_APO_ROOT_PATH）が設定されている
+                 * ときだけ出す。未設定でも登録そのものは通す
+                 */
+                .filter((f) => f.kind !== "file" || form.attachmentEnabled)
                 .map((field) =>
                   field.kind === "file" ? (
                     <FileFieldRow
@@ -629,6 +888,7 @@ export default function ApoAcquisitionPage() {
                       disabled={submitting}
                       onChange={setFieldFiles}
                       onError={setFeedback}
+                      onRetry={createdRecordId ? retryAttachment : null}
                     />
                   ) : field.key === "otherManufacturer" ? (
                     /* 出ているときだけ必須。* の表示を実際の条件に合わせる */
@@ -654,16 +914,55 @@ export default function ApoAcquisitionPage() {
                   ),
                 )}
 
+              {/* 何件目を送っているかを伝える。読み上げは控えめに */}
+              <p
+                role="status"
+                aria-live="polite"
+                className="text-[12px] text-slate-500 dark:text-slate-400"
+              >
+                {uploadProgress
+                  ? `添付を送信中… ${uploadProgress.current}件目 / ${uploadProgress.total}件`
+                  : ""}
+              </p>
+
               {feedback ? (
                 <p
+                  role={feedbackIsError ? "alert" : "status"}
+                  aria-live={feedbackIsError ? "assertive" : "polite"}
                   className={`text-[13px] ${
-                    feedback.includes("登録しました")
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "text-red-600 dark:text-red-400"
+                    feedbackIsError
+                      ? "text-red-600 dark:text-red-400"
+                      : "text-emerald-600 dark:text-emerald-400"
                   }`}
                 >
                   {feedback}
                 </p>
+              ) : null}
+
+              {/*
+                ファイルは上がったのにリンクの保存だけ落ちた場合。
+                放っておくと @pocket を直接触るしかなくなるので、
+                ここから貼り直せるようにしておく
+              */}
+              {linkUnsaved && createdRecordId ? (
+                <div
+                  role="alert"
+                  aria-live="assertive"
+                  className="space-y-2 rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+                >
+                  <p>
+                    ファイルは保存されましたが、ドロップボックスURL
+                    の保存に失敗しました。
+                  </p>
+                  <button
+                    type="button"
+                    className="font-medium underline disabled:opacity-50"
+                    disabled={submitting}
+                    onClick={() => void handleRetryLink()}
+                  >
+                    URL を保存し直す
+                  </button>
+                </div>
               ) : null}
 
               <LiffPrimaryButton
@@ -671,7 +970,11 @@ export default function ApoAcquisitionPage() {
                 onClick={() => void handleSubmit()}
                 disabled={submitting}
               >
-                {submitting ? "登録中…" : "アポ取得情報を登録"}
+                {submitting
+                  ? "送信中…"
+                  : createdRecordId
+                    ? "失敗した添付を送り直す"
+                    : "アポ取得情報を登録"}
               </LiffPrimaryButton>
             </div>
           </LiffCard>
