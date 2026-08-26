@@ -43,3 +43,20 @@ export function formatApoListScheduledDateTime(row: {
   const time = row.scheduledTime.trim();
   return time ? `${date} ${time}` : date;
 }
+
+/** ギフト券が「有」のときの値。@pocket 側の選択肢は「有」「無」の2択 */
+const GIFT_COUPON_YES = "有";
+
+/**
+ * ギフト券のバッジを出すか。
+ *
+ * 「有」のときだけ出す。「無」・空欄・@pocket の未入力表現（"-"）では出さない。
+ *
+ * 突き合わせは既存の列解決と同じ NFKC + trim にそろえる
+ * （meeting-schedule-fields.ts / apo-acquisition-fields.ts の nfkc と同じ）。
+ * 独自の正規化を書くと、全角・半角や前後の空白のゆれで判定がずれる。
+ */
+export function hasApoListGiftCoupon(row: { giftCoupon: string }): boolean {
+  const value = row.giftCoupon.normalize("NFKC").trim();
+  return value === GIFT_COUPON_YES;
+}

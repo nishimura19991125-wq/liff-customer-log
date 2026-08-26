@@ -46,6 +46,7 @@ function row(over: Partial<ApoListRow> = {}): ApoListRow {
     city: over.city ?? "生駒市",
     apoTypeLabel: over.apoTypeLabel ?? "DC案件",
     estimateStatus: over.estimateStatus ?? "見積依頼済み",
+    giftCoupon: over.giftCoupon ?? "無",
     negotiationStatus: over.negotiationStatus ?? "商談待ち",
   };
 }

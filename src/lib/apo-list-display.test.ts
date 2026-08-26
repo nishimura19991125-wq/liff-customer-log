@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatApoListScheduledDateTime,
   groupApoListRowsByDate,
+  hasApoListGiftCoupon,
   APO_LIST_UNDATED_LABEL,
 } from "@/lib/apo-list-display";
 import { filterApoListRows } from "@/lib/apo-list-filter";
@@ -18,6 +19,7 @@ function row(over: Partial<ApoListRow> = {}): ApoListRow {
     city: over.city ?? "生駒市",
     apoTypeLabel: over.apoTypeLabel ?? "DC案件",
     estimateStatus: over.estimateStatus ?? "見積依頼済み",
+    giftCoupon: over.giftCoupon ?? "無",
     negotiationStatus: over.negotiationStatus ?? "商談待ち",
   };
 }
@@ -183,5 +185,39 @@ describe("行が持つ項目", () => {
     expect(groupApoListRowsByDate([empty])[0]?.label).toBe(
       APO_LIST_UNDATED_LABEL,
     );
+  });
+});
+
+describe("ギフト券のバッジ", () => {
+  it("★「有」なら出す", () => {
+    expect(hasApoListGiftCoupon({ giftCoupon: "有" })).toBe(true);
+  });
+
+  it("★「無」なら出さない", () => {
+    expect(hasApoListGiftCoupon({ giftCoupon: "無" })).toBe(false);
+  });
+
+  it("★ 空欄なら出さない", () => {
+    expect(hasApoListGiftCoupon({ giftCoupon: "" })).toBe(false);
+    expect(hasApoListGiftCoupon({ giftCoupon: "   " })).toBe(false);
+  });
+
+  it("★ @pocket の未入力表現「-」でも出さない", () => {
+    expect(hasApoListGiftCoupon({ giftCoupon: "-" })).toBe(false);
+  });
+
+  it("★ 前後に空白がある「 有 」でも出す", () => {
+    expect(hasApoListGiftCoupon({ giftCoupon: " 有 " })).toBe(true);
+    expect(hasApoListGiftCoupon({ giftCoupon: "　有　" })).toBe(true);
+  });
+
+  it("「有」を含むだけの値では出さない（完全一致で判定する）", () => {
+    expect(hasApoListGiftCoupon({ giftCoupon: "有り" })).toBe(false);
+    expect(hasApoListGiftCoupon({ giftCoupon: "未定（有）" })).toBe(false);
+  });
+
+  it("行から直接判定できる", () => {
+    expect(hasApoListGiftCoupon(row({ giftCoupon: "有" }))).toBe(true);
+    expect(hasApoListGiftCoupon(row())).toBe(false);
   });
 });

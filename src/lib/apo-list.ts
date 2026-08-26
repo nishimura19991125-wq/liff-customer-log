@@ -151,6 +151,7 @@ function buildApoListRow(
     city: formatCityLabel(readField(recObj, fieldMap.city)),
     apoTypeLabel: apoTypeDisplayLabel(readField(recObj, fieldMap.apoType)),
     estimateStatus: readField(recObj, fieldMap.estimateStatus),
+    giftCoupon: readField(recObj, fieldMap.giftCoupon),
     negotiationStatus: readField(recObj, fieldMap.negotiationStatus),
   };
 }

@@ -17,6 +17,8 @@ export type ApoListRow = {
   /** アポ種別（DC案件・SP案件など） */
   apoTypeLabel: string;
   estimateStatus: string;
+  /** ギフト券（有/無）。「有」のときだけバッジを出す */
+  giftCoupon: string;
   /** 進行中の絞り込みに使う。表示はしない */
   negotiationStatus: string;
 };
