@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConstructionRequestCopyPanel } from "@/components/construction-request-copy-panel";
 import { ContractorSummaryCopyPanel } from "@/components/contractor-summary-copy-panel";
 import { CustomerDocumentUploadPanel } from "@/components/customer-document-upload-panel";
+import { KannaProjectNameCopyPanel } from "@/components/kanna-project-name-copy-panel";
 import { KatakanaAwareTextInput } from "@/components/katakana-aware-text-input";
 import { StaffNameSuggestCombobox } from "@/components/staff-name-suggest-combobox";
 import {
@@ -1201,6 +1202,11 @@ export function CustomerInfoEditForm({
         施工依頼ステータスによる出し分けもしない
       */}
       <ContractorSummaryCopyPanel values={displayValues} disabled={saving} />
+      {/*
+        KANNA の案件名。タイムツリー登録用の直下に並べる。
+        こちらも @pocket を一切更新しないので、レコードIDが無くても出せる
+      */}
+      <KannaProjectNameCopyPanel values={displayValues} disabled={saving} />
     </div>
   );
 }
