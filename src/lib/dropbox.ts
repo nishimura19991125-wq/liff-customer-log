@@ -693,3 +693,78 @@ export async function uploadCustomerFile(
   }
   throw new DropboxError(`files/upload ${res.status}: ${summary}`);
 }
+
+// ───────────────────────────────────── 任意パス向け（アポ資料など）
+
+/**
+ * アポ資料のルート。顧客フォルダとは別の場所にあるため設定を分ける。
+ * 未設定なら null を返し、呼び出し側は添付機能そのものを出さない
+ * （フェイルクローズ。推測でパスを組み立てない）。
+ */
+export function dropboxApoRootPath(): string | null {
+  const raw = process.env.DROPBOX_APO_ROOT_PATH?.trim();
+  if (!raw) return null;
+  // 末尾スラッシュ付きのパスを Dropbox は受け付けない
+  return raw.replace(/\/+$/, "");
+}
+
+/** アポ資料の添付が使える状態か（認証情報とルートの両方が要る） */
+export function dropboxApoConfigured(): boolean {
+  return dropboxConfigured() && dropboxApoRootPath() !== null;
+}
+
+/**
+ * 任意のパスにフォルダを用意する。
+ *
+ * ensureCustomerFolder との違いは、顧客フォルダのルート（rootPath）に
+ * 縛られない点だけ。既にあるフォルダはエラーにしない。
+ * 共有リンクは取らない（要るときだけ dropboxSharedLinkForPath を呼ぶ）。
+ */
+export async function ensureDropboxFolderAtPath(path: string): Promise<void> {
+  const cfg = readDropboxConfig();
+  if (!cfg) throw new DropboxError("Dropbox の環境変数が未設定です");
+
+  const target = path.trim().replace(/\/+$/, "");
+  if (!target) throw new DropboxError("フォルダのパスが空です");
+
+  const created = await dropboxRpc(
+    "/2/files/create_folder_v2",
+    { path: target, autorename: false },
+    cfg,
+  );
+
+  if (!created.ok) {
+    const tag = errorTagOf(created);
+    // 既存フォルダは正常系
+    if (!tag.includes("path/conflict")) {
+      throw rpcFailure("files/create_folder_v2", created);
+    }
+  }
+}
+
+/**
+ * 任意のパスの共有リンクを取る。
+ *
+ * 公開範囲の検証は顧客フォルダと**同じ sharedLinkUrlFor** を通す。
+ * audience="team" の明示と resolved_visibility の検証はその中にあり、
+ * 用途が違うからといってこの検証を飛ばすことはしない。
+ */
+export async function dropboxSharedLinkForPath(path: string): Promise<string> {
+  const cfg = readDropboxConfig();
+  if (!cfg) throw new DropboxError("Dropbox の環境変数が未設定です");
+  return sharedLinkUrlFor(path.trim().replace(/\/+$/, ""), cfg);
+}
+
+/**
+ * 任意のパスへファイルを上げる薄いラッパー。
+ *
+ * 中身は uploadCustomerFile と同じ（あちらも顧客フォルダに縛られず
+ * フルパスを受ける）。呼び出し元への影響を避けるため改名はせず、
+ * 顧客以外の用途から呼ぶときの名前としてこちらを用意する。
+ */
+export async function uploadDropboxFile(
+  filePath: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  return uploadCustomerFile(filePath, bytes);
+}
