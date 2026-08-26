@@ -39,9 +39,12 @@ const OPEN = [
 function row(over: Partial<ApoListRow> = {}): ApoListRow {
   return {
     recordId: over.recordId ?? "1",
+    scheduledYmd: over.scheduledYmd ?? "2026-06-12",
     scheduledTime: over.scheduledTime ?? "14:00",
+    scheduledDateLabel: over.scheduledDateLabel ?? "6月12日（金）",
     customerName: over.customerName ?? "テスト様",
     city: over.city ?? "生駒市",
+    apoTypeLabel: over.apoTypeLabel ?? "DC案件",
     estimateStatus: over.estimateStatus ?? "見積依頼済み",
     negotiationStatus: over.negotiationStatus ?? "商談待ち",
   };

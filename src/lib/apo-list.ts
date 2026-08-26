@@ -8,7 +8,9 @@ import {
 } from "@/lib/customer-info-record";
 import { resolveApoMapAddressFieldIds } from "@/lib/map-address-fields";
 import {
+  apoTypeDisplayLabel,
   formatCityLabel,
+  formatMeetingDateLabel,
   meetingScheduleWantedFieldCsv,
   parseScheduledParts,
   recordMatchesStaff,
@@ -135,19 +137,31 @@ function buildApoListRow(
   const timeFromField = readField(recObj, fieldMap.meetingTime);
   const timeMatch = /(\d{1,2}:\d{2})/.exec(timeFromField || scheduled?.time || "");
 
+  // 初回商談実施日で埋めない。商談・資料送付予定日時そのものの日付
+  const scheduledYmd = scheduled?.ymd ?? "";
+
   return {
     recordId,
+    scheduledYmd,
     scheduledTime: timeMatch?.[1]?.slice(0, 5) ?? "",
+    scheduledDateLabel: scheduledYmd
+      ? formatMeetingDateLabel(scheduledYmd)
+      : "日付未定",
     customerName: readField(recObj, fieldMap.customerName),
     city: formatCityLabel(readField(recObj, fieldMap.city)),
+    apoTypeLabel: apoTypeDisplayLabel(readField(recObj, fieldMap.apoType)),
     estimateStatus: readField(recObj, fieldMap.estimateStatus),
     negotiationStatus: readField(recObj, fieldMap.negotiationStatus),
   };
 }
 
-/** 時刻の昇順。時刻が無いものは後ろに回し、同時刻は顧客名順 */
+/** 日付・時刻の昇順。どちらも無いものは後ろに回し、同時刻は顧客名順 */
 function sortApoListRows(rows: ApoListRow[]): void {
   rows.sort((a, b) => {
+    // 日付未定は末尾。グルーピングの並びと合わせる
+    const dateA = a.scheduledYmd || "9999-12-31";
+    const dateB = b.scheduledYmd || "9999-12-31";
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
     const timeA = a.scheduledTime || "99:99";
     const timeB = b.scheduledTime || "99:99";
     if (timeA !== timeB) return timeA.localeCompare(timeB);

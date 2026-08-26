@@ -193,3 +193,91 @@ describe("GET /api/apo-list", () => {
     expect(body.rows[1]?.scheduledTime).toBe("");
   });
 });
+
+describe("GET /api/apo-list（表示項目）", () => {
+  it("★ アポ種別が取れる（既存 CSV に含まれている列）", async () => {
+    h.records = [record({ [FIELD.apoType]: "ダイレクト" })];
+
+    const res = await apoListGet(get("/api/apo-list"));
+    const body = (await res.json()) as ApoListPayload;
+
+    // apoTypeDisplayLabel が「ダイレクト」→「DC案件」に整形する
+    expect(body.rows[0]?.apoTypeLabel).toBe("DC案件");
+  });
+
+  it("★ 商談・資料送付予定日時の日付を持つ（初回商談実施日で埋めない）", async () => {
+    h.records = [
+      record({
+        [FIELD.scheduledDate]: "2026-09-05 14:00:00",
+        [FIELD.meetingDate]: "2026-01-05",
+      }),
+    ];
+
+    const res = await apoListGet(get("/api/apo-list"));
+    const body = (await res.json()) as ApoListPayload;
+
+    expect(body.rows[0]?.scheduledYmd).toBe("2026-09-05");
+    expect(body.rows[0]?.scheduledTime).toBe("14:00");
+  });
+
+  it("★ 予定日時が空なら、初回商談実施日があっても日付は空", async () => {
+    h.records = [
+      record({
+        [FIELD.scheduledDate]: "",
+        [FIELD.meetingTime]: "",
+        [FIELD.meetingDate]: "2026-01-05",
+      }),
+    ];
+
+    const res = await apoListGet(get("/api/apo-list"));
+    const body = (await res.json()) as ApoListPayload;
+
+    expect(body.rows[0]?.scheduledYmd).toBe("");
+    expect(body.rows[0]?.scheduledDateLabel).toBe("日付未定");
+  });
+
+  it("日付見出しの文言が付く", async () => {
+    h.records = [record({ [FIELD.scheduledDate]: "2026-06-12 14:00:00" })];
+
+    const res = await apoListGet(get("/api/apo-list"));
+    const body = (await res.json()) as ApoListPayload;
+
+    expect(body.rows[0]?.scheduledDateLabel).toBe("6月12日（金）");
+  });
+
+  it("★ 日付・時刻の昇順で返す（日付未定は末尾）", async () => {
+    // 時刻は「時刻」列が優先されるため、そちらも合わせて指定する
+    h.records = [
+      record({
+        [FIELD.scheduledDate]: "",
+        [FIELD.meetingTime]: "",
+        [FIELD.customerName]: "未定",
+      }),
+      record({
+        [FIELD.scheduledDate]: "2026-06-13 09:00:00",
+        [FIELD.meetingTime]: "09:00",
+        [FIELD.customerName]: "翌日",
+      }),
+      record({
+        [FIELD.scheduledDate]: "2026-06-12 15:00:00",
+        [FIELD.meetingTime]: "15:00",
+        [FIELD.customerName]: "当日午後",
+      }),
+      record({
+        [FIELD.scheduledDate]: "2026-06-12 09:00:00",
+        [FIELD.meetingTime]: "09:00",
+        [FIELD.customerName]: "当日午前",
+      }),
+    ];
+
+    const res = await apoListGet(get("/api/apo-list"));
+    const body = (await res.json()) as ApoListPayload;
+
+    expect(body.rows.map((r) => r.customerName)).toEqual([
+      "当日午前",
+      "当日午後",
+      "翌日",
+      "未定",
+    ]);
+  });
+});
