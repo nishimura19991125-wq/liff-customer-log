@@ -1,9 +1,14 @@
+import { checkboxGroupValueToPocketArray } from "@/lib/customer-info-form/checkbox-pocket";
 import {
   installationTypeHidesBatterySection,
   installationTypeHidesPanelSection,
 } from "@/lib/customer-info-form/options";
+import { isSameApClStaff } from "@/lib/customer-info-form/pt-transfer";
 import { formatCustomerNameForDisplay } from "@/lib/customer-name-display";
-import { INSTALLATION_TYPE_OPTIONS } from "@/lib/customer-info-form/schema";
+import {
+  COSMETIC_COVER_OPTIONS,
+  INSTALLATION_TYPE_OPTIONS,
+} from "@/lib/customer-info-form/schema";
 import { formatYmdWithWeekday } from "@/lib/format-weekday-date";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 
@@ -59,6 +64,10 @@ export function formatConstructionRequestDate(raw: string | undefined): string {
 
 const BATTERY_UNIT = "kWh";
 const PANEL_UNIT = "kW";
+const POWER_CON_COUNT_UNIT = "台";
+
+/** 担当者・化粧カバーの区切り。半角カンマではなく読点 */
+const IDEOGRAPHIC_COMMA = "、";
 
 /**
  * 蓄電池容量に単位を付ける。
@@ -87,6 +96,68 @@ export function formatPanelCapacity(raw: string | undefined): string {
   if (/kwh/i.test(t)) return t;
   if (/kw/i.test(t)) return t;
   return `${t}${PANEL_UNIT}`;
+}
+
+/**
+ * パワコン設置台数に単位を付ける。
+ *
+ * @pocket の選択肢は "1" / "2" で単位を含まないが、値に既に「台」が
+ * 入っている場合は二重に付けない（formatBatteryCapacity と同じ流儀）。
+ * 値が空のときは単位も付けない（行だけ残して値は空にする）。
+ */
+export function formatPowerConCount(raw: string | undefined): string {
+  const t = plain(raw);
+  if (!t) return "";
+  if (t.endsWith(POWER_CON_COUNT_UNIT)) return t;
+  return `${t}${POWER_CON_COUNT_UNIT}`;
+}
+
+/**
+ * 担当者行の値。AP担当者、CL担当者 の順で読点でつなぐ。
+ *
+ * 同一人物なら1人分だけ出す。判定は既存の突合と同じ
+ * isSameApClStaff（NFKC・空白の畳み込み）を使う。姓名の間の空白が
+ * 全角と半角で違うだけの場合に別人と扱わないため、独自に trim() だけで
+ * 比較してはならない（recordMatchesStaff / decideApClStaffPut と同じ判定）。
+ *
+ * 表示は @pocket の元の文字列。正規化するのは比較だけ。
+ * 片方だけのときは読点を残さない。両方空なら空（行は残る）。
+ */
+export function formatConstructionRequestStaff(
+  values: CustomerInfoFormValues,
+): string {
+  const ap = plain(values.apStaff);
+  const cl = plain(values.clStaff);
+  if (!ap) return cl;
+  if (!cl) return ap;
+  if (isSameApClStaff(values)) return ap;
+  return `${ap}${IDEOGRAPHIC_COMMA}${cl}`;
+}
+
+/**
+ * 化粧カバー（複数選択）を読点でつなぐ。
+ *
+ * 値は @pocket 取り込み時にカンマ区切りの文字列になっている
+ * （checkbox-pocket.ts）。区切りの解釈は同ファイルの
+ * checkboxGroupValueToPocketArray に任せ、ここでは並べ替えだけを行う。
+ *
+ * 並び順は COSMETIC_COVER_OPTIONS の定義順。選択した順や @pocket の
+ * 返す順に左右されると、同じ内容でも案件ごとに表記が変わってしまう。
+ * 定義に無い値は落とさず末尾へ回す（情報を消さないため）。
+ */
+export function formatCosmeticCoverLine(raw: string | undefined): string {
+  const selected = checkboxGroupValueToPocketArray(plain(raw));
+  if (selected.length === 0) return "";
+
+  const options = COSMETIC_COVER_OPTIONS as readonly string[];
+  const orderOf = (value: string): number => {
+    const i = options.indexOf(value);
+    return i === -1 ? options.length : i;
+  };
+
+  return [...selected]
+    .sort((a, b) => orderOf(a) - orderOf(b))
+    .join(IDEOGRAPHIC_COMMA);
 }
 
 /** ①のみ → `5.6kWh` / ①と② → `5.6kWh + 5.6kWh` */
@@ -159,6 +230,10 @@ export function buildConstructionRequestTemplate(
   const lines: string[] = [
     "⭐️新規案件依頼",
     `【${manufacturer}${workType}${IDEOGRAPHIC_SPACE}${scheduledDate}】`,
+    // 担当者は前後を空行で挟んで独立させる
+    "",
+    `担当者：${formatConstructionRequestStaff(values)}`,
+    "",
     `住所：${address}`,
     `お客様名：${formatCustomerNameWithHonorific(values.customerName)}`,
     `・メーカー：${manufacturer}`,
@@ -167,6 +242,8 @@ export function buildConstructionRequestTemplate(
   if (showPanel) {
     lines.push(`・パネル：${formatPanelCapacity(values.panelCapacityKw)}`);
   }
+  // パネル・蓄電池と違い、設置種別による省略はしない
+  lines.push(`・パワコン設置台数：${formatPowerConCount(values.powerConCount)}`);
   if (showBattery) {
     lines.push(
       `・蓄電池：${formatBatteryCapacityLine(
@@ -179,7 +256,8 @@ export function buildConstructionRequestTemplate(
   lines.push(
     `・屋根材：${plain(values.roofMaterial)}`,
     `・分電盤：${plain(values.breakerAmps)}`,
-    // 空行は「・分電盤：」の直後。パネル行・蓄電池行が出ない設置種別でも
+    `・化粧カバー：${formatCosmeticCoverLine(values.cosmeticCover)}`,
+    // 空行は「・化粧カバー：」の直後。パネル行・蓄電池行が出ない設置種別でも
     // 位置が崩れないよう、条件付きの行より後ろでまとめて積む
     "",
     "📍ピンポイント",

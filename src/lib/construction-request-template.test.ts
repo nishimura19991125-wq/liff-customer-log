@@ -35,6 +35,10 @@ const BASE: CustomerInfoFormValues = {
   roofMaterial: "カラーベスト",
   breakerAmps: "60A",
   pinpointAddress: "https://maps.example.test/xyz",
+  apStaff: "西村太郎",
+  clStaff: "冨田菜摘",
+  powerConCount: "2",
+  cosmeticCover: "黒,白",
 };
 
 function build(overrides: CustomerInfoFormValues = {}) {
@@ -266,13 +270,18 @@ describe("テンプレート全文", () => {
       [
         "⭐️新規案件依頼",
         `【ネクストエナジー創蓄工事${FULL}2026/9/5(土)】`,
+        "",
+        "担当者：西村太郎、冨田菜摘",
+        "",
         "住所：東京都世田谷区",
         "お客様名：山田　太郎様",
         "・メーカー：ネクストエナジー",
         "・パネル：5.775kW",
+        "・パワコン設置台数：2台",
         "・蓄電池：5.6kWh + 5.6kWh",
         "・屋根材：カラーベスト",
         "・分電盤：60A",
+        "・化粧カバー：黒、白",
         "",
         "📍ピンポイント",
         "https://maps.example.test/xyz",
@@ -288,11 +297,17 @@ describe("テンプレート全文", () => {
       [
         "⭐️新規案件依頼",
         `【ネクストエナジーパワコン取替工事${FULL}2026/9/5(土)】`,
+        "",
+        "担当者：西村太郎、冨田菜摘",
+        "",
         "住所：東京都世田谷区",
         "お客様名：山田　太郎様",
         "・メーカー：ネクストエナジー",
+        // パネル・蓄電池は出ないが、パワコン設置台数は設置種別で省略しない
+        "・パワコン設置台数：2台",
         "・屋根材：カラーベスト",
         "・分電盤：60A",
+        "・化粧カバー：黒、白",
         "",
         "📍ピンポイント",
         "https://maps.example.test/xyz",
@@ -311,37 +326,37 @@ describe("施工依頼ステータス", () => {
 
 describe("空行の位置", () => {
   it.each(INSTALLATION_TYPE_OPTIONS)(
-    "%s でも空行が「・分電盤：」の直後と URL の直後に入る",
+    "%s でも空行が「・化粧カバー：」の直後と URL の直後に入る",
     (installationType) => {
       const lines = build({ installationType }).text.split("\n");
 
-      const breakerIndex = lines.findIndex((l) => l.startsWith("・分電盤："));
-      expect(breakerIndex).toBeGreaterThanOrEqual(0);
-      // 分電盤の直後が空行、その次がピンポイントの見出し
-      expect(lines[breakerIndex + 1]).toBe("");
-      expect(lines[breakerIndex + 2]).toBe("📍ピンポイント");
+      const lastDetailIndex = lines.findIndex((l) => l.startsWith("・化粧カバー："));
+      expect(lastDetailIndex).toBeGreaterThanOrEqual(0);
+      // 化粧カバーの直後が空行、その次がピンポイントの見出し
+      expect(lines[lastDetailIndex + 1]).toBe("");
+      expect(lines[lastDetailIndex + 2]).toBe("📍ピンポイント");
       // URL の次が空行、その次が結び
-      expect(lines[breakerIndex + 3]).toBe("https://maps.example.test/xyz");
-      expect(lines[breakerIndex + 4]).toBe("");
-      expect(lines[breakerIndex + 5]).toBe(
+      expect(lines[lastDetailIndex + 3]).toBe("https://maps.example.test/xyz");
+      expect(lines[lastDetailIndex + 4]).toBe("");
+      expect(lines[lastDetailIndex + 5]).toBe(
         "ご確認よろしくお願いいたします🙇",
       );
       // 末尾は結びで終わる（余計な空行を足さない）
-      expect(lines).toHaveLength(breakerIndex + 6);
-      // 空行はちょうど2つ
-      expect(lines.filter((l) => l === "")).toHaveLength(2);
+      expect(lines).toHaveLength(lastDetailIndex + 6);
+      // 空行は担当者の前後2つ + 末尾2つ
+      expect(lines.filter((l) => l === "")).toHaveLength(4);
     },
   );
 
   it("ピンポイント住所が空でも空行の数は変わらない", () => {
     const lines = build({ pinpointAddress: "" }).text.split("\n");
-    const breakerIndex = lines.findIndex((l) => l.startsWith("・分電盤："));
-    expect(lines[breakerIndex + 1]).toBe("");
-    expect(lines[breakerIndex + 2]).toBe("📍ピンポイント");
+    const lastDetailIndex = lines.findIndex((l) => l.startsWith("・化粧カバー："));
+    expect(lines[lastDetailIndex + 1]).toBe("");
+    expect(lines[lastDetailIndex + 2]).toBe("📍ピンポイント");
     // URL 行は空になるが行自体は残る
-    expect(lines[breakerIndex + 3]).toBe("");
-    expect(lines[breakerIndex + 4]).toBe("");
-    expect(lines[breakerIndex + 5]).toBe("ご確認よろしくお願いいたします🙇");
+    expect(lines[lastDetailIndex + 3]).toBe("");
+    expect(lines[lastDetailIndex + 4]).toBe("");
+    expect(lines[lastDetailIndex + 5]).toBe("ご確認よろしくお願いいたします🙇");
   });
 });
 
@@ -369,5 +384,161 @@ describe("施工依頼ステータスの項目定義", () => {
   it("完了値「済」が選択肢に含まれる", () => {
     const def = CUSTOMER_INFO_FORM_FIELD_MAP.get("constructionRequestStatus");
     expect(def?.options).toContain(CONSTRUCTION_REQUEST_STATUS_DONE);
+  });
+});
+
+describe("担当者行", () => {
+  const staffLine = (over: CustomerInfoFormValues) =>
+    lineStartingWith(build(over).text, "担当者：");
+
+  it("★ AP と CL が異なるときは読点でつなぐ（AP が先）", () => {
+    expect(staffLine({ apStaff: "山田　太郎", clStaff: "佐藤　花子" })).toBe(
+      "担当者：山田　太郎、佐藤　花子",
+    );
+  });
+
+  it("★ 区切りは読点。半角カンマではない", () => {
+    const line = staffLine({ apStaff: "山田", clStaff: "佐藤" }) ?? "";
+    expect(line).toContain("、");
+    expect(line).not.toContain(",");
+  });
+
+  it("★ AP と CL が同じなら1人分だけ", () => {
+    expect(staffLine({ apStaff: "山田　太郎", clStaff: "山田　太郎" })).toBe(
+      "担当者：山田　太郎",
+    );
+  });
+
+  it("★ 全角スペースと半角スペースの違いで別人と判定しない", () => {
+    // 既存の突合（normApClStaffName / isSameApClStaff）と同じ NFKC 正規化
+    expect(staffLine({ apStaff: "山田　太郎", clStaff: "山田 太郎" })).toBe(
+      "担当者：山田　太郎",
+    );
+    expect(staffLine({ apStaff: "山田 太郎", clStaff: "山田　太郎" })).toBe(
+      "担当者：山田 太郎",
+    );
+  });
+
+  it("前後の空白があっても同一と判定する", () => {
+    expect(staffLine({ apStaff: "山田　太郎", clStaff: " 山田　太郎 " })).toBe(
+      "担当者：山田　太郎",
+    );
+  });
+
+  it("★ AP のみなら AP だけ（読点を残さない）", () => {
+    expect(staffLine({ apStaff: "山田　太郎", clStaff: "" })).toBe(
+      "担当者：山田　太郎",
+    );
+  });
+
+  it("★ CL のみなら CL だけ（読点を残さない）", () => {
+    expect(staffLine({ apStaff: "", clStaff: "佐藤　花子" })).toBe(
+      "担当者：佐藤　花子",
+    );
+  });
+
+  it("★ 両方空欄なら「担当者：」のまま（行は残す）", () => {
+    expect(staffLine({ apStaff: "", clStaff: "" })).toBe("担当者：");
+  });
+
+  it("@pocket の未入力表現「-」は空として扱う", () => {
+    expect(staffLine({ apStaff: "-", clStaff: "-" })).toBe("担当者：");
+    expect(staffLine({ apStaff: "山田　太郎", clStaff: "-" })).toBe(
+      "担当者：山田　太郎",
+    );
+  });
+
+  it("表示は @pocket の元の文字列（比較だけ正規化する）", () => {
+    // 全角の空白をそのまま残す。正規化した形に置き換えない
+    expect(staffLine({ apStaff: "山田　太郎", clStaff: "" })).toBe(
+      "担当者：山田　太郎",
+    );
+  });
+
+  it("担当者行は前後を空行で挟む", () => {
+    const lines = build({}).text.split("\n");
+    const i = lines.findIndex((l) => l.startsWith("担当者："));
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(lines[i - 1]).toBe("");
+    expect(lines[i + 1]).toBe("");
+    // 直前は【…】の行、直後は住所
+    expect(lines[i - 2]?.startsWith("【")).toBe(true);
+    expect(lines[i + 2]?.startsWith("住所：")).toBe(true);
+  });
+});
+
+describe("パワコン設置台数", () => {
+  const countLine = (over: CustomerInfoFormValues) =>
+    lineStartingWith(build(over).text, "・パワコン設置台数：");
+
+  it("★ 値があれば末尾に「台」を付ける", () => {
+    expect(countLine({ powerConCount: "1" })).toBe("・パワコン設置台数：1台");
+    expect(countLine({ powerConCount: "2" })).toBe("・パワコン設置台数：2台");
+  });
+
+  it("★ 空欄なら「台」を付けない（行は残す）", () => {
+    expect(countLine({ powerConCount: "" })).toBe("・パワコン設置台数：");
+  });
+
+  it("★ 既に「台」で終わる値は重複させない", () => {
+    expect(countLine({ powerConCount: "2台" })).toBe("・パワコン設置台数：2台");
+  });
+
+  it("@pocket の未入力表現「-」は空として扱う", () => {
+    expect(countLine({ powerConCount: "-" })).toBe("・パワコン設置台数：");
+  });
+
+  it("設置種別によって省略しない（パネル・蓄電池と違う）", () => {
+    for (const installationType of INSTALLATION_TYPE_OPTIONS) {
+      expect(countLine({ installationType }), installationType).toBe(
+        "・パワコン設置台数：2台",
+      );
+    }
+  });
+});
+
+describe("化粧カバー", () => {
+  const coverLine = (over: CustomerInfoFormValues) =>
+    lineStartingWith(build(over).text, "・化粧カバー：");
+
+  it("★ 複数選択は読点でつなぐ", () => {
+    expect(coverLine({ cosmeticCover: "黒,白" })).toBe("・化粧カバー：黒、白");
+  });
+
+  it("★ 並び順は COSMETIC_COVER_OPTIONS の定義順（選択順に左右されない）", () => {
+    // 定義順は 黒 → 白 → アイボリー → ブラウン → グレー → 新築のため未定 → 無
+    expect(coverLine({ cosmeticCover: "白,黒" })).toBe("・化粧カバー：黒、白");
+    expect(coverLine({ cosmeticCover: "グレー,黒,ブラウン" })).toBe(
+      "・化粧カバー：黒、ブラウン、グレー",
+    );
+  });
+
+  it("★ 1つだけなら読点を付けない", () => {
+    expect(coverLine({ cosmeticCover: "黒" })).toBe("・化粧カバー：黒");
+  });
+
+  it("★ 選択なしなら「・化粧カバー：」のまま（行は残す）", () => {
+    expect(coverLine({ cosmeticCover: "" })).toBe("・化粧カバー：");
+  });
+
+  it("読点区切りで保存されていても読める", () => {
+    expect(coverLine({ cosmeticCover: "白、黒" })).toBe("・化粧カバー：黒、白");
+  });
+
+  it("定義に無い値は落とさず末尾に回す", () => {
+    expect(coverLine({ cosmeticCover: "未知の色,黒" })).toBe(
+      "・化粧カバー：黒、未知の色",
+    );
+  });
+
+  it("@pocket の未入力表現「-」は空として扱う", () => {
+    expect(coverLine({ cosmeticCover: "-" })).toBe("・化粧カバー：");
+  });
+
+  it("化粧カバーは明細の最後で、直後が空行", () => {
+    const lines = build({}).text.split("\n");
+    const i = lines.findIndex((l) => l.startsWith("・化粧カバー："));
+    expect(lines[i - 1]?.startsWith("・分電盤：")).toBe(true);
+    expect(lines[i + 1]).toBe("");
   });
 });
