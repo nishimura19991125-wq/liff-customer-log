@@ -112,7 +112,14 @@ export type ApoAcquisitionCreateAudit = {
 export type ApoAcquisitionCreateResult =
   | {
       ok: true;
-      /** 添付の送信先。/records/{recordId}/attachments に使う */
+      /**
+       * 添付の送信先。/records/{recordId}/attachments に使う。
+       *
+       * **空になることがある。** このアプリの POST /records は ID を返さず、
+       * 作成前後の一覧照合でも特定できないことがあるため。
+       * 空でもレコードは作成済みなので、失敗として扱わないこと
+       * （失敗と伝えると利用者が押し直し、重複レコードが増える）
+       */
       recordId: string;
       audit: ApoAcquisitionCreateAudit;
     }

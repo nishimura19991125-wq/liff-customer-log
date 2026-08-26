@@ -24,6 +24,10 @@ import {
   type ApoAcquisitionFormPayload,
 } from "@/lib/apo-acquisition-types";
 import { atPocketRecordIdFromCreateResult } from "@/lib/atpocket-record-id";
+import {
+  pickCreatedApoRecordId,
+  snapshotApoRecordIds,
+} from "@/lib/apo-record-lookup";
 import type { AtPocketFieldRow } from "@/lib/atpocket";
 import {
   customerInfoPutValue,
@@ -593,43 +597,89 @@ export async function createApoAcquisitionRecord(
 
     const createPayload = applyApoAutoNumberOnCreate(filteredRecord, apoFields);
 
-    const created = await createRecord(apoAppId, createPayload, writeAuth);
-    const recordId = atPocketRecordIdFromCreateResult(created);
-    if (!recordId) {
-      // レコードは作成済みだが recordId が無いため監査ログを書けない。
-      // 発生に気づけるよう、後から @pocket 上で該当レコードを探せる情報を残す。
-      console.error(
-        "[apo-acquisition:create] 登録は完了しましたが recordId を解決できず、監査ログが記録されませんでした",
-        {
-          appsId: apoAppId,
-          customerName: values.customerName ?? "",
-          apStaffName,
-          scheduledYmd,
-          location: created.location ?? null,
-          hasRawBody: Boolean(created.rawBody),
-        },
-      );
-      return {
-        ok: false,
-        status: 502,
-        error: "登録は完了しましたが、レコード ID を取得できませんでした",
-      };
-    }
-
-    await applyApoRelationStaffFields(
-      apoAppId,
-      recordId,
-      resolved,
-      apoFields,
-      { apStaffName, clStaffName },
-      writeAuth,
-    );
-
+    // recordId を特定できなくても監査ログは残すので、先に用意しておく
     const labels: Record<string, string> = {};
     for (const f of apoFields) {
       const id = f.uniqueId?.trim();
       const caption = f.caption?.trim();
       if (id && caption) labels[id] = caption;
+    }
+
+    /**
+     * 作成前の一覧を控えておく。
+     *
+     * このアプリの POST /records は ID を返さない（Location も本文も空）。
+     * 作成後の一覧と突き合わせて「増えた1件」を採るため、作成の**前**に要る。
+     * 取れなくても登録は続ける（recordId が空になるだけ）
+     */
+    const beforeSnapshot = await snapshotApoRecordIds({
+      appId: apoAppId,
+      customerNameFieldId: resolved.customerName.uniqueId,
+      customerName: values.customerName ?? "",
+      auth: readAuth,
+    });
+
+    const created = await createRecord(apoAppId, createPayload, writeAuth);
+
+    /**
+     * ここから先、レコードは**作成済み**である。
+     * 何が起きても ok: false を返さないこと。失敗と伝えると利用者が押し直し、
+     * 重複レコードが増える（実際に2件の重複が発生した）
+     */
+    let recordId = atPocketRecordIdFromCreateResult(created) ?? "";
+
+    if (!recordId) {
+      const afterSnapshot = await snapshotApoRecordIds({
+        appId: apoAppId,
+        customerNameFieldId: resolved.customerName.uniqueId,
+        customerName: values.customerName ?? "",
+        auth: readAuth,
+      });
+      recordId = pickCreatedApoRecordId(beforeSnapshot, afterSnapshot) ?? "";
+    }
+
+    if (!recordId) {
+      // 後から @pocket 上で該当レコードを探せる情報を残す。
+      // お客様名は個人情報なので出さない（担当者と日付で辿れる）
+      console.error(
+        "[apo-acquisition:create] 登録は完了しましたが recordId を特定できませんでした（添付・担当者更新は行われません）",
+        {
+          appsId: apoAppId,
+          apStaffName,
+          apoAcquiredDate: apoAcquiredRaw,
+          scheduledYmd,
+          location: created.location ?? null,
+          hasRawBody: Boolean(created.rawBody),
+          beforeReliable: beforeSnapshot?.reliable ?? null,
+        },
+      );
+      return {
+        ok: true,
+        recordId: "",
+        audit: { appId: apoAppId, record: createPayload, labels },
+      };
+    }
+
+    /**
+     * 担当者の関連付けはレコード作成後の追加更新。
+     * ここで失敗しても**レコードは既にある**ので、全体を失敗にしない。
+     * 502 を返すと利用者が押し直し、重複レコードが増える
+     */
+    try {
+      await applyApoRelationStaffFields(
+        apoAppId,
+        recordId,
+        resolved,
+        apoFields,
+        { apStaffName, clStaffName },
+        writeAuth,
+      );
+    } catch (e) {
+      console.error(
+        "[apo-acquisition:create] 担当者の関連付けに失敗しました（登録は完了しています）",
+        { appsId: apoAppId, recordId },
+        e instanceof Error ? e.message : String(e),
+      );
     }
 
     return {

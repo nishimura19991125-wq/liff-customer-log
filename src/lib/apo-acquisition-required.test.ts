@@ -42,6 +42,8 @@ vi.mock("@/lib/atpocket", () => ({
   salesDashboardApoWriteConfigured: () => true,
   fetchAppFields: async () => FIELDS,
   fetchRecordById: async () => ({ record: {} }),
+  // 作成前後の recordId 照合で引かれる。ここでは中身を見ないので空で返す
+  fetchRecordsList: async () => ({ records: [] }),
   createRecord: async (_appId: string, payload: Record<string, unknown>) => {
     h.created.push(payload);
     return { recordIdHint: "rec-1", row: null, location: null };
