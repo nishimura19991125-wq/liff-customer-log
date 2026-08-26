@@ -79,6 +79,21 @@ function CustomerListGlyph() {
   );
 }
 
+/** アポ情報一覧。クリップボード（つまみ付きの枠）に明細行を2本 */
+function ApoListGlyph() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M9 4H7.5A2.5 2.5 0 0 0 5 6.5v12A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5v-12A2.5 2.5 0 0 0 16.5 4H15M9 4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1H9V4ZM8.5 11h7M8.5 15h4.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function SalesDashboardGlyph() {
   return (
     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -489,6 +504,13 @@ export default function HomeHubPage() {
               title="担当顧客一覧"
               description="担当案件の書類・工事日・補助金を一覧で確認します。"
               icon={<CustomerListGlyph />}
+              disabled={needsStaffBind}
+            />
+            <LiffMenuCard
+              href="/apo-list"
+              title="アポ情報一覧"
+              description="担当アポの見積ステータス・商談ステータスを一覧で確認します。"
+              icon={<ApoListGlyph />}
               disabled={needsStaffBind}
             />
             {continueShortcuts.length > 0 ? (
