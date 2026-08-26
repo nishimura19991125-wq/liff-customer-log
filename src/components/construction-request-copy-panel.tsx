@@ -8,6 +8,10 @@ import {
   buildConstructionRequestTemplate,
   CONSTRUCTION_REQUEST_STATUS_DONE,
 } from "@/lib/construction-request-template";
+import {
+  CONSTRUCTION_REQUEST_STATUS_HINT,
+  COPY_BUTTON_LABEL,
+} from "@/lib/copy-panel-labels";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 
@@ -52,6 +56,8 @@ export function ConstructionRequestCopyPanel({
   const [outcome, setOutcome] = useState<CopyOutcome | null>(null);
   const [showManualCopy, setShowManualCopy] = useState(false);
   const bodyId = useId();
+  /** ボタン下の補足文。aria-describedby でボタンと結び付ける */
+  const statusHintId = useId();
 
   const template = useMemo(
     () => buildConstructionRequestTemplate(values),
@@ -199,14 +205,27 @@ export function ConstructionRequestCopyPanel({
                 type="button"
                 disabled={disabled || busy || !idToken}
                 onClick={() => void handleCopy()}
+                /*
+                  文言を3パネルで「コピー」に統一したため、ボタンの label
+                  だけでは @pocket が更新されることが分からない。
+                  下の補足文を読み上げに含める。既に「済」のときは
+                  補足文を出さないので、参照先も付けない
+                */
+                aria-describedby={alreadyDone ? undefined : statusHintId}
                 className="mt-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-bold text-white disabled:bg-slate-300"
               >
-                {busy
-                  ? "処理中…"
-                  : alreadyDone
-                    ? "コピーする"
-                    : "コピーして施工依頼ステータスを済にする"}
+                {busy ? "処理中…" : COPY_BUTTON_LABEL}
               </button>
+
+              {/* 既に「済」なら更新は起きないので出さない */}
+              {alreadyDone ? null : (
+                <p
+                  id={statusHintId}
+                  className="mt-1 text-[11px] leading-relaxed text-slate-500"
+                >
+                  {CONSTRUCTION_REQUEST_STATUS_HINT}
+                </p>
+              )}
 
               {showManualCopy ? (
                 <ManualCopyFallback text={template.text} />
