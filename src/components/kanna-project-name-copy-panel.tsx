@@ -80,7 +80,7 @@ export function KannaProjectNameCopyPanel({
           setOutcome(null);
           setShowManualCopy(false);
         }}
-        className="mt-2 min-h-[44px] rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-[13px] font-bold text-emerald-900 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+        className="mt-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-[13px] font-bold text-emerald-900 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
       >
         {open ? "閉じる" : "送る"}
       </button>
@@ -98,7 +98,7 @@ export function KannaProjectNameCopyPanel({
                 type="button"
                 disabled={disabled || busy}
                 onClick={() => void handleCopy()}
-                className="mt-2 min-h-[44px] rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-bold text-white disabled:bg-slate-300"
+                className="mt-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-bold text-white disabled:bg-slate-300"
               >
                 {busy ? "処理中…" : "コピーする"}
               </button>
