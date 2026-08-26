@@ -399,11 +399,20 @@ export default function ApoAcquisitionPage() {
     total: number;
   } | null>(null);
   /**
-   * 登録済みレコードの id。
-   * 添付だけ失敗したときに、レコードを作り直さず添付だけ送り直すため。
-   * 二重登録を防ぐので、ここが埋まっている間は登録要求を出さない
+   * 登録が済んだかどうか。
+   *
+   * null 以外になったら**二度と登録要求を出さない**。
+   * @pocket がレコード ID を返さないことがあり、以前はそれを失敗として
+   * 見せていたため、押し直しで重複レコードが増えていた。
+   * ID を特定できたかどうかに関わらず、作成が通った時点でここを埋める。
+   *
+   * recordId は添付の送信先。特定できなかったときは null で、
+   * 添付は送れないが登録そのものは成功として扱う
    */
-  const [createdRecordId, setCreatedRecordId] = useState<string | null>(null);
+  const [created, setCreated] = useState<{ recordId: string | null } | null>(
+    null,
+  );
+  const createdRecordId = created?.recordId ?? null;
   /** 共有リンクの保存だけ落ちたか。貼り直しの導線を出す */
   const [linkUnsaved, setLinkUnsaved] = useState(false);
 
@@ -417,6 +426,19 @@ export default function ApoAcquisitionPage() {
 
   /** 通知文を赤字・alert で出すか。判定は src/lib 側 */
   const feedbackIsError = apoAcquisitionFeedbackIsError(feedback ?? "");
+
+  /** まだ送っていない添付の件数 */
+  const pendingAttachmentCount = Object.values(files).reduce(
+    (n, list) => n + (list ?? []).filter((f) => !f.done).length,
+    0,
+  );
+  /**
+   * 登録が済み、送り直す添付も無い状態。
+   * ここで「登録」を押させると重複レコードになるので、
+   * ボタンは入力のやり直しに切り替える
+   */
+  const finished =
+    created !== null && (!created.recordId || pendingAttachmentCount === 0);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -510,7 +532,7 @@ export default function ApoAcquisitionPage() {
       apoAcquiredDate: form.defaults.apoAcquiredYmd,
     });
     setFiles({});
-    setCreatedRecordId(null);
+    setCreated(null);
     setLinkUnsaved(false);
   }, [form]);
 
@@ -700,14 +722,14 @@ export default function ApoAcquisitionPage() {
     try {
       /**
        * 登録と添付を別のリクエストに分ける。
-       * 登録が通った時点で成功として確定させ、添付はそのあと1件ずつ送る。
        *
-       * createdRecordId が埋まっているのは「登録は済んだが添付が残っている」
-       * 状態。ここで作り直すと二重登録になるので、添付だけ送り直す
+       * created が埋まっているのは「登録は済んでいる」状態。
+       * ここで作り直すと重複レコードになるので、絶対に登録要求を出さない。
+       * 残っている添付だけを送り直す
        */
-      let recordId = createdRecordId ?? "";
-      if (!recordId) {
-        const created = await liffAuthedJsonFetch<{
+      let target = created;
+      if (!target) {
+        const res = await liffAuthedJsonFetch<{
           ok?: boolean;
           recordId?: string;
         }>("/api/apo-acquisition/records", idToken, {
@@ -718,7 +740,13 @@ export default function ApoAcquisitionPage() {
             values,
           }),
         });
-        recordId = created.recordId?.trim() ?? "";
+        /**
+         * ここに来た時点でレコードは作成済み。
+         * recordId が空でも「登録できた」として確定させる
+         * （空のまま失敗と伝えると、押し直しで重複が増える）
+         */
+        target = { recordId: res.recordId?.trim() || null };
+        setCreated(target);
       }
 
       const pending = Object.values(files).reduce(
@@ -731,26 +759,27 @@ export default function ApoAcquisitionPage() {
         resetForm();
         return;
       }
-      if (!recordId) {
-        // 登録は通ったが id が返らなかった。添付先を決められない
-        setCreatedRecordId(null);
+
+      if (!target.recordId) {
+        /**
+         * レコードは作られているが、@pocket が ID を返さず一覧照合でも
+         * 特定できなかった。添付だけ諦める。
+         * 「失敗しました」とは伝えない（実際には登録されている）
+         */
         setFeedback(
-          "アポ取得情報を登録しました。添付は送信できませんでした（登録番号を取得できませんでした）。",
+          "アポ取得情報を登録しました。ただし添付ファイルは保存できませんでした。お手数ですが @pocket から直接ご登録ください。",
         );
         return;
       }
 
-      // 添付が残っている間は id を保持し、押し直しで再送できるようにする
-      setCreatedRecordId(recordId);
-      const failed = await uploadAttachments(recordId, idToken);
+      const failed = await uploadAttachments(target.recordId, idToken);
       if (failed > 0) {
         setFeedback(
-          `アポ取得情報を登録しました。添付${failed}件の送信に失敗しました。もう一度「登録」を押すと、失敗した分だけ送り直します。`,
+          `アポ取得情報を登録しました。添付${failed}件の送信に失敗しました。「失敗した添付を送り直す」でやり直せます。`,
         );
         return;
       }
 
-      setCreatedRecordId(null);
       setFeedback("アポ取得情報を登録しました");
       resetForm();
     } catch (e) {
@@ -763,15 +792,7 @@ export default function ApoAcquisitionPage() {
       setSubmitting(false);
       setUploadProgress(null);
     }
-  }, [
-    idToken,
-    form,
-    values,
-    files,
-    createdRecordId,
-    uploadAttachments,
-    resetForm,
-  ]);
+  }, [idToken, form, values, files, created, uploadAttachments, resetForm]);
 
   if (phase === "init" || phase === "need-login") {
     return (
@@ -965,16 +986,32 @@ export default function ApoAcquisitionPage() {
                 </div>
               ) : null}
 
+              {/*
+                登録が済んだあとは登録要求を出さない。
+                @pocket は作成しても ID を返さないことがあり、
+                「失敗に見えて実は登録されている」状態で押し直すと
+                重複レコードが増えるため
+              */}
               <LiffPrimaryButton
                 type="button"
-                onClick={() => void handleSubmit()}
+                onClick={() => {
+                  if (finished) {
+                    // 前回の知らせを残したまま次の入力に入らせない
+                    setFeedback(null);
+                    resetForm();
+                    return;
+                  }
+                  void handleSubmit();
+                }}
                 disabled={submitting}
               >
                 {submitting
                   ? "送信中…"
-                  : createdRecordId
-                    ? "失敗した添付を送り直す"
-                    : "アポ取得情報を登録"}
+                  : finished
+                    ? "続けて新規登録する"
+                    : created
+                      ? "失敗した添付を送り直す"
+                      : "アポ取得情報を登録"}
               </LiffPrimaryButton>
             </div>
           </LiffCard>
