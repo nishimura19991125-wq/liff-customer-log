@@ -4,6 +4,7 @@ import {
   formatApoListScheduledDateTime,
   groupApoListRowsByDate,
   hasApoListGiftCoupon,
+  nextOpenApoRecordId,
   APO_LIST_UNDATED_LABEL,
 } from "@/lib/apo-list-display";
 import { filterApoListRows } from "@/lib/apo-list-filter";
@@ -219,5 +220,27 @@ describe("ギフト券のバッジ", () => {
   it("行から直接判定できる", () => {
     expect(hasApoListGiftCoupon(row({ giftCoupon: "有" }))).toBe(true);
     expect(hasApoListGiftCoupon(row())).toBe(false);
+  });
+});
+
+describe("詳細の開閉（同時に1件だけ）", () => {
+  it("★ 閉じているカードをタップすると開く", () => {
+    expect(nextOpenApoRecordId(null, "1")).toBe("1");
+  });
+
+  it("★ 別のカードをタップすると、そちらに差し替わる（前のは閉じる）", () => {
+    expect(nextOpenApoRecordId("1", "2")).toBe("2");
+    expect(nextOpenApoRecordId("2", "3")).toBe("3");
+  });
+
+  it("★ 開いているカードをもう一度タップすると閉じる", () => {
+    expect(nextOpenApoRecordId("1", "1")).toBeNull();
+  });
+
+  it("開いた状態が同時に2件になることはない（戻り値は常に1件かnull）", () => {
+    // 戻り値は string | null なので、複数を同時に保持できない
+    const after = nextOpenApoRecordId("1", "2");
+    expect(typeof after === "string" || after === null).toBe(true);
+    expect(after).not.toBe("1");
   });
 });

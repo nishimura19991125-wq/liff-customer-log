@@ -60,3 +60,17 @@ export function hasApoListGiftCoupon(row: { giftCoupon: string }): boolean {
   const value = row.giftCoupon.normalize("NFKC").trim();
   return value === GIFT_COUPON_YES;
 }
+
+/**
+ * カードをタップしたときに、次に開くべき recordId を返す。
+ *
+ * 同時に開けるのは1件だけ。開いているものをもう一度タップしたら閉じ
+ * （null）、別のものをタップしたらそちらへ差し替える。
+ * 状態の持ち方を画面側に散らさないよう、規則はここに置く。
+ */
+export function nextOpenApoRecordId(
+  currentOpen: string | null,
+  tapped: string,
+): string | null {
+  return currentOpen === tapped ? null : tapped;
+}
