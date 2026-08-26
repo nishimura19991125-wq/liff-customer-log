@@ -108,6 +108,11 @@ function buildFieldMeta(
   return APO_ACQUISITION_FIELD_KEYS.map((key) => {
     const r = resolved[key];
     const spec = r.spec;
+    /**
+     * 担当者以外の選択肢は spec.options だけを見る。
+     * @pocket 側から取る経路は無い（apo-acquisition-fields.ts の
+     * 冒頭を参照。実物とは手動で合わせている）
+     */
     const options =
       spec.kind === "staffSelect"
         ? key === "apStaff"
@@ -116,11 +121,7 @@ function buildFieldMeta(
         : spec.kind === "select" ||
             spec.kind === "checkboxGroup" ||
             spec.kind === "checkboxGroupText"
-          ? // fixedOptions の項目は @pocket 側に運用外の選択肢が残っていても
-            // 画面に出さない（アポランクの C / D など）
-            !spec.fixedOptions && r.pocketOptions && r.pocketOptions.length
-            ? r.pocketOptions
-            : spec.options ?? []
+          ? spec.options ?? []
           : undefined;
     return {
       key,
@@ -527,10 +528,7 @@ export async function createApoAcquisitionRecord(
         if (!joined) continue;
         value = joined;
       } else if (r.spec.kind === "checkboxGroup") {
-        const selected = checkboxGroupValueToPocketArray(
-          raw,
-          r.pocketOptions?.length ? r.pocketOptions : r.spec.options,
-        );
+        const selected = checkboxGroupValueToPocketArray(raw, r.spec.options);
         if (selected.length === 0) continue;
         value = selected;
       }

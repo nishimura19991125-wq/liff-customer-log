@@ -14,6 +14,31 @@ import { isWritableAtPocketField } from "@/lib/customer-info-form/pocket-writabl
 import { apoImportKeyFieldIdsExcludedOnCreate } from "@/lib/meeting-schedule-fields";
 import { APO_DESIRED_MANUFACTURER_OPTIONS } from "@/lib/apo-desired-manufacturer";
 
+/**
+ * アポ取得情報連携の入力項目の定義。
+ *
+ * ⚠ **選択肢（options）はハードコードであり、@pocket の実物と手動で
+ *    同期する必要がある。**
+ *
+ * 以前は @pocket の列定義から選択肢を読む実装（extractPocketOptions）が
+ * あったが、一度も機能していなかった。atpocket.ts の
+ * normalizeAtPocketFieldRow が応答から uniqueId / fieldId / caption /
+ * fieldType / relationId / primaryKey の6つだけを残して組み立て直すため、
+ * 選択肢の情報はここへ届く前に捨てられている。
+ * 自動取得したい場合は atpocket.ts の正規化から直すこと
+ * （共有処理のため全アプリ・全画面に影響する）。
+ *
+ * ズレていると、その選択肢を選んだときだけ @pocket が 400 を返す
+ * （例:「オール電化 or ガス 「ガス」 は登録されていません」）。
+ * 選ばれるまで表面化しないので、発見が遅れる。
+ *
+ * ⚠ **実物と突き合わせ済みなのは オール電化orガス だけである。**
+ *    ギフト券 / アポ種別 / 見積種別 / 補助金有無 / 屋根形状 / 屋根材 /
+ *    既設設備 は未確認で、食い違っている可能性がある。
+ *
+ * お客様情報側（customer-info-form/options.ts）も同じ方針。
+ */
+
 function nfkc(s: string): string {
   return s.normalize("NFKC").trim();
 }
@@ -28,11 +53,18 @@ type FieldSpec = {
   /** 見出し（キャプション）候補。完全一致優先→部分一致 */
   captions: string[];
   placeholder?: string;
-  /** select の既定選択肢（@pocket 側の選択肢が取れない場合のフォールバック） */
+  /**
+   * select / checkbox の選択肢。**これが唯一の情報源**で、
+   * @pocket の実物とは手動で合わせる（ファイル冒頭の注意書きを参照）
+   */
   options?: string[];
   /**
-   * true なら @pocket 側の選択肢を無視し、必ず options を使う。
-   * @pocket に運用外の選択肢が残っていても画面に出さないための指定
+   * @pocket 側の選択肢を使わず、必ず options を使う指定。
+   *
+   * ⚠ 選択肢の自動取得をやめたため、**現在この指定は効果を持たない**
+   *    （options は常に使われる）。自動取得を復活させるときに、
+   *    運用外の選択肢を画面へ出さないための指定として意味を取り戻す。
+   *    どの項目を固定したいかの記録として残している
    */
   fixedOptions?: boolean;
   /**
@@ -493,35 +525,7 @@ export type ApoAcquisitionResolvedField = {
   uniqueId: string | null;
   /** 標準 POST/PUT で書き込み可能か（連携項目は false） */
   writable: boolean;
-  /** @pocket 側の選択肢（取れた場合のみ） */
-  pocketOptions?: string[];
 };
-
-/** @pocket の選択肢定義（choices/options 等）を可能なら取り出す */
-function extractPocketOptions(field: AtPocketFieldRow | undefined): string[] {
-  if (!field) return [];
-  const raw = field as unknown as Record<string, unknown>;
-  const candidates =
-    raw.choices ?? raw.options ?? raw.selectOptions ?? raw.items ?? null;
-  if (!Array.isArray(candidates)) return [];
-  const values: string[] = [];
-  for (const c of candidates) {
-    if (typeof c === "string") {
-      const t = c.trim();
-      if (t) values.push(t);
-    } else if (c && typeof c === "object") {
-      const obj = c as Record<string, unknown>;
-      const label =
-        (typeof obj.label === "string" && obj.label) ||
-        (typeof obj.name === "string" && obj.name) ||
-        (typeof obj.value === "string" && obj.value) ||
-        "";
-      const t = String(label).trim();
-      if (t) values.push(t);
-    }
-  }
-  return values;
-}
 
 const POCKET_FILE_FIELD_TYPES = new Set([
   "File",
@@ -559,7 +563,6 @@ export function resolveApoAcquisitionFields(
       spec,
       uniqueId,
       writable: uniqueId ? writable : false,
-      pocketOptions: extractPocketOptions(matched),
     };
   }
   return result;

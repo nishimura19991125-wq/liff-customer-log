@@ -51,8 +51,12 @@ describe("アポランクの選択肢", () => {
     expect(APO_ACQUISITION_FIELD_SPECS.apoRank.options).toEqual(["A", "B"]);
   });
 
-  it("★★ @pocket 側の選択肢に依存しない（fixedOptions）", () => {
-    // これが無いと、@pocket に C / D が残っている場合に画面へ出てしまう
+  it("固定指定が残っている（fixedOptions）", () => {
+    /*
+     * 選択肢の自動取得をやめたので、現在この指定は効果を持たない
+     * （options が常に使われる）。自動取得を復活させたときに
+     * C / D を画面へ出さないための記録として残している
+     */
     expect(APO_ACQUISITION_FIELD_SPECS.apoRank.fixedOptions).toBe(true);
   });
 
@@ -76,7 +80,6 @@ describe("入力項目の増減", () => {
     const spec = APO_ACQUISITION_FIELD_SPECS.desiredManufacturer;
     expect(spec.kind).toBe("checkboxGroupText");
     expect(spec.options).toEqual(["SHARP", "XSOL", "Panasonic", "その他"]);
-    // テキスト型なので @pocket からは選択肢を取れない
     expect(spec.fixedOptions).toBe(true);
   });
 
@@ -106,6 +109,7 @@ describe("★ オール電化orガスの選択肢", () => {
    * @pocket の実物は「オール電化 / ガス住宅」。
    * コード側が「ガス」だったため、それを選んだ登録が 400 で弾かれていた
    *   オール電化 or ガス 「ガス」 は登録されていません
+   * 選択肢は @pocket と手動で合わせるしかない（自動取得の経路は無い）
    */
   it("実物どおり オール電化 / ガス住宅", () => {
     expect(spec.options).toEqual(["オール電化", "ガス住宅"]);
@@ -124,6 +128,68 @@ describe("★ オール電化orガスの選択肢", () => {
     for (const c of ["オール電化orガス", "オール電化", "電化ガス", "電気ガス"]) {
       expect(spec.captions).toContain(c);
     }
+  });
+});
+
+describe("選択肢はハードコードで @pocket と手動同期する", () => {
+  /*
+   * 以前は extractPocketOptions が @pocket の列定義から選択肢を読む建前
+   * だったが、一度も機能していなかった（atpocket.ts の
+   * normalizeAtPocketFieldRow が6つのキーだけを残して組み立て直すため、
+   * 選択肢はここへ届く前に捨てられる）。
+   * 実物と突き合わせ済みなのは オール電化orガス だけ。
+   * 残りは未確認で、食い違っていればその値を選んだときに 400 になる
+   */
+  const UNVERIFIED = [
+    "giftCoupon",
+    "apoType",
+    "estimateType",
+    "subsidy",
+    "roofShape",
+    "roofMaterial",
+    "existingEquipment",
+  ] as const;
+
+  it("未確認の項目にも選択肢が入っている（空にしない）", () => {
+    for (const key of UNVERIFIED) {
+      expect(APO_ACQUISITION_FIELD_SPECS[key].options?.length ?? 0)
+        .toBeGreaterThan(0);
+    }
+  });
+
+  it("★ 今回の修正で他項目の選択肢は変えていない", () => {
+    expect(APO_ACQUISITION_FIELD_SPECS.giftCoupon.options).toEqual(["有", "無"]);
+    expect(APO_ACQUISITION_FIELD_SPECS.subsidy.options).toEqual([
+      "有",
+      "無",
+      "不明",
+    ]);
+    expect(APO_ACQUISITION_FIELD_SPECS.roofShape.options).toEqual([
+      "片流れ",
+      "切妻",
+      "寄棟",
+      "陸屋根",
+    ]);
+    expect(APO_ACQUISITION_FIELD_SPECS.apoType.options).toEqual([
+      "ダイレクト",
+      "お客様紹介",
+      "(DC)工務店OBリスト",
+      "ソーラーパートナーズ",
+    ]);
+    expect(APO_ACQUISITION_FIELD_SPECS.estimateType.options).toEqual([
+      "太陽光パネル＋蓄電池",
+      "蓄電池単体",
+      "太陽光単体",
+      "その他",
+    ]);
+    expect(APO_ACQUISITION_FIELD_SPECS.existingEquipment.options).toEqual([
+      "ガス給湯器",
+      "エコキュート",
+      "IH",
+      "エネファーム",
+      "エコウィル",
+    ]);
+    expect(APO_ACQUISITION_FIELD_SPECS.roofMaterial.options).toHaveLength(10);
   });
 });
 
