@@ -91,7 +91,7 @@ function matchesMeetingScheduleStatus(statusRaw: string): boolean {
   return allowed.some((a) => status.includes(normalizeStatus(a)));
 }
 
-function apoTypeDisplayLabel(typeVal: string): string {
+export function apoTypeDisplayLabel(typeVal: string): string {
   const tv = typeVal.trim();
   if (!tv) return "";
   if (tv.includes("ソーラーパートナーズ")) return "SP案件";
@@ -143,7 +143,7 @@ function parseTimeToMinutes(time: string): number {
   return Number(m[1]) * 60 + Number(m[2]);
 }
 
-function formatMeetingDateLabel(ymd: string): string {
+export function formatMeetingDateLabel(ymd: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
   if (!m) return ymd;
   const d = new Date(`${ymd}T12:00:00+09:00`);
