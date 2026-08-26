@@ -34,6 +34,10 @@ import {
 import { postalCodeForPocket } from "@/lib/customer-info-form/postal-code";
 import { checkboxGroupValueToPocketArray } from "@/lib/customer-info-form/checkbox-pocket";
 import {
+  formatApoDesiredManufacturers,
+  hasApoDesiredManufacturerOther,
+} from "@/lib/apo-desired-manufacturer";
+import {
   filterCustomerInfoPutPayload,
   isWritableAtPocketField,
 } from "@/lib/customer-info-form/pocket-writable-fields";
@@ -125,8 +129,12 @@ function buildFieldMeta(
         ? key === "apStaff"
           ? apStaffOptions
           : clStaffOptions
-        : spec.kind === "select" || spec.kind === "checkboxGroup"
-          ? r.pocketOptions && r.pocketOptions.length
+        : spec.kind === "select" ||
+            spec.kind === "checkboxGroup" ||
+            spec.kind === "checkboxGroupText"
+          ? // fixedOptions の項目は @pocket 側に運用外の選択肢が残っていても
+            // 画面に出さない（アポランクの C / D など）
+            !spec.fixedOptions && r.pocketOptions && r.pocketOptions.length
             ? r.pocketOptions
             : spec.options ?? []
           : undefined;
@@ -421,6 +429,21 @@ export async function createApoAcquisitionRecord(
     }
   }
 
+  /**
+   * その他メーカーは「その他」が選ばれたときだけ必須。
+   * spec.required では表せない条件なのでここで見る
+   */
+  const wantsOtherManufacturer = hasApoDesiredManufacturerOther(
+    values.desiredManufacturer,
+  );
+  if (wantsOtherManufacturer && !nfkc(values.otherManufacturer ?? "")) {
+    return {
+      ok: false,
+      status: 400,
+      error: "その他メーカーを入力してください",
+    };
+  }
+
   for (const key of APO_ACQUISITION_FIELD_KEYS) {
     const spec = APO_ACQUISITION_FIELD_SPECS[key];
     if (spec.kind !== "file") continue;
@@ -517,6 +540,20 @@ export async function createApoAcquisitionRecord(
         const pocket = postalCodeForPocket(raw);
         if (!pocket) continue;
         value = pocket;
+      } else if (key === "otherManufacturer" && !wantsOtherManufacturer) {
+        /**
+         * 「その他」が選ばれていないなら書き込まない。
+         * 希望メーカーに「その他」が入っていないのに その他メーカー に値が
+         * 残ると @pocket 上でデータが矛盾する。新規作成なので既存値を
+         * 消す心配はなく、単に空のままになる。
+         * 画面側は入力値を保持するので、選び直せばそのまま保存できる
+         */
+        continue;
+      } else if (r.spec.kind === "checkboxGroupText") {
+        // @pocket 側はテキスト型。定義順に並べて半角カンマで連結する
+        const joined = formatApoDesiredManufacturers(raw);
+        if (!joined) continue;
+        value = joined;
       } else if (r.spec.kind === "checkboxGroup") {
         const selected = checkboxGroupValueToPocketArray(
           raw,
