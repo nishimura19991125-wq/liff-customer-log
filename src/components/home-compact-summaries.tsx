@@ -12,7 +12,7 @@ import {
   type BulletinListResponse,
 } from "@/lib/bulletin-types";
 import { LIFF_SWR_DEFAULT_OPTIONS } from "@/lib/liff-swr";
-import { filterMeetingScheduleHomePanelItems } from "@/lib/meeting-schedule-negotiation-status";
+import { filterOpenMeetingScheduleItems } from "@/lib/meeting-schedule-negotiation-status";
 import type { MeetingSchedulePayload } from "@/lib/meeting-schedule-types";
 
 type Props = {
@@ -113,7 +113,7 @@ export function HomeCompactSummaries({
    * 件数表示もこの絞り込み後の件数になる。
    */
   const meetingItems = useMemo(
-    () => filterMeetingScheduleHomePanelItems(meetingData?.items ?? []),
+    () => filterOpenMeetingScheduleItems(meetingData?.items ?? []),
     [meetingData?.items],
   );
   const meetingPreview = meetingItems.slice(0, PREVIEW_LIMIT);
