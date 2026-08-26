@@ -236,6 +236,23 @@ function resolveRecordScheduleYmd(
   return { ymd: "", time: "" };
 }
 
+/**
+ * 商談・資料送付予定日時の日付だけ。
+ *
+ * resolveRecordScheduleYmd は未設定のとき初回商談実施日で埋めるが、
+ * ここは埋めない。出勤後アラートの日付判定が
+ * 初回商談実施日で誤発火しないようにするため
+ */
+function resolveScheduledDateTimeYmd(
+  recObj: Record<string, unknown>,
+  fieldMap: MeetingScheduleFieldMap,
+): string {
+  const parsed = parseScheduledParts(
+    readCustomerInfoFieldValue(recObj, fieldMap.scheduledDate),
+  );
+  return parsed?.ymd ?? "";
+}
+
 function scheduleDateLabel(ymd: string): string {
   if (!ymd) return "日付未定";
   return formatMeetingDateLabel(ymd);
@@ -450,6 +467,8 @@ function buildMeetingItemFromRecord(
     clPerson,
     sortMinutes: timeMatch ? parseTimeToMinutes(timeMatch[1]!) : 24 * 60,
     scheduledYmd: schedule.ymd,
+    // 初回商談実施日で埋めない、商談・資料送付予定日時そのものの日付
+    scheduledDateTimeYmd: resolveScheduledDateTimeYmd(recObj, fieldMap),
     scheduledDateLabel: scheduleDateLabel(schedule.ymd),
     pinpointAddress,
     normalAddress,

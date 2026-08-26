@@ -18,6 +18,14 @@ export type MeetingScheduleItem = {
   sortMinutes: number;
   /** 商談・資料送付予定日時など（一覧ソート用。未設定時は空） */
   scheduledYmd: string;
+  /**
+   * 商談・資料送付予定日時の**日付だけ**（YYYY-MM-DD。未設定時は空）。
+   *
+   * scheduledYmd は未設定のとき初回商談実施日で埋める（一覧のソート用）
+   * ため、「商談・資料送付予定日時そのもの」を見たい判定には使えない。
+   * 出勤後アラートの日付判定はこちらを使う
+   */
+  scheduledDateTimeYmd: string;
   /** 表示用日付ラベル（未設定時は「日付未定」） */
   scheduledDateLabel: string;
   /** Google マップ連携用 */
