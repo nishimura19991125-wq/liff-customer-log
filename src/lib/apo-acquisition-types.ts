@@ -10,7 +10,6 @@ export const APO_ACQUISITION_FIELD_KEYS = [
   "contractorPerson",
   "estimateType",
   "scheduledDate",
-  "estimateRequest",
   "customerName",
   "elevationPlanAttachment",
   "postalCode",
@@ -31,6 +30,8 @@ export const APO_ACQUISITION_FIELD_KEYS = [
   "familyComposition",
   "familyFeatures",
   "conversationContent",
+  "desiredManufacturer",
+  "otherManufacturer",
   "otherSharedItems",
 ] as const;
 
@@ -45,7 +46,12 @@ export type ApoAcquisitionInputKind =
   | "select"
   | "staffSelect"
   | "file"
-  | "checkboxGroup";
+  | "checkboxGroup"
+  /**
+   * 画面はチェックボックス（複数選択）だが、@pocket 側はテキスト型。
+   * 保存時に半角カンマ区切りの文字列へ変換する（希望メーカー）
+   */
+  | "checkboxGroupText";
 
 /** UI に渡す各フィールドのメタ情報 */
 export type ApoAcquisitionFieldMeta = {

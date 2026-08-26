@@ -12,6 +12,7 @@ import {
 } from "@/lib/apo-acquisition-types";
 import { isWritableAtPocketField } from "@/lib/customer-info-form/pocket-writable-fields";
 import { apoImportKeyFieldIdsExcludedOnCreate } from "@/lib/meeting-schedule-fields";
+import { APO_DESIRED_MANUFACTURER_OPTIONS } from "@/lib/apo-desired-manufacturer";
 
 function nfkc(s: string): string {
   return s.normalize("NFKC").trim();
@@ -29,6 +30,16 @@ type FieldSpec = {
   placeholder?: string;
   /** select の既定選択肢（@pocket 側の選択肢が取れない場合のフォールバック） */
   options?: string[];
+  /**
+   * true なら @pocket 側の選択肢を無視し、必ず options を使う。
+   * @pocket に運用外の選択肢が残っていても画面に出さないための指定
+   */
+  fixedOptions?: boolean;
+  /**
+   * 見出しで引けない列の逃げ道。@pocket のフィールド識別名（field-61 など）。
+   * 見出しが分からない項目にだけ使う（推測の見出し候補を書かないため）
+   */
+  fallbackFieldId?: string;
   hint?: string;
 };
 
@@ -49,7 +60,7 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
     key: "clStaff",
     label: "CL担当者",
     kind: "staffSelect",
-    required: true,
+    required: false,
     envKey: "APO_ACQUISITION_CL_STAFF_FIELD_ID",
     captions: ["CL担当者", "CL 担当者", "クローザー"],
   },
@@ -65,7 +76,7 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
     key: "giftCoupon",
     label: "ギフト券",
     kind: "select",
-    required: false,
+    required: true,
     envKey: "APO_ACQUISITION_GIFT_COUPON_FIELD_ID",
     captions: ["ギフト券", "ギフト", "商品券"],
     options: ["有", "無"],
@@ -74,10 +85,12 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
     key: "apoRank",
     label: "アポランク",
     kind: "select",
-    required: false,
+    required: true,
     envKey: "APO_ACQUISITION_APO_RANK_FIELD_ID",
     captions: ["アポランク", "APランク", "ランク"],
-    options: ["A", "B", "C", "D"],
+    // 画面で選べるのは A / B だけ。@pocket に C / D が残っていても出さない
+    options: ["A", "B"],
+    fixedOptions: true,
   },
   apoType: {
     key: "apoType",
@@ -129,17 +142,9 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
     key: "scheduledDate",
     label: "商談・資料送付予定日時",
     kind: "datetime",
-    required: true,
+    required: false,
     envKey: "MEETING_SCHEDULE_DATE_FIELD_ID",
     captions: ["商談・資料送付予定日時", "商談資料送付予定日時"],
-  },
-  estimateRequest: {
-    key: "estimateRequest",
-    label: "見積依頼内容",
-    kind: "textarea",
-    required: false,
-    envKey: "APO_ACQUISITION_ESTIMATE_REQUEST_FIELD_ID",
-    captions: ["見積依頼内容", "見積り依頼内容", "見積もり依頼内容", "依頼内容"],
   },
   customerName: {
     key: "customerName",
@@ -332,6 +337,30 @@ export const APO_ACQUISITION_FIELD_SPECS: Record<
     envKey: "APO_ACQUISITION_CONVERSATION_FIELD_ID",
     captions: ["会話した内容", "会話内容", "商談内容", "会話"],
   },
+  desiredManufacturer: {
+    key: "desiredManufacturer",
+    label: "希望メーカー",
+    // 画面は複数選択だが @pocket 側はテキスト型。保存時にカンマ区切りへ変換する
+    kind: "checkboxGroupText",
+    required: false,
+    envKey: "APO_ACQUISITION_DESIRED_MANUFACTURER_FIELD_ID",
+    // 見出しが分からないため識別名で引く
+    captions: [],
+    fallbackFieldId: "field-61",
+    options: [...APO_DESIRED_MANUFACTURER_OPTIONS],
+    // テキスト型なので @pocket から選択肢は取れない。必ずこの4つを使う
+    fixedOptions: true,
+  },
+  otherManufacturer: {
+    key: "otherManufacturer",
+    label: "その他メーカー",
+    kind: "text",
+    // 「その他」が選ばれたときだけ必須。判定はサーバ側で行う
+    required: false,
+    envKey: "APO_ACQUISITION_OTHER_MANUFACTURER_FIELD_ID",
+    captions: [],
+    fallbackFieldId: "field-60",
+  },
   otherSharedItems: {
     key: "otherSharedItems",
     label: "その他共有事項",
@@ -413,6 +442,18 @@ function resolveSpecFieldIdRaw(
 
   if (!uniqueId) {
     uniqueId = pickByCaptionsPartial(fields, spec.captions);
+  }
+
+  /**
+   * 見出しで引けない列（希望メーカー・その他メーカー）の逃げ道。
+   * @pocket のフィールド識別名で直接引く。見出しが分からないので、
+   * 推測の見出し候補を書く代わりにこちらを使う
+   */
+  if (!uniqueId && spec.fallbackFieldId) {
+    uniqueId = resolveConfiguredFieldToSchemaUniqueId(
+      spec.fallbackFieldId,
+      fields,
+    );
   }
 
   return uniqueId;
