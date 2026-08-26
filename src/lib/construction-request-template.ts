@@ -228,7 +228,7 @@ export function buildConstructionRequestTemplate(
   const showBattery = !installationTypeHidesBatterySection(installationType);
 
   const lines: string[] = [
-    "⭐️新規案件依頼",
+    "⭐️新規案件依頼⭐️",
     `【${manufacturer}${workType}${IDEOGRAPHIC_SPACE}${scheduledDate}】`,
     // 担当者は前後を空行で挟んで独立させる
     "",
