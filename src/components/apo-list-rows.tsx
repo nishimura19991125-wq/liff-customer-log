@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { LiffCard } from "@/components/liff-chrome";
 import { formatCustomerNameForDisplay } from "@/lib/customer-name-display";
 import {
@@ -35,7 +37,12 @@ const giftCouponBadgeClass =
 function ApoListRowCard({ row }: { row: ApoListRow }) {
   return (
     <LiffCard>
-      <div className="px-4 py-4">
+      {/* カード全体を詳細への導線にする */}
+      <Link
+        href={`/apo-list/${encodeURIComponent(row.recordId)}`}
+        className="block px-4 py-4 active:opacity-70"
+        aria-label={`${row.customerName || "名称未設定"} の詳細`}
+      >
         <p className="text-[16px] font-bold leading-snug text-slate-900 dark:text-white">
           {/* 表示だけ整える。@pocket の値は変更しない */}
           {formatCustomerNameForDisplay(row.customerName) || "（名称未設定）"}
@@ -59,7 +66,7 @@ function ApoListRowCard({ row }: { row: ApoListRow }) {
         <p className="mt-2 text-[13px] text-slate-600 dark:text-slate-400">
           商談・資料送付予定日時: {formatApoListScheduledDateTime(row)}
         </p>
-      </div>
+      </Link>
     </LiffCard>
   );
 }
