@@ -69,3 +69,49 @@ export function isScheduledBeforeToday(
   if (!ymd) return true;
   return ymd < todayYmd;
 }
+
+/**
+ * 出勤後アラートの日付条件。
+ *
+ * 商談・資料送付予定日時の**日付が今日より前**なら true。
+ *   - 見るのは日付だけ。時刻は見ない
+ *   - 今日の案件は出さない（今日 14:00 の案件は時刻を過ぎていても対象外）
+ *   - 空欄は出さない
+ *
+ * 「今日」は引数で受け取る。呼び出し側が Asia/Tokyo 基準の値を渡す。
+ *
+ * 似た名前の isScheduledBeforeToday とは**空欄の扱いが逆**（あちらは
+ * 空欄を true にする）。アラートの判定にはこちらを使うこと。
+ */
+export function isMeetingScheduleAlertOverdue(
+  scheduledDateTimeYmdRaw: string,
+  todayYmd: string,
+): boolean {
+  const scheduled = normalizeMeetingScheduleYmd(scheduledDateTimeYmdRaw);
+  if (!scheduled) return false;
+
+  const today = normalizeMeetingScheduleYmd(todayYmd);
+  if (!today) return false;
+
+  // YYYY-MM-DD 同士なら辞書順の比較がそのまま日付の前後になる
+  return scheduled < today;
+}
+
+/**
+ * 日付を YYYY-MM-DD に揃える。
+ *
+ * @pocket の値には「2026/09/10 00:00:00」のような形式が混ざるため、
+ * 比較の前に揃える。サーバ側で揃えた値が渡ってくる前提だが、
+ * 取り違えても誤判定しないようここでも受ける
+ */
+function normalizeMeetingScheduleYmd(raw: string): string {
+  const s = (raw ?? "").trim();
+  if (!s) return "";
+
+  const datePart =
+    s.replace(/\//g, "-").split("T")[0]?.split(" ")[0]?.trim() ?? "";
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(datePart);
+  if (!m) return "";
+
+  return `${m[1]}-${m[2]!.padStart(2, "0")}-${m[3]!.padStart(2, "0")}`;
+}
