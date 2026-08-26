@@ -4,6 +4,7 @@ import { useId, useMemo, useState } from "react";
 
 import { ManualCopyFallback } from "@/components/manual-copy-fallback";
 import { writeToClipboard } from "@/lib/clipboard-copy";
+import { COPY_BUTTON_LABEL } from "@/lib/copy-panel-labels";
 import { buildContractorSummaryLine } from "@/lib/contractor-summary-line";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 
@@ -100,7 +101,7 @@ export function ContractorSummaryCopyPanel({
                 onClick={() => void handleCopy()}
                 className="mt-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-bold text-white disabled:bg-slate-300"
               >
-                {busy ? "処理中…" : "コピーする"}
+                {busy ? "処理中…" : COPY_BUTTON_LABEL}
               </button>
 
               {showManualCopy ? (
