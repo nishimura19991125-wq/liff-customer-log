@@ -2,13 +2,57 @@
 
 import { LiffCard } from "@/components/liff-chrome";
 import { formatCustomerNameForDisplay } from "@/lib/customer-name-display";
+import {
+  formatApoListScheduledDateTime,
+  groupApoListRowsByDate,
+} from "@/lib/apo-list-display";
 import type { ApoListRow } from "@/lib/apo-list-types";
 
 type Props = {
   rows: ApoListRow[];
 };
 
-/** 1件の表示。時刻 / 顧客名 / 市区郡 / 見積ステータス */
+/**
+ * バッジ。市区郡・アポ種別は商談予定カード
+ * （meeting-schedule-item-card.tsx）と同じ配色・形にそろえる。
+ * 見積ステータスも同じ流儀でバッジにする。
+ */
+const cityBadgeClass =
+  "rounded-md bg-slate-100 px-2 py-0.5 text-[12px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200";
+const apoTypeBadgeClass =
+  "rounded-md bg-amber-100 px-2 py-0.5 text-[12px] font-medium text-amber-900 dark:bg-amber-950/50 dark:text-amber-200";
+const estimateStatusBadgeClass =
+  "rounded-md bg-slate-100 px-2 py-0.5 text-[12px] text-slate-600 dark:bg-slate-800 dark:text-slate-300";
+
+/** 1件分。お客様名 → バッジ3種 → 商談・資料送付予定日時 */
+function ApoListRowCard({ row }: { row: ApoListRow }) {
+  return (
+    <LiffCard>
+      <div className="px-4 py-4">
+        <p className="text-[16px] font-bold leading-snug text-slate-900 dark:text-white">
+          {/* 表示だけ整える。@pocket の値は変更しない */}
+          {formatCustomerNameForDisplay(row.customerName) || "（名称未設定）"}
+        </p>
+
+        {/* flex-wrap で幅の狭い端末でも折り返す */}
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {row.city ? <span className={cityBadgeClass}>{row.city}</span> : null}
+          {row.apoTypeLabel ? (
+            <span className={apoTypeBadgeClass}>{row.apoTypeLabel}</span>
+          ) : null}
+          {row.estimateStatus ? (
+            <span className={estimateStatusBadgeClass}>{row.estimateStatus}</span>
+          ) : null}
+        </div>
+
+        <p className="mt-2 text-[13px] text-slate-600 dark:text-slate-400">
+          商談・資料送付予定日時: {formatApoListScheduledDateTime(row)}
+        </p>
+      </div>
+    </LiffCard>
+  );
+}
+
 export function ApoListRows({ rows }: Props) {
   if (rows.length === 0) {
     return (
@@ -20,42 +64,28 @@ export function ApoListRows({ rows }: Props) {
     );
   }
 
+  // 絞り込み後の行を渡すこと。空のグループは作られない
+  const groups = groupApoListRowsByDate(rows);
+
   return (
-    <ul className="flex flex-col gap-3">
-      {rows.map((row, i) => (
-        <li key={`${row.recordId}-${i}`}>
-          <LiffCard>
-            <div className="flex items-start gap-3 px-4 py-4">
-              <div className="flex w-14 shrink-0 flex-col items-center justify-center rounded-xl bg-sky-50 py-2 dark:bg-sky-950/40">
-                <span className="text-[11px] font-medium text-sky-700 dark:text-sky-300">
-                  開始
-                </span>
-                <span className="text-[18px] font-black tabular-nums leading-none text-sky-900 dark:text-sky-100">
-                  {row.scheduledTime || "—"}
-                </span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[16px] font-bold leading-snug text-slate-900 dark:text-white">
-                  {/* 表示だけ整える。@pocket の値は変更しない */}
-                  {formatCustomerNameForDisplay(row.customerName) || "（名称未設定）"}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {row.city ? (
-                    <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[12px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                      {row.city}
-                    </span>
-                  ) : null}
-                  {row.estimateStatus ? (
-                    <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[12px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                      {row.estimateStatus}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          </LiffCard>
-        </li>
+    <div className="flex flex-col gap-5">
+      {groups.map((group) => (
+        <section key={group.ymd || group.label}>
+          <h2 className="mb-2 px-1 text-[13px] font-bold text-slate-500 dark:text-slate-400">
+            {group.label}
+            <span className="ml-2 font-medium text-slate-400 dark:text-slate-500">
+              {group.items.length}件
+            </span>
+          </h2>
+          <ul className="flex flex-col gap-3">
+            {group.items.map((row, i) => (
+              <li key={`${group.ymd}-${row.recordId}-${i}`}>
+                <ApoListRowCard row={row} />
+              </li>
+            ))}
+          </ul>
+        </section>
       ))}
-    </ul>
+    </div>
   );
 }
