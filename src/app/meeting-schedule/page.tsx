@@ -26,10 +26,9 @@ import {
   isLiffSwrSessionExpired,
 } from "@/lib/liff-swr";
 import type { MeetingScheduleCardPatch } from "@/lib/meeting-schedule-card-save";
-import type {
-  MeetingScheduleItem,
-  MeetingSchedulePayload,
-} from "@/lib/meeting-schedule-types";
+import { groupMeetingScheduleItemsByDate } from "@/lib/meeting-schedule-list-groups";
+import { filterOpenMeetingScheduleItems } from "@/lib/meeting-schedule-negotiation-status";
+import type { MeetingSchedulePayload } from "@/lib/meeting-schedule-types";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
@@ -81,26 +80,6 @@ async function patchMeetingSchedule(
   } catch {
     return { ok: false, error: "通信に失敗しました。電波状況をご確認ください" };
   }
-}
-
-function groupItemsByDate(items: MeetingScheduleItem[]) {
-  const map = new Map<string, MeetingScheduleItem[]>();
-  for (const item of items) {
-    const key = item.scheduledYmd || "__undated__";
-    const bucket = map.get(key);
-    if (bucket) bucket.push(item);
-    else map.set(key, [item]);
-  }
-
-  return [...map.entries()]
-    .map(([key, groupItems]) => ({
-      ymd: key === "__undated__" ? "" : key,
-      label: groupItems[0]?.scheduledDateLabel ?? "日付未定",
-      items: groupItems,
-    }))
-    .sort((a, b) =>
-      (a.ymd || "9999-12-31").localeCompare(b.ymd || "9999-12-31"),
-    );
 }
 
 export default function MeetingSchedulePage() {
@@ -171,10 +150,29 @@ export default function MeetingSchedulePage() {
   }, [swrError]);
 
   const isToday = viewDate === todayYmdJst();
-  const itemCount = data?.items?.length ?? 0;
+
+  /**
+   * 「一覧」タブだけ商談ステータスで絞る。商談結果が確定済みの案件
+   * （即決成約・否・アポキャン等）は載せない。
+   *
+   * 「日別」タブ（scope=day）は従来どおり全件出す。
+   * ホーム画面のパネルと同じ API（scope=list）を共有しているため
+   * サーバ側では絞れず、呼び出し側それぞれで絞っている。
+   * 判定は filterOpenMeetingScheduleItems ひとつなので二重管理にはならない。
+   */
+  const visibleItems = useMemo(() => {
+    const items = data?.items ?? [];
+    return viewMode === "list" ? filterOpenMeetingScheduleItems(items) : items;
+  }, [data?.items, viewMode]);
+
+  const itemCount = visibleItems.length;
+  /**
+   * 絞り込んでからグルーピングする。グループは案件があるときだけ作られる
+   * ので、0件になった日付の見出しだけが残ることはない
+   */
   const groupedItems = useMemo(
-    () => (data?.items ? groupItemsByDate(data.items) : []),
-    [data?.items],
+    () => groupMeetingScheduleItemsByDate(visibleItems),
+    [visibleItems],
   );
 
   const subtitle = useMemo(() => {
@@ -469,7 +467,8 @@ export default function MeetingSchedulePage() {
               </div>
             ) : (
               <ul className="flex flex-col gap-3">
-                {data.items.map((item, i) => (
+                {/* 日別タブ。絞り込みは効かせず従来どおり全件出す */}
+                {visibleItems.map((item, i) => (
                   <li key={`${item.recordId}-${i}`}>
                     <MeetingScheduleItemCard
                       item={item}
