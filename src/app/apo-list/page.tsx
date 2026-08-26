@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { ApoListRows } from "@/components/apo-list-rows";
@@ -167,8 +168,22 @@ export default function ApoListPage() {
             : undefined
         }
       >
-        <div className="mb-4">
-          <ApoListScopeTabs value={scope} onChange={setScope} />
+        {/*
+          新規登録はこの画面では作らず、既存の /apo-acquisition
+          （アポ取得時入力）へ案内する。項目定義・必須条件・選択肢を
+          二重に持つと、片方だけ直したときに事故になるため。
+          切り替えタブと同じ高さにそろえて横に並べる
+        */}
+        <div className="mb-4 flex items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <ApoListScopeTabs value={scope} onChange={setScope} />
+          </div>
+          <Link
+            href="/apo-acquisition"
+            className="inline-flex min-h-[44px] shrink-0 items-center rounded-xl bg-emerald-600 px-4 text-[14px] font-semibold text-white transition active:scale-[0.98] dark:bg-emerald-500"
+          >
+            新規登録
+          </Link>
         </div>
 
         <div id="apo-list-panel" role="tabpanel" aria-labelledby={`apo-list-tab-${scope}`}>
