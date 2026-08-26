@@ -5,6 +5,7 @@ import { formatCustomerNameForDisplay } from "@/lib/customer-name-display";
 import {
   formatApoListScheduledDateTime,
   groupApoListRowsByDate,
+  hasApoListGiftCoupon,
 } from "@/lib/apo-list-display";
 import type { ApoListRow } from "@/lib/apo-list-types";
 
@@ -23,6 +24,12 @@ const apoTypeBadgeClass =
   "rounded-md bg-amber-100 px-2 py-0.5 text-[12px] font-medium text-amber-900 dark:bg-amber-950/50 dark:text-amber-200";
 const estimateStatusBadgeClass =
   "rounded-md bg-slate-100 px-2 py-0.5 text-[12px] text-slate-600 dark:bg-slate-800 dark:text-slate-300";
+/**
+ * ギフト券。形は他と同じで色だけ分ける。
+ * 「有」のときにだけ出る印なので、灰色が並ぶ中で見分けが付くようにする
+ */
+const giftCouponBadgeClass =
+  "rounded-md bg-emerald-100 px-2 py-0.5 text-[12px] font-medium text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200";
 
 /** 1件分。お客様名 → バッジ3種 → 商談・資料送付予定日時 */
 function ApoListRowCard({ row }: { row: ApoListRow }) {
@@ -42,6 +49,10 @@ function ApoListRowCard({ row }: { row: ApoListRow }) {
           ) : null}
           {row.estimateStatus ? (
             <span className={estimateStatusBadgeClass}>{row.estimateStatus}</span>
+          ) : null}
+          {/* 末尾。「有」のときだけ出す（判定は src/lib 側） */}
+          {hasApoListGiftCoupon(row) ? (
+            <span className={giftCouponBadgeClass}>ギフト券</span>
           ) : null}
         </div>
 
