@@ -187,7 +187,7 @@ export default function ApoListPage() {
               </p>
             </LiffCard>
           ) : (
-            <ApoListRows rows={visibleRows} />
+            <ApoListRows rows={visibleRows} idToken={idToken} />
           )}
         </div>
       </div>

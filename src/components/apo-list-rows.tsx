@@ -1,18 +1,24 @@
 "use client";
 
-import Link from "next/link";
+import { useId, useState } from "react";
 
+import { ApoDetailGroups } from "@/components/apo-detail-groups";
 import { LiffCard } from "@/components/liff-chrome";
+import { useLiffSwr } from "@/hooks/use-liff-swr";
 import { formatCustomerNameForDisplay } from "@/lib/customer-name-display";
 import {
   formatApoListScheduledDateTime,
   groupApoListRowsByDate,
   hasApoListGiftCoupon,
+  nextOpenApoRecordId,
 } from "@/lib/apo-list-display";
+import type { ApoDetailPayload } from "@/lib/apo-detail-types";
 import type { ApoListRow } from "@/lib/apo-list-types";
+import { LIFF_SWR_DEFAULT_OPTIONS } from "@/lib/liff-swr";
 
 type Props = {
   rows: ApoListRow[];
+  idToken: string | null;
 };
 
 /**
@@ -33,15 +39,48 @@ const estimateStatusBadgeClass =
 const giftCouponBadgeClass =
   "rounded-md bg-emerald-100 px-2 py-0.5 text-[12px] font-medium text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200";
 
-/** 1件分。お客様名 → バッジ3種 → 商談・資料送付予定日時 */
-function ApoListRowCard({ row }: { row: ApoListRow }) {
+/**
+ * 1件分。お客様名 → バッジ4種 → 商談・資料送付予定日時。
+ *
+ * カード全体が詳細の開閉トグル。開いている間だけ詳細を取りに行く
+ * （閉じているカードは path を null にしてフェッチしない）。
+ * 取得は recordId 単位で60秒キャッシュされるので、開き直しても増えない。
+ */
+function ApoListRowCard({
+  row,
+  idToken,
+  open,
+  onToggle,
+}: {
+  row: ApoListRow;
+  idToken: string | null;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const bodyId = useId();
+
+  const { data, error, isLoading } = useLiffSwr<
+    ApoDetailPayload & { error?: string }
+  >(
+    open ? `/api/apo-list/${encodeURIComponent(row.recordId)}` : null,
+    idToken,
+    LIFF_SWR_DEFAULT_OPTIONS,
+  );
+
+  /**
+   * 担当外（403）と存在しない（404）は区別しない。
+   * 文言を分けると他人の案件の有無が分かってしまうため
+   */
+  const notAvailable = Boolean(error) || Boolean(data?.error);
+
   return (
     <LiffCard>
-      {/* カード全体を詳細への導線にする */}
-      <Link
-        href={`/apo-list/${encodeURIComponent(row.recordId)}`}
-        className="block px-4 py-4 active:opacity-70"
-        aria-label={`${row.customerName || "名称未設定"} の詳細`}
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={onToggle}
+        className="block w-full px-4 py-4 text-left active:opacity-70"
       >
         <p className="text-[16px] font-bold leading-snug text-slate-900 dark:text-white">
           {/* 表示だけ整える。@pocket の値は変更しない */}
@@ -66,12 +105,51 @@ function ApoListRowCard({ row }: { row: ApoListRow }) {
         <p className="mt-2 text-[13px] text-slate-600 dark:text-slate-400">
           商談・資料送付予定日時: {formatApoListScheduledDateTime(row)}
         </p>
-      </Link>
+      </button>
+
+      {open ? (
+        <div
+          id={bodyId}
+          className="border-t border-slate-100 px-4 py-3 dark:border-slate-800"
+        >
+          {isLoading && !data ? (
+            <p
+              role="status"
+              aria-live="polite"
+              className="py-2 text-center text-[13px] text-slate-500 dark:text-slate-400"
+            >
+              読み込み中…
+            </p>
+          ) : notAvailable ? (
+            <p
+              role="alert"
+              aria-live="assertive"
+              className="rounded-lg border border-amber-400 bg-amber-50 px-2.5 py-2 text-[12px] font-bold leading-relaxed text-amber-900"
+            >
+              この案件は表示できません。時間をおいてお試しください。
+            </p>
+          ) : data && !data.configured ? (
+            <p
+              role="alert"
+              aria-live="assertive"
+              className="rounded-lg border border-amber-400 bg-amber-50 px-2.5 py-2 text-[12px] font-bold leading-relaxed text-amber-900"
+            >
+              アポ情報は環境変数設定後に利用できます。
+            </p>
+          ) : data ? (
+            /* お客様名はカード側に出ているので、ここでは繰り返さない */
+            <ApoDetailGroups groups={data.groups} />
+          ) : null}
+        </div>
+      ) : null}
     </LiffCard>
   );
 }
 
-export function ApoListRows({ rows }: Props) {
+export function ApoListRows({ rows, idToken }: Props) {
+  /** 開いているカードの recordId。同時に開けるのは1件だけ */
+  const [openRecordId, setOpenRecordId] = useState<string | null>(null);
+
   if (rows.length === 0) {
     return (
       <LiffCard>
@@ -98,7 +176,17 @@ export function ApoListRows({ rows }: Props) {
           <ul className="flex flex-col gap-3">
             {group.items.map((row, i) => (
               <li key={`${group.ymd}-${row.recordId}-${i}`}>
-                <ApoListRowCard row={row} />
+                <ApoListRowCard
+                  row={row}
+                  idToken={idToken}
+                  open={openRecordId === row.recordId}
+                  // 開いているものを押したら閉じる。別のものを押したら差し替え
+                  onToggle={() =>
+                    setOpenRecordId((current) =>
+                      nextOpenApoRecordId(current, row.recordId),
+                    )
+                  }
+                />
               </li>
             ))}
           </ul>
