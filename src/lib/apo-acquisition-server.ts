@@ -422,20 +422,24 @@ export async function createApoAcquisitionRecord(
     };
   }
 
-  const apoAcquiredYmd = normalizeYmd(values.apoAcquiredDate ?? "");
-  if (!apoAcquiredYmd) {
+  /**
+   * ここから下は**形式**だけを見る。空かどうかは上の spec.required が見る。
+   *
+   * 以前はここで「アポ取得日」「商談・資料送付予定日時」の必須も判定していた。
+   * spec.required と二重管理になっていたため、定義側で商談・資料送付予定日時を
+   * 任意にしても登録が弾かれ続ける不具合になった。
+   * 必須の判定はこの関数に持たせず、APO_ACQUISITION_FIELD_SPECS を
+   * 唯一の情報源にすること。
+   */
+  const apoAcquiredRaw = nfkc(values.apoAcquiredDate ?? "");
+  if (apoAcquiredRaw && !normalizeYmd(apoAcquiredRaw)) {
     return { ok: false, status: 400, error: "アポ取得日を入力してください" };
   }
+
+  // 空でもよい。読めたときだけ後段のログに使う
   const scheduledYmd = normalizeYmd(
     (values.scheduledDate ?? "").split(/[T\s]/)[0] ?? "",
   );
-  if (!scheduledYmd) {
-    return {
-      ok: false,
-      status: 400,
-      error: "商談・資料送付予定日時を入力してください",
-    };
-  }
 
   try {
     const readAuth = { apiKey: apiKeyForSalesDashboardApoPocket() };
