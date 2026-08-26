@@ -61,6 +61,12 @@ export type MeetingScheduleFieldMap = {
   responseDate: string | null;
   /** 商談ステータス（アラート表示用） */
   negotiationStatus: string | null;
+  /**
+   * ギフト券（有/無）。アポ情報一覧のバッジ表示にだけ使う。
+   * 列が見つからないときは null になり、要求フィールドの CSV も
+   * 変わらない（＝キャッシュキーも変わらない）
+   */
+  giftCoupon: string | null;
 };
 
 export function meetingScheduleCloseTypeOptions(): string[] {
@@ -177,6 +183,16 @@ export function resolveMeetingScheduleFieldMap(
     ["商談ステータス", "商談ｽﾃｰﾀｽ", "商談ステータス区分"],
     ["商談ステータス"],
   );
+  /**
+   * 環境変数と見出し候補は APO_ACQUISITION_FIELD_SPECS.giftCoupon と
+   * 同じものを使う。同じアプリの同じ列なので、別の名前で二重に持たない
+   */
+  const giftCoupon = pickByEnvOrKeywords(
+    "APO_ACQUISITION_GIFT_COUPON_FIELD_ID",
+    fields,
+    ["ギフト券", "ギフト", "商品券"],
+    ["ギフト券"],
+  );
 
   return {
     clPerson,
@@ -192,6 +208,7 @@ export function resolveMeetingScheduleFieldMap(
     closeType,
     responseDate,
     negotiationStatus,
+    giftCoupon,
   };
 }
 

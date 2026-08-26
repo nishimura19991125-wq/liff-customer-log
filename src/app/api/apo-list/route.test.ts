@@ -13,6 +13,8 @@ const h = vi.hoisted(() => ({
   /** fetchMeetingScheduleRecordsCached に渡された fieldsCsv を記録する */
   requestedCsv: [] as string[],
   records: [] as Array<Record<string, unknown>>,
+  /** ギフト券の列。null は「@pocket に列が見つからない」場合 */
+  giftCouponFieldId: "f_gift" as string | null,
 }));
 
 const FIELD = {
@@ -30,6 +32,14 @@ const FIELD = {
   responseDate: "f_response_date",
   negotiationStatus: "f_nego",
 };
+
+/** ギフト券の列ID（テスト用の固定値） */
+const FIELD_GIFT = "f_gift";
+
+/** 列が見つからない場合を再現できるよう、ギフト券だけ差し替え可能にする */
+function fieldMap() {
+  return { ...FIELD, giftCoupon: h.giftCouponFieldId };
+}
 
 vi.mock("@/lib/request-auth", () => ({
   resolveCallerLineAuth: async () => ({ ok: true, lineUserId: "U-test" }),
@@ -56,7 +66,7 @@ vi.mock("@/lib/atpocket", () => ({
 vi.mock("@/lib/meeting-schedule-fields", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@/lib/meeting-schedule-fields")>();
-  return { ...actual, resolveMeetingScheduleFieldMap: () => FIELD };
+  return { ...actual, resolveMeetingScheduleFieldMap: () => fieldMap() };
 });
 
 vi.mock("@/lib/meeting-schedule-records-cache", () => ({
@@ -104,6 +114,7 @@ function get(path: string): Request {
 beforeEach(() => {
   h.requestedCsv.length = 0;
   h.records = [];
+  h.giftCouponFieldId = "f_gift";
 });
 
 describe("GET /api/apo-list", () => {
@@ -279,5 +290,62 @@ describe("GET /api/apo-list（表示項目）", () => {
       "翌日",
       "未定",
     ]);
+  });
+});
+
+/**
+ * ギフト券の列を CSV に足したので、全経路が同じ CSV を使い続けることを
+ * ここで固定する。ずれるとキャッシュが割れて @pocket へのリクエストが
+ * 倍になり、429 が再発する
+ */
+describe("ギフト券の列とキャッシュキー", () => {
+  it("★★ 列を足しても、商談進捗と同じ fieldsCsv のまま", async () => {
+    await apoListGet(get("/api/apo-list"));
+    await meetingScheduleGet(get("/api/meeting-schedule?scope=list"));
+
+    expect(h.requestedCsv).toHaveLength(2);
+    expect(h.requestedCsv[0]).toBe(h.requestedCsv[1]);
+    // 足した列が実際に要求されている
+    expect(h.requestedCsv[0]).toContain("f_gift");
+  });
+
+  it("★★ 列が見つからないときは CSV に増えない（キャッシュキーが変わらない）", async () => {
+    h.giftCouponFieldId = null;
+
+    await apoListGet(get("/api/apo-list"));
+    await meetingScheduleGet(get("/api/meeting-schedule?scope=list"));
+
+    // 両経路とも同じで、ギフト券の分は入らない
+    expect(h.requestedCsv[0]).toBe(h.requestedCsv[1]);
+    expect(h.requestedCsv[0]).not.toContain("f_gift");
+    // 空文字や undefined が紛れ込まない
+    expect(h.requestedCsv[0]?.split(",").every(Boolean)).toBe(true);
+  });
+
+  it("列の有無で CSV は変わる（＝足した列が効いている）", async () => {
+    await apoListGet(get("/api/apo-list"));
+    h.giftCouponFieldId = null;
+    await apoListGet(get("/api/apo-list"));
+
+    expect(h.requestedCsv[0]).not.toBe(h.requestedCsv[1]);
+  });
+
+  it("ギフト券の値を行に持たせる", async () => {
+    h.records = [record({ [FIELD_GIFT]: "有" })];
+
+    const res = await apoListGet(get("/api/apo-list"));
+    const body = (await res.json()) as ApoListPayload;
+
+    expect(body.rows[0]?.giftCoupon).toBe("有");
+  });
+
+  it("列が見つからないときは空になる（バッジは出ない）", async () => {
+    h.giftCouponFieldId = null;
+    h.records = [record({ [FIELD_GIFT]: "有" })];
+
+    const res = await apoListGet(get("/api/apo-list"));
+    const body = (await res.json()) as ApoListPayload;
+
+    expect(body.rows[0]?.giftCoupon).toBe("");
   });
 });

@@ -369,6 +369,10 @@ export function meetingScheduleWantedFieldCsv(
     fieldMap.closeType,
     fieldMap.responseDate,
     fieldMap.negotiationStatus,
+    // アポ情報一覧のバッジ表示にだけ使う。ここに足すことで全経路が
+    // 同じ CSV を要求し続け、キャッシュキーが割れない（429 の再発防止）。
+    // 列が見つからないときは null で、CSV も従来どおりになる
+    fieldMap.giftCoupon,
     ...collectMapAddressFieldsCsv(mapAddressIds),
   ]) {
     if (id?.trim()) ids.add(id.trim());
