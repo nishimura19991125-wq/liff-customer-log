@@ -99,7 +99,7 @@ function apoTypeDisplayLabel(typeVal: string): string {
   return tv;
 }
 
-function formatCityLabel(raw: string): string {
+export function formatCityLabel(raw: string): string {
   const s = raw.replace(/\s+/g, " ").trim();
   if (!s) return "";
   const cityMatch = /(.+?[市区町村郡])/.exec(s);
@@ -107,7 +107,7 @@ function formatCityLabel(raw: string): string {
   return s.length > 24 ? `${s.slice(0, 24)}…` : s;
 }
 
-function parseScheduledParts(raw: unknown): { ymd: string; time: string } | null {
+export function parseScheduledParts(raw: unknown): { ymd: string; time: string } | null {
   const s = coerceCustomerInfoDisplayString(raw);
   if (!s) return null;
 
@@ -160,7 +160,7 @@ function resolveTargetYmd(dateParam: string | null | undefined): string {
   return jstDateKey();
 }
 
-function recordMatchesStaff(
+export function recordMatchesStaff(
   recObj: Record<string, unknown>,
   fieldMap: MeetingScheduleFieldMap,
   boundStaffName: string,
@@ -350,7 +350,7 @@ function normalizeEditableStatus(statusRaw: string): string | null {
   return partial ?? null;
 }
 
-function meetingScheduleWantedFieldCsv(
+export function meetingScheduleWantedFieldCsv(
   fieldMap: MeetingScheduleFieldMap,
   mapAddressIds: MapAddressFieldIds,
 ): string {
