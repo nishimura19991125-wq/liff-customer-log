@@ -391,6 +391,12 @@ export async function createApoAcquisitionRecord(
   const apStaffName = nfkc(
     values.apStaff ?? input.apStaffName ?? boundStaffName,
   );
+  /**
+   * 下の必須チェックでも同じ値を見ており、apStaff の required と
+   * **二重管理**になっている。ここを先に置いているのは、以降の処理が
+   * apStaffName（紐付け担当者への読み替え後の値）を前提にしているため。
+   * apStaff を任意にする場合は、ここも同時に外すこと。
+   */
   if (!apStaffName) {
     return { ok: false, status: 400, error: "AP担当者を選択してください" };
   }
