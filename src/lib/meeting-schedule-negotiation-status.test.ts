@@ -64,6 +64,9 @@ function item(negotiationStatus: string): MeetingScheduleItem {
     clPerson: "",
     sortMinutes: 0,
     scheduledYmd: "2026-09-05",
+    // アラートの日付条件は満たしておく（下の一致テストで
+    // 商談ステータスの判定だけを見たいため）
+    scheduledDateTimeYmd: "2026-06-12",
     scheduledDateLabel: "9/5",
     pinpointAddress: "",
     normalAddress: "",
@@ -224,7 +227,9 @@ describe("確認ダイアログを出すか", () => {
   it("★ アラートの実際の判定と一致する（実際に遷移しうる全組み合わせ）", () => {
     for (const current of MEETING_SCHEDULE_NEGOTIATION_STATUSES) {
       for (const next of meetingScheduleNegotiationOptionsFor(current)) {
-        const staysInAlert = filterPendingMeetingAlerts([item(next)]).length > 0;
+        // 日付条件は満たした状態で、商談ステータスの判定だけを突き合わせる
+        const staysInAlert =
+          filterPendingMeetingAlerts([item(next)], "2026-08-26").length > 0;
         expect(keepsMeetingScheduleAlert(next)).toBe(staysInAlert);
         expect(needsMeetingScheduleNegotiationConfirm(current, next)).toBe(
           next !== current && !staysInAlert,

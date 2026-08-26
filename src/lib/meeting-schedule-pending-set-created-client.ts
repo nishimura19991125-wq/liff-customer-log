@@ -1,4 +1,5 @@
 import {
+  isMeetingScheduleAlertOverdue,
   isMeetingScheduleNegotiationWaitingStatus,
   isMeetingScheduleReNegotiationStatus,
 } from "@/lib/meeting-schedule-shared";
@@ -32,12 +33,29 @@ function sortPendingAlertItems(
   });
 }
 
+/**
+ * 出勤後アラートに出す案件。
+ *
+ * 商談ステータス（商談待ち / 再商談 / 再商談日調整中）**かつ**
+ * 商談・資料送付予定日時が今日より前、の AND で絞る。
+ * 予定日時がまだ先の案件を出さないため。
+ *
+ * 日付は scheduledDateTimeYmd（商談・資料送付予定日時そのもの）を見る。
+ * scheduledYmd は未設定のとき初回商談実施日で埋まるので使わない。
+ *
+ * todayYmd は Asia/Tokyo 基準。テストで固定できるよう引数で受ける。
+ */
 export function filterPendingMeetingAlerts(
   items: MeetingScheduleItem[],
+  todayYmd: string = todayYmdJst(),
 ): MeetingScheduleAlertItem[] {
   const alerts: MeetingScheduleAlertItem[] = [];
 
   for (const item of items) {
+    if (!isMeetingScheduleAlertOverdue(item.scheduledDateTimeYmd, todayYmd)) {
+      continue;
+    }
+
     const negotiationStatus = item.negotiationStatus.trim();
     if (isMeetingScheduleNegotiationWaitingStatus(negotiationStatus)) {
       alerts.push({ ...item, alertKind: "waiting" });
