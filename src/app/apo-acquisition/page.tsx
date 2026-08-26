@@ -24,6 +24,10 @@ import type {
   ApoAcquisitionFormPayload,
   ApoAcquisitionValues,
 } from "@/lib/apo-acquisition-types";
+import {
+  hasApoDesiredManufacturerOther,
+  APO_DESIRED_MANUFACTURER_OTHER,
+} from "@/lib/apo-desired-manufacturer";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 import {
   formatPostalCodeInput,
@@ -41,6 +45,9 @@ const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
 const inputClass =
   "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[14px] text-slate-900 shadow-sm disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white";
+
+/** その他メーカーの領域。「その他」チェックの aria-controls が指す */
+const OTHER_MANUFACTURER_REGION_ID = "apo-other-manufacturer";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_FILES_PER_FIELD = 5;
@@ -181,6 +188,8 @@ function FieldRow({ field, value, disabled, onChange, onBlur }: FieldRowProps) {
         </select>
       );
       break;
+    // checkboxGroupText は @pocket 側がテキスト型なだけで、画面は同じ形
+    case "checkboxGroupText":
     case "checkboxGroup":
       control = (
         <div className="flex flex-wrap gap-2">
@@ -201,6 +210,14 @@ function FieldRow({ field, value, disabled, onChange, onBlur }: FieldRowProps) {
                   className="size-4 rounded border-slate-300 text-orange-500"
                   checked={checked}
                   disabled={disabled}
+                  {...(field.key === "desiredManufacturer" &&
+                  opt === APO_DESIRED_MANUFACTURER_OTHER
+                    ? {
+                        // このチェックで「その他メーカー」欄が出入りする
+                        "aria-expanded": checked,
+                        "aria-controls": OTHER_MANUFACTURER_REGION_ID,
+                      }
+                    : {})}
                   onChange={() => {
                     const next = new Set(selected);
                     if (checked) next.delete(opt);
@@ -348,6 +365,14 @@ export default function ApoAcquisitionPage() {
   const [files, setFiles] = useState<
     Partial<Record<ApoAcquisitionFieldKey, ApoAcquisitionFileAttachment[]>>
   >({});
+
+  /**
+   * その他メーカーを出すか。希望メーカーで「その他」を選んだときだけ。
+   * 判定は src/lib 側（保存時の必須判定と同じ関数）
+   */
+  const showsOtherManufacturer = hasApoDesiredManufacturerOther(
+    values.desiredManufacturer,
+  );
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -587,6 +612,14 @@ export default function ApoAcquisitionPage() {
 
               {form.fields
                 .filter((f) => f.present)
+                /**
+                 * その他メーカーは「その他」を選んだときだけ出す。
+                 * 外しても values からは消さないので、選び直せば入力値が戻る
+                 */
+                .filter(
+                  (f) =>
+                    f.key !== "otherManufacturer" || showsOtherManufacturer,
+                )
                 .map((field) =>
                   field.kind === "file" ? (
                     <FileFieldRow
@@ -597,6 +630,18 @@ export default function ApoAcquisitionPage() {
                       onChange={setFieldFiles}
                       onError={setFeedback}
                     />
+                  ) : field.key === "otherManufacturer" ? (
+                    /* 出ているときだけ必須。* の表示を実際の条件に合わせる */
+                    <div id={OTHER_MANUFACTURER_REGION_ID}>
+                      <FieldRow
+                        key={field.key}
+                        field={{ ...field, required: true }}
+                        value={values[field.key] ?? ""}
+                        disabled={submitting}
+                        onChange={setValue}
+                        onBlur={handleFieldBlur}
+                      />
+                    </div>
                   ) : (
                     <FieldRow
                       key={field.key}
