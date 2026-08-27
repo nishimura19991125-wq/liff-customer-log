@@ -72,6 +72,7 @@ import {
   type CustomerInfoConstructionLinkResult,
 } from "@/lib/customer-info-construction-link";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
+import { resolveCustomerInfoConstructionHandlerFieldId } from "@/lib/customer-info-construction-handler";
 import { resolveCustomerInfoCreatorFieldId } from "@/lib/customer-info-creator-field";
 import {
   lineAuthUnauthorizedResponse,
@@ -182,6 +183,7 @@ async function linkConstructionIfScheduledDateEntered(input: {
   loadedRecord: Record<string, unknown> | null;
   customerNameFieldId: string;
   housingStatusFieldId: string;
+  constructionHandlerFieldId: string;
   tNumber: string;
   lineUserId: string;
   cancelTriggered: boolean;
@@ -207,6 +209,8 @@ async function linkConstructionIfScheduledDateEntered(input: {
     housingStatus: read(input.housingStatusFieldId),
     constructionDate: after,
     contractor: (input.values.constructionContractor ?? "").trim(),
+    // フォームに無い列なので保存前の値をそのまま転記する
+    constructionHandler: read(input.constructionHandlerFieldId),
     lineUserId: input.lineUserId,
   });
 }
@@ -655,6 +659,13 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       const housingStatusFieldId = resolveCustomerInfoHousingStatusFieldId(
         appFields,
       );
+      /**
+       * 工事対応者はお客様情報のフォームに無い列。
+       * 工事アプリへ転記するので保存前レコードから読む
+       * （update-construction-handler が両アプリへ同じ名前を書いている）
+       */
+      const constructionHandlerFieldId =
+        resolveCustomerInfoConstructionHandlerFieldId(appFields) ?? "";
 
       // AP/CL所属支店を引き直すかの判定に使う。担当者が変わっていなければ
       // 支店は触らない（引けないときに "-" で潰さないため）。
@@ -670,6 +681,7 @@ export async function PUT(request: Request, ctx: RouteCtx) {
           ...(constructionDateFieldId ? [constructionDateFieldId] : []),
           ...(customerNameFieldId ? [customerNameFieldId] : []),
           ...(housingStatusFieldId ? [housingStatusFieldId] : []),
+          ...(constructionHandlerFieldId ? [constructionHandlerFieldId] : []),
           ...contractNotificationExtraFieldIdList(notificationFieldIds),
         ],
       );
@@ -792,6 +804,7 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         loadedRecord: loadedStaff?.record ?? null,
         customerNameFieldId,
         housingStatusFieldId,
+        constructionHandlerFieldId,
         tNumber: notificationExtras.tNumber,
         lineUserId: auth.lineUserId,
         cancelTriggered,

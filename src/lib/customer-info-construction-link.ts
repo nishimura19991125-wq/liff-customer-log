@@ -44,7 +44,7 @@ import { fieldCaptionByUniqueId } from "@/lib/customer-info-record";
  * 429 やタイムアウトのときは何もせず警告だけ返す。
  *
  * ■ 書き込む項目
- * 住宅ステータス・お客様名・施工予定日・施工会社の4つだけ。
+ * 住宅ステータス・お客様名・施工予定日・施工会社・工事対応者の5つだけ。
  * ほかの列は @pocket の編集画面や別の連携が持ち主なので触らない。
  * 新規作成では取込キー（Aki番号）を空文字で載せ、T番号 を転記する。
  */
@@ -140,6 +140,8 @@ export async function linkCustomerInfoToConstruction(opts: {
   /** 施工予定日 YYYY-MM-DD */
   constructionDate: string;
   contractor: string;
+  /** 工事対応者。お客様情報側の値をそのまま転記する */
+  constructionHandler: string;
   lineUserId?: string;
 }): Promise<CustomerInfoConstructionLinkResult> {
   const calAppId = process.env.CALENDAR_APP_ID?.trim();
@@ -189,6 +191,7 @@ export async function linkCustomerInfoToConstruction(opts: {
     : fids.title?.trim() || null;
   const startDateFieldId = fids.startDate?.trim() || null;
   const contractorFieldId = fids.contractor?.trim() || null;
+  const handlerFieldId = fids.constructionHandler?.trim() || null;
 
   if (!tNumberFieldId || !customerFieldId || !startDateFieldId) {
     console.error(
@@ -209,6 +212,7 @@ export async function linkCustomerInfoToConstruction(opts: {
     housingFieldId ?? undefined,
     startDateFieldId,
     contractorFieldId ?? undefined,
+    handlerFieldId ?? undefined,
   );
 
   const found = await findConstructionRecordByTNumber({
@@ -223,16 +227,22 @@ export async function linkCustomerInfoToConstruction(opts: {
   }
 
   /**
-   * 書き込むのは4項目だけ。ほかの列はここが持ち主ではない。
-   * 値が空のものは載せない（既に入っている値を消さないため）
+   * 書き込むのは5項目だけ。ほかの列はここが持ち主ではない。
+   * 値が空のものは載せない（既に入っている値を消さないため）。
+   *
+   * 工事対応者は工事アプリ側が単一選択、お客様情報側がテキストで、
+   * 値そのものはスタッフ名で揃っている（update-construction-handler が
+   * 両アプリへ同じ名前を書いている）。そのまま転記してよい
    */
   const customerName = opts.customerName.trim();
   const housing = opts.housingStatus.trim();
   const contractor = opts.contractor.trim();
+  const handler = opts.constructionHandler.trim();
   const patch: Record<string, unknown> = { [startDateFieldId]: startYmd };
   if (customerName) patch[customerFieldId] = customerName;
   if (housing && housingFieldId) patch[housingFieldId] = housing;
   if (contractor && contractorFieldId) patch[contractorFieldId] = contractor;
+  if (handler && handlerFieldId) patch[handlerFieldId] = handler;
 
   try {
     if (found.kind === "found") {

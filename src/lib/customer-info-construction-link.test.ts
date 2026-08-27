@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * ここで固定するのは次の4つ。
  *   - 既存レコードは T番号 で引く（Aki番号 は第1段階のレコードに無い）
  *   - **探せなかったときは作らない**（二重に作ると実データを壊す）
- *   - 書き込むのは4項目だけ
+ *   - 書き込むのは5項目だけ
  *   - 新規作成では取込キー（Aki番号）を空文字で載せ、採番値を返す
  */
 
@@ -30,6 +30,7 @@ const FIELDS = [
   { uniqueId: "field-3", caption: "施工予定日" },
   { uniqueId: "field-4", caption: "施工会社" },
   { uniqueId: "field-5", caption: "住宅ステータス" },
+  { uniqueId: "field-6", caption: "工事対応者" },
 ];
 
 vi.mock("@/lib/atpocket", () => ({
@@ -92,6 +93,7 @@ const BASE = {
   housingStatus: "既築案件",
   constructionDate: "2026-12-01",
   contractor: "ピュアライフ",
+  constructionHandler: "西村 直也",
   lineUserId: "U1",
 };
 
@@ -194,16 +196,37 @@ describe("★ 既存レコードがあるとき（更新）", () => {
   });
 });
 
-describe("★ 書き込む項目は4つだけ", () => {
-  it("住宅ステータス・お客様名・施工予定日・施工会社", async () => {
+describe("★ 書き込む項目は5つだけ", () => {
+  it("住宅ステータス・お客様名・施工予定日・施工会社・工事対応者", async () => {
     h.listRows = [row(55, { "field-1": "T00003420", "field-101": "A0001" })];
 
     await linkCustomerInfoToConstruction(BASE);
 
     // 取込キー（Aki番号）は @pocket の作法で必要なので別枠
     expect(Object.keys(h.writes[0]!.payload).sort()).toEqual(
-      ["field-101", "field-2", "field-3", "field-4", "field-5"].sort(),
+      [
+        "field-101",
+        "field-2",
+        "field-3",
+        "field-4",
+        "field-5",
+        "field-6",
+      ].sort(),
     );
+  });
+
+  it("★ 工事対応者を転記する", async () => {
+    h.listRows = [row(55, { "field-1": "T00003420" })];
+
+    await linkCustomerInfoToConstruction(BASE);
+
+    expect(h.writes[0]?.payload).toHaveProperty("field-6", "西村 直也");
+  });
+
+  it("★ 新規作成でも工事対応者を載せる", async () => {
+    await linkCustomerInfoToConstruction(BASE);
+
+    expect(h.writes[0]?.payload).toHaveProperty("field-6", "西村 直也");
   });
 
   it("値が空の項目は載せない（既存値を消さない）", async () => {
@@ -213,10 +236,12 @@ describe("★ 書き込む項目は4つだけ", () => {
       ...BASE,
       contractor: "",
       housingStatus: "",
+      constructionHandler: "",
     });
 
     expect(h.writes[0]?.payload).not.toHaveProperty("field-4");
     expect(h.writes[0]?.payload).not.toHaveProperty("field-5");
+    expect(h.writes[0]?.payload).not.toHaveProperty("field-6");
     // 施工予定日は必ず載る（これがトリガーなので）
     expect(h.writes[0]?.payload).toHaveProperty("field-3", "2026-12-01");
   });
