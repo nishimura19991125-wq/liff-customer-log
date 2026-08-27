@@ -12,7 +12,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * の2点。
  *
  * ここで固定するのは次の4つ。
- *   - お客様情報の payload に T番号 を載せない（自動採番列への書き込みは不正）
+ *   - T番号 の列は**新規作成のときだけ空文字で載せる**（@pocket が採番する）。
+ *     更新では載せない（既存の採番値を消さないため）
  *   - 突合は Aki番号 で行う
  *   - Aki番号 が空の既存レコードは T番号 で拾う（二重登録を防ぐ）
  *   - 採番された T番号 を返す
@@ -117,11 +118,22 @@ beforeEach(() => {
 });
 
 describe("★ 新規作成", () => {
-  it("お客様情報の payload に T番号 を載せない（自動採番列）", async () => {
+  it("★ T番号 の列を空文字で載せる（@pocket が採番する）", async () => {
+    /*
+     * 「値を送らない」と「列を載せない」は別物。
+     * 列ごと外すと @pocket が 400 を返す
+     *   キー項目「T番号」が取込設定に存在しないため登録できません
+     */
     await sync();
 
     expect(h.created).toHaveLength(1);
-    expect(h.created[0]).not.toHaveProperty("field-268");
+    expect(h.created[0]).toHaveProperty("field-268", "");
+  });
+
+  it("採番済みの値を送りつけない（空文字であること）", async () => {
+    await sync();
+
+    expect(h.created[0]!["field-268"]).toBe("");
   });
 
   it("★ Aki番号 を書き込む（次回以降の突合キーになる）", async () => {
@@ -185,12 +197,13 @@ describe("★ 既存レコードの更新", () => {
     );
   });
 
-  it("更新でも T番号 を payload に載せない", async () => {
+  it("★ 更新では T番号 を載せない（採番済みの値を消さない）", async () => {
     h.lookup["field-267"] = { A0001: "cust-9" };
     h.customerRecords["cust-9"] = { "field-268": "T00001111" };
 
     await sync();
 
+    // 空文字を送ると既に入っている T番号 を消しかねない
     expect(h.updated[0]?.payload).not.toHaveProperty("field-268");
   });
 });

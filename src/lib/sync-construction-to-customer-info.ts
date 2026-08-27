@@ -655,12 +655,30 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   });
   const existingId = existing?.recordId ?? null;
 
-  /**
-   * T番号（resolvedCustomerKey）は**載せない**。
-   * お客様情報アプリ側の自動採番列なので、値を送るのは不正になる。
-   * 突合キーとして書くのは Aki番号 のほう
-   */
   const customerRecord: Record<string, unknown> = {};
+
+  /**
+   * 取込キー（T番号）の列を、**新規作成のときだけ空文字で載せる**。
+   *
+   * @pocket の作成APIは、取込キーの列がレコード本文に無いと
+   * 「キー項目「T番号」が取込設定に存在しないため登録できません」で 400 を返す。
+   * 値は空でよく、空ならこのアプリ側で自動採番される。
+   * 他の新規作成も同じことをしている:
+   *   - buildEmptySlotPayload（キャンセル時の空き枠）… 取込キー列に "" を入れる
+   *   - applyApoAutoNumberOnCreate（アポ取得）… 同上
+   *   - buildConstructionFillPatch（工事登録）… 同上
+   *
+   * 更新のときは載せない。空文字を送ると既に採番されている T番号 を消しかねない。
+   * 更新に取込キーが要る経路（作成直後の Dropboxリンク PUT・
+   * /customer-info の保存）では、読み取った実際の値を載せている。
+   *
+   * ⚠「値を送らない」と「列を載せない」は別物。列ごと外すと 400 になる。
+   */
+  if (!existingId) {
+    customerRecord[resolvedCustomerKey] = "";
+  }
+
+  // 突合キーは Aki番号。工事アプリが採番した値をここへ書く
   if (customerAkiFieldId && akiKey) {
     customerRecord[customerAkiFieldId] = akiKey;
   }
