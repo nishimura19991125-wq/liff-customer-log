@@ -1849,6 +1849,8 @@ function NewConstructionRecordPanel({
         error?: string;
         customerInfoSynced?: boolean;
         constructionSaved?: boolean;
+        /** 施工予定日が未定で、工事登録アプリに作らなかった */
+        constructionSkipped?: boolean;
         calendarPatch?: CalendarRecordMonthPatch;
         /** Dropbox フォルダを用意できなかったときの警告（E-5） */
         warning?: string;
@@ -1902,17 +1904,27 @@ function NewConstructionRecordPanel({
       setScheduledStartDate("");
       setContractor("");
       try {
-        await onSaved(data.calendarPatch ?? null);
+        /**
+         * 工事登録アプリに作っていないときはカレンダーに出るものが無い。
+         * 再取得しても表示は変わらないので @pocket を叩かない
+         */
+        if (!data.constructionSkipped) {
+          await onSaved(data.calendarPatch ?? null);
+        }
       } catch (e) {
         setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
         return;
       }
       setFeedback({
         kind: "ok",
-        text:
-          (data.customerInfoSynced
+        text: data.constructionSkipped
+          ? // 工事登録アプリに作っていないのでカレンダーには出ない。
+            // 「登録できていない」と誤解されないよう、何が起きたかを先に書く
+            "お客様情報アプリに登録しました。T番号が採番されています。\n" +
+            "施工予定日が未定のため、工事カレンダーにはまだ表示されません。日程が決まったら施工予定日を入力してください。"
+          : data.customerInfoSynced
             ? "登録しました。@pocket で T番号が採番され、お客様情報アプリにも連携しました。"
-            : "登録しました。@pocket で T番号が採番されています。"),
+            : "登録しました。@pocket で T番号が採番されています。",
       });
       setSaveWarning(data.warning?.trim() || null);
     } catch (e) {
@@ -2000,6 +2012,12 @@ function NewConstructionRecordPanel({
               : null}
             T番号は @pocket の自動採番により付与されます。
           </p>
+          {/* 送信前に分岐を伝える。押したあとに驚かせない */}
+          {!scheduledStartDate.trim() ? (
+            <p className="mb-3 rounded-xl bg-slate-50 px-3 py-2 text-[12px] leading-relaxed text-slate-700 ring-1 ring-slate-100">
+              施工予定日が空のときは、お客様情報アプリにのみ登録します。工事カレンダーには表示されません。日程が決まったら施工予定日を入力してください。
+            </p>
+          ) : null}
           <label className="block">
             <span className="mb-1 block text-[12px] font-bold text-slate-700">
               住宅ステータス{" "}
