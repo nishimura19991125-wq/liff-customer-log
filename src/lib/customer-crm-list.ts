@@ -18,7 +18,9 @@ import {
   isCrmConstructionDateUnset,
   buildCrmSubsidyInfo,
   resolveCrmConstructionDateFieldId,
+  resolveCrmContractorFieldId,
   resolveCrmDocumentFields,
+  resolveCrmHousingStatusFieldId,
   resolveCrmSortDateFieldId,
   resolveCrmSubsidyFieldIds,
 } from "@/lib/customer-crm-documents";
@@ -97,6 +99,16 @@ const DEFAULT_PAGE_DELAY_MS = 400;
 type CrmCandidate = CustomerCrmListItem & {
   sortKey: number;
   audience: Record<string, unknown>;
+  /**
+   * 住宅ステータス・施工業者の**生の値**（3-1 で追加）。
+   *
+   * 工事カレンダーの未定案件一覧が表示に使う。担当顧客一覧（/customer-list）
+   * は読まないので、CustomerCrmListItem には**載せない**
+   * （/api/customers の応答を変えないため）。
+   * 列を解決できない環境では空文字になる。
+   */
+  housingStatus: string;
+  contractorName: string;
 };
 
 /** 担当者で絞る前の全件。ユーザー非依存なのでキーに氏名を含めない */
@@ -185,6 +197,9 @@ type CrmFieldContext = {
   clFieldId: string | null;
   creatorFieldId: string | null;
   constructionDateFieldId: string | null;
+  /** 未定案件一覧の表示に使う2列（3-1 で追加）。解決できなければ null */
+  housingStatusFieldId: string | null;
+  contractorFieldId: string | null;
   subsidyFieldIds: CrmSubsidyFieldIds;
   sortFieldId: string | null;
   customerStatusFieldId: string | null;
@@ -206,6 +221,8 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
 
   const docFields = resolveCrmDocumentFields(appFields);
   const constructionDateFieldId = resolveCrmConstructionDateFieldId(appFields);
+  const housingStatusFieldId = resolveCrmHousingStatusFieldId(appFields);
+  const contractorFieldId = resolveCrmContractorFieldId(appFields);
   const subsidyFieldIds = resolveCrmSubsidyFieldIds(appFields);
   const sortFieldId = resolveCrmSortDateFieldId(appFields);
   const customerStatusFieldId = resolveCrmCustomerStatusFieldId(appFields);
@@ -236,6 +253,9 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
   if (subtitleField) fieldIdSet.add(subtitleField);
   if (tNumberFieldId) fieldIdSet.add(tNumberFieldId);
   if (constructionDateFieldId) fieldIdSet.add(constructionDateFieldId);
+  // 3-1: 列が増えるだけで、ページ数も呼び出し回数も変わらない
+  if (housingStatusFieldId) fieldIdSet.add(housingStatusFieldId);
+  if (contractorFieldId) fieldIdSet.add(contractorFieldId);
   if (subsidyFieldIds.subsidyPresenceId) {
     fieldIdSet.add(subsidyFieldIds.subsidyPresenceId);
   }
@@ -263,6 +283,8 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
     clFieldId,
     creatorFieldId,
     constructionDateFieldId,
+    housingStatusFieldId,
+    contractorFieldId,
     subsidyFieldIds,
     sortFieldId,
     customerStatusFieldId,
@@ -390,6 +412,12 @@ async function fetchAllCustomerCrmCandidatesFromPocket(): Promise<CrmSnapshot> {
         isConstructionDateUnset,
         isCancelled,
         isCompleted,
+        housingStatus: ctx.housingStatusFieldId
+          ? readCustomerInfoFieldValue(recObj, ctx.housingStatusFieldId)
+          : "",
+        contractorName: ctx.contractorFieldId
+          ? readCustomerInfoFieldValue(recObj, ctx.contractorFieldId)
+          : "",
         sortKey: crmSortKeyFromRecord(recObj, recordId, ctx.sortFieldId),
         audience,
       });

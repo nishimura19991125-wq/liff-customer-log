@@ -33,6 +33,8 @@ function candidate(
     isConstructionDateUnset: false,
     isCancelled: false,
     isCompleted: false,
+    housingStatus: "",
+    contractorName: "",
     sortKey: Number(recordId),
     audience,
   };

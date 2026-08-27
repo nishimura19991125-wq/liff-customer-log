@@ -107,6 +107,46 @@ export function resolveCrmConstructionDateFieldId(
   return null;
 }
 
+/**
+ * 「住宅ステータス」列の uniqueId。
+ *
+ * 解決順は sync-construction-to-customer-info.ts と**同じ**にそろえてある。
+ * あちらが工事レコードから転記して書き込む列を、こちらが読むため、
+ * 別の列を掴むと「書いた場所と読む場所が違う」状態になる。
+ *
+ * お客様情報のフォームに出ない列なので schema.ts に key が無く、
+ * resolveCustomerInfoFormFieldId では解決できない（見出しで引く）。
+ */
+export function resolveCrmHousingStatusFieldId(
+  appFields: AtPocketFieldRow[],
+): string | null {
+  const env = process.env.CUSTOMER_INFO_HOUSING_STATUS_FIELD_ID?.trim();
+  if (env) {
+    return resolveConfiguredFieldToSchemaUniqueId(env, appFields);
+  }
+  return (
+    pickFieldUniqueIdByExactCaption(appFields, "住宅ステータス") ??
+    pickFieldUniqueIdByExactCaption(appFields, "住宅 ステータス")
+  );
+}
+
+/**
+ * 「施工業者」列の uniqueId。
+ *
+ * こちらはフォームにある列なので、連携（sync 側）と同じ
+ * resolveCustomerInfoFormFieldId をそのまま使う
+ * （CUSTOMER_INFO_CONSTRUCTION_CONTRACTOR_FIELD_ID で上書き可）。
+ */
+export function resolveCrmContractorFieldId(
+  appFields: AtPocketFieldRow[],
+): string | null {
+  return resolveCustomerInfoFormFieldId(
+    "constructionContractor",
+    "施工業者",
+    appFields,
+  );
+}
+
 /** 「補助金有無」列の uniqueId（環境変数で上書き可） */
 export function resolveCrmSubsidyFieldId(
   appFields: AtPocketFieldRow[],
