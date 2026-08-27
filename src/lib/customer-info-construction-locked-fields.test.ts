@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   CUSTOMER_INFO_CONSTRUCTION_LOCKED_FIELDS,
+  CUSTOMER_INFO_CONSTRUCTION_LOCKED_FIELD_LABELS,
   CUSTOMER_INFO_CONSTRUCTION_LOCKED_HINT,
   isCustomerInfoConstructionFieldLocked,
   stripCustomerInfoConstructionFieldsFromPayload,
@@ -19,10 +20,11 @@ import { CUSTOMER_INFO_FORM_FIELDS } from "@/lib/customer-info-form/schema";
  */
 
 describe("★ 対象の項目", () => {
-  it("施工予定日と施工業者の2つ", () => {
+  it("施工予定日・施工業者・初回施工予定日の3つ", () => {
     expect([...CUSTOMER_INFO_CONSTRUCTION_LOCKED_FIELDS]).toEqual([
       "constructionDate",
       "constructionContractor",
+      "firstConstructionDate",
     ]);
   });
 
@@ -34,10 +36,20 @@ describe("★ 対象の項目", () => {
     expect(isCustomerInfoConstructionFieldLocked("customerName")).toBe(false);
   });
 
-  it("初回施工予定日は対象外（今回の指示は2項目）", () => {
+  it("★ 初回施工予定日も対象", () => {
+    /*
+     * 工事カレンダー連携が書く列。お客様情報側で編集しても次の連携で
+     * 上書きされるため、「編集できるのに保存されない」状態を作らない
+     */
     expect(isCustomerInfoConstructionFieldLocked("firstConstructionDate")).toBe(
-      false,
+      true,
     );
+  });
+
+  it("全項目にラベルがある", () => {
+    for (const key of CUSTOMER_INFO_CONSTRUCTION_LOCKED_FIELDS) {
+      expect(CUSTOMER_INFO_CONSTRUCTION_LOCKED_FIELD_LABELS[key]).toBeTruthy();
+    }
   });
 
   it("★ どちらもフォーム定義で必須ではない", () => {
@@ -63,12 +75,15 @@ describe("★ payload から落とす", () => {
       ? "field-9"
       : key === "constructionContractor"
         ? "field-4"
-        : null;
+        : key === "firstConstructionDate"
+          ? "field-8"
+          : null;
 
-  it("2列とも落とす", () => {
+  it("★ 3列とも落とす", () => {
     const payload: Record<string, unknown> = {
       "field-9": "2026/12/01",
       "field-4": "ピュアライフ",
+      "field-8": "2026/11/01",
       "field-2": "山田 太郎",
     };
 
@@ -77,7 +92,11 @@ describe("★ payload から落とす", () => {
       fieldIdOf,
     );
 
-    expect(dropped).toEqual(["constructionDate", "constructionContractor"]);
+    expect(dropped).toEqual([
+      "constructionDate",
+      "constructionContractor",
+      "firstConstructionDate",
+    ]);
     expect(payload).toEqual({ "field-2": "山田 太郎" });
   });
 

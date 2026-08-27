@@ -49,6 +49,12 @@ const RESOLVED = [
     type: "select",
   },
   {
+    key: "firstConstructionDate",
+    fieldId: "field-8",
+    label: "初回施工予定日",
+    type: "date",
+  },
+  {
     key: "customerStatus",
     fieldId: "field-20",
     label: "顧客ステータス",
@@ -142,6 +148,7 @@ vi.mock("@/lib/customer-info-form/put-payload", () => ({
   formPayloadFromValues: async () => ({
     "field-9": "2026-12-01",
     "field-4": "ピュアライフ",
+    "field-8": "2026-11-01",
     "field-2": "山田 太郎",
   }),
 }));
@@ -295,15 +302,18 @@ describe("★ 施工予定日・施工業者は保存を受け付けない", () 
    * 画面から入力欄を消しても API を直に叩けば書けるため、サーバでも塞ぐ。
    * 施工予定日の割り当ては工事カレンダーからのみ行う方針。
    */
-  it("★ payload から2列とも落ちる", async () => {
+  it("★ payload から3列とも落ちる", async () => {
     await put({
       constructionDate: "2026-12-01",
       constructionContractor: "ピュアライフ",
+      firstConstructionDate: "2026-11-01",
     });
 
     expect(h.savedPayloads).toHaveLength(1);
     expect(h.savedPayloads[0]).not.toHaveProperty("field-9");
     expect(h.savedPayloads[0]).not.toHaveProperty("field-4");
+    // 初回施工予定日も工事カレンダー連携が書く列
+    expect(h.savedPayloads[0]).not.toHaveProperty("field-8");
   });
 
   it("★ 他の項目は残る（保存を巻き込まない）", async () => {
@@ -313,7 +323,11 @@ describe("★ 施工予定日・施工業者は保存を受け付けない", () 
   });
 
   it("値が空でも保存できる（必須で止まらない）", async () => {
-    const res = await put({ constructionDate: "", constructionContractor: "" });
+    const res = await put({
+      constructionDate: "",
+      constructionContractor: "",
+      firstConstructionDate: "",
+    });
 
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true });
@@ -331,5 +345,7 @@ describe("★ 施工予定日・施工業者は保存を受け付けない", () 
     expect(h.cancelSideEffectCalls).toBe(1);
     expect(h.savedPayloads[0]).toHaveProperty("field-9");
     expect(h.savedPayloads[0]).toHaveProperty("field-4");
+    // キャンセルは初回施工予定日も空にする
+    expect(h.savedPayloads[0]).toHaveProperty("field-8");
   });
 });

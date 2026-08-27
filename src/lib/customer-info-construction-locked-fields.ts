@@ -16,10 +16,11 @@
  * キャンセル処理は同じ PUT を通るが、あちらは施工予定日・施工会社を
  * **空にするのが仕事**なので、呼び出し側で除外している。
  *
- * ■ 初回施工予定日は対象外
- * 同じく工事カレンダー連携が書く列だが、今回の指示は2項目のみ。
- * 対象を広げる場合は CUSTOMER_INFO_CONSTRUCTION_LOCKED_FIELDS に
- * "firstConstructionDate" を足せば、画面もサーバも同時に追随する。
+ * ■ 3項目とも工事カレンダー連携が書く列
+ * 施工予定日・施工業者・初回施工予定日はいずれも
+ * sync-construction-to-customer-info.ts が工事レコードから転記する。
+ * お客様情報側で編集しても次の連携で上書きされるため、
+ * 「編集できるのに保存されない」状態を作らないよう表示だけにする。
  *
  * 元に戻すときはこの配列から外すだけでよい。
  * 入力欄の組み立てや選択肢の取得は消さずに残してある。
@@ -27,11 +28,12 @@
 
 export type CustomerInfoConstructionLockedField =
   | "constructionDate"
-  | "constructionContractor";
+  | "constructionContractor"
+  | "firstConstructionDate";
 
 /** 現在 /customer-info から変更できない項目 */
 export const CUSTOMER_INFO_CONSTRUCTION_LOCKED_FIELDS: readonly CustomerInfoConstructionLockedField[] =
-  ["constructionDate", "constructionContractor"];
+  ["constructionDate", "constructionContractor", "firstConstructionDate"];
 
 export const CUSTOMER_INFO_CONSTRUCTION_LOCKED_FIELD_LABELS: Record<
   CustomerInfoConstructionLockedField,
@@ -39,6 +41,7 @@ export const CUSTOMER_INFO_CONSTRUCTION_LOCKED_FIELD_LABELS: Record<
 > = {
   constructionDate: "施工予定日",
   constructionContractor: "施工業者",
+  firstConstructionDate: "初回施工予定日",
 };
 
 /** 画面に添える補足文。どこで変更するのかまで書く */
