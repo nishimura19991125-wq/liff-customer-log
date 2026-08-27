@@ -16,11 +16,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   /** T番号 → 一覧の応答 */
   listRows: [] as unknown[],
+  /** 呼び出し順に差し替える応答（作成前後で変える用）。空なら listRows */
+  listQueue: [] as unknown[][],
   listCalls: [] as { query?: string }[],
   listThrows: false,
+  /** この回数を超えた照合だけ例外にする（作成後の引き直しを落とす用） */
+  listThrowsAfter: null as number | null,
   writes: [] as { recordId?: string; payload: Record<string, unknown> }[],
   auditOps: [] as string[],
   akiOnCreate: "A0007" as string | null,
+  /** false のとき @pocket が作成の応答に ID を返さない（実機の挙動） */
+  createReturnsId: true,
 }));
 
 const FIELDS = [
@@ -43,6 +49,15 @@ vi.mock("@/lib/atpocket", () => ({
   ) => {
     h.listCalls.push({ query: params?.query });
     if (h.listThrows) throw new Error("429 Too Many Requests");
+    if (
+      h.listThrowsAfter !== null &&
+      h.listCalls.length > h.listThrowsAfter
+    ) {
+      throw new Error("429 Too Many Requests");
+    }
+    if (h.listQueue.length > 0) {
+      return { records: h.listQueue.shift() ?? [] };
+    }
     return { records: h.listRows };
   },
 }));
@@ -58,7 +73,13 @@ vi.mock("@/lib/atpocket-write-with-import-key", () => ({
     });
     return opts.recordId
       ? undefined
-      : { recordIdHint: "con-new", row: null, location: null };
+      : {
+          ...(h.createReturnsId
+            ? { recordIdHint: "con-new" }
+            : { recordIdHint: null }),
+          row: {},
+          location: null,
+        };
   },
 }));
 
@@ -112,6 +133,9 @@ beforeEach(() => {
   h.writes = [];
   h.auditOps = [];
   h.akiOnCreate = "A0007";
+  h.listQueue = [];
+  h.createReturnsId = true;
+  h.listThrowsAfter = null;
 });
 
 describe("★ 既存レコードが無いとき（新規作成）", () => {
@@ -315,5 +339,117 @@ describe("★ 触らない条件", () => {
 
     expect(res).toMatchObject({ kind: "skipped" });
     expect(h.writes).toHaveLength(0);
+  });
+});
+
+describe("★ @pocket が作成の応答に ID を返さないとき", () => {
+  /*
+   * 実機で確認済みの挙動。
+   *   [customer-info-construction-link]
+   *   作成した工事レコードの ID を取得できませんでした
+   *
+   * 書き込んだ T番号 で引き直す。**作成の前に同じ検索で 0 件だった**ので、
+   * 1件見つかればそれが今作ったレコードになる。
+   */
+  beforeEach(() => {
+    h.createReturnsId = false;
+  });
+
+  it("★ 作成後に T番号 で引き直して recordId を特定する", async () => {
+    h.listQueue = [
+      [], // 作成前の照合: 見つからない
+      [row(88, { "field-1": "T00003420", "field-101": "A0007" })],
+    ];
+
+    const res = await linkCustomerInfoToConstruction(BASE);
+
+    expect(res).toMatchObject({ kind: "created", recordId: "88" });
+  });
+
+  it("★ 引き直した行から Aki番号 を読む（GET を増やさない）", async () => {
+    h.listQueue = [
+      [],
+      [row(88, { "field-1": "T00003420", "field-101": "A0009" })],
+    ];
+
+    const res = await linkCustomerInfoToConstruction(BASE);
+
+    expect(res).toMatchObject({ akiNumber: "A0009" });
+  });
+
+  it("反映が遅れても、待ってから見つかれば特定できる", async () => {
+    h.listQueue = [
+      [], // 作成前
+      [], // 作成直後（まだ一覧に出ていない）
+      [row(88, { "field-1": "T00003420", "field-101": "A0007" })],
+    ];
+
+    const res = await linkCustomerInfoToConstruction(BASE);
+
+    expect(res).toMatchObject({ kind: "created", recordId: "88" });
+  });
+
+  it("★ 特定できなくても登録は成功として扱う", async () => {
+    // 何度引いても見つからない
+    h.listRows = [];
+
+    const res = await linkCustomerInfoToConstruction(BASE);
+
+    // 「作成できなかった」とは伝えない。レコードは実際に出来ている
+    expect(res.kind).toBe("created");
+    expect(res).toMatchObject({ recordId: "", akiNumber: "" });
+    expect(h.writes).toHaveLength(1);
+  });
+
+  it("★ 2件以上一致したら特定しない（待ち直さない）", async () => {
+    h.listQueue = [
+      [],
+      [
+        row(88, { "field-1": "T00003420" }),
+        row(89, { "field-1": "T00003420" }),
+      ],
+    ];
+
+    const res = await linkCustomerInfoToConstruction(BASE);
+
+    expect(res).toMatchObject({ kind: "created", recordId: "" });
+    // 打ち切るので照合は2回まで（作成前1・作成後1）
+    expect(h.listCalls).toHaveLength(2);
+  });
+
+  it("★ 引き直しが例外なら特定しない（待ち直さない）", async () => {
+    // 作成前の照合だけ通し、作成後の引き直しは 429 で落とす
+    h.listThrowsAfter = 1;
+
+    const res = await linkCustomerInfoToConstruction(BASE);
+
+    expect(res).toMatchObject({ kind: "created", recordId: "" });
+    // 例外は待っても直らないので打ち切る（作成前1・作成後1）
+    expect(h.listCalls).toHaveLength(2);
+  });
+
+  it("★ 再保存で工事レコードが二重に作られない", async () => {
+    // 1回目: ID を特定できないまま作成される
+    h.listRows = [];
+    const first = await linkCustomerInfoToConstruction(BASE);
+    expect(first).toMatchObject({ kind: "created", recordId: "" });
+    const createsAfterFirst = h.writes.filter((w) => !w.recordId).length;
+    expect(createsAfterFirst).toBe(1);
+
+    // 2回目: 作成済みのレコードが T番号 で見つかるので更新に回る
+    h.writes = [];
+    h.listRows = [row(88, { "field-1": "T00003420" })];
+    const second = await linkCustomerInfoToConstruction(BASE);
+
+    expect(second).toEqual({ kind: "updated", recordId: "88" });
+    expect(h.writes.filter((w) => !w.recordId)).toHaveLength(0);
+  });
+
+  it("監査ログは recordId を特定できたときだけ記録する", async () => {
+    h.listRows = [];
+    await linkCustomerInfoToConstruction(BASE);
+
+    // 対象レコードが分からない監査ログは残さない
+    expect(h.auditOps).toEqual([]);
   });
 });

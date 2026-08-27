@@ -132,6 +132,42 @@ async function findConstructionRecordByTNumber(opts: {
   return { kind: "not-found" };
 }
 
+/**
+ * 作成直後の再照合の待ち時間（ms）。
+ *
+ * @pocket は作成の応答にレコード ID を返さないので、書いた T番号 で
+ * 引き直すしかない。一覧に載るまで一瞬かかることがあるため少しだけ待つ。
+ * 作成のときにしか通らない経路なので、この呼び出し回数は許容する。
+ */
+const CREATE_LOOKUP_DELAYS_MS = [0, 400, 1200] as const;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 作成したレコードを T番号 で引き直す。
+ *
+ * **作成の前に同じ検索で 0 件だったこと**が前提になっている。
+ * その状態で1件見つかったなら、それは今作ったレコードに他ならない。
+ * 掴み違えようがないので、アポ取得時入力のような作成前後の差分は要らない。
+ *
+ * 複数一致・例外のときは待っても解決しないので、その場で打ち切る。
+ */
+async function findCreatedConstructionRecord(opts: {
+  calAppId: string;
+  tNumberFieldId: string;
+  tNumber: string;
+  fieldsCsv: string;
+}): Promise<FoundConstructionRecord> {
+  for (const delay of CREATE_LOOKUP_DELAYS_MS) {
+    if (delay > 0) await sleep(delay);
+    const found = await findConstructionRecordByTNumber(opts);
+    if (found.kind !== "not-found") return found;
+  }
+  return { kind: "not-found" };
+}
+
 export async function linkCustomerInfoToConstruction(opts: {
   /** お客様情報の T番号（工事レコードの突合キー） */
   tNumber: string;
@@ -294,20 +330,47 @@ export async function linkCustomerInfoToConstruction(opts: {
     });
     invalidateAllCalendarPayloadCache();
 
-    const recordId = created
+    let recordId = created
       ? (atPocketRecordIdFromCreateResult(created) ?? "")
       : "";
 
+    /**
+     * @pocket は作成の応答に ID を返さないことがある（実機で確認済み）。
+     * 書き込んだ T番号 で引き直す。作成の前に同じ検索で 0 件だったので、
+     * 1件見つかればそれが今作ったレコードになる
+     */
+    let createdRecord: Record<string, unknown> | null = null;
+    if (!recordId) {
+      const relocated = await findCreatedConstructionRecord({
+        calAppId,
+        tNumberFieldId,
+        tNumber,
+        fieldsCsv,
+      });
+      if (relocated.kind === "found") {
+        recordId = relocated.recordId;
+        createdRecord = relocated.record;
+      }
+    }
+
     let akiNumber = "";
-    if (recordId && importKeyFieldId) {
-      akiNumber =
-        (await ensureConstructionImportKeyOnRecord(
-          calAppId,
-          recordId,
-          importKeyFieldId,
-          readAuth,
-          fieldsCsv,
-        )) ?? "";
+    if (importKeyFieldId) {
+      // 引き直した行に Aki番号 が載っていればそれを使う（GET を1回減らす）
+      if (createdRecord) {
+        akiNumber =
+          readConstructionTNumberFromRecord(createdRecord, importKeyFieldId) ??
+          "";
+      }
+      if (!akiNumber && recordId) {
+        akiNumber =
+          (await ensureConstructionImportKeyOnRecord(
+            calAppId,
+            recordId,
+            importKeyFieldId,
+            readAuth,
+            fieldsCsv,
+          )) ?? "";
+      }
     }
 
     if (recordId) {
@@ -322,9 +385,15 @@ export async function linkCustomerInfoToConstruction(opts: {
         constructionFields,
       });
     } else {
-      // レコードは作られている。ID が取れないだけなので失敗にはしない
+      /**
+       * レコードは作られている。ID が取れないだけなので失敗にはしない。
+       * Aki番号 の書き戻しだけ諦める。
+       *
+       * 次に施工予定日を変えて保存すると、作成前の照合が今回のレコードを
+       * 拾って更新に回るので、二重には作られない
+       */
       console.error(
-        "[customer-info-construction-link] 作成した工事レコードの ID を取得できませんでした",
+        "[customer-info-construction-link] 作成した工事レコードの ID を特定できませんでした（Aki番号の書き戻しは行いません）",
         { calAppId },
       );
     }
