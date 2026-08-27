@@ -104,11 +104,17 @@ export function readConstructionTNumberFromRecord(
   return t || null;
 }
 
-/** 自動採番直後: GET で T番号が付くまで短く待つ（空枠は既存 T を読むだけ） */
-export async function ensureConstructionTNumberOnRecord(
+/**
+ * 工事レコードから取込キー（Aki番号）を読む。
+ *
+ * 作成直後は採番が反映されるまで一瞬空のことがあるので、
+ * T番号でやっていたのと同じ短いポーリングをこちらへ移した。
+ * 工事アプリはもう T番号 を採番しないため、T番号 を待っても永久に空になる。
+ */
+export async function ensureConstructionImportKeyOnRecord(
   calAppId: string,
   recordId: string,
-  tNumberFieldId: string,
+  importKeyFieldId: string,
   pocketAuth: AtPocketFetchAuth,
   fieldsCsv: string,
 ): Promise<string | null> {
@@ -119,25 +125,39 @@ export async function ensureConstructionTNumberOnRecord(
     fieldsCsv,
   );
   if (row?.record && typeof row.record === "object") {
-    const t = readConstructionTNumberFromRecord(
+    const key = readConstructionTNumberFromRecord(
       row.record as Record<string, unknown>,
-      tNumberFieldId,
+      importKeyFieldId,
     );
-    if (t) return t;
+    if (key) return key;
   }
   return pollConstructionTNumberByRecordId(
     calAppId,
     recordId,
-    tNumberFieldId,
+    importKeyFieldId,
     pocketAuth,
     fieldsCsv,
   );
 }
 
-/** 空枠 PUT / 新規登録後 PUT で共通のペイロード */
+/**
+ * 空枠 PUT / 新規登録後 PUT で共通のペイロード。
+ *
+ * ■ 取込キー（Aki番号）
+ * @pocket は取込キーの列が本文に無いと 400 を返すので必ず載せる。
+ * 作成時は空文字（@pocket が採番する）、更新時は既存値を載せる。
+ *
+ * ■ T番号
+ * 工事アプリでは採番されない。お客様情報アプリが採番した値を
+ * 転記してくるだけなので、**値があるときだけ**載せる。
+ * 空文字で載せると、既に入っている T番号 を消してしまう。
+ */
 export function buildConstructionFillPatch(opts: {
   resolvedCustomer: string;
   resolvedHousing: string;
+  /** 取込キー（Aki番号）の列。作成時は空文字を載せる */
+  resolvedImportKey?: string;
+  importKeyValue?: unknown;
   resolvedTNumber: string;
   tNumberValue: unknown;
   customerName: string;
@@ -155,10 +175,17 @@ export function buildConstructionFillPatch(opts: {
   contractor?: string;
 }): Record<string, unknown> {
   const patch: Record<string, unknown> = {
-    [opts.resolvedTNumber]: opts.tNumberValue,
     [opts.resolvedCustomer]: opts.customerName,
     [opts.resolvedHousing]: opts.housingRaw,
   };
+  const importKeyId = opts.resolvedImportKey?.trim();
+  if (importKeyId) {
+    // 値が無くても列は載せる。空なら @pocket が採番する
+    patch[importKeyId] = opts.importKeyValue ?? "";
+  }
+  // T番号は転記されてくる値。空で上書きしない
+  const tNumber = coerceTNumberDisplay(opts.tNumberValue);
+  if (tNumber) patch[opts.resolvedTNumber] = tNumber;
   if (opts.resolvedHandlerField != null && opts.handlerValue != null) {
     patch[opts.resolvedHandlerField] = opts.handlerValue;
   }

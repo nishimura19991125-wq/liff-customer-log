@@ -11,6 +11,7 @@ import {
   constructionTitleFieldIsEmpty,
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
+  resolveConstructionImportKeyFieldId,
   resolveConstructionTNumberFieldId,
   resolveEmptyFillHousingStatusFieldId,
 } from "@/lib/calendar-kojo";
@@ -217,10 +218,28 @@ export async function POST(request: Request) {
       );
     }
 
+
+    /**
+     * 取込キー（Aki番号）。@pocket は取込キーの列が本文に無いと更新を拒む。
+     * 以前は T番号 がこの役だったが、採番元がお客様情報アプリへ移った
+     */
+    const resolvedImportKey =
+      resolveConstructionImportKeyFieldId(constructionFields);
+    if (!resolvedImportKey) {
+      return NextResponse.json(
+        {
+          error:
+            "取込キー（Aki番号）フィールドの uniqueId が分かりません。CALENDAR_CONSTRUCTION_IMPORT_KEY_FIELD_ID を .env に設定するか、アプリに「Aki番号」見出しのフィールドを用意してください。",
+        },
+        { status: 500 },
+      );
+    }
+
     const fieldsCsv = uniqueFieldsCsv(
       resolvedCustomer,
       resolvedHousing,
       resolvedTNumber,
+      resolvedImportKey,
       fids.startDate,
       fids.shigumi,
       fids.panelWork,
@@ -245,20 +264,22 @@ export async function POST(request: Request) {
       return NextResponse.json(body, { status });
     }
 
-    const existingT = readConstructionTNumberFromRecord(recObj, resolvedTNumber);
-    if (!existingT) {
-      return NextResponse.json(
-        {
-          error:
-            "このレコードから T番号 を取得できませんでした。@pocket で空枠に T番号 が入っているか、フィールド設定を確認してください。",
-        },
-        { status: 409 },
-      );
-    }
+    /**
+     * T番号 は**空でもよい**。工事アプリで採番しなくなったため、
+     * この空き枠がまだお客様情報と紐づいていなければ入っていない。
+     * 弾かずに進め、連携のあとに書き戻す
+     */
+    const existingT =
+      readConstructionTNumberFromRecord(recObj, resolvedTNumber) ?? "";
+
+    const existingAki =
+      readConstructionTNumberFromRecord(recObj, resolvedImportKey) ?? "";
 
     const patch = buildConstructionFillPatch({
       resolvedCustomer,
       resolvedHousing,
+      resolvedImportKey,
+      importKeyValue: existingAki,
       resolvedTNumber,
       tNumberValue: existingT,
       customerName,
@@ -290,10 +311,11 @@ export async function POST(request: Request) {
       appId: calAppId,
       recordId,
       payload: patch,
-      importKeyFieldId: resolvedTNumber,
+      importKeyFieldId: resolvedImportKey,
       existingRecord: recObj,
       readAuth,
       writeAuth,
+      allowMissingImportKey: true,
     });
     constructionUpdated = true;
 
@@ -314,6 +336,8 @@ export async function POST(request: Request) {
     return finalizeConstructionCalendarSave({
       calAppId,
       constructionRecordId: recordId,
+      constructionUniqueKey: existingT,
+      constructionImportKey: existingAki,
       customerName,
       housingStatus: housingRaw,
       constructionFields,

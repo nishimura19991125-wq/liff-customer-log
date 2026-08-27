@@ -15,6 +15,7 @@ import {
 } from "@/lib/calendar-construction-pocket-common";
 import {
   resolveConfiguredFieldToSchemaUniqueId,
+  resolveConstructionImportKeyFieldId,
   resolveConstructionTNumberFieldId,
 } from "@/lib/calendar-kojo";
 import {
@@ -143,7 +144,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: msg }, { status: 400 });
     }
 
-    const fieldsCsv = uniqueFieldsCsv(resolvedHandlerField, resolvedTNumber);
+    /** 取込キー（Aki番号）。更新の PUT に同送する */
+    const resolvedImportKey =
+      resolveConstructionImportKeyFieldId(constructionFields);
+
+    const fieldsCsv = uniqueFieldsCsv(
+      resolvedHandlerField,
+      resolvedTNumber,
+      resolvedImportKey ?? undefined,
+    );
     const recRow = await fetchConstructionRecordRow(
       calAppId,
       recordId,
@@ -157,19 +166,28 @@ export async function POST(request: Request) {
       );
     }
 
+    const recObj = recRow.record as Record<string, unknown>;
     const existingT = readConstructionTNumberFromRecord(
-      recRow.record as Record<string, unknown>,
+      recObj,
       resolvedTNumber,
     );
+    /**
+     * この導線はお客様情報アプリを T番号 で引くため、T番号 は必須のまま。
+     * まだ連携されていない案件（T番号 が空）はここでは扱えない
+     */
     if (!existingT) {
       return NextResponse.json(
         {
           error:
-            "このレコードから T番号 を取得できませんでした。@pocket で T番号 が入っているか、フィールド設定を確認してください。",
+            "このレコードから T番号 を取得できませんでした。お客様情報アプリとの連携がまだの案件では工事対応者を変更できません。",
         },
         { status: 409 },
       );
     }
+
+    const existingAki = resolvedImportKey
+      ? readConstructionTNumberFromRecord(recObj, resolvedImportKey)
+      : null;
 
     /**
      * タスクP: お客様情報アプリ → 工事カレンダーの順で書く。
@@ -200,9 +218,16 @@ export async function POST(request: Request) {
         : undefined;
 
     const writeAuth = { apiKey: apiKeyForCalendarWrite() };
-    const handlerPatch = {
+    /**
+     * 取込キーは Aki番号。@pocket は取込キーの列が本文に無いと更新を拒む。
+     * T番号 は表示・突合用に据え置きで載せる（値は変えない）
+     */
+    const handlerPatch: Record<string, unknown> = {
       [resolvedTNumber]: existingT,
       [resolvedHandlerField]: resolvedName.name,
+      ...(resolvedImportKey && existingAki
+        ? { [resolvedImportKey]: existingAki }
+        : {}),
     };
     try {
       await updateRecord(calAppId, recordId, handlerPatch, writeAuth);

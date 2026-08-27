@@ -22,6 +22,8 @@ const APP_FIELDS = [
   { uniqueId: "field-3", caption: "施工予定日" },
   { uniqueId: "field-4", caption: "施工会社" },
   { uniqueId: "field-5", caption: "住宅ステータス" },
+  // 取込キー。T番号 の採番元がお客様情報アプリへ移ったため必須になった
+  { uniqueId: "field-101", caption: "Aki番号" },
 ];
 
 vi.mock("@/lib/request-auth", () => ({

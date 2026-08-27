@@ -12,7 +12,7 @@ import { fieldCaptionByUniqueId } from "@/lib/customer-info-record";
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
 import {
   buildConstructionFillPatch,
-  ensureConstructionTNumberOnRecord,
+  ensureConstructionImportKeyOnRecord,
   resolveConstructionRecordAfterCreate,
   uniqueFieldsCsv,
 } from "@/lib/calendar-construction-pocket-common";
@@ -24,6 +24,7 @@ import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
 import {
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
+  resolveConstructionImportKeyFieldId,
   resolveConstructionTNumberFieldId,
   resolveEmptyFillHousingStatusFieldId,
 } from "@/lib/calendar-kojo";
@@ -59,8 +60,15 @@ type Body = {
 };
 
 /**
- * 工事カレンダー新規登録（工事日未定・日程都度調整案件）。工事空枠登録（fill-empty-slot）と同じ流れ:
- * 工事アプリへ書き込み → recordId 確定 → GET で T番号確認 → PUT → お客様情報連携
+ * 工事カレンダー新規登録（工事日未定・日程都度調整案件）。
+ *
+ * 工事アプリへ書き込み（取込キー＝Aki番号は空で送り @pocket が採番）
+ *   → recordId 確定 → GET で Aki番号確認 → PUT
+ *   → お客様情報連携（Aki番号で突合。ここで T番号 が採番される）
+ *   → 採番された T番号 を工事アプリへ書き戻す（finalizeConstructionCalendarSave 内）
+ *
+ * T番号 を採番するのは**お客様情報アプリ**で、工事アプリではない。
+ * 工事アプリの T番号 は転記されてくる値を入れるだけのテキスト列。
  */
 export async function POST(request: Request) {
   const auth = await resolveCallerLineAuth(request);
@@ -222,10 +230,24 @@ export async function POST(request: Request) {
       );
     }
 
+    /** 取込キー（Aki番号）。これが無いと @pocket が作成を受け付けない */
+    const resolvedImportKey =
+      resolveConstructionImportKeyFieldId(constructionFields);
+    if (!resolvedImportKey) {
+      return NextResponse.json(
+        {
+          error:
+            "取込キー（Aki番号）フィールドの uniqueId が分かりません。CALENDAR_CONSTRUCTION_IMPORT_KEY_FIELD_ID を .env に設定するか、アプリに「Aki番号」見出しのフィールドを用意してください。",
+        },
+        { status: 500 },
+      );
+    }
+
     const fieldsCsv = uniqueFieldsCsv(
       resolvedCustomer,
       resolvedHousing,
       resolvedTNumber,
+      resolvedImportKey,
       fids.startDate,
       fids.contractor,
     );
@@ -244,7 +266,11 @@ export async function POST(request: Request) {
       payload: buildConstructionFillPatch({
         resolvedCustomer,
         resolvedHousing,
+        resolvedImportKey,
+        // 空で送る。@pocket が Aki番号 を採番する
+        importKeyValue: "",
         resolvedTNumber,
+        // 工事アプリでは採番されない。お客様情報の採番後に書き戻す
         tNumberValue: "",
         customerName,
         housingRaw,
@@ -253,7 +279,7 @@ export async function POST(request: Request) {
         fids,
         ...patchExtras,
       }),
-      importKeyFieldId: resolvedTNumber,
+      importKeyFieldId: resolvedImportKey,
       writeAuth,
     });
     if (!createResult) {
@@ -271,7 +297,8 @@ export async function POST(request: Request) {
         customerFieldId: resolvedCustomer,
         housingFieldId: resolvedHousing,
         startDateFieldId: fids.startDate?.trim() || undefined,
-        tNumberFieldId: resolvedTNumber,
+        // 作成直後の照合で読むのは取込キー（Aki番号）。T番号 はまだ空
+        tNumberFieldId: resolvedImportKey,
       },
       readAuth,
     );
@@ -284,7 +311,7 @@ export async function POST(request: Request) {
       // 実際に発生するかを観測するために記録する。
       console.error(
         "[api/calendar/create-record] recordId を解決できず監査ログを記録できません",
-        { uniqueKey, customerName },
+        { akiNumber: uniqueKey, customerName },
       );
     }
 
@@ -300,30 +327,38 @@ export async function POST(request: Request) {
     }
 
     if (recordId) {
-      const tNumber = await ensureConstructionTNumberOnRecord(
+      /**
+       * 待つのは Aki番号（工事アプリの自動採番）。
+       * T番号 はお客様情報アプリが採番するので、ここで待っても永久に空になる
+       */
+      const akiNumber = await ensureConstructionImportKeyOnRecord(
         calAppId,
         recordId,
-        resolvedTNumber,
+        resolvedImportKey,
         writeAuth,
         fieldsCsv,
       );
-      uniqueKey = uniqueKey ?? tNumber;
+      uniqueKey = uniqueKey ?? akiNumber;
       if (!uniqueKey) {
-        return NextResponse.json(
-          {
-            error:
-              "登録したレコードから T番号 を取得できませんでした。@pocket で T番号 が採番されているか、フィールド設定を確認してください。",
-            constructionSaved: true,
-          },
-          { status: 409 },
+        /**
+         * レコードは作成済み。ここで失敗を返すと利用者が押し直して
+         * 重複レコードになる。Aki番号 が読めないと突合できないので
+         * お客様情報連携は諦めるが、登録そのものは成功として扱う
+         */
+        console.error(
+          "[api/calendar/create-record] Aki番号を取得できないため、お客様情報連携を行いません",
+          { calAppId, recordId },
         );
       }
 
       const patch = buildConstructionFillPatch({
         resolvedCustomer,
         resolvedHousing,
+        resolvedImportKey,
+        importKeyValue: uniqueKey ?? "",
         resolvedTNumber,
-        tNumberValue: uniqueKey,
+        // T番号 はまだ無い。空で上書きしないよう空文字を渡す
+        tNumberValue: "",
         customerName,
         housingRaw,
         resolvedHandlerField,
@@ -336,9 +371,10 @@ export async function POST(request: Request) {
         appId: calAppId,
         recordId,
         payload: patch,
-        importKeyFieldId: resolvedTNumber,
+        importKeyFieldId: resolvedImportKey,
         readAuth,
         writeAuth,
+        allowMissingImportKey: true,
       });
 
       // 新規登録（ベストエフォート。登録は確定済み）
@@ -347,7 +383,7 @@ export async function POST(request: Request) {
         operation: "create",
         targetAppId: calAppId,
         targetRecordId: recordId,
-        targetTNumber: uniqueKey,
+        targetTNumber: uniqueKey ?? "",
         changes: computeAuditChanges(null, patch, {
           labelOf: (fieldId) =>
             fieldCaptionByUniqueId(constructionFields, fieldId),
@@ -358,7 +394,8 @@ export async function POST(request: Request) {
     return finalizeConstructionCalendarSave({
       calAppId,
       constructionRecordId: recordId,
-      constructionUniqueKey: uniqueKey,
+      // 新規なので工事側に T番号 は無い。突合は Aki番号 で行う
+      constructionImportKey: uniqueKey,
       customerName,
       housingStatus: housingRaw,
       constructionFields,

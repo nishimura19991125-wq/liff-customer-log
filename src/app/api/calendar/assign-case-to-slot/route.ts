@@ -16,7 +16,7 @@ import {
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
 import {
   buildConstructionFillPatch,
-  ensureConstructionTNumberOnRecord,
+  ensureConstructionImportKeyOnRecord,
   readConstructionTNumberFromRecord,
   uniqueFieldsCsv,
 } from "@/lib/calendar-construction-pocket-common";
@@ -28,6 +28,7 @@ import {
   pickRecordValueByFieldAliases,
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
+  resolveConstructionImportKeyFieldId,
   resolveConstructionTNumberFieldId,
   resolveEmptyFillHousingStatusFieldId,
 } from "@/lib/calendar-kojo";
@@ -216,10 +217,28 @@ export async function POST(request: Request) {
       return NextResponse.json(conflictBody, { status });
     }
 
+
+    /**
+     * 取込キー（Aki番号）。@pocket は取込キーの列が本文に無いと更新を拒む。
+     * 以前は T番号 がこの役だったが、採番元がお客様情報アプリへ移った
+     */
+    const resolvedImportKey =
+      resolveConstructionImportKeyFieldId(constructionFields);
+    if (!resolvedImportKey) {
+      return NextResponse.json(
+        {
+          error:
+            "取込キー（Aki番号）フィールドの uniqueId が分かりません。CALENDAR_CONSTRUCTION_IMPORT_KEY_FIELD_ID を .env に設定するか、アプリに「Aki番号」見出しのフィールドを用意してください。",
+        },
+        { status: 500 },
+      );
+    }
+
     const caseFieldsCsv = uniqueFieldsCsv(
       titleId,
       resolvedHousing,
       resolvedTNumber,
+      resolvedImportKey,
       startDateId,
       fids.shigumi,
       fids.panelWork,
@@ -276,27 +295,29 @@ export async function POST(request: Request) {
       pickRecordValueByFieldAliases(caseRec, resolvedHousing),
     );
 
-    let existingT = readConstructionTNumberFromRecord(caseRec, resolvedTNumber);
-    if (!existingT) {
-      existingT = await ensureConstructionTNumberOnRecord(
-        calAppId,
-        caseRecordId,
-        resolvedTNumber,
-        readAuth,
-        caseFieldsCsv,
-      );
-    }
-    if (!existingT) {
-      return NextResponse.json(
-        {
-          error:
-            "案件の T番号 を取得できません。@pocket で T番号 が入っているか、フィールド設定を確認してください。",
-        },
-        { status: 400 },
-      );
+    /**
+     * T番号 は**空でもよい**。工事アプリで採番しなくなったため、
+     * まだお客様情報と紐づいていない案件には入っていない。弾かずに進める
+     */
+    const existingT =
+      readConstructionTNumberFromRecord(caseRec, resolvedTNumber) ?? "";
+
+    /** 取込キー（Aki番号）。反映待ちがありうるので短くポーリングする */
+    let existingAki =
+      readConstructionTNumberFromRecord(caseRec, resolvedImportKey) ?? "";
+    if (!existingAki) {
+      existingAki =
+        (await ensureConstructionImportKeyOnRecord(
+          calAppId,
+          caseRecordId,
+          resolvedImportKey,
+          readAuth,
+          caseFieldsCsv,
+        )) ?? "";
     }
 
-    if (await isCustomerTNumberCancelled(existingT)) {
+    // T番号 が無い案件はお客様情報にも無いので、キャンセル済みではありえない
+    if (existingT && (await isCustomerTNumberCancelled(existingT))) {
       return NextResponse.json(
         {
           error:
@@ -346,6 +367,8 @@ export async function POST(request: Request) {
     const patch = buildConstructionFillPatch({
       resolvedCustomer: titleId,
       resolvedHousing,
+      resolvedImportKey,
+      importKeyValue: existingAki,
       resolvedTNumber,
       tNumberValue: existingT,
       customerName,
@@ -359,7 +382,8 @@ export async function POST(request: Request) {
       appId: calAppId,
       recordId: caseRecordId,
       payload: patch,
-      importKeyFieldId: resolvedTNumber,
+      importKeyFieldId: resolvedImportKey,
+      allowMissingImportKey: true,
       existingRecord: caseRec,
       readAuth,
       writeAuth,
@@ -443,6 +467,7 @@ export async function POST(request: Request) {
       calAppId,
       constructionRecordId: caseRecordId,
       constructionUniqueKey: existingT,
+      constructionImportKey: existingAki,
       customerName,
       housingStatus: housingStatus || undefined,
       constructionFields,
