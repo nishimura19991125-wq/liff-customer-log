@@ -30,6 +30,13 @@ import { fieldCaptionByUniqueId } from "@/lib/customer-info-record";
 /**
  * お客様情報で施工予定日を入れたとき、工事登録アプリへレコードを載せる（第2段階）。
  *
+ * ⚠ **現在この連携は既定で動かない。**
+ *    施工予定日の割り当ては工事カレンダーからのみ行う方針に変わったため、
+ *    お客様情報の保存からは呼ばないようにしている。
+ *    処理そのものは第3段階（未定案件の抽出元の変更）で一部を再利用する
+ *    見込みがあるので消さずに残してある。
+ *    動かすときは customerInfoConstructionLinkOnSaveEnabled() を参照。
+ *
  * 第1段階（b7f4169）で、施工予定日が未定の新規登録は工事登録アプリに
  * 作らないようにした。その案件の日程が決まったらここで工事側へ載せる。
  *
@@ -56,6 +63,24 @@ export type CustomerInfoConstructionLinkResult =
   | { kind: "updated"; recordId: string }
   /** 失敗。お客様情報の保存は成功しているので警告として伝える */
   | { kind: "failed"; warning: string };
+
+/**
+ * お客様情報の保存から工事登録アプリへ連携するか。
+ *
+ * 既定は **false**。施工予定日の割り当ては工事カレンダーから行う方針で、
+ * お客様情報側からの連携は要らなくなった。
+ * コメントアウトではなくこの入口で止めているのは、処理を型チェックと
+ * テストの対象に残したままにするため（動かないコードは腐る）。
+ *
+ * 方針が戻ったときは CUSTOMER_INFO_CONSTRUCTION_LINK_ON_SAVE=true を設定する。
+ * そのときは保存前レコードから施工予定日・お客様名・住宅ステータス・
+ * 工事対応者を読む必要がある（呼び出し側で同じ条件で分岐している）。
+ */
+export function customerInfoConstructionLinkOnSaveEnabled(): boolean {
+  return (
+    process.env.CUSTOMER_INFO_CONSTRUCTION_LINK_ON_SAVE?.trim() === "true"
+  );
+}
 
 const LINK_FAILED_WARNING =
   "お客様情報は保存しましたが、工事カレンダーへの反映に失敗しました。時間をおいて施工予定日を保存し直すか、DX事業部へ連絡してください。";
