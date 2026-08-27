@@ -108,6 +108,7 @@ beforeEach(() => {
   process.env.CUSTOMER_INFO_APP_ID = "app-cust";
   process.env.CUSTOMER_INFO_CONSTRUCTION_UNIQUE_KEY_FIELD_ID = "field-268";
   process.env.CUSTOMER_INFO_AKI_NUMBER_FIELD_ID = "field-267";
+  process.env.CUSTOMER_INFO_CUSTOMER_NAME_FIELD_ID = "field-2";
   h.customerRecords = {};
   h.lookup = {};
   h.lookupCalls = [];
@@ -222,6 +223,78 @@ describe("★ キーが無いとき", () => {
     delete process.env.CUSTOMER_INFO_APP_ID;
 
     const res = await sync();
+
+    expect(res).toEqual({ kind: "skipped" });
+    expect(h.created).toHaveLength(0);
+  });
+});
+
+describe("★ customerInfoOnly（施工予定日が未定・工事レコードが無い）", () => {
+  function syncOnly(over: Record<string, unknown> = {}) {
+    return syncConstructionRecordToCustomerInfoApp({
+      calAppId: "app-con",
+      customerInfoOnly: true,
+      customerName: "山田 太郎",
+      housingStatus: "既築案件",
+      ...over,
+    });
+  }
+
+  it("★ 工事アプリを一切読まない（レコード・列定義とも）", async () => {
+    // fetchRecordById のモックは con-1 だけを返す。呼ばれていないことを
+    // 「工事側の値が payload に出てこない」ことで確かめる
+    await syncOnly();
+
+    expect(h.created).toHaveLength(1);
+    expect(h.created[0]).not.toHaveProperty("field-267");
+  });
+
+  it("★ 必ず新規作成になる（突合キーが無いため更新しない）", async () => {
+    // 同じ顧客名の既存レコードがあっても拾わない
+    h.lookup["field-268"] = { T00002222: "cust-old" };
+    h.lookup["field-267"] = { A0001: "cust-9" };
+
+    await syncOnly();
+
+    expect(h.created).toHaveLength(1);
+    expect(h.updated.filter((u) => u.recordId !== "cust-new")).toHaveLength(0);
+  });
+
+  it("★ Aki番号 は空のまま（採番されていないため）", async () => {
+    await syncOnly();
+
+    expect(h.created[0]).not.toHaveProperty("field-267");
+  });
+
+  it("★ T番号 の列は空文字で載せる（お客様情報側で採番される）", async () => {
+    await syncOnly();
+
+    expect(h.created[0]).toHaveProperty("field-268", "");
+  });
+
+  it("★ 採番された T番号 を返す", async () => {
+    const res = await syncOnly();
+
+    expect(res).toMatchObject({ kind: "synced", tNumber: "T00003420" });
+  });
+
+  it("お客様名・住宅ステータスは載せる", async () => {
+    await syncOnly();
+
+    expect(h.created[0]!["field-2"]).toBe("山田 太郎");
+    expect(h.created[0]!["field-5"]).toBe("既築案件");
+  });
+
+  it("突合の照合そのものを行わない（@pocket を無駄に叩かない）", async () => {
+    await syncOnly();
+
+    expect(h.lookupCalls).toHaveLength(0);
+  });
+
+  it("CUSTOMER_INFO_APP_ID 未設定なら何もしない", async () => {
+    delete process.env.CUSTOMER_INFO_APP_ID;
+
+    const res = await syncOnly();
 
     expect(res).toEqual({ kind: "skipped" });
     expect(h.created).toHaveLength(0);

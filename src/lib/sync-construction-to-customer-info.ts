@@ -149,6 +149,10 @@ function coercePocketPlainString(raw: unknown): string {
  * お客様情報側で自動採番される列なので、値を送るのは不正。
  * 書き込みのあとに読み取り、戻り値で返す。呼び出し側がそれを工事アプリへ
  * 書き戻すことで、両アプリの T番号 がそろう。
+ *
+ * ■ 工事レコードが無い場合（customerInfoOnly）
+ * 施工予定日が未定の案件は工事アプリに作らない。工事レコードを読む処理を
+ * すべて飛ばし、お客様情報にだけ作る。突合キーが無いので必ず新規作成になる。
  */
 export async function syncConstructionRecordToCustomerInfoApp(opts: {
   calAppId: string;
@@ -161,8 +165,19 @@ export async function syncConstructionRecordToCustomerInfoApp(opts: {
   customerName: string;
   /** LIFF で選択した住宅ステータス（工事レコード再取得より優先） */
   housingStatus?: string;
-  constructionFields: AtPocketFieldRow[];
-  calendarAuth: AtPocketFetchAuth;
+  /**
+   * 工事アプリを使わず、お客様情報にだけ作る。
+   *
+   * 施工予定日が未定の案件で使う。**必ず新規作成になる**ので、
+   * 「工事レコードを特定できなかった」ときのフォールバックとして
+   * 自動的にこの経路へ落とさないこと（顧客が二重にできる）。
+   * 呼び出し側が意図して立てる指定にしている
+   */
+  customerInfoOnly?: boolean;
+  /** customerInfoOnly のときの施工会社。工事レコードから読めないため */
+  contractor?: string;
+  constructionFields?: AtPocketFieldRow[];
+  calendarAuth?: AtPocketFetchAuth;
   /** LIFF ログイン者の LINE ID（sub）。AP/CL担当者の自動転記に使用 */
   lineUserId?: string;
 }): Promise<CustomerInfoSyncResult> {
@@ -400,8 +415,10 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   constructionImportKey?: string;
   customerName: string;
   housingStatus?: string;
-  constructionFields: AtPocketFieldRow[];
-  calendarAuth: AtPocketFetchAuth;
+  customerInfoOnly?: boolean;
+  contractor?: string;
+  constructionFields?: AtPocketFieldRow[];
+  calendarAuth?: AtPocketFetchAuth;
   lineUserId?: string;
 }): Promise<CustomerInfoSyncResult> {
   const customerAppId = process.env.CUSTOMER_INFO_APP_ID?.trim();
@@ -409,10 +426,25 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     return { kind: "skipped" };
   }
 
-  const constructionRecordId = opts.constructionRecordId?.trim() || "";
-  const keyFromOpts = opts.constructionUniqueKey?.trim() || "";
-  const akiFromOpts = opts.constructionImportKey?.trim() || "";
-  if (!constructionRecordId && !keyFromOpts && !akiFromOpts) {
+  const customerInfoOnly = opts.customerInfoOnly === true;
+  const constructionFields: AtPocketFieldRow[] = opts.constructionFields ?? [];
+  /** 工事アプリを読む経路でだけ使う。customerInfoOnly では触らない */
+  const calendarAuth: AtPocketFetchAuth = opts.calendarAuth ?? { apiKey: "" };
+  const constructionRecordId = customerInfoOnly
+    ? ""
+    : opts.constructionRecordId?.trim() || "";
+  const keyFromOpts = customerInfoOnly
+    ? ""
+    : opts.constructionUniqueKey?.trim() || "";
+  const akiFromOpts = customerInfoOnly
+    ? ""
+    : opts.constructionImportKey?.trim() || "";
+  if (
+    !customerInfoOnly &&
+    !constructionRecordId &&
+    !keyFromOpts &&
+    !akiFromOpts
+  ) {
     return {
       kind: "failed",
       error:
@@ -431,9 +463,10 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   }
 
   const constructionKeyField = resolveConstructionTNumberFieldId(
-    opts.constructionFields,
+    constructionFields,
   );
-  if (!constructionKeyField) {
+  // customerInfoOnly では工事アプリを一切読まないので、この列は要らない
+  if (!constructionKeyField && !customerInfoOnly) {
     return {
       kind: "failed",
       error:
@@ -442,7 +475,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   }
   /** 工事アプリの取込キー（Aki番号）。突合の主キー */
   const constructionAkiField = resolveConstructionImportKeyFieldId(
-    opts.constructionFields,
+    constructionFields,
   );
 
   const customerAuth: AtPocketFetchAuth = {
@@ -478,7 +511,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   }
 
   const constructionRegFields =
-    resolveConstructionRegistrationNumberFieldIds(opts.constructionFields);
+    resolveConstructionRegistrationNumberFieldIds(constructionFields);
   const customerRegFields =
     resolveCustomerInfoRegistrationNumberFieldIds(customerFields);
 
@@ -524,9 +557,9 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     return null;
   })();
 
-  const constructionFids = resolveConstructionFieldIds(opts.constructionFields);
+  const constructionFids = resolveConstructionFieldIds(constructionFields);
   const constructionHousingFieldId =
-    resolveEmptyFillHousingStatusFieldId(opts.constructionFields);
+    resolveEmptyFillHousingStatusFieldId(constructionFields);
   const customerHousingFieldId = (() => {
     const fromEnv =
       process.env.CUSTOMER_INFO_HOUSING_STATUS_FIELD_ID?.trim() || "";
@@ -576,14 +609,14 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     let recRow = await fetchRecordById(
       opts.calAppId,
       constructionRecordId,
-      opts.calendarAuth,
+      calendarAuth,
       fieldsCsv,
     );
     if (!recRow?.record) {
       recRow = await fetchRecordById(
         opts.calAppId,
         constructionRecordId,
-        opts.calendarAuth,
+        calendarAuth,
       );
     }
 
@@ -595,7 +628,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     }
 
     recObj = recRow.record as Record<string, unknown>;
-    if (!uniqueKey) {
+    if (!uniqueKey && constructionKeyField) {
       uniqueKey = coercePocketPlainString(
         pickRecordValueByFieldAliases(recObj, constructionKeyField),
       );
@@ -620,14 +653,18 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       opts.calAppId,
       constructionRecordId,
       constructionAkiField,
-      opts.calendarAuth,
+      calendarAuth,
       fieldsCsv,
       SYNC_TNUMBER_POLL_DELAYS_MS,
     );
     if (polled) akiKey = polled;
   }
 
-  if (!akiKey && !uniqueKey) {
+  /**
+   * customerInfoOnly は突合キーを持たない（工事レコードが無いため）。
+   * 常に新規作成になる。ここで失敗にしない
+   */
+  if (!customerInfoOnly && !akiKey && !uniqueKey) {
     return {
       kind: "failed",
       error:
@@ -647,12 +684,18 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
    * 防いでいたが、読み直しが1回でも空を返すと消し損ねて上書きが通ってしまう。
    * 判定を先に済ませ、既存レコードでは**そもそも payload に載せない**。
    */
-  const existing = await findExistingCustomerInfoRecord({
-    akiFieldId: customerAkiFieldId,
-    akiValue: akiKey,
-    tNumberFieldId: resolvedCustomerKey,
-    tNumberValue: uniqueKey,
-  });
+  /**
+   * customerInfoOnly は Aki番号 も T番号 も持たないので照合できない。
+   * 引くキーが無いまま探すと、条件なしで最初の1件を掴みかねないので引かない
+   */
+  const existing = customerInfoOnly
+    ? null
+    : await findExistingCustomerInfoRecord({
+        akiFieldId: customerAkiFieldId,
+        akiValue: akiKey,
+        tNumberFieldId: resolvedCustomerKey,
+        tNumberValue: uniqueKey,
+      });
   const existingId = existing?.recordId ?? null;
 
   const customerRecord: Record<string, unknown> = {};
@@ -695,6 +738,17 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     }
     if (housingValue) {
       customerRecord[customerHousingFieldId] = housingValue;
+    }
+  }
+
+  /**
+   * 施工会社。工事レコードがあればそこから、無ければ画面の入力から。
+   * 施工予定日は customerInfoOnly では未定なので載せない
+   */
+  if (!recObj && customerContractorFieldId) {
+    const contractor = (opts.contractor ?? "").trim();
+    if (contractor) {
+      customerRecord[customerContractorFieldId] = contractor;
     }
   }
 
