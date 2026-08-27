@@ -3,15 +3,22 @@ import "server-only";
 import { NextResponse } from "next/server";
 
 import type { AtPocketFetchAuth, AtPocketFieldRow } from "@/lib/atpocket";
+import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
 import { buildCalendarPatchAfterConstructionSave } from "@/lib/calendar-record-patch-server";
+import {
+  resolveConstructionImportKeyFieldId,
+  resolveConstructionTNumberFieldId,
+} from "@/lib/calendar-kojo";
 import { syncConstructionRecordToCustomerInfoApp } from "@/lib/sync-construction-to-customer-info";
 
 /** 工事空枠更新・工事日未定新規のいずれも同じ後処理（お客様情報連携→カレンダーパッチ） */
 export async function finalizeConstructionCalendarSave(opts: {
   calAppId: string;
   constructionRecordId: string | null;
-  /** 工事レコードの T番号（recordId が取れないときのお客様情報連携用） */
+  /** 工事レコードの T番号（既存レコードの後方互換の突合に使う） */
   constructionUniqueKey?: string | null;
+  /** 工事レコードの取込キー（Aki番号）。お客様情報との突合の主キー */
+  constructionImportKey?: string | null;
   customerName: string;
   /** LIFF で選択した住宅ステータス（お客様情報・工事アプリ連携用） */
   housingStatus?: string;
@@ -28,8 +35,9 @@ export async function finalizeConstructionCalendarSave(opts: {
   const savedVerb = opts.savedVerb ?? "更新";
   const recordId = opts.constructionRecordId?.trim() || null;
   const uniqueKey = opts.constructionUniqueKey?.trim() || null;
+  const importKey = opts.constructionImportKey?.trim() || null;
 
-  if (!recordId && !uniqueKey) {
+  if (!recordId && !uniqueKey && !importKey) {
     return NextResponse.json(
       {
         error:
@@ -46,6 +54,7 @@ export async function finalizeConstructionCalendarSave(opts: {
     calAppId: opts.calAppId,
     constructionRecordId: recordId ?? undefined,
     constructionUniqueKey: uniqueKey ?? undefined,
+    constructionImportKey: importKey ?? undefined,
     customerName: opts.customerName,
     housingStatus: opts.housingStatus,
     constructionFields: opts.constructionFields,
@@ -61,6 +70,50 @@ export async function finalizeConstructionCalendarSave(opts: {
       },
       { status: 502 },
     );
+  }
+
+  /**
+   * お客様情報アプリが採番した T番号 を工事アプリへ書き戻す。
+   *
+   * 採番元が入れ替わったため、この一往復をしないと工事アプリの T番号 が
+   * 空のままになる。カレンダーの表示・工事報告アプリとの突合・
+   * キャンセル処理が T番号 を見ているので、ここで揃えておく。
+   *
+   * 失敗しても登録・更新は成立しているので、警告だけ残して先へ進む
+   */
+  const syncedTNumber =
+    customerSync.kind === "synced" ? customerSync.tNumber?.trim() : "";
+  if (recordId && syncedTNumber && syncedTNumber !== uniqueKey) {
+    const tNumberFieldId = resolveConstructionTNumberFieldId(
+      opts.constructionFields,
+    );
+    const importKeyFieldId = resolveConstructionImportKeyFieldId(
+      opts.constructionFields,
+    );
+    if (tNumberFieldId) {
+      try {
+        await writePocketRecordWithImportKey({
+          appId: opts.calAppId,
+          recordId,
+          payload: {
+            [tNumberFieldId]: syncedTNumber,
+            ...(importKeyFieldId && importKey
+              ? { [importKeyFieldId]: importKey }
+              : {}),
+          },
+          importKeyFieldId: importKeyFieldId ?? undefined,
+          readAuth: opts.calendarAuth,
+          writeAuth: opts.calendarAuth,
+          allowMissingImportKey: true,
+        });
+      } catch (e) {
+        console.error(
+          "[calendar-after-construction-save] T番号を工事アプリへ書き戻せませんでした",
+          { calAppId: opts.calAppId, recordId },
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+    }
   }
 
   const calendarPatch = recordId

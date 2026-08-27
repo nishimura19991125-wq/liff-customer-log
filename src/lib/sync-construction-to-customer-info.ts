@@ -26,6 +26,7 @@ import {
   pocketFieldUniqueIdByCaption,
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
+  resolveConstructionImportKeyFieldId,
   resolveConstructionTNumberFieldId,
   resolveEmptyFillHousingStatusFieldId,
 } from "@/lib/calendar-kojo";
@@ -65,6 +66,12 @@ export type CustomerInfoSyncResult =
   | {
       kind: "synced";
       customerInfoRecordId?: string;
+      /**
+       * お客様情報アプリが採番した T番号。
+       * 呼び出し側はこれを工事アプリへ書き戻す（採番元が入れ替わったため）。
+       * 読めなかったときは undefined
+       */
+      tNumber?: string;
       /** Dropbox フォルダを用意できなかったときの画面向け警告（E-5） */
       dropboxWarning?: string;
     }
@@ -128,16 +135,29 @@ function coercePocketPlainString(raw: unknown): string {
 }
 
 /**
- * 工事アプリへ書き込み済みのレコードを GET し、ユニークキー（T番号等）を取り出して
- * お客様情報アプリに登録する。同一キーが既にあれば更新（PUT）、なければ新規（POST）。
+ * 工事アプリへ書き込み済みのレコードを GET し、お客様情報アプリに登録する。
+ * 同一キーが既にあれば更新（PUT）、なければ新規（POST）。
  * CUSTOMER_INFO_APP_ID 未設定時は何もしない（skipped）。
+ *
+ * ■ 突合キーは Aki番号
+ * 以前は T番号 で突き合わせていたが、T番号 を採番するのが
+ * **お客様情報アプリ側**に変わったため、作成する時点では T番号 が存在しない。
+ * 工事アプリが採番する Aki番号 を突合キーにする。
+ * 既存レコードには Aki番号 が入っていないので、T番号 でも探す（後方互換）。
+ *
+ * ■ T番号 は書かない・読んで返す
+ * お客様情報側で自動採番される列なので、値を送るのは不正。
+ * 書き込みのあとに読み取り、戻り値で返す。呼び出し側がそれを工事アプリへ
+ * 書き戻すことで、両アプリの T番号 がそろう。
  */
 export async function syncConstructionRecordToCustomerInfoApp(opts: {
   calAppId: string;
-  /** 工事レコード ID（空枠更新時は必須。新規で取れないときは constructionUniqueKey と併用） */
+  /** 工事レコード ID（空枠更新時は必須。新規で取れないときはキーと併用） */
   constructionRecordId?: string;
-  /** 工事 T番号（recordId 未取得時に空枠登録と同様の連携を行う） */
+  /** 工事 T番号（既存レコードの後方互換の突合に使う） */
   constructionUniqueKey?: string;
+  /** 工事アプリの取込キー（Aki番号）。突合の主キー */
+  constructionImportKey?: string;
   customerName: string;
   /** LIFF で選択した住宅ステータス（工事レコード再取得より優先） */
   housingStatus?: string;
@@ -213,7 +233,7 @@ async function applyApClStaffFromLineUserToCustomerRecord(
 }
 
 /**
- * お客様情報アプリに同じ T番号のレコードが既にあるか。
+ * お客様情報アプリに同じキーのレコードが既にあるか。
  *
  * キャッシュが null を返したときは、キャッシュを外して1回だけ引き直す（修正2）。
  * 「見つからない」を取り違えると createRecord まで進んでしまい、同じ顧客の
@@ -229,6 +249,79 @@ async function resolveExistingCustomerInfoRecordId(
   );
   if (cached) return cached;
   return refetchCustomerInfoRecordIdByUniqueKey(keyFieldSchemaId, uniqueKey);
+}
+
+/**
+ * 既存レコードを Aki番号 → T番号 の順に探す。
+ *
+ * 突合キーが T番号 から Aki番号 へ移ったが、**それ以前に作られた
+ * お客様情報レコードには Aki番号 が入っていない**（新設のテキスト列で、
+ * これまで誰も書き込んでいない）。Aki番号 だけで探すと既存顧客が
+ * 「見つからない」と判定され、同じ顧客のレコードが二重にできる。
+ *
+ * そこで見つからなければ T番号 でも探す。見つけたレコードには
+ * Aki番号 を書き込むので、一度連携すればその顧客は Aki番号 で引けるようになる。
+ * 探す軸を増やすだけなので、取りこぼしは減っても増えない。
+ */
+async function findExistingCustomerInfoRecord(opts: {
+  akiFieldId: string | null;
+  akiValue: string;
+  tNumberFieldId: string | null;
+  tNumberValue: string;
+}): Promise<{ recordId: string; matchedBy: "aki" | "tNumber" } | null> {
+  if (opts.akiFieldId && opts.akiValue) {
+    const byAki = await resolveExistingCustomerInfoRecordId(
+      opts.akiFieldId,
+      opts.akiValue,
+    );
+    if (byAki) return { recordId: byAki, matchedBy: "aki" };
+  }
+  if (opts.tNumberFieldId && opts.tNumberValue) {
+    const byT = await resolveExistingCustomerInfoRecordId(
+      opts.tNumberFieldId,
+      opts.tNumberValue,
+    );
+    if (byT) return { recordId: byT, matchedBy: "tNumber" };
+  }
+  return null;
+}
+
+/**
+ * お客様情報アプリの T番号 を読む。
+ *
+ * 採番元がこちらへ移ったので、書き込んだあとに読み取って
+ * 工事アプリへ返すのが連携の要になる。読めなければ空文字。
+ */
+async function readCustomerInfoTNumber(
+  customerAppId: string,
+  recordId: string,
+  tNumberFieldId: string,
+  customerAuth: AtPocketFetchAuth,
+): Promise<string> {
+  try {
+    let row = await fetchRecordById(
+      customerAppId,
+      recordId,
+      customerAuth,
+      tNumberFieldId,
+    );
+    if (!row?.record) {
+      row = await fetchRecordById(customerAppId, recordId, customerAuth);
+    }
+    if (!row?.record || typeof row.record !== "object") return "";
+    return coercePocketPlainString(
+      pickRecordValueByFieldAliases(
+        row.record as Record<string, unknown>,
+        tNumberFieldId,
+      ),
+    );
+  } catch (e) {
+    console.warn(
+      "[sync-construction-to-customer-info] T番号の読み取りに失敗",
+      e instanceof Error ? e.message : String(e),
+    );
+    return "";
+  }
 }
 
 /**
@@ -303,6 +396,8 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   calAppId: string;
   constructionRecordId?: string;
   constructionUniqueKey?: string;
+  /** 工事アプリの取込キー（Aki番号）。お客様情報の突合に使う */
+  constructionImportKey?: string;
   customerName: string;
   housingStatus?: string;
   constructionFields: AtPocketFieldRow[];
@@ -316,11 +411,12 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
 
   const constructionRecordId = opts.constructionRecordId?.trim() || "";
   const keyFromOpts = opts.constructionUniqueKey?.trim() || "";
-  if (!constructionRecordId && !keyFromOpts) {
+  const akiFromOpts = opts.constructionImportKey?.trim() || "";
+  if (!constructionRecordId && !keyFromOpts && !akiFromOpts) {
     return {
       kind: "failed",
       error:
-        "工事レコードを特定できませんでした。お客様情報アプリへの連携に必要な T番号またはレコード ID が取得できません。",
+        "工事レコードを特定できませんでした。お客様情報アプリへの連携に必要な Aki番号・T番号・レコード ID のいずれも取得できません。",
     };
   }
 
@@ -341,9 +437,13 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     return {
       kind: "failed",
       error:
-        "工事アプリからユニークキー（T番号）のフィールドを特定できません。CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID または CALENDAR_CONSTRUCTION_UNIQUE_KEY_FIELD_ID を設定してください。",
+        "工事アプリから T番号 のフィールドを特定できません。CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID または CALENDAR_CONSTRUCTION_UNIQUE_KEY_FIELD_ID を設定してください。",
     };
   }
+  /** 工事アプリの取込キー（Aki番号）。突合の主キー */
+  const constructionAkiField = resolveConstructionImportKeyFieldId(
+    opts.constructionFields,
+  );
 
   const customerAuth: AtPocketFetchAuth = {
     apiKey: apiKeyForCustomerInfoWrite(),
@@ -408,6 +508,22 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     });
   }
 
+  /**
+   * お客様情報アプリの Aki番号 列（テキスト）。
+   * 未設定・未解決でも連携は続ける（T番号 での突合に落ちるだけ）
+   */
+  const customerAkiFieldId = (() => {
+    const fromEnv = process.env.CUSTOMER_INFO_AKI_NUMBER_FIELD_ID?.trim();
+    if (fromEnv) {
+      return resolveConfiguredFieldToSchemaUniqueId(fromEnv, customerFields);
+    }
+    for (const caption of ["Aki番号", "アキ番号", "AKI番号"]) {
+      const id = pocketFieldUniqueIdByCaption(customerFields, caption);
+      if (id) return id;
+    }
+    return null;
+  })();
+
   const constructionFids = resolveConstructionFieldIds(opts.constructionFields);
   const constructionHousingFieldId =
     resolveEmptyFillHousingStatusFieldId(opts.constructionFields);
@@ -451,7 +567,10 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     .join(",");
 
   let recObj: Record<string, unknown> | null = null;
+  /** 工事アプリに入っている T番号（既存レコードのみ。新規では空） */
   let uniqueKey = keyFromOpts;
+  /** 工事アプリの取込キー（Aki番号） */
+  let akiKey = akiFromOpts;
 
   if (constructionRecordId) {
     let recRow = await fetchRecordById(
@@ -481,43 +600,38 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
         pickRecordValueByFieldAliases(recObj, constructionKeyField),
       );
     }
+    if (!akiKey && constructionAkiField) {
+      akiKey = coercePocketPlainString(
+        pickRecordValueByFieldAliases(recObj, constructionAkiField),
+      );
+    }
   }
 
-  if (!uniqueKey && constructionRecordId) {
-    const polledKey = await pollConstructionTNumberByRecordId(
+  /**
+   * Aki番号 は工事アプリの自動採番。作成直後は反映に一瞬かかることがあるので、
+   * 以前 T番号 でやっていたのと同じ短いポーリングで待つ。
+   *
+   * ただし T番号 が既に入っているレコードは移行前からある案件で、
+   * Aki番号 が付いていないことがある。待っても出てこないので待たない
+   * （毎回1秒以上の空振りになる）。その場合は T番号 で突合する
+   */
+  if (!akiKey && !uniqueKey && constructionAkiField && constructionRecordId) {
+    const polled = await pollConstructionTNumberByRecordId(
       opts.calAppId,
       constructionRecordId,
-      constructionKeyField,
+      constructionAkiField,
       opts.calendarAuth,
       fieldsCsv,
       SYNC_TNUMBER_POLL_DELAYS_MS,
     );
-    if (polledKey) uniqueKey = polledKey;
-    if (uniqueKey && !recObj) {
-      let recRow = await fetchRecordById(
-        opts.calAppId,
-        constructionRecordId,
-        opts.calendarAuth,
-        fieldsCsv,
-      );
-      if (!recRow?.record) {
-        recRow = await fetchRecordById(
-          opts.calAppId,
-          constructionRecordId,
-          opts.calendarAuth,
-        );
-      }
-      if (recRow?.record && typeof recRow.record === "object") {
-        recObj = recRow.record as Record<string, unknown>;
-      }
-    }
+    if (polled) akiKey = polled;
   }
 
-  if (!uniqueKey) {
+  if (!akiKey && !uniqueKey) {
     return {
       kind: "failed",
       error:
-        "工事レコードからユニークキー（T番号）を取得できませんでした。@pocket で採番・反映されているか確認してください。",
+        "工事レコードから突合キー（Aki番号）を取得できませんでした。@pocket で採番・反映されているか確認してください。",
     };
   }
 
@@ -533,14 +647,23 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
    * 防いでいたが、読み直しが1回でも空を返すと消し損ねて上書きが通ってしまう。
    * 判定を先に済ませ、既存レコードでは**そもそも payload に載せない**。
    */
-  const existingId = await resolveExistingCustomerInfoRecordId(
-    resolvedCustomerKey,
-    uniqueKey,
-  );
+  const existing = await findExistingCustomerInfoRecord({
+    akiFieldId: customerAkiFieldId,
+    akiValue: akiKey,
+    tNumberFieldId: resolvedCustomerKey,
+    tNumberValue: uniqueKey,
+  });
+  const existingId = existing?.recordId ?? null;
 
-  const customerRecord: Record<string, unknown> = {
-    [resolvedCustomerKey]: uniqueKey,
-  };
+  /**
+   * T番号（resolvedCustomerKey）は**載せない**。
+   * お客様情報アプリ側の自動採番列なので、値を送るのは不正になる。
+   * 突合キーとして書くのは Aki番号 のほう
+   */
+  const customerRecord: Record<string, unknown> = {};
+  if (customerAkiFieldId && akiKey) {
+    customerRecord[customerAkiFieldId] = akiKey;
+  }
   if (resolvedCustomerName) {
     customerRecord[resolvedCustomerName] = opts.customerName.trim();
   }
@@ -636,19 +759,27 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     customerRecord[inputStatusFieldId] = INPUT_STATUS_PENDING;
   }
 
-  // ── E-2/E-3: Dropbox 顧客フォルダを用意し、共有リンクを同じ payload に載せる ──
-  // ここは「保存 → T番号を再取得」が終わって uniqueKey が確定した後。
-  // 採番ロジックには触れていない。失敗しても連携そのものは止めない。
+  /**
+   * E-2/E-3: Dropbox 顧客フォルダを用意し、共有リンクを payload に載せる。
+   *
+   * フォルダ名に T番号 が要る。既存レコードならこの時点で分かっているが、
+   * **新規作成では作られるまで分からない**（お客様情報側の自動採番のため）。
+   * そこで作成後にもう一度呼べるよう切り出してある。失敗しても連携は止めない。
+   */
   let dropboxWarning: string | undefined;
-  if (dropboxConfigured()) {
+  const applyDropboxLink = async (
+    target: Record<string, unknown>,
+    tNumber: string,
+  ): Promise<void> => {
+    if (!dropboxConfigured() || !tNumber) return;
     const linkFieldId = resolveCustomerInfoDropboxLinkFieldId(customerFields);
     const folder = await ensureCustomerFolderLink({
-      tNumber: uniqueKey,
+      tNumber,
       customerName: opts.customerName,
       scope: "sync-construction-to-customer-info",
     });
     if (folder.url && linkFieldId) {
-      customerRecord[linkFieldId] = folder.url;
+      target[linkFieldId] = folder.url;
     } else if (folder.url && !linkFieldId) {
       // フォルダは作れたがリンクの保存先が分からない。
       // フォルダ作成は冪等なので、列を直せば次回の保存で書き込まれる。
@@ -658,6 +789,23 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       dropboxWarning = DROPBOX_FOLDER_WARNING;
     }
     dropboxWarning = dropboxWarning ?? folder.warning ?? undefined;
+  };
+
+  /**
+   * お客様情報側の T番号。既存レコードなら先に読める。
+   * 新規作成のときは空で、作成後に読み直す
+   */
+  let customerTNumber = "";
+  if (existingId) {
+    customerTNumber = await readCustomerInfoTNumber(
+      customerAppId,
+      existingId,
+      resolvedCustomerKey,
+      customerAuth,
+    );
+    // 工事アプリ側にしか無い旧データでも、フォルダ名は作れるようにする
+    if (!customerTNumber) customerTNumber = uniqueKey;
+    await applyDropboxLink(customerRecord, customerTNumber);
   }
 
   const pocketPayload: Record<string, unknown> = {};
@@ -715,7 +863,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       lineUserId: opts.lineUserId ?? "",
       customerAppId,
       recordId: existingId,
-      tNumber: uniqueKey,
+      tNumber: customerTNumber || uniqueKey,
       before,
       payload: pocketPayload,
       customerFields,
@@ -723,6 +871,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     return {
       kind: "synced",
       customerInfoRecordId: existingId,
+      ...(customerTNumber ? { tNumber: customerTNumber } : {}),
       ...(dropboxWarning ? { dropboxWarning } : {}),
     };
   }
@@ -732,15 +881,66 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     pocketPayload,
     customerAuth,
   );
-  const customerInfoRecordId =
-    atPocketRecordIdFromCreateResult(created) ?? undefined;
+  /**
+   * 作成応答から ID が取れないことがある。
+   * その場合は今書いた Aki番号 で引き直す（この時点なら必ず1件ある）
+   */
+  let customerInfoRecordId = atPocketRecordIdFromCreateResult(created) ?? "";
+  if (!customerInfoRecordId && customerAkiFieldId && akiKey) {
+    customerInfoRecordId =
+      (await refetchCustomerInfoRecordIdByUniqueKey(
+        customerAkiFieldId,
+        akiKey,
+      )) ?? "";
+  }
+
+  /**
+   * ここで初めて T番号 が分かる（お客様情報アプリの自動採番）。
+   * Dropbox のフォルダ名に要るので、作成後に用意してリンクだけ書き足す
+   */
+  if (customerInfoRecordId) {
+    customerTNumber = await readCustomerInfoTNumber(
+      customerAppId,
+      customerInfoRecordId,
+      resolvedCustomerKey,
+      customerAuth,
+    );
+    if (customerTNumber) {
+      const linkRecord: Record<string, unknown> = {};
+      await applyDropboxLink(linkRecord, customerTNumber);
+      if (Object.keys(linkRecord).length > 0) {
+        const linkPayload: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(linkRecord)) {
+          linkPayload[k] = customerInfoPutValue(v);
+        }
+        // 取込キー（T番号）の同送が要る。ここでは値が分かっている
+        linkPayload[resolvedCustomerKey] =
+          customerInfoPutValue(customerTNumber);
+        try {
+          await updateRecord(
+            customerAppId,
+            customerInfoRecordId,
+            linkPayload,
+            customerAuth,
+          );
+        } catch (e) {
+          // 登録は済んでいる。リンクだけ入らなくても連携は成功として扱う
+          console.error(
+            "[sync-construction-to-customer-info] Dropboxリンクの保存に失敗",
+            e instanceof Error ? e.message : String(e),
+          );
+          dropboxWarning = dropboxWarning ?? DROPBOX_FOLDER_WARNING;
+        }
+      }
+    }
+  }
 
   await recordCustomerInfoSyncAuditLog({
     operation: "create",
     lineUserId: opts.lineUserId ?? "",
     customerAppId,
-    recordId: customerInfoRecordId ?? "",
-    tNumber: uniqueKey,
+    recordId: customerInfoRecordId,
+    tNumber: customerTNumber || akiKey,
     before: null,
     payload: pocketPayload,
     customerFields,
@@ -748,7 +948,8 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
 
   return {
     kind: "synced",
-    customerInfoRecordId,
+    ...(customerInfoRecordId ? { customerInfoRecordId } : {}),
+    ...(customerTNumber ? { tNumber: customerTNumber } : {}),
     ...(dropboxWarning ? { dropboxWarning } : {}),
   };
 }
