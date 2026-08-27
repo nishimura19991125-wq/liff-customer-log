@@ -85,7 +85,7 @@ export function customerInfoConstructionLinkOnSaveEnabled(): boolean {
 const LINK_FAILED_WARNING =
   "お客様情報は保存しましたが、工事カレンダーへの反映に失敗しました。時間をおいて施工予定日を保存し直すか、DX事業部へ連絡してください。";
 
-type FoundConstructionRecord =
+export type FoundConstructionRecord =
   | { kind: "found"; recordId: string; record: Record<string, unknown> }
   | { kind: "not-found" }
   /** 探せなかった。作成に進んではいけない */
@@ -97,8 +97,13 @@ type FoundConstructionRecord =
  * 絞り込みのクエリだけを使い、全件走査へは落とさない。
  * ここで大量ページを舐めると、保存のたびに @pocket の上限を圧迫する。
  * 2件以上ヒットしたら特定しない（どちらが正か決められない）。
+ *
+ * 第3段階 3-2 の割り当て API（assign-customer-case）も、空き枠を使う前に
+ * これを呼ぶ。既存の工事レコードがあるのに空き枠へ書くと、同じ T番号 の
+ * 工事レコードが2件になり、以降この検索が「複数一致」で error を返して
+ * その顧客が自動照合できなくなるため。判定を1本に保つので export している。
  */
-async function findConstructionRecordByTNumber(opts: {
+export async function findConstructionRecordByTNumber(opts: {
   calAppId: string;
   tNumberFieldId: string;
   tNumber: string;
