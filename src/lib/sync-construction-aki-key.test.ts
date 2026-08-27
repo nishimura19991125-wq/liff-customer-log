@@ -198,14 +198,33 @@ describe("★ 既存レコードの更新", () => {
     );
   });
 
-  it("★ 更新では T番号 を載せない（採番済みの値を消さない）", async () => {
+  /**
+   * 以前ここは「更新では T番号 を載せない」を固定していた。
+   * 実機で @pocket が
+   *   update record failed: 400
+   *   キー項目「T番号」が取込設定に存在しないため登録できません。
+   * を返したので、載せる側へ直した。取込キーの列は作成だけでなく
+   * 更新でも本文に要る。
+   *
+   * ただし**空文字ではなく読み取った実際の値**を載せる。空文字だと
+   * 採番済みの T番号 を消しかねない、という元の懸念はそのまま生きている。
+   */
+  it("★ 更新では読み取った実際の T番号 を載せる（400 対策）", async () => {
     h.lookup["field-267"] = { A0001: "cust-9" };
     h.customerRecords["cust-9"] = { "field-268": "T00001111" };
 
     await sync();
 
-    // 空文字を送ると既に入っている T番号 を消しかねない
-    expect(h.updated[0]?.payload).not.toHaveProperty("field-268");
+    expect(h.updated[0]?.payload["field-268"]).toBe("T00001111");
+  });
+
+  it("★ 更新の T番号 は空文字にしない（採番済みの値を消さない）", async () => {
+    h.lookup["field-267"] = { A0001: "cust-9" };
+    h.customerRecords["cust-9"] = { "field-268": "T00001111" };
+
+    await sync();
+
+    expect(h.updated[0]?.payload["field-268"]).not.toBe("");
   });
 });
 

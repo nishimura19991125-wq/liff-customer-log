@@ -13,6 +13,7 @@ import {
   fetchRecordById,
   updateRecord,
 } from "@/lib/atpocket";
+import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
 import { auditLogEnabled, recordAuditLog } from "@/lib/audit-log";
 import { computeAuditChanges } from "@/lib/audit-log-changes";
 import {
@@ -878,6 +879,22 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     // 工事アプリ側にしか無い旧データでも、フォルダ名は作れるようにする
     if (!customerTNumber) customerTNumber = uniqueKey;
     await applyDropboxLink(customerRecord, customerTNumber);
+
+    /**
+     * 取込キー（T番号）の列を**更新の payload にも載せる**。
+     *
+     * @pocket は「キー項目「T番号」が取込設定に存在しないため登録できません」で
+     * 400 を返す。これは作成だけでなく更新でも同じで、5c50070 で作成側に
+     * 空文字を載せたときに更新側が漏れていた。
+     *
+     * ⚠ 更新で空文字を送ってはならない。採番済みの T番号 を消しかねない。
+     *    ここで載せるのは**読み取った実際の値**だけにする。
+     *    値が読めなかったときは載せず、下の writePocketRecordWithImportKey が
+     *    レコードから引き直す（それも駄目なら @pocket の 400 がそのまま出る）。
+     */
+    if (customerTNumber) {
+      customerRecord[resolvedCustomerKey] = customerTNumber;
+    }
   }
 
   const pocketPayload: Record<string, unknown> = {};
@@ -924,12 +941,19 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       existingId,
       customerAuth,
     );
-    await updateRecord(
-      customerAppId,
-      existingId,
-      pocketPayload,
-      customerAuth,
-    );
+    /**
+     * 更新も取込キー経由で書く。上で値を載せてあるので追加の GET は起きない。
+     * 載っていなかったときだけ、この中でレコードから引き直してくれる
+     * （この経路の 400 を1箇所で防ぐため、他の更新経路と同じ部品にそろえた）。
+     */
+    await writePocketRecordWithImportKey({
+      appId: customerAppId,
+      recordId: existingId,
+      payload: pocketPayload,
+      importKeyFieldId: resolvedCustomerKey,
+      readAuth: customerAuth,
+      writeAuth: customerAuth,
+    });
     await recordCustomerInfoSyncAuditLog({
       operation: "update",
       lineUserId: opts.lineUserId ?? "",
