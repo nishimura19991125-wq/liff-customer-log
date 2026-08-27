@@ -205,8 +205,14 @@ describe("★ ② 既にキャンセルなら実行されない", () => {
     expect(status).toBe(200);
     expect(body.ok).toBe(true);
     expect(h.sideEffectCalls).toHaveLength(0);
-    // 値も消さない（@pocket の日付は yyyy/mm/dd で送られる）
-    expect(h.updateCalls[0]["field-7"]).toBe("2026/12/01");
+    /*
+     * 施工予定日（field-7）は payload に載らない。
+     * 期待値を変えたのは意図した変更。施工予定日・施工業者は
+     * 工事カレンダーからのみ変更する方針になり、/customer-info の保存では
+     * 列ごと落とすようにした（customer-info-construction-locked-fields.ts）。
+     * キャンセルが動く保存では従来どおり通る（④ のテストで確認している）
+     */
+    expect(h.updateCalls[0]).not.toHaveProperty("field-7");
   });
 
   it("★ 「キャンセル」を含むだけの値では実行されない", async () => {
@@ -263,14 +269,21 @@ describe("★ ④ 4項目が空になる", () => {
     expect(payload["field-10"]).toBe(""); // 工事対応者
   });
 
-  it("処理が走らない保存では値がそのまま入る", async () => {
+  it("処理が走らない保存では、施工予定日・施工業者は payload に載らない", async () => {
     h.beforeCustomerStatus = "キャンセル";
 
     await put(CANCEL_VALUES);
 
     const payload = h.updateCalls[0];
-    expect(payload["field-7"]).toBe("2026/12/01");
-    expect(payload["field-9"]).toBe("ピュアライフ");
+    /*
+     * 期待値を変えたのは意図した変更。
+     * 施工予定日・施工業者は工事カレンダーからのみ変更する方針になり、
+     * キャンセルが動かない保存では列ごと落とすようにした。
+     * 「そのまま入る」から「載らない」へ。どちらも値は消えない
+     */
+    expect(payload).not.toHaveProperty("field-7");
+    expect(payload).not.toHaveProperty("field-9");
+    // 工事対応者はロックの対象外。従来どおり通る
     expect(payload["field-10"]).not.toBe("");
   });
 });

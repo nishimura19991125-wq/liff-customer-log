@@ -16,6 +16,11 @@ const h = vi.hoisted(() => ({
   /** 保存前レコードの取得で要求された列（CSV） */
   fetchedCsv: [] as (string | undefined)[],
   updated: [] as Record<string, unknown>[],
+  /** 保存直前の payload（更新の中身と同じもの） */
+  savedPayloads: [] as Record<string, unknown>[],
+  /** true のとき「キャンセルへ変える保存」として扱わせる */
+  cancelTriggered: false,
+  cancelSideEffectCalls: 0,
 }));
 
 const APP_FIELDS = [
@@ -37,6 +42,18 @@ const RESOLVED = [
     type: "date",
   },
   { key: "customerName", fieldId: "field-2", label: "お客様名", type: "text" },
+  {
+    key: "constructionContractor",
+    fieldId: "field-4",
+    label: "施工業者",
+    type: "select",
+  },
+  {
+    key: "customerStatus",
+    fieldId: "field-20",
+    label: "顧客ステータス",
+    type: "select",
+  },
 ];
 
 vi.mock("@/lib/request-auth", () => ({
@@ -111,8 +128,22 @@ vi.mock("@/lib/customer-info-form/validate", () => ({
 }));
 
 vi.mock("@/lib/customer-info-form/put-payload", () => ({
-  attachCustomerInfoImportKeyToPayload: async () => ({ ok: true }),
-  formPayloadFromValues: async () => ({ "field-9": "2026-12-01" }),
+  attachCustomerInfoImportKeyToPayload: async (
+    _appId: string,
+    _recordId: string,
+    _auth: unknown,
+    _fields: unknown,
+    payload: Record<string, unknown>,
+  ) => {
+    // 保存直前の payload をここで覗く
+    h.savedPayloads.push({ ...payload });
+    return { ok: true };
+  },
+  formPayloadFromValues: async () => ({
+    "field-9": "2026-12-01",
+    "field-4": "ピュアライフ",
+    "field-2": "山田 太郎",
+  }),
 }));
 
 vi.mock("@/lib/contract-notification-server", () => ({
@@ -130,11 +161,20 @@ vi.mock("@/lib/contract-notification-server", () => ({
 
 vi.mock("@/lib/customer-cancel-server", () => ({
   applyCustomerCancelToPayload: () => {},
-  runCustomerCancelSideEffects: async () => ({
-    warnings: [],
-    constructionUpdated: false,
-    emptySlotCreated: false,
-  }),
+  runCustomerCancelSideEffects: async () => {
+    h.cancelSideEffectCalls += 1;
+    return {
+      warnings: [],
+      constructionUpdated: false,
+      emptySlotCreated: false,
+    };
+  },
+}));
+
+vi.mock("@/lib/customer-status-label", () => ({
+  // 保存する値がキャンセルかどうかの判定。テストから切り替える
+  isCustomerStatusCancelledExact: (v: string | undefined) =>
+    h.cancelTriggered && v === "キャンセル",
 }));
 
 vi.mock("@/lib/audit-log", () => ({
@@ -181,6 +221,9 @@ beforeEach(() => {
   h.linkCalls = [];
   h.fetchedCsv = [];
   h.updated = [];
+  h.savedPayloads = [];
+  h.cancelTriggered = false;
+  h.cancelSideEffectCalls = 0;
 });
 
 describe("★ 既定では工事登録アプリへ連携しない", () => {
@@ -244,5 +287,49 @@ describe("★ 環境変数で元に戻せる", () => {
     await put({ constructionDate: "2026-12-01" });
 
     expect(h.linkCalls).toHaveLength(0);
+  });
+});
+
+describe("★ 施工予定日・施工業者は保存を受け付けない", () => {
+  /*
+   * 画面から入力欄を消しても API を直に叩けば書けるため、サーバでも塞ぐ。
+   * 施工予定日の割り当ては工事カレンダーからのみ行う方針。
+   */
+  it("★ payload から2列とも落ちる", async () => {
+    await put({
+      constructionDate: "2026-12-01",
+      constructionContractor: "ピュアライフ",
+    });
+
+    expect(h.savedPayloads).toHaveLength(1);
+    expect(h.savedPayloads[0]).not.toHaveProperty("field-9");
+    expect(h.savedPayloads[0]).not.toHaveProperty("field-4");
+  });
+
+  it("★ 他の項目は残る（保存を巻き込まない）", async () => {
+    await put({ customerName: "山田 太郎" });
+
+    expect(h.savedPayloads[0]).toMatchObject({ "field-2": "山田 太郎" });
+  });
+
+  it("値が空でも保存できる（必須で止まらない）", async () => {
+    const res = await put({ constructionDate: "", constructionContractor: "" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true });
+  });
+
+  it("★ キャンセル処理からの書き込みは通す", async () => {
+    /*
+     * キャンセルは施工予定日・施工業者を**空にするのが仕事**。
+     * ここで落とすと、施工予定日が残ったままキャンセルになる
+     */
+    h.cancelTriggered = true;
+
+    await put({ customerStatus: "キャンセル" });
+
+    expect(h.cancelSideEffectCalls).toBe(1);
+    expect(h.savedPayloads[0]).toHaveProperty("field-9");
+    expect(h.savedPayloads[0]).toHaveProperty("field-4");
   });
 });

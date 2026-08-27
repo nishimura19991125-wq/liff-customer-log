@@ -74,6 +74,7 @@ import {
 } from "@/lib/customer-info-construction-link";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 import { resolveCustomerInfoConstructionHandlerFieldId } from "@/lib/customer-info-construction-handler";
+import { stripCustomerInfoConstructionFieldsFromPayload } from "@/lib/customer-info-construction-locked-fields";
 import { resolveCustomerInfoCreatorFieldId } from "@/lib/customer-info-creator-field";
 import {
   lineAuthUnauthorizedResponse,
@@ -745,6 +746,26 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       );
       if (cancelTriggered) {
         applyCustomerCancelToPayload(payload, appFields);
+      } else {
+        /**
+         * 施工予定日・施工業者は画面から変更できない（表示だけ）。
+         * 入力欄を消しても API を直に叩けば書けるので、ここでも落とす。
+         *
+         * キャンセルのときは通す。あちらはこの2項目を**空にするのが仕事**で、
+         * 落とすと施工予定日が残ったままキャンセルになってしまう。
+         * 工事カレンダーからの連携は自前で payload を組み立てて
+         * updateRecord を呼ぶので、そもそもここを通らない
+         */
+        const dropped = stripCustomerInfoConstructionFieldsFromPayload(
+          payload,
+          (key) => resolved.find((f) => f.key === key)?.fieldId ?? null,
+        );
+        if (dropped.length > 0) {
+          console.warn(
+            "[api/customer-info/records/[recordId] PUT] 工事カレンダー側で管理する項目を保存対象から外しました",
+            { dropped },
+          );
+        }
       }
       if (Object.keys(payload).length === 0) {
         return NextResponse.json(
