@@ -337,6 +337,8 @@ async function fetchAllCustomerCrmCandidatesFromPocket(): Promise<CrmSnapshot> {
   const candidates: CrmCandidate[] = [];
   const maxPages = crmMaxPages();
   const pageDelayMs = crmPageDelayMs();
+  /** 上限ページまで満杯で回りきったか（＝取り切れていない） */
+  let reachedPageCap = false;
 
   for (let page = 1; page <= maxPages; page++) {
     if (page > 1 && pageDelayMs > 0) {
@@ -432,6 +434,29 @@ async function fetchAllCustomerCrmCandidatesFromPocket(): Promise<CrmSnapshot> {
     }
 
     if (rows.length < PAGE_LIMIT) break;
+    // 満杯のまま最終ページまで来た＝この先にまだレコードがある
+    if (page === maxPages) reachedPageCap = true;
+  }
+
+  /**
+   * 上限で打ち切ったことを必ず残す（3-1）。
+   *
+   * 以前は break 条件だけで、上限に達しても静かに切れていた。
+   * 担当顧客一覧なら「古い案件が出ない」で済むが、工事カレンダーの
+   * 未定案件の抽出元にすると「割り当てたい案件が一覧に無い」になる。
+   * 原因が設定なのかデータなのか、ログが無いと切り分けられない。
+   *
+   * 出すのは件数と設定値だけ。顧客名・T番号・レコードIDは出さない。
+   */
+  if (reachedPageCap) {
+    console.warn(
+      "[customer-crm] 取得ページ数の上限に達しました。これより後のお客様情報レコードは読み込めていません。CUSTOMER_CRM_MAX_PAGES を確認してください",
+      JSON.stringify({
+        maxPages,
+        pageLimit: PAGE_LIMIT,
+        loaded: candidates.length,
+      }),
+    );
   }
 
   candidates.sort((a, b) => b.sortKey - a.sortKey);
