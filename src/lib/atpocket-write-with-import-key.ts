@@ -30,6 +30,15 @@ export type WritePocketRecordWithImportKeyOpts = {
   /** existingRecord が無いとき既存レコードを取得するため */
   readAuth?: AtPocketFetchAuth;
   writeAuth: AtPocketFetchAuth;
+  /**
+   * 既存レコードから取込キーを読めなかったとき、キーを載せずに書き込む。
+   *
+   * 取込キーの列が @pocket 側で差し替わった直後は、それ以前に作られた
+   * レコードに新しいキーの値が入っていないことがある。そこで先回りして
+   * 例外にすると、**既存レコードの更新がすべて落ちる**。
+   * この指定があるときは載せずに送り、可否は @pocket に判断させる。
+   */
+  allowMissingImportKey?: boolean;
 };
 
 function coerceImportKeyValue(raw: unknown): string | null {
@@ -121,13 +130,22 @@ export async function writePocketRecordWithImportKey(
 
   if (keyFieldId && !payloadHasImportKeyValue(payload, keyFieldId)) {
     if (recordId) {
-      payload[keyFieldId] = await resolveExistingImportKeyValue({
-        appId: opts.appId,
-        recordId,
-        importKeyFieldId: keyFieldId,
-        existingRecord: opts.existingRecord,
-        readAuth: opts.readAuth,
-      });
+      try {
+        payload[keyFieldId] = await resolveExistingImportKeyValue({
+          appId: opts.appId,
+          recordId,
+          importKeyFieldId: keyFieldId,
+          existingRecord: opts.existingRecord,
+          readAuth: opts.readAuth,
+        });
+      } catch (e) {
+        if (!opts.allowMissingImportKey) throw e;
+        // 載せずに送る。@pocket が拒否すればそのエラーがそのまま返る
+        console.warn(
+          "[atpocket] 取込キーの既存値を読めないため、キーを載せずに更新します",
+          { appId: opts.appId, recordId, importKeyFieldId: keyFieldId },
+        );
+      }
     }
   }
 

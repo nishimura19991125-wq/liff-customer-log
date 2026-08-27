@@ -379,7 +379,15 @@ export function resolveConstructionFieldIds(
   return base;
 }
 
-/** 工事アプリの T番号（自動採番列）の uniqueId。環境変数 → 見出し「T番号」の順で解決 */
+/**
+ * 工事アプリの **T番号** 列の uniqueId。環境変数 → 見出し「T番号」の順で解決。
+ *
+ * ⚠ これは**取込キーではない**。
+ * 以前は工事アプリが T番号 を自動採番しており、取込キーも兼ねていた。
+ * 現在 T番号 を採番するのは**お客様情報アプリ**で、工事アプリ側は
+ * 転記されてくる値を入れるだけのテキスト列である。
+ * 取込キーは resolveConstructionImportKeyFieldId（Aki番号）を使うこと。
+ */
 export function resolveConstructionTNumberFieldId(
   fields: AtPocketFieldRow[],
 ): string | null {
@@ -393,6 +401,30 @@ export function resolveConstructionTNumberFieldId(
   const t = fids.tNumber?.trim();
   if (!t) return null;
   return resolveConfiguredFieldToSchemaUniqueId(t, fields);
+}
+
+/**
+ * 工事アプリの**取込キー**列（Aki番号）の uniqueId。
+ *
+ * @pocket は取込キーの列がレコード本文に無いと、作成も更新も
+ * 「取込設定にキー項目を追加してください」で 400 を返す。
+ * この列が自動採番なので、作成時は空文字を載せれば @pocket が採番する。
+ *
+ * 解決順は 環境変数 → 見出し「Aki番号」。
+ * 見出しの表記ゆれ（アキ番号・AKI番号）も拾う。
+ */
+export function resolveConstructionImportKeyFieldId(
+  fields: AtPocketFieldRow[],
+): string | null {
+  const fromEnv = process.env.CALENDAR_CONSTRUCTION_IMPORT_KEY_FIELD_ID?.trim();
+  if (fromEnv) {
+    return resolveConfiguredFieldToSchemaUniqueId(fromEnv, fields);
+  }
+  for (const caption of ["Aki番号", "アキ番号", "AKI番号", "aki番号"]) {
+    const id = pocketFieldUniqueIdByCaption(fields, caption);
+    if (id) return id;
+  }
+  return null;
 }
 
 /**
