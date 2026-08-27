@@ -418,6 +418,13 @@ export async function POST(request: Request) {
         calAppId,
         constructionRecordId: linked.recordId || null,
         constructionUniqueKey: tNumber,
+        /**
+         * 工事レコードの T番号 は「入っている」と決めつけない。
+         * 作成直後は @pocket の取込処理で落ちることがあり、実機でも
+         * お客様名・Aki番号 だけ入って T番号 が空になっていた。
+         * 空を渡して、連携後の書き戻しを必ず通す
+         */
+        constructionRecordTNumber: "",
         constructionImportKey:
           linked.kind === "created" ? linked.akiNumber : undefined,
         customerName,
@@ -593,6 +600,8 @@ export async function POST(request: Request) {
       calAppId,
       constructionRecordId: slotRecordId,
       constructionUniqueKey: tNumber,
+      // 上の PUT で載せてはいるが、入った保証はしない（link 経路と同じ理由）
+      constructionRecordTNumber: "",
       constructionImportKey: slotAki,
       customerName,
       housingStatus: housingStatus || undefined,

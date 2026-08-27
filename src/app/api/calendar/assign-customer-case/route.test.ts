@@ -302,6 +302,16 @@ describe("既存が無く空き枠があるとき", () => {
     expect(h.finalize[0]?.constructionUniqueKey).toBe("T00003420");
   });
 
+  /**
+   * 実機で「工事登録アプリに T番号 が入らない」が出た。
+   * 書き戻しの判定に突合キーを使っていたため、お客様情報側の T番号 と
+   * 一致して書き戻しが飛んでいた。入っている前提にしない
+   */
+  it("★ 連携後の T番号 書き戻しを飛ばさない", async () => {
+    await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+    expect(h.finalize[0]?.constructionRecordTNumber).toBe("");
+  });
+
   it("住宅ステータス・工事対応者・施工予定日も書かれる", async () => {
     await call({ ...BASE_BODY, slotRecordId: "slot-9" });
     expect(h.writes[0]?.payload[HOUSING_ID]).toBe("既築案件");
@@ -354,6 +364,16 @@ describe("既存も空き枠も無いとき", () => {
     expect(h.finalize[0]?.constructionImportKey).toBe("AKI-NEW");
     expect(body.assignedTo).toBe("new");
     expect(body.slotUsed).toBe(false);
+  });
+
+  it("★ 作成 payload に T番号 が載る", async () => {
+    await call(BASE_BODY);
+    expect(h.writes[0]?.payload[T_ID]).toBe("T00003420");
+  });
+
+  it("★ 連携後の T番号 書き戻しを飛ばさない", async () => {
+    await call(BASE_BODY);
+    expect(h.finalize[0]?.constructionRecordTNumber).toBe("");
   });
 
   it("空き枠を指定しない経路では T番号 検索を1回しかしない", async () => {

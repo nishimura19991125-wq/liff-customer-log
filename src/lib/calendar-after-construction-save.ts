@@ -17,6 +17,19 @@ export async function finalizeConstructionCalendarSave(opts: {
   constructionRecordId: string | null;
   /** 工事レコードの T番号（既存レコードの後方互換の突合に使う） */
   constructionUniqueKey?: string | null;
+  /**
+   * **工事レコードに今入っている T番号**。書き戻しが要るかの判定にだけ使う。
+   *
+   * 省略すると constructionUniqueKey を使う（従来の呼び出しはそのまま）。
+   * 従来の呼び出し元は工事レコードから読んだ値を constructionUniqueKey に
+   * 渡していたので、それで判定できていた。
+   *
+   * お客様情報を起点にする経路（assign-customer-case）は、突合のために
+   * **お客様情報側の T番号** を constructionUniqueKey に渡す。これは
+   * 「工事レコードに入っている値」ではないので、そのまま判定に使うと
+   * 一致してしまい書き戻しが飛ぶ。分からないときは空文字を渡すこと。
+   */
+  constructionRecordTNumber?: string | null;
   /** 工事レコードの取込キー（Aki番号）。お客様情報との突合の主キー */
   constructionImportKey?: string | null;
   customerName: string;
@@ -83,7 +96,15 @@ export async function finalizeConstructionCalendarSave(opts: {
    */
   const syncedTNumber =
     customerSync.kind === "synced" ? customerSync.tNumber?.trim() : "";
-  if (recordId && syncedTNumber && syncedTNumber !== uniqueKey) {
+  /**
+   * 工事レコードに今入っている T番号。
+   * 明示されていなければ、従来どおり突合キーを「レコードの値」とみなす。
+   */
+  const currentRecordTNumber =
+    opts.constructionRecordTNumber === undefined
+      ? uniqueKey
+      : (opts.constructionRecordTNumber?.trim() || "");
+  if (recordId && syncedTNumber && syncedTNumber !== currentRecordTNumber) {
     const tNumberFieldId = resolveConstructionTNumberFieldId(
       opts.constructionFields,
     );
