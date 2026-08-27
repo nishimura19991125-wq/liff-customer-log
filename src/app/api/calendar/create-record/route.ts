@@ -17,6 +17,7 @@ import {
   uniqueFieldsCsv,
 } from "@/lib/calendar-construction-pocket-common";
 import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
+import { syncConstructionRecordToCustomerInfoApp } from "@/lib/sync-construction-to-customer-info";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import { isValidEmptyFillHousingStatus } from "@/lib/calendar-empty-fill-options";
@@ -60,7 +61,12 @@ type Body = {
 };
 
 /**
- * 工事カレンダー新規登録（工事日未定・日程都度調整案件）。
+ * 工事カレンダー新規登録。
+ *
+ * ■ 施工予定日で経路が分かれる
+ *   あり → 工事登録アプリに作成 → お客様情報へ連携 → T番号 を書き戻す
+ *   なし → **工事登録アプリに作らない**。お客様情報にだけ作る
+ *          （日付未定の案件に Aki番号 を採番しないため。カレンダーには出ない）
  *
  * 工事アプリへ書き込み（取込キー＝Aki番号は空で送り @pocket が採番）
  *   → recordId 確定 → GET で Aki番号確認 → PUT
@@ -139,6 +145,52 @@ export async function POST(request: Request) {
 
   const readAuth = { apiKey: apiKeyForCalendarPocket1() };
   const writeAuth = { apiKey: apiKeyForCalendarWrite() };
+
+  /**
+   * 施工予定日が未定なら、工事登録アプリにレコードを作らない。
+   *
+   * 日程が決まっていない案件にまで Aki番号 を採番すると、カレンダー上に
+   * 日付の無い案件が溜まる。お客様情報にだけ作り、日程が決まってから
+   * 工事登録アプリへ載せる（第2段階で実装予定）。
+   *
+   * 工事アプリを一切触らないので、列定義の取得も行わない。
+   * カレンダーには出ないが、これは意図した動作
+   */
+  if (!scheduledStartDate) {
+    const sync = await syncConstructionRecordToCustomerInfoApp({
+      calAppId,
+      customerInfoOnly: true,
+      customerName,
+      housingStatus: housingRaw,
+      contractor,
+      lineUserId: auth.lineUserId,
+    });
+
+    if (sync.kind === "failed") {
+      return NextResponse.json({ error: sync.error }, { status: 502 });
+    }
+    if (sync.kind === "skipped") {
+      return NextResponse.json(
+        {
+          error:
+            "施工予定日が未定の案件はお客様情報アプリへ登録しますが、CUSTOMER_INFO_APP_ID が未設定のため登録できませんでした。",
+        },
+        { status: 503 },
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      customerInfoSynced: true,
+      /** 工事アプリに作っていないことを画面に伝える */
+      constructionSkipped: true,
+      ...(sync.customerInfoRecordId
+        ? { customerInfoRecordId: sync.customerInfoRecordId }
+        : {}),
+      ...(sync.tNumber ? { tNumber: sync.tNumber } : {}),
+      ...(sync.dropboxWarning ? { warning: sync.dropboxWarning } : {}),
+    });
+  }
 
   let constructionSaved = false;
 
