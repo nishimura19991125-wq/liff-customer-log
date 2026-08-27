@@ -22,6 +22,10 @@ import {
   isContractAmountDerived,
   syncContractAmountFromPayment,
 } from "@/lib/customer-info-form/form-change";
+import {
+  CUSTOMER_INFO_CONSTRUCTION_LOCKED_HINT,
+  isCustomerInfoConstructionFieldLocked,
+} from "@/lib/customer-info-construction-locked-fields";
 import { formatDecimalKwInput } from "@/lib/customer-info-form/decimal-kw";
 import {
   formatCommaInteger,
@@ -178,6 +182,14 @@ const NAME_SPLIT_GROUPS = {
 } as const;
 
 const NAME_SPLIT_GIVEN_KEYS = new Set(["customerGivenName", "furiganaGiven"]);
+
+/**
+ * 工事カレンダーが持ち主の項目の見せ方。
+ * 商談予定カード（meeting-schedule-item-card.tsx）の編集不可表示に合わせる
+ */
+const LOCKED_VALUE_CLASS =
+  "w-full min-w-0 max-w-full rounded-xl bg-slate-100 px-3 py-2.5 text-[14px] text-slate-900";
+const LOCKED_NOTE_CLASS = "mt-1 text-[11px] leading-relaxed text-slate-500";
 
 function NameSplitFieldGroup({
   groupLabel,
@@ -1024,6 +1036,29 @@ export function CustomerInfoEditForm({
       ) : null}
       {visibleFields.map((field) => {
         if (NAME_SPLIT_GIVEN_KEYS.has(field.key)) return null;
+
+        /**
+         * 施工予定日・施工業者は工事カレンダーが持ち主。
+         * ラベルは残し、値だけをテキストで見せる
+         * （商談予定カードの見積ステータスと同じ流儀）。
+         * サーバ側でも payload から落としているので、
+         * ここを消し忘れても書き込まれることはない
+         */
+        if (isCustomerInfoConstructionFieldLocked(field.key)) {
+          return (
+            <div key={field.key} className="block">
+              <span className="mb-1 block text-[12px] font-semibold text-slate-700">
+                {field.label}
+              </span>
+              <p className={LOCKED_VALUE_CLASS}>
+                {displayValues[field.key] || "未設定"}
+              </p>
+              <p className={LOCKED_NOTE_CLASS}>
+                {CUSTOMER_INFO_CONSTRUCTION_LOCKED_HINT}
+              </p>
+            </div>
+          );
+        }
 
         const nameSplitGroup =
           field.key in NAME_SPLIT_GROUPS
