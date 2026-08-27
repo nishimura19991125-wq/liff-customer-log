@@ -111,6 +111,14 @@ type CrmCandidate = CustomerCrmListItem & {
   contractorName: string;
 };
 
+/**
+ * 絞り込み前の1件。getCachedCustomerCrmSnapshot から出てくる型。
+ *
+ * ⚠ audience（AP担当者・CL担当者・案件作成者の生値）が付いている。
+ *    画面へ返すときは必ず必要な項目だけを詰め替えること。
+ */
+export type CustomerCrmCandidate = CrmCandidate;
+
 /** 担当者で絞る前の全件。ユーザー非依存なのでキーに氏名を含めない */
 type CrmCacheEntry = {
   expiresAt: number;
@@ -451,8 +459,26 @@ function toCustomerCrmListItem(c: CrmCandidate): CustomerCrmListItem {
   };
 }
 
-/** 絞り込み前の全件を、ユーザー非依存キーで共有する（タスクO-3） */
-async function getCachedCustomerCrmSnapshot(): Promise<CrmSnapshot> {
+/**
+ * 絞り込み前の全件を、ユーザー非依存キーで共有する（タスクO-3）。
+ *
+ * ⚠ **返るのは担当者で絞られていない全件。そのまま画面へ返してはならない。**
+ *    誰の担当かは items[].audience にしか入っておらず、詰め替えるだけでは
+ *    他人の担当顧客が見える。取り出したら必ず
+ *      - 担当顧客一覧なら filterCrmCandidatesForStaff
+ *      - それ以外なら用途ごとの明示的なフィルタ
+ *    を通すこと。
+ *
+ * ⚠ **絞り込んだ結果をキャッシュへ戻さないこと**（Phase 0 §6）。
+ *    キーが担当者名を含まない前提で共有しているため、絞り込み済みを
+ *    入れると別の担当者へ他人の結果が配られる。
+ *
+ * @pocket の利用制限はサイト単位で100秒あたり100回。ここは全件走査
+ * （最大 CUSTOMER_CRM_MAX_PAGES ページ）なので、**新しい全件走査を足さず
+ * この1本を共有する**ために export している。TTL は CUSTOMER_CRM_CACHE_TTL_MS
+ * （既定600秒）。
+ */
+export async function getCachedCustomerCrmSnapshot(): Promise<CrmSnapshot> {
   const ttl = crmCacheTtlMs();
   if (ttl <= 0) {
     return fetchAllCustomerCrmCandidatesFromPocket();
