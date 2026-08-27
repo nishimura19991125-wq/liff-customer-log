@@ -303,3 +303,100 @@ describe("★ 空き枠の書き込み経路", () => {
     expect(errorSpy).toHaveBeenCalled();
   });
 });
+
+/**
+ * 実機で「キャンセルしても案件が工事カレンダーに残る」が出た件。
+ *
+ * 原因は工事レコードを空にする**更新**の取込キーが T番号 のままだったこと。
+ * db2ee62 で空き枠の**作成**だけ Aki番号 へ移し、更新が残っていた。
+ * @pocket は取込キーの列が本文に無いと更新を 400 で返すので、
+ * 施工予定日が消えず、空き枠の作成も道連れで飛んでいた。
+ */
+describe("★ 工事レコードを空にする更新の取込キー", () => {
+  it("★ 取込キーは Aki番号。T番号 ではない", async () => {
+    await runCustomerCancelSideEffects(FAR_FUTURE);
+
+    expect(h.importKeyWriteCalls).toHaveLength(1);
+    // field-101 = Aki番号 / field-1 = T番号
+    expect(h.importKeyWriteCalls[0].importKeyFieldId).toBe("field-101");
+    expect(h.importKeyWriteCalls[0].importKeyFieldId).not.toBe("field-1");
+  });
+
+  it("★ Aki番号 が無い移行前の案件でもキャンセルできる", async () => {
+    // 他の工事アプリ更新と同じ扱い。ここで例外にすると
+    // 「Aki番号 が無い案件はキャンセルできない」になってしまう
+    await runCustomerCancelSideEffects(FAR_FUTURE);
+
+    expect(h.importKeyWriteCalls[0].allowMissingImportKey).toBe(true);
+  });
+
+  it("★ 空にするのは施工予定日・施工会社・工事対応者の3つ", async () => {
+    await runCustomerCancelSideEffects(FAR_FUTURE);
+
+    expect(h.updateCalls[0]).toEqual({
+      "field-3": "",
+      "field-4": "",
+      "field-6": "",
+    });
+  });
+});
+
+describe("★ 工事レコードの引き当て", () => {
+  it("★ T番号 が転記されていなくても Aki番号 で引ける", async () => {
+    // 第1段階以降に作られた案件。工事側の T番号 がまだ空
+    h.records = [
+      {
+        recordId: 5002,
+        record: {
+          "field-101": "A0042",
+          "field-2": "山田太郎",
+          "field-3": "2026-12-01",
+          "field-4": "ピュアライフ",
+        },
+      },
+    ];
+
+    const result = await runCustomerCancelSideEffects({
+      ...FAR_FUTURE,
+      akiNumber: "A0042",
+    });
+
+    expect(result.constructionUpdated).toBe(true);
+    expect(result.warnings).toEqual([]);
+    expect(h.importKeyWriteCalls[0]).toHaveProperty("recordId", "5002");
+  });
+
+  it("★ Aki番号 が無い移行前の案件は従来どおり T番号 で引ける", async () => {
+    const result = await runCustomerCancelSideEffects(FAR_FUTURE);
+
+    expect(result.constructionUpdated).toBe(true);
+    expect(h.importKeyWriteCalls[0]).toHaveProperty("recordId", "5001");
+  });
+
+  it("★ Aki番号 を優先する（同じ一覧に両方あるとき）", async () => {
+    h.records = [
+      // T番号 だけ一致する別レコード
+      { recordId: 5001, record: { "field-1": "T00003372" } },
+      // Aki番号 が一致する本命
+      { recordId: 5002, record: { "field-101": "A0042" } },
+    ];
+
+    await runCustomerCancelSideEffects({ ...FAR_FUTURE, akiNumber: "A0042" });
+
+    expect(h.importKeyWriteCalls[0]).toHaveProperty("recordId", "5002");
+  });
+
+  it("どちらでも引けなければ更新も空き枠作成もしない", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    h.records = [];
+
+    const result = await runCustomerCancelSideEffects(FAR_FUTURE);
+
+    expect(result.constructionUpdated).toBe(false);
+    expect(result.emptySlotCreated).toBe(false);
+    expect(h.importKeyWriteCalls).toHaveLength(0);
+    expect(h.createCalls).toHaveLength(0);
+    expect(result.warnings).toHaveLength(1);
+    warnSpy.mockRestore();
+  });
+});

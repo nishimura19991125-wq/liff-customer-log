@@ -212,32 +212,54 @@ export async function resolveCancelPlanWithHolidays(input: {
   });
 }
 
-/** 工事レコードを T番号 で引く。既存の一覧キャッシュに相乗りする */
-async function findConstructionRecordIdByTNumber(
+/**
+ * 工事レコードを Aki番号 → T番号 の順で引く。既存の一覧キャッシュに相乗りする。
+ *
+ * ■ Aki番号 を先に見る理由
+ * 工事アプリ側で確実に入っているのは Aki番号（あちらの自動採番）。
+ * T番号 はお客様情報が採番して**転記されてくる**値なので、転記が
+ * 済んでいない案件では空のことがある。T番号 だけで引くと、その案件は
+ * 「工事アプリに無い」と誤判定され、キャンセルしても工事レコードが
+ * 手つかずで残る（カレンダーに案件が残る）。
+ *
+ * ■ T番号 も残す理由
+ * 移行前からある案件には Aki番号 が入っていない。あちらは T番号 で引ける。
+ */
+async function findConstructionRecordIdForCancel(
   calAppId: string,
   fieldsCsv: string,
-  tNumberFieldId: string,
-  tNumber: string,
-): Promise<string | null> {
-  const want = normApClStaffName(tNumber);
-  if (!want) return null;
+  keys: Array<{ fieldId: string | null; value: string }>,
+): Promise<{ recordId: string; matchedBy: string } | null> {
+  const targets = keys
+    .map((k) => ({
+      fieldId: k.fieldId?.trim() ?? "",
+      want: normApClStaffName(k.value),
+    }))
+    .filter((k) => k.fieldId && k.want);
+  if (targets.length === 0) return null;
 
   const records = await fetchCalendarConstructionRecordsCached(
     calAppId,
     fieldsCsv,
     null,
   );
-  for (const row of records) {
-    const rec = row.record;
-    if (!rec || typeof rec !== "object") continue;
-    const cell = coercePlainString(
-      pickRecordValueByFieldAliases(rec as Record<string, unknown>, tNumberFieldId),
-    );
-    if (normApClStaffName(cell) !== want) continue;
-    const id = row.recordId ?? row.id;
-    if (id == null) continue;
-    const s = String(id).trim();
-    if (s) return s;
+  // キーの優先順に全件を見る。先に Aki番号 で一巡してから T番号 へ落とす
+  for (const target of targets) {
+    for (const row of records) {
+      const rec = row.record;
+      if (!rec || typeof rec !== "object") continue;
+      const cell = coercePlainString(
+        pickRecordValueByFieldAliases(
+          rec as Record<string, unknown>,
+          target.fieldId,
+        ),
+      );
+      if (normApClStaffName(cell) !== target.want) continue;
+      const id = row.recordId ?? row.id;
+      if (id == null) continue;
+      const s = String(id).trim();
+      if (s) return { recordId: s, matchedBy: target.fieldId };
+    }
   }
   return null;
 }
@@ -271,8 +293,13 @@ export function applyCustomerCancelToPayload(
 }
 
 export async function runCustomerCancelSideEffects(opts: {
-  /** キャンセルする案件の T番号（工事アプリの取込キー） */
+  /** キャンセルする案件の T番号（お客様情報の採番値。工事側へ転記されている） */
   tNumber: string;
+  /**
+   * 工事アプリの取込キー（Aki番号）。お客様情報に控えてあれば渡す。
+   * 工事レコードを引く主キーで、T番号 が転記されていない案件でも当たる
+   */
+  akiNumber?: string;
   /** キャンセル前の施工予定日（空き枠の判定と作成に使う） */
   constructionDate: string;
   /** キャンセル前の施工会社（空き枠の判定と作成に使う） */
@@ -331,25 +358,32 @@ export async function runCustomerCancelSideEffects(opts: {
     resolveConstructionImportKeyFieldId(constructionFields);
 
   const csv = collectConstructionFieldsCsv(fids);
-  let constructionRecordId: string | null = null;
+  let found: { recordId: string; matchedBy: string } | null = null;
   try {
-    constructionRecordId = await findConstructionRecordIdByTNumber(
-      calAppId,
-      csv,
-      tNumberFieldId,
-      tNumber,
-    );
+    found = await findConstructionRecordIdForCancel(calAppId, csv, [
+      // 工事アプリ側の主キー。転記待ちに左右されない
+      { fieldId: importKeyFieldId, value: opts.akiNumber ?? "" },
+      // 移行前からある案件はこちらで引ける
+      { fieldId: tNumberFieldId, value: tNumber },
+    ]);
   } catch (e) {
     console.error("[customer-cancel] 工事レコードの照合に失敗", e);
     return { ...base, warnings: [CONSTRUCTION_UPDATE_FAILED] };
   }
+  const constructionRecordId = found?.recordId ?? null;
 
   if (!constructionRecordId) {
     // 工事レコードが無い＝カレンダー上でその日を押さえていない。
     // 空き枠を作ると存在しなかった空きを増やすことになるので作らない。
     console.warn(
       "[customer-cancel] 工事アプリに該当レコードが無いため、更新と空き枠作成をスキップ",
-      JSON.stringify({ tNumber }),
+      JSON.stringify({
+        tNumber,
+        // どちらのキーで探せたのかを残す。Aki番号 を渡せていないだけの
+        // ことがあり、その場合は工事レコードはある
+        hasAkiNumber: Boolean(opts.akiNumber?.trim()),
+        hasImportKeyField: Boolean(importKeyFieldId),
+      }),
     );
     return { ...base, warnings: [CONSTRUCTION_NOT_FOUND] };
   }
@@ -371,13 +405,28 @@ export async function runCustomerCancelSideEffects(opts: {
   let constructionUpdated = false;
   if (Object.keys(clearPatch).length > 0) {
     try {
+      /**
+       * 取込キーは **Aki番号**。T番号 ではない。
+       *
+       * db2ee62 で空き枠の**作成**だけ Aki番号 へ移し、ここ（更新）が
+       * T番号 のまま残っていた。@pocket は取込キーの列が本文に無いと
+       * 更新を 400 で返すので、キャンセルしても工事レコードの
+       * 施工予定日が消えず、案件がカレンダーに残っていた。
+       * 空き枠の作成も constructionUpdated を見ているので道連れで飛ぶ。
+       *
+       * allowMissingImportKey は他の工事アプリ更新（fill-empty-slot・
+       * assign-case-to-slot・schedule-undated-case）と同じ扱い。
+       * 移行前からある案件には Aki番号 が入っていないことがあり、
+       * ここで例外にすると**その案件はキャンセルできなくなる**
+       */
       await writePocketRecordWithImportKey({
         appId: calAppId,
         recordId: constructionRecordId,
         payload: clearPatch,
-        importKeyFieldId: tNumberFieldId,
+        importKeyFieldId: importKeyFieldId ?? undefined,
         readAuth,
         writeAuth,
+        allowMissingImportKey: true,
       });
       constructionUpdated = true;
     } catch (e) {
