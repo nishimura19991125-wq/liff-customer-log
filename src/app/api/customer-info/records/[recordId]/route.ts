@@ -68,6 +68,7 @@ import {
   resolveConfiguredFieldToSchemaUniqueId,
 } from "@/lib/calendar-kojo";
 import {
+  customerInfoConstructionLinkOnSaveEnabled,
   linkCustomerInfoToConstruction,
   type CustomerInfoConstructionLinkResult,
 } from "@/lib/customer-info-construction-link";
@@ -648,24 +649,33 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       /**
        * 第2段階: 施工予定日を入れたら工事登録アプリへ載せる。
        *
-       * 判定に使う「保存前の施工予定日」と、工事側へ書く住宅ステータスは
-       * どちらもこの下の保存前レコードから読む。専用の GET を足さない
-       * （@pocket はサイト単位で100秒100回。保存のたびに増やさない）
+       * ⚠ **既定では動かない。** 施工予定日の割り当ては工事カレンダーから
+       *    行う方針に変わったため、お客様情報の保存からは連携しない。
+       *    処理は第3段階で一部を再利用する見込みがあるので残してある。
+       *
+       * 連携する材料（保存前の施工予定日・お客様名・住宅ステータス・
+       * 工事対応者）は下の保存前レコードから読む。連携しないなら列を
+       * 増やさない — @pocket から運ぶ量をそのぶん減らす
        */
-      const constructionDateFieldId =
-        resolved.find((f) => f.key === "constructionDate")?.fieldId ?? "";
-      const customerNameFieldId =
-        resolved.find((f) => f.key === "customerName")?.fieldId ?? "";
-      const housingStatusFieldId = resolveCustomerInfoHousingStatusFieldId(
-        appFields,
-      );
+      const constructionLinkEnabled =
+        customerInfoConstructionLinkOnSaveEnabled();
+      const constructionDateFieldId = constructionLinkEnabled
+        ? (resolved.find((f) => f.key === "constructionDate")?.fieldId ?? "")
+        : "";
+      const customerNameFieldId = constructionLinkEnabled
+        ? (resolved.find((f) => f.key === "customerName")?.fieldId ?? "")
+        : "";
+      const housingStatusFieldId = constructionLinkEnabled
+        ? resolveCustomerInfoHousingStatusFieldId(appFields)
+        : "";
       /**
        * 工事対応者はお客様情報のフォームに無い列。
        * 工事アプリへ転記するので保存前レコードから読む
        * （update-construction-handler が両アプリへ同じ名前を書いている）
        */
-      const constructionHandlerFieldId =
-        resolveCustomerInfoConstructionHandlerFieldId(appFields) ?? "";
+      const constructionHandlerFieldId = constructionLinkEnabled
+        ? (resolveCustomerInfoConstructionHandlerFieldId(appFields) ?? "")
+        : "";
 
       // AP/CL所属支店を引き直すかの判定に使う。担当者が変わっていなければ
       // 支店は触らない（引けないときに "-" で潰さないため）。
@@ -788,6 +798,8 @@ export async function PUT(request: Request, ctx: RouteCtx) {
        * 第2段階: 施工予定日が**新しく入った／変わった**ときだけ、
        * 工事登録アプリへ載せる。
        *
+       * ⚠ 既定では constructionLinkEnabled が false なので通らない。
+       *
        * 毎回確認すると保存のたびに @pocket の照合が走る。
        * 保存前の値と比べて変わったときだけにする。
        * 保存前を読めていないときは動かさない（キャンセル処理と同じ考え方で、
@@ -798,17 +810,19 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         loadedStaff && constructionDateFieldId
           ? readCustomerInfoFieldValue(loadedStaff.record, constructionDateFieldId)
           : null;
-      const linkResult = await linkConstructionIfScheduledDateEntered({
-        values,
-        beforeConstructionDate,
-        loadedRecord: loadedStaff?.record ?? null,
-        customerNameFieldId,
-        housingStatusFieldId,
-        constructionHandlerFieldId,
-        tNumber: notificationExtras.tNumber,
-        lineUserId: auth.lineUserId,
-        cancelTriggered,
-      });
+      const linkResult = constructionLinkEnabled
+        ? await linkConstructionIfScheduledDateEntered({
+            values,
+            beforeConstructionDate,
+            loadedRecord: loadedStaff?.record ?? null,
+            customerNameFieldId,
+            housingStatusFieldId,
+            constructionHandlerFieldId,
+            tNumber: notificationExtras.tNumber,
+            lineUserId: auth.lineUserId,
+            cancelTriggered,
+          })
+        : null;
       if (linkResult?.kind === "failed") warnings.push(linkResult.warning);
 
       /**
