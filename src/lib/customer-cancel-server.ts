@@ -17,6 +17,7 @@ import {
   pocketFieldUniqueIdByCaption,
   resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
+  resolveConstructionImportKeyFieldId,
   resolveConstructionTNumberFieldId,
 } from "@/lib/calendar-kojo";
 import { fetchJapanHolidayKeysForRange } from "@/lib/japan-holidays-api";
@@ -128,21 +129,24 @@ async function recordAuditLogBestEffort(
 /**
  * 空き枠レコードの中身を組み立てる。
  *
- * ■ 取込キー（T番号）の列を**空文字で載せる**理由
+ * ■ 取込キー（Aki番号）の列を**空文字で載せる**理由
  * @pocket の作成APIは、取込キーの列がレコード本文に無いと
  * 「取込設定にキー項目を追加してください」で 400 を返す。値は空でよく、
  * 空なら自動採番される。他の新規作成も同じことをしている:
- *   - buildConstructionFillPatch（create-record）… tNumberValue: "" を載せる
+ *   - buildConstructionFillPatch（create-record）… 取込キー列に "" を載せる
  *   - applyAttendanceAutoNumberOnCreate（勤怠）… 取込キー列に "" を入れる
- * 載せるのは列だけで、できあがるレコードの中身は
- * 「顧客ステータス=工事待ち・施工予定日・施工会社」のみになる。
+ *
+ * ⚠ 以前はここに T番号 を載せていた。工事アプリが T番号 を自動採番し、
+ *   取込キーも兼ねていたため。採番元がお客様情報アプリへ移り、
+ *   工事アプリの取込キーは Aki番号 になったので載せる列を変えている。
+ *   T番号 は載せない（採番されないので空文字を入れても意味が無い）。
  *
  * ■ お客様名は載せない
  * 空のままにすることで空き枠として扱われる（constructionTitleFieldIsEmpty）。
  */
 export function buildEmptySlotPayload(input: {
-  /** 工事登録アプリの T番号（取込キー）列 */
-  tNumberFieldId: string;
+  /** 工事登録アプリの取込キー（Aki番号）列 */
+  importKeyFieldId: string;
   startDateFieldId: string;
   contractorFieldId: string;
   /** 解決できないときは null。その場合ステータス無しで作る */
@@ -152,7 +156,7 @@ export function buildEmptySlotPayload(input: {
 }): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     // 値は入れない。@pocket が自動採番する
-    [input.tNumberFieldId]: "",
+    [input.importKeyFieldId]: "",
     [input.startDateFieldId]: input.dayKey,
     [input.contractorFieldId]: input.contractor,
   };
@@ -322,6 +326,9 @@ export async function runCustomerCancelSideEffects(opts: {
     console.error("[customer-cancel] 工事アプリの T番号 列を解決できません");
     return { ...base, warnings: [CONSTRUCTION_NOT_FOUND] };
   }
+  /** 空き枠の作成に要る取込キー（Aki番号）。無ければ空き枠は作らない */
+  const importKeyFieldId =
+    resolveConstructionImportKeyFieldId(constructionFields);
 
   const csv = collectConstructionFieldsCsv(fids);
   let constructionRecordId: string | null = null;
@@ -403,9 +410,15 @@ export async function runCustomerCancelSideEffects(opts: {
   if (constructionUpdated && plan.createsEmptySlot) {
     const startId = fids.startDate?.trim();
     const contractorId = fids.contractor?.trim();
-    if (!startId || !contractorId) {
+    if (!startId || !contractorId || !importKeyFieldId) {
+      // 取込キーの列が無いと @pocket が作成を拒むので、ここで諦める
       console.error(
-        "[customer-cancel] 施工予定日／施工会社の列を解決できず、空き枠を作成できません",
+        "[customer-cancel] 施工予定日／施工会社／取込キー（Aki番号）の列を解決できず、空き枠を作成できません",
+        {
+          hasStartDate: Boolean(startId),
+          hasContractor: Boolean(contractorId),
+          hasImportKey: Boolean(importKeyFieldId),
+        },
       );
       warnings.push(EMPTY_SLOT_FAILED);
     } else {
@@ -417,7 +430,7 @@ export async function runCustomerCancelSideEffects(opts: {
         );
       }
       const slotPayload = buildEmptySlotPayload({
-        tNumberFieldId,
+        importKeyFieldId,
         startDateFieldId: startId,
         contractorFieldId: contractorId,
         customerStatusFieldId: slotStatusId,

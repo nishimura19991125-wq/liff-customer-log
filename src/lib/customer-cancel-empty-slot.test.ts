@@ -34,6 +34,8 @@ const APP_FIELDS = [
   { uniqueId: "field-4", caption: "施工会社" },
   { uniqueId: "field-5", caption: "顧客ステータス" },
   { uniqueId: "field-6", caption: "工事対応者" },
+  // 取込キー。@pocket が自動採番する（工事アプリの T番号 は採番しなくなった）
+  { uniqueId: "field-101", caption: "Aki番号" },
 ];
 
 vi.mock("@/lib/atpocket", () => ({
@@ -134,9 +136,9 @@ const FAR_FUTURE = {
 };
 
 describe("★ 空き枠の payload", () => {
-  it("取込キー（T番号）の列を空文字で載せる", () => {
+  it("★ 取込キー（Aki番号）の列を空文字で載せる", () => {
     const payload = buildEmptySlotPayload({
-      tNumberFieldId: "field-1",
+      importKeyFieldId: "field-1",
       startDateFieldId: "field-3",
       contractorFieldId: "field-4",
       customerStatusFieldId: "field-5",
@@ -151,7 +153,7 @@ describe("★ 空き枠の payload", () => {
 
   it("★ 既存の空き枠と同じ構成（顧客ステータス=工事待ち・施工予定日・施工会社）", () => {
     const payload = buildEmptySlotPayload({
-      tNumberFieldId: "field-1",
+      importKeyFieldId: "field-1",
       startDateFieldId: "field-3",
       contractorFieldId: "field-4",
       customerStatusFieldId: "field-5",
@@ -169,7 +171,7 @@ describe("★ 空き枠の payload", () => {
 
   it("お客様名は載せない（空のままで空き枠として扱われる）", () => {
     const payload = buildEmptySlotPayload({
-      tNumberFieldId: "field-1",
+      importKeyFieldId: "field-1",
       startDateFieldId: "field-3",
       contractorFieldId: "field-4",
       customerStatusFieldId: "field-5",
@@ -182,7 +184,7 @@ describe("★ 空き枠の payload", () => {
 
   it("顧客ステータス列を解決できないときはその列だけ落ちる", () => {
     const payload = buildEmptySlotPayload({
-      tNumberFieldId: "field-1",
+      importKeyFieldId: "field-1",
       startDateFieldId: "field-3",
       contractorFieldId: "field-4",
       customerStatusFieldId: null,
@@ -220,7 +222,8 @@ describe("★ 空き枠の書き込み経路", () => {
     await runCustomerCancelSideEffects(FAR_FUTURE);
 
     expect(h.createCalls[0].payload).toEqual({
-      "field-1": "",
+      // 取込キーは Aki番号。T番号（field-1）は載せない（採番されないため）
+      "field-101": "",
       "field-3": "2026-12-01",
       "field-4": "ピュアライフ",
       "field-5": "工事待ち",
