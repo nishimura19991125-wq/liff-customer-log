@@ -98,7 +98,7 @@ export function UndatedCasePicker({
           工事日未定案件（名前検索）{" "}
           <span className="font-semibold text-red-600">必須</span>
           <span className="mt-0.5 block text-[11px] font-normal leading-snug text-slate-500">
-            お客様名（またはT番号）の一部を入力して候補から選んでください（キャンセル案件は除外）
+            お客様名（またはT番号）の一部を入力して候補から選んでください（お客様情報の施工予定日が空の案件。キャンセルは除外）
             {state.status === "ok" ? `（未定 ${state.cases.length}件）` : ""}
           </span>
         </span>
@@ -129,7 +129,7 @@ export function UndatedCasePicker({
                 一致する案件がありません
               </li>
             ) : (
-              filtered.map((c) => <li key={c.recordId}>{renderCaseButton(c)}</li>)
+              filtered.map((c) => <li key={c.customerInfoRecordId}>{renderCaseButton(c)}</li>)
             )}
           </ul>
         ) : null}
@@ -152,7 +152,7 @@ export function UndatedCasePicker({
             ) : (
               <ul className="max-h-56 overflow-y-auto rounded-xl border border-sky-200 bg-sky-50/40 py-1 shadow-sm">
                 {state.myCases.map((c) => (
-                  <li key={c.recordId}>{renderCaseButton(c)}</li>
+                  <li key={c.customerInfoRecordId}>{renderCaseButton(c)}</li>
                 ))}
               </ul>
             )}

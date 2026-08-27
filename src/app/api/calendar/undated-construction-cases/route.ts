@@ -1,20 +1,10 @@
 import { NextResponse } from "next/server";
 
-import {
-  apiKeyForCalendarPocket,
-  fetchAppFields,
-} from "@/lib/atpocket";
 import type { UndatedConstructionCasesPayload } from "@/lib/calendar-api-types";
-import { fetchCalendarConstructionRecordsCached } from "@/lib/calendar-construction-records-cache";
-import {
-  collectConstructionFieldsCsv,
-  resolveConstructionFieldIds,
-} from "@/lib/calendar-kojo";
-import { buildUndatedConstructionCases } from "@/lib/calendar-undated-cases";
-import { fetchCancelledCustomerTNumbersCached } from "@/lib/customer-cancelled-t-numbers";
-import { listCustomerCrmRecords } from "@/lib/customer-crm-list";
+import { getCachedCustomerCrmSnapshot } from "@/lib/customer-crm-list";
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
+import { buildUndatedCustomerCases } from "@/lib/customer-undated-cases";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
@@ -23,19 +13,35 @@ import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
 export const dynamic = "force-dynamic";
 
-/** 工事日未定の既存案件一覧（全件検索＋AP/CL担当候補） */
+/**
+ * 工事日未定の案件一覧（第3段階 3-3 で抽出元を変更）。
+ *
+ *   旧: 工事登録アプリの全件から「お客様名あり・日付が全部空」を拾う
+ *   新: お客様情報アプリから「施工予定日が空・キャンセル以外・T番号あり」
+ *
+ * 第1段階（b7f4169）で施工予定日が未定の新規登録を工事登録アプリに
+ * 作らなくなったため、旧の拾い方ではその案件が一覧に出てこなかった。
+ *
+ * ■ @pocket の呼び出しが減る
+ * 旧はこの1リクエストで3系統の全件走査を起こしていた。
+ *   工事アプリ全件 ＋ キャンセルT番号（お客様情報全件）
+ *   ＋ 担当顧客一覧（お客様情報全件）＋ 工事アプリの fields
+ * 新は 3-1 の共有スナップショット1系統だけ。顧客ステータスは
+ * スナップショットに載っているのでキャンセル用の走査が要らず、
+ * 工事アプリはそもそも読まない。
+ */
 export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
 
-  const calAppId = process.env.CALENDAR_APP_ID?.trim();
-  if (!calAppId) {
+  const customerCfg = customerInfoConfigReady();
+  if (!customerCfg.ok) {
     const payload: UndatedConstructionCasesPayload = {
       configured: false,
       disabled: true,
       items: [],
       myItems: [],
-      error: "CALENDAR_APP_ID が未設定です",
+      error: customerCfg.error,
     };
     return NextResponse.json(payload, { status: 503 });
   }
@@ -46,80 +52,8 @@ export async function GET(request: Request) {
     );
     const staffName = normApClStaffName(boundStaffName ?? "");
 
-    const calAuth = { apiKey: apiKeyForCalendarPocket() };
-    const [constructionFields, cancelledTNumbers, myApClTNumbers] =
-      await Promise.all([
-        fetchAppFields(calAppId, calAuth, {
-          operation: "calendar:工事日未定案件fields",
-          appEnv: "CALENDAR_APP_ID",
-        }),
-        fetchCancelledCustomerTNumbersCached().catch((e) => {
-          console.warn(
-            "[api/calendar/undated-construction-cases] cancelled T lookup failed",
-            e,
-          );
-          return new Set<string>();
-        }),
-        (async () => {
-          if (!staffName) return new Set<string>();
-          const customerCfg = customerInfoConfigReady();
-          if (!customerCfg.ok) return new Set<string>();
-          try {
-            const crmCustomers = await listCustomerCrmRecords(
-              staffName,
-              "no_construction_date",
-              { maxResults: null },
-            );
-            return new Set(
-              crmCustomers
-                .filter((c) => !c.isCancelled)
-                .map((c) => normApClStaffName(c.tNumber ?? ""))
-                .filter(Boolean),
-            );
-          } catch (e) {
-            console.warn(
-              "[api/calendar/undated-construction-cases] my AP/CL T lookup failed",
-              e,
-            );
-            return new Set<string>();
-          }
-        })(),
-      ]);
-
-    const fids = resolveConstructionFieldIds(constructionFields);
-    if (!fids.title?.trim()) {
-      const payload: UndatedConstructionCasesPayload = {
-        configured: false,
-        staffName,
-        items: [],
-        myItems: [],
-        error: "お客様名フィールドを特定できません",
-      };
-      return NextResponse.json(payload);
-    }
-
-    const csv = collectConstructionFieldsCsv(fids);
-    const constructionRecords = await fetchCalendarConstructionRecordsCached(
-      calAppId,
-      csv,
-      null,
-    );
-
-    const baseItems = buildUndatedConstructionCases(
-      constructionRecords,
-      constructionFields,
-      {
-        excludedTNumbers:
-          cancelledTNumbers.size > 0 ? cancelledTNumbers : undefined,
-      },
-    );
-
-    const items = baseItems.map((item) => {
-      const normT = normApClStaffName(item.tNumber);
-      const isMyApCl = Boolean(normT && myApClTNumbers.has(normT));
-      return isMyApCl ? { ...item, isMyApCl: true } : item;
-    });
-    const myItems = items.filter((item) => item.isMyApCl);
+    const snapshot = await getCachedCustomerCrmSnapshot();
+    const { items, myItems } = buildUndatedCustomerCases(snapshot, staffName);
 
     const payload: UndatedConstructionCasesPayload = {
       configured: true,
@@ -132,9 +66,7 @@ export async function GET(request: Request) {
   } catch (e) {
     console.error("[api/calendar/undated-construction-cases]", e);
     const msg =
-      e instanceof Error
-        ? e.message
-        : "工事日未定案件の取得に失敗しました";
+      e instanceof Error ? e.message : "工事日未定案件の取得に失敗しました";
     const isRateLimited =
       msg.includes("429") || msg.includes("Too Many Request");
     return NextResponse.json(

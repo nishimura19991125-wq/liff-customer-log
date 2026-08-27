@@ -83,8 +83,22 @@ export type ConstructionHandlerHomePayload = {
 };
 
 /** 工事日未定の既存案件（空き枠への割り当て候補・全件） */
+/**
+ * 工事日未定の案件（一覧・選択用）。
+ *
+ * ⚠ 第3段階 3-3 で **recordId を廃止**した。
+ *    以前は工事レコードの ID を指しており、旧ルート
+ *    （assign-case-to-slot / schedule-undated-case）の caseRecordId として
+ *    そのまま送っていた。抽出元がお客様情報アプリへ移り、ID の指すものが
+ *    変わったため、名前を変えずに差し替えると**別アプリのレコードIDを
+ *    旧ルートへ送る**事故になる。フィールドごと消して、取りこぼしが
+ *    コンパイルエラーになるようにしてある。
+ *
+ *    送信先は /api/calendar/assign-customer-case（3-2 で追加）。
+ */
 export type UndatedConstructionCase = {
-  recordId: string;
+  /** お客様情報のレコードID。割り当ての送信先はこれ */
+  customerInfoRecordId: string;
   customerName: string;
   housingShort: string;
   contractorName: string;

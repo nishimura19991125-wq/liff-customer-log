@@ -24,6 +24,11 @@ import { CustomerNameSplitInput } from "@/components/customer-name-split-input";
 import { CalendarAssignUndatedCaseForm } from "@/components/calendar-assign-undated-case-form";
 import { CalendarMonthSkeleton } from "@/components/calendar-month-skeleton";
 import {
+  ASSIGN_CUSTOMER_CASE_PATH,
+  assignedCaseSuccessMessage,
+  type AssignCustomerCaseResponse,
+} from "@/lib/calendar-assign-customer-case-client";
+import {
   ConstructionHandlerStaffSelect,
   HANDLER_STAFF_SELECT_CLASS,
   fetchConstructionHandlerStaffRows,
@@ -62,6 +67,7 @@ import type {
   CalendarAttachmentMeta,
   CalendarMonthApiItem,
   CalendarRecordMonthPatch,
+  UndatedConstructionCase,
 } from "@/lib/calendar-api-types";
 import {
   EMPTY_FILL_HOUSING_STATUS_NEW_BUILD,
@@ -803,7 +809,8 @@ function EmptySlotCard({
     "idle" | "loading" | "ok" | "err"
   >("idle");
   const [handlerListError, setHandlerListError] = useState("");
-  const [selectedCaseRecordId, setSelectedCaseRecordId] = useState("");
+  const [selectedCase, setSelectedCase] =
+    useState<UndatedConstructionCase | null>(null);
   const [caseSearchInput, setCaseSearchInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
@@ -824,6 +831,15 @@ function EmptySlotCard({
 
   const rid = item.recordId?.trim();
   const canSubmit = Boolean(rid && idToken);
+
+  /**
+   * この空き枠の施工会社。割り当て API に必須で渡す。
+   * contractorKey は施工会社名そのもので、未設定のときだけ __UNSET__ になる
+   */
+  const slotContractorName =
+    item.contractorKey && item.contractorKey !== "__UNSET__"
+      ? item.contractorKey.trim()
+      : "";
 
   const isNewBuildHousing =
     housingStatus === EMPTY_FILL_HOUSING_STATUS_NEW_BUILD;
@@ -848,7 +864,7 @@ function EmptySlotCard({
 
   /** 案件の選択をまっさらにする（開閉・タブ切り替え時） */
   function resetUndatedCaseSelection() {
-    setSelectedCaseRecordId("");
+    setSelectedCase(null);
     setCaseSearchInput("");
   }
 
@@ -1076,12 +1092,24 @@ function EmptySlotCard({
     }
   }
 
+  /**
+   * 未定案件をこの空き枠へ割り当てる（3-3 で送信先を変更）。
+   *
+   *   旧: assign-case-to-slot（案件に日付を書き、この空き枠を**削除**）
+   *   新: assign-customer-case（この枠のレコードを案件に変える。削除しない）
+   *
+   * 工事登録アプリに同じ案件が既にある場合は、サーバがそちらへ書いて
+   * この枠は残る。押した枠が変わらないことがあるので、結果は
+   * assignedTo を見て伝える
+   */
   async function handleAssignSubmit() {
     if (!rid) return;
-    const caseId = selectedCaseRecordId.trim();
     const dayKey = slotDayKey?.trim() ?? "";
-    if (!caseId || !dayKey) return;
+    if (!selectedCase || !dayKey) return;
     if (undatedListStatus !== "ok" || undatedCases.length === 0) return;
+    if (handlerMisconfigured) return;
+    if (handlerFromStaff && !selectedHandlerStaffId.trim()) return;
+    if (!slotContractorName) return;
 
     setSubmitting(true);
     setFeedback(null);
@@ -1104,28 +1132,26 @@ function EmptySlotCard({
         return;
       }
 
-      const res = await fetch("/api/calendar/assign-case-to-slot", {
+      const res = await fetch(ASSIGN_CUSTOMER_CASE_PATH, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
+          customerInfoRecordId: selectedCase.customerInfoRecordId,
+          scheduledStartDate: dayKey,
+          contractor: slotContractorName,
           slotRecordId: rid,
-          caseRecordId: caseId,
-          slotDayKey: dayKey,
+          ...(handlerFromStaff
+            ? { constructionHandlerStaffRecordId: selectedHandlerStaffId }
+            : {}),
           viewYear,
           viewMonth,
         }),
       });
       const rawBody = await res.text();
-      let data: {
-        error?: string;
-        customerInfoSynced?: boolean;
-        constructionSaved?: boolean;
-        calendarPatch?: CalendarRecordMonthPatch;
-        slotConflict?: boolean;
-      } = {};
+      let data: AssignCustomerCaseResponse = {};
       if (rawBody.trim()) {
         try {
           data = JSON.parse(rawBody) as typeof data;
@@ -1144,7 +1170,7 @@ function EmptySlotCard({
           return;
         }
         if (data.constructionSaved) {
-          setSelectedCaseRecordId("");
+          setSelectedCase(null);
           setFillMode("new");
           setOpen(false);
           try {
@@ -1169,7 +1195,7 @@ function EmptySlotCard({
         });
         return;
       }
-      setSelectedCaseRecordId("");
+      setSelectedCase(null);
       setFillMode("new");
       setOpen(false);
       try {
@@ -1178,12 +1204,7 @@ function EmptySlotCard({
         setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
         return;
       }
-      setFeedback({
-        kind: "ok",
-        text: data.customerInfoSynced
-          ? "割り当てました。カレンダーに反映し、お客様情報アプリの施工予定日も更新しました。"
-          : "割り当てました。カレンダーに反映済みです。",
-      });
+      setFeedback({ kind: "ok", text: assignedCaseSuccessMessage(data) });
     } catch (e) {
       setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
     } finally {
@@ -1305,11 +1326,21 @@ function EmptySlotCard({
                 {slotDayKey?.trim()
                   ? formatDisplayYmd(slotDayKey.trim())
                   : "未選択"}
-                ）に割り当てます。案件のT番号はそのまま維持され、空き枠は削除されます。
+                ）に割り当てます。
+                <span className="font-semibold text-slate-800">
+                  空き枠は削除しません。
+                </span>
+                この枠のレコードをそのまま案件に変え、Aki番号を引き継ぎます。工事登録アプリに同じ案件が既にあるときは、そちらに日付を入れてこの枠は残します。
               </p>
               {!slotDayKey?.trim() ? (
                 <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-900 ring-1 ring-amber-100">
                   カレンダー上の日付が特定できないため、割り当てできません。日付を選び直してください。
+                </p>
+              ) : null}
+              {!slotContractorName ? (
+                <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-amber-900 ring-1 ring-amber-100">
+                  この空き枠に施工会社が入っていないため、割り当てできません。@pocket
+                  で施工会社を設定してください。
                 </p>
               ) : null}
               <UndatedCasePicker
@@ -1318,23 +1349,37 @@ function EmptySlotCard({
                 searchInput={caseSearchInput}
                 onSearchInputChange={(v) => {
                   setCaseSearchInput(v);
-                  setSelectedCaseRecordId("");
+                  setSelectedCase(null);
                 }}
-                selectedRecordId={selectedCaseRecordId}
+                selectedRecordId={selectedCase?.customerInfoRecordId ?? ""}
                 onSelectCase={(c) => {
-                  setSelectedCaseRecordId(c.recordId);
+                  setSelectedCase(c);
                   setCaseSearchInput(undatedCaseOptionLabel(c));
                 }}
                 onClearSelection={resetUndatedCaseSelection}
               />
+              {handlerFromStaff ? (
+                <ConstructionHandlerStaffSelect
+                  submitting={submitting}
+                  canSubmit={canSubmit}
+                  handlerListStatus={handlerListStatus}
+                  handlerListError={handlerListError}
+                  handlerRows={handlerRows}
+                  selectedHandlerStaffId={selectedHandlerStaffId}
+                  setSelectedHandlerStaffId={setSelectedHandlerStaffId}
+                  inputId={`construction-handler-assign-${rid ?? "unknown"}`}
+                />
+              ) : null}
               <button
                 type="button"
                 className="mt-4 w-full rounded-xl bg-slate-800 py-3 text-[14px] font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
                 disabled={
                   submitting ||
                   !canSubmit ||
-                  !selectedCaseRecordId.trim() ||
+                  !selectedCase ||
                   !slotDayKey?.trim() ||
+                  !slotContractorName ||
+                  handlerBlocking ||
                   undatedListStatus !== "ok"
                 }
                 onClick={() => void handleAssignSubmit()}
@@ -1515,6 +1560,7 @@ function NewConstructionRecordPanel({
   viewMonth,
   onSaved,
   onSessionExpired,
+  constructionHandlerUsesStaffDirectory,
 }: {
   idToken: string | null;
   open: boolean;
@@ -1523,6 +1569,8 @@ function NewConstructionRecordPanel({
   viewMonth: number;
   onSaved: (patch?: CalendarRecordMonthPatch | null) => Promise<void>;
   onSessionExpired?: () => void;
+  /** undefined: 工事対応者なし。true: スタッフ名簿。false: 設定不足 */
+  constructionHandlerUsesStaffDirectory?: boolean;
 }) {
   const [customerFamilyName, setCustomerFamilyName] = useState("");
   const [customerGivenName, setCustomerGivenName] = useState("");
@@ -1766,11 +1814,14 @@ function NewConstructionRecordPanel({
           {panelMode === "assign" ? (
             <CalendarAssignUndatedCaseForm
               idToken={idToken}
-              active={open}
+              active={open && panelMode === "assign"}
               viewYear={viewYear}
               viewMonth={viewMonth}
               onSaved={onSaved}
               onSessionExpired={onSessionExpired}
+              constructionHandlerUsesStaffDirectory={
+                constructionHandlerUsesStaffDirectory
+              }
             />
           ) : (
             <>
@@ -2472,6 +2523,10 @@ export function LiffCalendarMonthPage({
               viewMonth={ym.month}
               onSaved={applyCalendarSaveToView}
               onSessionExpired={() => setPhase("session-expired")}
+              constructionHandlerUsesStaffDirectory={
+                data?.emptyFillConstructionHandlerUsesStaffDirectory ??
+                data?.emptyFillConstructionRegistrantUsesStaffDirectory
+              }
             />
           ) : null}
 

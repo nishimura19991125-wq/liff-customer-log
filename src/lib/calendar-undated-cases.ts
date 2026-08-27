@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { AtPocketFieldRow, AtPocketRecordRow } from "@/lib/atpocket";
-import type { UndatedConstructionCase } from "@/lib/calendar-api-types";
+
 import { dayKeyFromConstructionRecord } from "@/lib/calendar-consume-empty-slot";
 import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
 import {
@@ -13,6 +13,24 @@ import {
   type ConstructionFieldIds,
 } from "@/lib/calendar-kojo";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
+
+/**
+ * 工事登録アプリから拾っていた頃の1件（旧）。
+ *
+ * ⚠ **3-3 で使われなくなった。**撤去は 3-4 で行う。
+ *    抽出元がお客様情報アプリへ移り、UndatedConstructionCase の
+ *    recordId（工事レコードのID）は廃止されたので、その型は使えない。
+ *    revert しやすさのため実装は残し、型だけここへ切り出してある。
+ */
+export type LegacyUndatedConstructionCase = {
+  /** 工事レコードのID */
+  recordId: string;
+  customerName: string;
+  housingShort: string;
+  contractorName: string;
+  tNumber: string;
+  isMyApCl?: boolean;
+};
 
 function coercePlainString(raw: unknown): string {
   if (raw == null) return "";
@@ -105,7 +123,7 @@ export function buildUndatedConstructionCases(
     allowedTNumbers?: Set<string>;
     excludedTNumbers?: Set<string>;
   },
-): UndatedConstructionCase[] {
+): LegacyUndatedConstructionCase[] {
   const fids = resolveConstructionFieldIds(constructionFields);
   const titleId = fids.title?.trim();
   if (!titleId) return [];
@@ -115,7 +133,7 @@ export function buildUndatedConstructionCases(
   const excludedTNumbers = options?.excludedTNumbers;
 
   const tNumberId = resolveConstructionTNumberFieldId(constructionFields);
-  const items: UndatedConstructionCase[] = [];
+  const items: LegacyUndatedConstructionCase[] = [];
 
   for (const rec of records) {
     const recordId = recordIdFromRow(rec);
