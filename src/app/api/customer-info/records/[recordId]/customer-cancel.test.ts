@@ -10,6 +10,8 @@ const h = vi.hoisted(() => ({
   updateCalls: [] as Array<Record<string, unknown>>,
   /** 保存前レコードの顧客ステータス */
   beforeCustomerStatus: "工事待ち",
+  /** 保存前レコードの Aki番号（工事アプリの取込キー） */
+  beforeAkiNumber: "A0042",
   /** runCustomerCancelSideEffects の呼び出し引数 */
   sideEffectCalls: [] as Array<Record<string, unknown>>,
   sideEffectWarnings: [] as string[],
@@ -29,6 +31,7 @@ const APP_FIELDS = [
   { uniqueId: "field-11", caption: "APPT" },
   { uniqueId: "field-12", caption: "CLPT" },
   { uniqueId: "field-13", caption: "電話番号" },
+  { uniqueId: "field-14", caption: "Aki番号" },
 ];
 
 vi.mock("@/lib/request-auth", () => ({
@@ -63,6 +66,7 @@ vi.mock("@/lib/atpocket", () => ({
       "field-6": h.beforeCustomerStatus,
       "field-7": "2026-12-01",
       "field-9": "ピュアライフ",
+      "field-14": h.beforeAkiNumber,
     },
   }),
   updateRecord: async (
@@ -170,6 +174,7 @@ beforeEach(() => {
   h.sideEffectCalls = [];
   h.sideEffectWarnings = [];
   h.beforeCustomerStatus = "工事待ち";
+  h.beforeAkiNumber = "A0042";
 });
 
 describe("★ ① キャンセル以外 → キャンセル で処理が実行される", () => {
@@ -337,5 +342,35 @@ describe("★ V-7 失敗時の扱い", () => {
     const { body } = await put(CANCEL_VALUES);
 
     expect(body.warning).toBeUndefined();
+  });
+});
+
+/**
+ * 実機で「キャンセルしても案件が工事カレンダーに残る」が出た件。
+ *
+ * 工事レコードは Aki番号（工事アプリの自動採番）でしか確実に引けない。
+ * T番号 はお客様情報が採番して転記されてくる値で、転記が済んでいない
+ * 案件では工事側が空になっている。T番号 だけを渡すと後段が
+ * 「工事アプリに該当レコードが無い」と判断して何もしない。
+ */
+describe("★ 工事レコードを引くキーを渡す", () => {
+  it("★ 保存前レコードの Aki番号 を後段へ渡す", async () => {
+    await put(CANCEL_VALUES);
+
+    expect(h.sideEffectCalls[0]).toMatchObject({
+      tNumber: "T00003372",
+      akiNumber: "A0042",
+    });
+  });
+
+  it("Aki番号 が空でも T番号 は渡す（移行前の案件）", async () => {
+    h.beforeAkiNumber = "";
+
+    await put(CANCEL_VALUES);
+
+    expect(h.sideEffectCalls[0]).toMatchObject({
+      tNumber: "T00003372",
+      akiNumber: "",
+    });
   });
 });

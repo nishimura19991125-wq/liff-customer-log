@@ -223,6 +223,22 @@ async function linkConstructionIfScheduledDateEntered(input: {
  * ベストエフォート。ここが落ちても工事レコードは出来ているので、
  * 画面には出さずログだけ残す（次に施工予定日を変えれば入り直る）
  */
+/**
+ * お客様情報アプリの Aki番号 列。連携（sync）と同じ解決順にそろえる。
+ * 未設定時は見出しで引く（表記ゆれも拾う）
+ */
+function resolveCustomerInfoAkiFieldId(
+  appFields: AtPocketFieldRow[],
+): string | null {
+  const env = process.env.CUSTOMER_INFO_AKI_NUMBER_FIELD_ID?.trim();
+  if (env) return resolveConfiguredFieldToSchemaUniqueId(env, appFields);
+  for (const caption of ["Aki番号", "アキ番号", "AKI番号"]) {
+    const id = pocketFieldUniqueIdByCaption(appFields, caption);
+    if (id) return id;
+  }
+  return null;
+}
+
 async function writeAkiNumberBackToCustomerInfo(input: {
   appId: string;
   recordId: string;
@@ -231,10 +247,7 @@ async function writeAkiNumberBackToCustomerInfo(input: {
   akiNumber: string;
   tNumber: string;
 }): Promise<void> {
-  const akiEnv = process.env.CUSTOMER_INFO_AKI_NUMBER_FIELD_ID?.trim();
-  const akiFieldId = akiEnv
-    ? resolveConfiguredFieldToSchemaUniqueId(akiEnv, input.appFields)
-    : pocketFieldUniqueIdByCaption(input.appFields, "Aki番号");
+  const akiFieldId = resolveCustomerInfoAkiFieldId(input.appFields);
   if (!akiFieldId) {
     console.error(
       "[api/customer-info] お客様情報の Aki番号 列を解決できません。CUSTOMER_INFO_AKI_NUMBER_FIELD_ID を確認してください",
@@ -646,6 +659,12 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       // キャンセル処理（タスクV）のトリガー判定に使う保存前の顧客ステータス
       const customerStatusFieldId =
         resolved.find((f) => f.key === "customerStatus")?.fieldId ?? "";
+      /**
+       * 工事アプリの取込キー（Aki番号）。キャンセル処理が工事レコードを
+       * 引くのに使う。T番号 は転記されてくる値で空のことがあり、
+       * それだけで探すと「工事アプリに無い」と誤判定して案件が残る
+       */
+      const akiNumberFieldId = resolveCustomerInfoAkiFieldId(appFields) ?? "";
 
       /**
        * 第2段階: 施工予定日を入れたら工事登録アプリへ載せる。
@@ -689,6 +708,7 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         [
           ...(inputStatusFieldId ? [inputStatusFieldId] : []),
           ...(customerStatusFieldId ? [customerStatusFieldId] : []),
+          ...(akiNumberFieldId ? [akiNumberFieldId] : []),
           ...(constructionDateFieldId ? [constructionDateFieldId] : []),
           ...(customerNameFieldId ? [customerNameFieldId] : []),
           ...(housingStatusFieldId ? [housingStatusFieldId] : []),
@@ -800,6 +820,10 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         try {
           cancelResult = await runCustomerCancelSideEffects({
             tNumber: notificationExtras.tNumber,
+            akiNumber:
+              loadedStaff && akiNumberFieldId
+                ? readCustomerInfoFieldValue(loadedStaff.record, akiNumberFieldId)
+                : "",
             constructionDate: cancelSource.constructionDate,
             contractor: cancelSource.contractor,
             todayDayKey: todayJstDayKey(),
