@@ -9,6 +9,7 @@ import {
   readCustomerInfoFieldValue,
 } from "@/lib/customer-info-record";
 import { fetchRecordsList } from "@/lib/atpocket";
+import { startServerTimingLog } from "@/lib/server-timing-log";
 
 const PAGE_LIMIT = 1000;
 const DEFAULT_MAX_PAGES = 25;
@@ -51,6 +52,13 @@ export async function findCustomerInfoRecordIdByUniqueKey(
   const fieldsCsv = keyFieldSchemaId.trim();
   const maxPages = keyLookupMaxPages();
 
+  const timing = startServerTimingLog("customer-info-key-lookup");
+  /** query 付きの1ページ目が返した行数 */
+  let queryRows = 0;
+  /** query 無しで引いたページ数と、その合計行数 */
+  let scanPages = 0;
+  let scanRows = 0;
+
   const scanPage = async (
     page: number,
     query?: string,
@@ -67,6 +75,12 @@ export async function findCustomerInfoRecordIdByUniqueKey(
       pocketCtx,
     );
     const rows = data.records ?? [];
+    if (query) {
+      queryRows = rows.length;
+    } else {
+      scanPages += 1;
+      scanRows += rows.length;
+    }
     for (const row of rows) {
       const recordId = customerInfoRecordIdFromRow(row);
       const rec = row.record;
@@ -80,19 +94,48 @@ export async function findCustomerInfoRecordIdByUniqueKey(
     return rows.length < PAGE_LIMIT ? "end" : null;
   };
 
+  /** 1行にまとめて出す。mode は固定文字列だけ */
+  const flush = (
+    mode: "query-hit" | "query-end" | "scan-hit" | "scan-end" | "scan-cap",
+    found: boolean,
+  ) => {
+    timing.flush({
+      mode,
+      found,
+      keyField: fieldsCsv,
+      queryRows,
+      scanPages,
+      scanRows,
+      pageLimit: PAGE_LIMIT,
+      maxPages,
+    });
+  };
+
   const qHit = await scanPage(1, uniqueKey);
+  timing.mark("query-page");
   if (typeof qHit === "string") {
-    if (qHit === "end") return null;
+    if (qHit === "end") {
+      flush("query-end", false);
+      return null;
+    }
+    flush("query-hit", true);
     return qHit;
   }
 
   for (let page = 1; page <= maxPages; page++) {
     const hit = await scanPage(page);
+    timing.mark("scan-pages");
     if (typeof hit === "string") {
-      if (hit === "end") return null;
+      if (hit === "end") {
+        flush("scan-end", false);
+        return null;
+      }
+      flush("scan-hit", true);
       return hit;
     }
   }
+
+  flush("scan-cap", false);
 
   return null;
 }
