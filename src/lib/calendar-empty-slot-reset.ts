@@ -74,12 +74,54 @@ export const CONSTRUCTION_SLOT_RESET_FIELD_LABELS: Record<
   constructionHandler: "工事対応者",
 };
 
-/** 空き枠へ戻しても**残す**項目。確認画面の説明にも使う */
-export const CONSTRUCTION_SLOT_KEEP_FIELD_LABELS: readonly string[] = [
-  "施工予定日",
-  "施工会社",
-  "Aki番号",
+/**
+ * 空き枠へ戻しても**残す**項目。
+ *
+ * ⚠ ラベルだけの配列にしないこと。実際に残す列と結びついていないと、
+ *    確認画面の説明と実際の挙動がずれても誰も気づかない（M-1 の積み残し）。
+ *    ここをキーと対にし、列 ID の組み立ても buildConstructionSlotKeepFieldIds
+ *    に寄せてあるので、片方だけ増減させることができない。
+ */
+export type ConstructionSlotKeepField =
+  | "startDate"
+  | "contractor"
+  | "importKey";
+
+export const CONSTRUCTION_SLOT_KEEP_FIELDS: readonly {
+  key: ConstructionSlotKeepField;
+  label: string;
+}[] = [
+  { key: "startDate", label: "施工予定日" },
+  { key: "contractor", label: "施工会社" },
+  { key: "importKey", label: "Aki番号" },
 ];
+
+/** 確認画面の説明に使うラベル。**定義から導出**するのでずれない */
+export const CONSTRUCTION_SLOT_KEEP_FIELD_LABELS: readonly string[] =
+  CONSTRUCTION_SLOT_KEEP_FIELDS.map((f) => f.label);
+
+/**
+ * 「残す列」の列 ID を組み立てる。
+ * buildConstructionEmptySlotResetPatch の keepFieldIds へそのまま渡す。
+ *
+ * 解決できなかった項目は unresolved で返す。守りが効かない列があることを
+ * 呼び出し側がログに出せるようにするため（黙って素通しにしない）。
+ */
+export function buildConstructionSlotKeepFieldIds(
+  fieldIdOf: (key: ConstructionSlotKeepField) => string | null | undefined,
+): { fieldIds: string[]; unresolved: ConstructionSlotKeepField[] } {
+  const fieldIds: string[] = [];
+  const unresolved: ConstructionSlotKeepField[] = [];
+  for (const { key } of CONSTRUCTION_SLOT_KEEP_FIELDS) {
+    const id = fieldIdOf(key)?.trim();
+    if (!id) {
+      unresolved.push(key);
+      continue;
+    }
+    if (!fieldIds.includes(id)) fieldIds.push(id);
+  }
+  return { fieldIds, unresolved };
+}
 
 export function isConstructionSlotResetField(
   key: string,

@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildConstructionEmptySlotResetPatch,
   isConstructionSlotResetField,
+  CONSTRUCTION_SLOT_KEEP_FIELDS,
   CONSTRUCTION_SLOT_KEEP_FIELD_LABELS,
+  buildConstructionSlotKeepFieldIds,
   CONSTRUCTION_SLOT_RESET_FIELDS,
   CONSTRUCTION_SLOT_RESET_FIELD_LABELS,
   type ConstructionSlotResetField,
@@ -268,5 +270,57 @@ describe("★ キャンセル処理と取り違えていない", () => {
     const moveClears = [...CONSTRUCTION_SLOT_RESET_FIELDS] as string[];
 
     expect(locked.some((k) => moveClears.includes(k))).toBe(false);
+  });
+});
+
+/**
+ * M-1 の積み残し。ラベルだけの配列だと、確認画面の説明と実際に残る列が
+ * ずれても誰も気づかない。キーと対にし、列 ID の組み立ても同じ定義から
+ * 導出するようにしたので、片方だけ増減させられない。
+ */
+describe("★ 残す列（ラベルと列 ID を結びつける）", () => {
+  const keepIdOf = (key: (typeof CONSTRUCTION_SLOT_KEEP_FIELDS)[number]["key"]) =>
+    key === "startDate"
+      ? START_DATE
+      : key === "contractor"
+        ? CONTRACTOR
+        : AKI;
+
+  it("★ ラベルは定義から導出される（手書きの配列ではない）", () => {
+    expect([...CONSTRUCTION_SLOT_KEEP_FIELD_LABELS]).toEqual(
+      CONSTRUCTION_SLOT_KEEP_FIELDS.map((f) => f.label),
+    );
+  });
+
+  it("★ 列 ID の数とラベルの数が一致する", () => {
+    const { fieldIds, unresolved } = buildConstructionSlotKeepFieldIds(keepIdOf);
+
+    expect(unresolved).toEqual([]);
+    expect(fieldIds).toHaveLength(CONSTRUCTION_SLOT_KEEP_FIELD_LABELS.length);
+    expect(fieldIds).toEqual([START_DATE, CONTRACTOR, AKI]);
+  });
+
+  it("★ 組み立てた列 ID をそのまま渡せば、その列は消えない", () => {
+    const { fieldIds } = buildConstructionSlotKeepFieldIds(keepIdOf);
+    const { patch } = build({}, fieldIds);
+
+    for (const id of fieldIds) {
+      expect(patch).not.toHaveProperty(id);
+    }
+  });
+
+  it("解決できない列は unresolved で返す（守りが効かないことを知らせる）", () => {
+    const { fieldIds, unresolved } = buildConstructionSlotKeepFieldIds((key) =>
+      key === "importKey" ? null : keepIdOf(key),
+    );
+
+    expect(fieldIds).toEqual([START_DATE, CONTRACTOR]);
+    expect(unresolved).toEqual(["importKey"]);
+  });
+
+  it("同じ列を返しても重複しない", () => {
+    const { fieldIds } = buildConstructionSlotKeepFieldIds(() => START_DATE);
+
+    expect(fieldIds).toEqual([START_DATE]);
   });
 });
