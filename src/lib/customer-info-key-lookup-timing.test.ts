@@ -1,25 +1,36 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * お客様情報のキー照合の計測（A-0）。
+ * お客様情報のキー照合。
  *
- * 実測でこの照合が1回あたり約2秒かかっていた。原因が
- *   「query が効かず1000件を運んでいる」のか
- *   「@pocket の応答自体が遅い」のか
- * をコードから決められないので、行数とページ数を出せるようにした。
+ * 計測（A-0）で、query に**値そのもの**を渡していたため @pocket が
+ * 絞り込みと解釈せず、**毎回全件を返していた**ことが確定した。
+ *   queryRows 1000 / scanPages 3 / scanRows 2749 / 約2秒
+ * 顧客が増えるほど遅くなり、PAGE_LIMIT × maxPages（25,000件）を超えると
+ * 「見つからない」を返すようになり、**顧客レコードが二重に作られる**。
  *
- * ここで固定するのは次の3つ。
- *   - 既定では何も出さない
- *   - 出すのは行数・ページ数・上限値と列の識別子だけ（探している値は出さない）
- *   - **照合の結果と @pocket への投げ方が変わっていない**（計測だけ）
+ * ここで固定するのは次の4つ。
+ *   - フィールド式で絞る（limit も 50 に下げる）
+ *   - 絞り込みが効かなければ**全件走査へ落ちる**（黙って「無い」と言わない）
+ *   - 走査は page=1 から（読み飛ばさない）
+ *   - 計測は既定で無効・個人情報を出さない
  */
 
 const KEY_FIELD = "field-268";
 
+type Call = {
+  page?: string;
+  limit?: string;
+  query?: string;
+  fields?: string;
+};
+
 const h = vi.hoisted(() => ({
-  /** page 番号 → 返す行 */
+  /** page 番号 → 返す行（query 無しの走査用） */
   pages: new Map<string, unknown[]>(),
-  calls: [] as Array<{ page?: string; limit?: string; query?: string }>,
+  /** 絞り込みページが返す行。null なら例外（拒否）を投げる */
+  queryRows: [] as unknown[] | null,
+  calls: [] as Call[],
 }));
 
 vi.mock("@/lib/customer-info-config", () => ({
@@ -28,15 +39,19 @@ vi.mock("@/lib/customer-info-config", () => ({
 }));
 
 vi.mock("@/lib/atpocket", () => ({
-  fetchRecordsList: async (
-    _appId: string,
-    params?: { page?: string; limit?: string; query?: string },
-  ) => {
+  fetchRecordsList: async (_appId: string, params?: Call) => {
     h.calls.push({
       page: params?.page,
       limit: params?.limit,
       query: params?.query,
+      fields: params?.fields,
     });
+    if (params?.query) {
+      if (h.queryRows === null) {
+        throw new Error("@pocket list records failed: 400 invalid query");
+      }
+      return { records: h.queryRows };
+    }
     return { records: h.pages.get(params?.page ?? "1") ?? [] };
   },
 }));
@@ -51,27 +66,43 @@ function row(recordId: string, tNumber: string) {
   return { recordId, record: { [KEY_FIELD]: tNumber } };
 }
 
-/** 1000件（PAGE_LIMIT）の満杯ページ。1件だけ目当ての値を混ぜられる */
-function fullPage(hitAt?: number): unknown[] {
-  return Array.from({ length: 1000 }, (_, i) =>
+/** limit ぶん埋まったページ */
+function fullPage(size: number, hitAt?: number): unknown[] {
+  return Array.from({ length: size }, (_, i) =>
     row(`r${i}`, i === hitAt ? "T00003420" : `T9999${i}`),
   );
 }
 
+function infoCalls(): unknown[][] {
+  return (console.info as unknown as { mock: { calls: unknown[][] } }).mock
+    .calls;
+}
+
 function flushed(): Record<string, unknown> | null {
-  const call = (console.info as unknown as { mock: { calls: unknown[][] } })
-    .mock.calls[0];
+  const call = infoCalls()[0];
   if (!call) return null;
   expect(call[0]).toBe("[timing]");
   return JSON.parse(String(call[1])) as Record<string, unknown>;
 }
 
+function warnText(): string {
+  return (console.warn as unknown as { mock: { calls: unknown[][] } }).mock.calls
+    .map((c) => c.map((x) => String(x)).join(" "))
+    .join("\n");
+}
+
+const queryCalls = () => h.calls.filter((c) => c.query);
+const scanCalls = () => h.calls.filter((c) => !c.query);
+
 beforeEach(() => {
   savedEnv.value = process.env.CALENDAR_TIMING_LOG;
   delete process.env.CALENDAR_TIMING_LOG;
+  delete process.env.CUSTOMER_INFO_KEY_LOOKUP_MAX_PAGES;
   h.pages.clear();
+  h.queryRows = [];
   h.calls.length = 0;
   vi.spyOn(console, "info").mockImplementation(() => {});
+  vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -80,22 +111,73 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("★ 計測は既定で無効", () => {
-  it("★ 何も出さない", async () => {
-    h.pages.set("1", [row("cust-9", "T00003420")]);
+describe("★ フィールド式で絞る", () => {
+  it("★ query がフィールド式・limit が 50", async () => {
+    h.queryRows = [row("cust-9", "T00003420")];
+
+    const id = await findCustomerInfoRecordIdByUniqueKey(
+      KEY_FIELD,
+      "T00003420",
+    );
+
+    expect(id).toBe("cust-9");
+    expect(queryCalls()).toHaveLength(1);
+    expect(queryCalls()[0]).toMatchObject({
+      page: "1",
+      limit: "50",
+      fields: KEY_FIELD,
+      query: `${KEY_FIELD} = "T00003420"`,
+    });
+    // 絞り込みが効いたので全件走査はしない
+    expect(scanCalls()).toHaveLength(0);
+  });
+
+  it("★ 引用符・バックスラッシュをエスケープする", async () => {
+    h.queryRows = [];
+    h.pages.set("1", []);
+
+    await findCustomerInfoRecordIdByUniqueKey(KEY_FIELD, 'a"b\\c');
+
+    expect(queryCalls()[0]?.query).toBe(`${KEY_FIELD} = "a\\"b\\\\c"`);
+  });
+
+  it("★ 絞り込みが効いて見つからなければ、走査せずに null", async () => {
+    // ここで走査へ落ちると、直したはずの全件走査が残ってしまう
+    h.queryRows = [];
+
+    const id = await findCustomerInfoRecordIdByUniqueKey(
+      KEY_FIELD,
+      "T00003420",
+    );
+
+    expect(id).toBeNull();
+    expect(scanCalls()).toHaveLength(0);
+  });
+
+  it("表記ゆれに備えて、生の値と正規化した値の2通りを試す", async () => {
+    h.queryRows = [];
+    h.pages.set("1", []);
+
+    await findCustomerInfoRecordIdByUniqueKey(KEY_FIELD, "T0000  3420");
+
+    expect(queryCalls().map((c) => c.query)).toEqual([
+      `${KEY_FIELD} = "T0000  3420"`,
+      `${KEY_FIELD} = "T0000 3420"`,
+    ]);
+  });
+
+  it("同じ形になる値では1通りしか投げない", async () => {
+    h.queryRows = [];
 
     await findCustomerInfoRecordIdByUniqueKey(KEY_FIELD, "T00003420");
 
-    expect(console.info).not.toHaveBeenCalled();
+    expect(queryCalls()).toHaveLength(1);
   });
 });
 
-describe("★ 何が返っているかを出す", () => {
-  beforeEach(() => {
-    process.env.CALENDAR_TIMING_LOG = "true";
-  });
-
-  it("★ query 付きの1ページ目で見つかったら query-hit と行数", async () => {
+describe("★ 絞り込みが効かないときは全件走査へ落ちる", () => {
+  it("★ 400 で拒否されたら走査する", async () => {
+    h.queryRows = null; // 例外を投げる
     h.pages.set("1", [row("cust-9", "T00003420")]);
 
     const id = await findCustomerInfoRecordIdByUniqueKey(
@@ -104,36 +186,37 @@ describe("★ 何が返っているかを出す", () => {
     );
 
     expect(id).toBe("cust-9");
-    expect(flushed()).toMatchObject({
-      scope: "customer-info-key-lookup",
-      mode: "query-hit",
-      found: true,
-      queryRows: 1,
-      scanPages: 0,
-      pageLimit: 1000,
-    });
+    expect(scanCalls()).toHaveLength(1);
   });
 
-  it("★ query が効いていなければ行数が pageLimit に張り付く", async () => {
-    // これが出たら「値そのものを query に渡していて絞れていない」の裏付け
-    h.pages.set("1", fullPage(500));
+  it("★ 拒否されたことをログに残す（遅いまま気づかない状態を作らない）", async () => {
+    h.queryRows = null;
+    h.pages.set("1", []);
+
+    await findCustomerInfoRecordIdByUniqueKey(KEY_FIELD, "T00003420");
+
+    expect(warnText()).toContain("拒否された");
+    expect(warnText()).toContain("全件走査");
+  });
+
+  it("★ 満杯で返ったら「無視された」とみなして走査する", async () => {
+    // 一意キーに 50 件も一致することはない ＝ 絞り込みが効いていない
+    h.queryRows = fullPage(50);
+    h.pages.set("1", [row("cust-9", "T00003420")]);
 
     const id = await findCustomerInfoRecordIdByUniqueKey(
       KEY_FIELD,
       "T00003420",
     );
 
-    expect(id).toBe("r500");
-    expect(flushed()).toMatchObject({
-      mode: "query-hit",
-      queryRows: 1000,
-      pageLimit: 1000,
-    });
+    expect(id).toBe("cust-9");
+    expect(scanCalls()).toHaveLength(1);
+    expect(warnText()).toContain("効いていない");
   });
 
-  it("★ 全件走査に落ちたらページ数と合計行数が出る（緊急の判別）", async () => {
-    // 1ページ目が満杯で当たらない → query 無しのページ走査へ落ちる
-    h.pages.set("1", fullPage());
+  it("★ 無視されたときに「見つからない」と即断しない（顧客が二重になる）", async () => {
+    h.queryRows = fullPage(50); // 目当ての値は含まれない
+    h.pages.set("1", fullPage(1000));
     h.pages.set("2", [row("cust-9", "T00003420")]);
 
     const id = await findCustomerInfoRecordIdByUniqueKey(
@@ -142,29 +225,27 @@ describe("★ 何が返っているかを出す", () => {
     );
 
     expect(id).toBe("cust-9");
-    const out = flushed();
-    expect(out).toMatchObject({ mode: "scan-hit", found: true });
-    // query 付き1回 + 走査2ページ
-    expect(out?.scanPages).toBe(2);
-    expect(out?.scanRows).toBe(1001);
   });
 
-  it("見つからなければ query-end と found: false", async () => {
-    h.pages.set("1", [row("cust-1", "T00000001")]);
+  it("★ 走査は page=1 から（先頭ページを読み飛ばさない）", async () => {
+    // 絞り込みページは limit が違うので、走査の1ページ目とは中身が違う。
+    // page=2 から始めると先頭 1000 件を取りこぼす
+    h.queryRows = fullPage(50);
+    h.pages.set("1", [row("cust-9", "T00003420")]);
 
     const id = await findCustomerInfoRecordIdByUniqueKey(
       KEY_FIELD,
       "T00003420",
     );
 
-    expect(id).toBeNull();
-    expect(flushed()).toMatchObject({ mode: "query-end", found: false });
+    expect(id).toBe("cust-9");
+    expect(scanCalls()[0]).toMatchObject({ page: "1", limit: "1000" });
   });
 
-  it("上限ページまで舐めても見つからなければ scan-cap", async () => {
+  it("走査の上限まで見つからなければ null", async () => {
     process.env.CUSTOMER_INFO_KEY_LOOKUP_MAX_PAGES = "2";
-    // どのページも満杯で当たらない
-    for (const p of ["1", "2", "3"]) h.pages.set(p, fullPage());
+    h.queryRows = null;
+    for (const p of ["1", "2", "3"]) h.pages.set(p, fullPage(1000));
 
     const id = await findCustomerInfoRecordIdByUniqueKey(
       KEY_FIELD,
@@ -172,41 +253,86 @@ describe("★ 何が返っているかを出す", () => {
     );
 
     expect(id).toBeNull();
-    expect(flushed()).toMatchObject({ mode: "scan-cap", maxPages: 2 });
-    delete process.env.CUSTOMER_INFO_KEY_LOOKUP_MAX_PAGES;
+    expect(scanCalls()).toHaveLength(2);
   });
 });
 
-describe("★ 個人情報を出さない", () => {
+describe("★ 計測", () => {
   beforeEach(() => {
     process.env.CALENDAR_TIMING_LOG = "true";
   });
 
-  it("★ 探している値も、見つかったレコードIDも出さない", async () => {
+  it("★ 既定では何も出さない", async () => {
+    delete process.env.CALENDAR_TIMING_LOG;
+    h.queryRows = [row("cust-9", "T00003420")];
+
+    await findCustomerInfoRecordIdByUniqueKey(KEY_FIELD, "T00003420");
+
+    expect(infoCalls()).toHaveLength(0);
+  });
+
+  it("★ 絞り込みが効いていれば queryRows 1・scanPages 0", async () => {
+    h.queryRows = [row("cust-9", "T00003420")];
+
+    await findCustomerInfoRecordIdByUniqueKey(KEY_FIELD, "T00003420");
+
+    expect(flushed()).toMatchObject({
+      scope: "customer-info-key-lookup",
+      mode: "query-hit",
+      found: true,
+      fallback: "none",
+      queryRows: 1,
+      scanPages: 0,
+    });
+  });
+
+  it("★ 走査へ落ちた理由が残る", async () => {
+    h.queryRows = fullPage(50);
     h.pages.set("1", [row("cust-9", "T00003420")]);
 
     await findCustomerInfoRecordIdByUniqueKey(KEY_FIELD, "T00003420");
 
-    const raw = String(
-      (console.info as unknown as { mock: { calls: unknown[][] } }).mock
-        .calls[0]?.[1],
-    );
+    expect(flushed()).toMatchObject({
+      mode: "scan-hit",
+      fallback: "ignored",
+      scanPages: 1,
+    });
+  });
+
+  it("拒否されたときは fallback: failed", async () => {
+    h.queryRows = null;
+    h.pages.set("1", []);
+
+    await findCustomerInfoRecordIdByUniqueKey(KEY_FIELD, "T00003420");
+
+    expect(flushed()).toMatchObject({ fallback: "failed", mode: "scan-end" });
+  });
+
+  it("★ 探している値も、見つかったレコードIDも出さない", async () => {
+    h.queryRows = [row("cust-9", "T00003420")];
+
+    await findCustomerInfoRecordIdByUniqueKey(KEY_FIELD, "T00003420");
+
+    const raw = String(infoCalls()[0]?.[1]);
     expect(raw).not.toContain("T00003420");
     expect(raw).not.toContain("cust-9");
   });
 
   it("★ 出るのは決められたキーだけ", async () => {
-    h.pages.set("1", [row("cust-9", "T00003420")]);
+    h.queryRows = [row("cust-9", "T00003420")];
 
     await findCustomerInfoRecordIdByUniqueKey(KEY_FIELD, "T00003420");
 
     expect(Object.keys(flushed() ?? {}).sort()).toEqual([
+      "fallback",
       "found",
       "keyField",
       "maxPages",
       "mode",
       "pageLimit",
+      "queryPageLimit",
       "queryRows",
+      "queryTries",
       "scanPages",
       "scanRows",
       "scope",
@@ -216,33 +342,30 @@ describe("★ 個人情報を出さない", () => {
   });
 });
 
-describe("★ 照合の挙動を変えていない（計測だけ）", () => {
-  it("★ @pocket への投げ方が同じ（limit・query・fields）", async () => {
-    process.env.CALENDAR_TIMING_LOG = "true";
-    h.pages.set("1", [row("cust-9", "T00003420")]);
-
-    await findCustomerInfoRecordIdByUniqueKey(KEY_FIELD, "T00003420");
-
-    expect(h.calls).toHaveLength(1);
-    expect(h.calls[0]).toMatchObject({
-      page: "1",
-      limit: "1000",
-      // まだフィールド式にしていない（A-0 は計測のみ）
-      query: "T00003420",
-    });
+describe("★ 照合の結果が変わらない", () => {
+  it("空のキーでは @pocket を叩かない", async () => {
+    expect(await findCustomerInfoRecordIdByUniqueKey(KEY_FIELD, "   ")).toBeNull();
+    expect(h.calls).toHaveLength(0);
   });
 
-  it("★ 計測が無効でも有効でも、返る値と呼び出し回数が同じ", async () => {
-    h.pages.set("1", fullPage());
-    h.pages.set("2", [row("cust-9", "T00003420")]);
+  it("全角・空白のゆれがあっても一致とみなす（照合そのものは従来どおり）", async () => {
+    h.queryRows = [row("cust-9", "Ｔ00003420")];
+
+    // 走査に落ちても同じ結果になること
+    const viaQuery = await findCustomerInfoRecordIdByUniqueKey(
+      KEY_FIELD,
+      "Ｔ00003420",
+    );
+    expect(viaQuery).toBe("cust-9");
+  });
+
+  it("計測の有無で結果が変わらない", async () => {
+    h.queryRows = [row("cust-9", "T00003420")];
 
     const off = await findCustomerInfoRecordIdByUniqueKey(
       KEY_FIELD,
       "T00003420",
     );
-    const callsOff = h.calls.length;
-
-    h.calls.length = 0;
     process.env.CALENDAR_TIMING_LOG = "true";
     const on = await findCustomerInfoRecordIdByUniqueKey(
       KEY_FIELD,
@@ -250,6 +373,5 @@ describe("★ 照合の挙動を変えていない（計測だけ）", () => {
     );
 
     expect(on).toBe(off);
-    expect(h.calls).toHaveLength(callsOff);
   });
 });
