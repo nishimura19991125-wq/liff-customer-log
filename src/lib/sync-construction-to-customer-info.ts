@@ -23,6 +23,8 @@ import {
 } from "@/lib/customer-info-dropbox-link";
 import { dropboxConfigured } from "@/lib/dropbox";
 import { safeHttpsUrl } from "@/lib/safe-external-url";
+import type { ServerTimingLog } from "@/lib/server-timing-log";
+import { startServerTimingLog } from "@/lib/server-timing-log";
 import {
   pickRecordValueByFieldAliases,
   pocketFieldUniqueIdByCaption,
@@ -182,6 +184,12 @@ export async function syncConstructionRecordToCustomerInfoApp(opts: {
   calendarAuth?: AtPocketFetchAuth;
   /** LIFF ログイン者の LINE ID（sub）。AP/CL担当者の自動転記に使用 */
   lineUserId?: string;
+  /**
+   * 段階ごとの所要時間を積む先（任意）。
+   * 呼び出し側が1行にまとめたいときに渡す。渡されなければ自前で作る
+   * （CALENDAR_TIMING_LOG が無効なら何もしない no-op）
+   */
+  timing?: ServerTimingLog;
 }): Promise<CustomerInfoSyncResult> {
   try {
     return await syncConstructionRecordToCustomerInfoAppInner(opts);
@@ -285,12 +293,15 @@ async function findExistingCustomerInfoRecord(opts: {
   akiValue: string;
   tNumberFieldId: string | null;
   tNumberValue: string;
+  timing: ServerTimingLog;
 }): Promise<{ recordId: string; matchedBy: "aki" | "tNumber" } | null> {
   if (opts.akiFieldId && opts.akiValue) {
     const byAki = await resolveExistingCustomerInfoRecordId(
       opts.akiFieldId,
       opts.akiValue,
     );
+    // 空振りは「キャッシュの null を信じない」ため2回引く。ここが効く
+    opts.timing.mark("lookup-aki");
     if (byAki) return { recordId: byAki, matchedBy: "aki" };
   }
   if (opts.tNumberFieldId && opts.tNumberValue) {
@@ -298,6 +309,7 @@ async function findExistingCustomerInfoRecord(opts: {
       opts.tNumberFieldId,
       opts.tNumberValue,
     );
+    opts.timing.mark("lookup-tnumber");
     if (byT) return { recordId: byT, matchedBy: "tNumber" };
   }
   return null;
@@ -450,7 +462,10 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
   constructionFields?: AtPocketFieldRow[];
   calendarAuth?: AtPocketFetchAuth;
   lineUserId?: string;
+  timing?: ServerTimingLog;
 }): Promise<CustomerInfoSyncResult> {
+  const timing =
+    opts.timing ?? startServerTimingLog("sync-construction-to-customer-info");
   const customerAppId = process.env.CUSTOMER_INFO_APP_ID?.trim();
   if (!customerAppId) {
     return { kind: "skipped" };
@@ -668,6 +683,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
         pickRecordValueByFieldAliases(recObj, constructionAkiField),
       );
     }
+    timing.mark("construction-get");
   }
 
   /**
@@ -725,6 +741,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
         akiValue: akiKey,
         tNumberFieldId: resolvedCustomerKey,
         tNumberValue: uniqueKey,
+        timing,
       });
   const existingId = existing?.recordId ?? null;
 
@@ -914,6 +931,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       dropboxLinkFieldId,
       customerAuth,
     );
+    timing.mark("customer-values-get");
     customerTNumber = existingValues.tNumber;
     // 工事アプリ側にしか無い旧データでも、フォルダ名は作れるようにする
     if (!customerTNumber) customerTNumber = uniqueKey;
@@ -936,6 +954,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     } else {
       await applyDropboxLink(customerRecord, customerTNumber);
     }
+    timing.mark("dropbox");
 
     /**
      * 取込キー（T番号）の列を**更新の payload にも載せる**。
@@ -991,6 +1010,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
         // 空欄なら初期値として入れる。値があれば触らない
         if (current.trim()) delete pocketPayload[inputStatusFieldId];
       }
+      timing.mark("input-status-get");
     }
 
     const before = await readCustomerInfoRecordForAudit(
@@ -999,6 +1019,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       customerAuth,
       Object.keys(pocketPayload),
     );
+    timing.mark("audit-before-get");
     /**
      * 更新も取込キー経由で書く。上で値を載せてあるので追加の GET は起きない。
      * 載っていなかったときだけ、この中でレコードから引き直してくれる
@@ -1012,6 +1033,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       readAuth: customerAuth,
       writeAuth: customerAuth,
     });
+    timing.mark("customer-write");
     if (dropboxSkipped) {
       // 既存リンクがあり Dropbox を叩かなかった（3往復ぶん省いた）
       console.info(
@@ -1029,6 +1051,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       payload: pocketPayload,
       customerFields,
     });
+    timing.mark("audit");
     return {
       kind: "synced",
       customerInfoRecordId: existingId,
@@ -1042,6 +1065,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     pocketPayload,
     customerAuth,
   );
+  timing.mark("customer-write");
   /**
    * 作成応答から ID が取れないことがある。
    * その場合は今書いた Aki番号 で引き直す（この時点なら必ず1件ある）
@@ -1109,6 +1133,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     payload: pocketPayload,
     customerFields,
   });
+  timing.mark("audit");
 
   return {
     kind: "synced",

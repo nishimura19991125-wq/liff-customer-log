@@ -9,6 +9,7 @@ import {
   resolveConstructionImportKeyFieldId,
   resolveConstructionTNumberFieldId,
 } from "@/lib/calendar-kojo";
+import { startServerTimingLog } from "@/lib/server-timing-log";
 import { syncConstructionRecordToCustomerInfoApp } from "@/lib/sync-construction-to-customer-info";
 
 /** 工事空枠更新・工事日未定新規のいずれも同じ後処理（お客様情報連携→カレンダーパッチ） */
@@ -54,6 +55,17 @@ export async function finalizeConstructionCalendarSave(opts: {
   /** 成功レスポンスに追記する任意フィールド（同日空枠削除の結果など） */
   extraResponse?: Record<string, unknown>;
 }): Promise<NextResponse> {
+  /**
+   * 後処理の内訳を1行で出す（CALENDAR_TIMING_LOG=true のときだけ）。
+   *
+   * 実測で finalize が全体の 67%（約11秒）を占めていた。連携（sync）の
+   * どの往復に消えているかが分からないと削りようがないので、sync にも
+   * この計測を渡して**1行にまとめて**出す。
+   *
+   * ここは全経路の共通処理なので、新規登録・空き枠入力・割り当て・移動の
+   * どれを実行しても同じ内訳が取れる。
+   */
+  const timing = startServerTimingLog("finalize-construction-save");
   const savedVerb = opts.savedVerb ?? "更新";
   const recordId = opts.constructionRecordId?.trim() || null;
   const uniqueKey = opts.constructionUniqueKey?.trim() || null;
@@ -82,9 +94,11 @@ export async function finalizeConstructionCalendarSave(opts: {
     constructionFields: opts.constructionFields,
     calendarAuth: opts.calendarAuth,
     lineUserId: opts.lineUserId,
+    timing,
   });
 
   if (customerSync.kind === "failed") {
+    timing.flush({ result: "sync-failed" });
     return NextResponse.json(
       {
         error: `${customerSync.error}（工事アプリへの${savedVerb}は完了しています）`,
@@ -143,6 +157,7 @@ export async function finalizeConstructionCalendarSave(opts: {
           e instanceof Error ? e.message : String(e),
         );
       }
+      timing.mark("tnumber-writeback");
     }
   }
 
@@ -156,6 +171,14 @@ export async function finalizeConstructionCalendarSave(opts: {
         opts.viewMonth,
       )
     : null;
+
+  timing.mark("calendar-patch");
+  timing.flush({
+    result: "ok",
+    // どこへ書いた結果かの目安（数値・固定文字列のみ）
+    syncKind: customerSync.kind,
+    calendarPatch: Boolean(calendarPatch),
+  });
 
   // Dropbox フォルダを用意できなくても登録・更新は成功として返す（E-5）。
   // 画面側は warning を成功メッセージとは別に目立たせて出す。
