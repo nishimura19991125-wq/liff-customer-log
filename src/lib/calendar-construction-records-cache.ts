@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { AtPocketFetchAuth, AtPocketRecordRow } from "@/lib/atpocket";
+import { startServerTimingLog } from "@/lib/server-timing-log";
 import {
   fetchAllRecordsPages,
   isPocketApiRateLimited,
@@ -78,6 +79,17 @@ export async function fetchCalendarConstructionRecordsCached(
   if (constructionInflight) return constructionInflight;
 
   constructionInflight = (async () => {
+    /**
+     * 何件運んでいるかを出す（CALENDAR_TIMING_LOG=true のときだけ）。
+     *
+     * お客様情報のキー照合では query が完全に無視され、毎回全件を
+     * 運んでいた。こちらの月クエリ（buildConstructionRecordsMonthOverlapQuery）は
+     * and / or / 比較演算子を使う別の構文で、効いているかは分かっていない。
+     * 効いていなければ、この1回が全件取得になる。
+     *
+     * rows が月内の件数に見合わないほど多ければ、月クエリも効いていない。
+     */
+    const timing = startServerTimingLog("calendar-construction-records");
     try {
       const rows = await fetchAllRecordsPages(
         calAppId,
@@ -94,6 +106,13 @@ export async function fetchCalendarConstructionRecordsCached(
           authKeys: listAuths,
         },
       );
+      timing.mark("fetch");
+      timing.flush({
+        rows: rows.length,
+        hasQuery: Boolean(query),
+        pageLimit: 1000,
+        maxPages: constructionMaxPages(),
+      });
       const ttl = constructionCacheTtlMs();
       constructionCache = {
         key,
