@@ -22,6 +22,7 @@ import {
   resolveCustomerInfoDropboxLinkFieldId,
 } from "@/lib/customer-info-dropbox-link";
 import { dropboxConfigured } from "@/lib/dropbox";
+import { safeHttpsUrl } from "@/lib/safe-external-url";
 import {
   pickRecordValueByFieldAliases,
   pocketFieldUniqueIdByCaption,
@@ -308,35 +309,46 @@ async function findExistingCustomerInfoRecord(opts: {
  * 採番元がこちらへ移ったので、書き込んだあとに読み取って
  * 工事アプリへ返すのが連携の要になる。読めなければ空文字。
  */
-async function readCustomerInfoTNumber(
+async function readCustomerInfoExistingValues(
   customerAppId: string,
   recordId: string,
   tNumberFieldId: string,
+  dropboxLinkFieldId: string | null,
   customerAuth: AtPocketFetchAuth,
-): Promise<string> {
+): Promise<{ tNumber: string; dropboxLink: string }> {
+  const empty = { tNumber: "", dropboxLink: "" };
+  const fieldsCsv = [tNumberFieldId, dropboxLinkFieldId]
+    .map((id) => id?.trim())
+    .filter((id): id is string => Boolean(id))
+    .join(",");
   try {
     let row = await fetchRecordById(
       customerAppId,
       recordId,
       customerAuth,
-      tNumberFieldId,
+      fieldsCsv,
     );
     if (!row?.record) {
       row = await fetchRecordById(customerAppId, recordId, customerAuth);
     }
-    if (!row?.record || typeof row.record !== "object") return "";
-    return coercePocketPlainString(
-      pickRecordValueByFieldAliases(
-        row.record as Record<string, unknown>,
-        tNumberFieldId,
+    if (!row?.record || typeof row.record !== "object") return empty;
+    const recObj = row.record as Record<string, unknown>;
+    return {
+      tNumber: coercePocketPlainString(
+        pickRecordValueByFieldAliases(recObj, tNumberFieldId),
       ),
-    );
+      dropboxLink: dropboxLinkFieldId
+        ? coercePocketPlainString(
+            pickRecordValueByFieldAliases(recObj, dropboxLinkFieldId),
+          )
+        : "",
+    };
   } catch (e) {
     console.warn(
-      "[sync-construction-to-customer-info] T番号の読み取りに失敗",
+      "[sync-construction-to-customer-info] T番号・Dropboxリンクの読み取りに失敗",
       e instanceof Error ? e.message : String(e),
     );
-    return "";
+    return empty;
   }
 }
 
@@ -349,10 +361,27 @@ async function readCustomerInfoRecordForAudit(
   customerAppId: string,
   recordId: string,
   customerAuth: AtPocketFetchAuth,
+  /**
+   * 比較する列だけを取る。computeAuditChanges は payload のキーしか見ないので、
+   * 全項目を運ぶ必要が無い（回数は同じだが転送量が減る）。
+   * 空を渡したときと、この CSV で読めなかったときは全項目に落とす
+   */
+  fieldIds?: readonly string[],
 ): Promise<Record<string, unknown> | null> {
   if (!auditLogEnabled()) return null;
+  const csv = (fieldIds ?? [])
+    .map((id) => id?.trim())
+    .filter((id): id is string => Boolean(id))
+    .join(",");
   try {
-    const row = await fetchRecordById(customerAppId, recordId, customerAuth);
+    let row = csv
+      ? await fetchRecordById(customerAppId, recordId, customerAuth, csv)
+      : null;
+    if (!row?.record) {
+      // CSV が拒否された・読めなかったときは全項目で取り直す。
+      // ここで null のまま進むと「全項目が新規入力」として記録される
+      row = await fetchRecordById(customerAppId, recordId, customerAuth);
+    }
     if (row?.record && typeof row.record === "object") {
       return row.record as Record<string, unknown>;
     }
@@ -840,12 +869,16 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
    * そこで作成後にもう一度呼べるよう切り出してある。失敗しても連携は止めない。
    */
   let dropboxWarning: string | undefined;
+  /** 既存リンクがあって Dropbox を叩かなかったか（ログ用） */
+  let dropboxSkipped = false;
+  const dropboxLinkFieldId =
+    resolveCustomerInfoDropboxLinkFieldId(customerFields);
   const applyDropboxLink = async (
     target: Record<string, unknown>,
     tNumber: string,
   ): Promise<void> => {
     if (!dropboxConfigured() || !tNumber) return;
-    const linkFieldId = resolveCustomerInfoDropboxLinkFieldId(customerFields);
+    const linkFieldId = dropboxLinkFieldId;
     const folder = await ensureCustomerFolderLink({
       tNumber,
       customerName: opts.customerName,
@@ -870,15 +903,39 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
    */
   let customerTNumber = "";
   if (existingId) {
-    customerTNumber = await readCustomerInfoTNumber(
+    /**
+     * T番号 と Dropboxリンク を**1回の GET でまとめて読む**。
+     * リンクの有無で Dropbox を叩くかが決まるので、追加の往復は要らない
+     */
+    const existingValues = await readCustomerInfoExistingValues(
       customerAppId,
       existingId,
       resolvedCustomerKey,
+      dropboxLinkFieldId,
       customerAuth,
     );
+    customerTNumber = existingValues.tNumber;
     // 工事アプリ側にしか無い旧データでも、フォルダ名は作れるようにする
     if (!customerTNumber) customerTNumber = uniqueKey;
-    await applyDropboxLink(customerRecord, customerTNumber);
+
+    /**
+     * ■ 既にリンクが入っていれば Dropbox を叩かない
+     *
+     * ensureCustomerFolderLink は毎回 3往復する
+     * （create_folder_v2 → create_shared_link_with_settings →
+     *   list_shared_links。既存フォルダでは前2つが必ず衝突エラーになる）。
+     * フォルダ名は T番号＋お客様名で決まり、更新のたびに変わるものではない。
+     * リンクが既にあるなら作り直す理由が無い。
+     *
+     * 判定は safeHttpsUrl。空文字・"-"・https でない値は「未設定」として
+     * 従来どおり作りにいく（壊れた値でフォルダ作成が永久に止まらないように）。
+     * お客様名の変更に追随するリネームは renameCustomerFolderLink が別に持つ。
+     */
+    if (safeHttpsUrl(existingValues.dropboxLink)) {
+      dropboxSkipped = true;
+    } else {
+      await applyDropboxLink(customerRecord, customerTNumber);
+    }
 
     /**
      * 取込キー（T番号）の列を**更新の payload にも載せる**。
@@ -940,6 +997,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       customerAppId,
       existingId,
       customerAuth,
+      Object.keys(pocketPayload),
     );
     /**
      * 更新も取込キー経由で書く。上で値を載せてあるので追加の GET は起きない。
@@ -954,6 +1012,13 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       readAuth: customerAuth,
       writeAuth: customerAuth,
     });
+    if (dropboxSkipped) {
+      // 既存リンクがあり Dropbox を叩かなかった（3往復ぶん省いた）
+      console.info(
+        "[sync-construction-to-customer-info] Dropboxリンクが既にあるためフォルダ確認を省略しました",
+      );
+    }
+
     await recordCustomerInfoSyncAuditLog({
       operation: "update",
       lineUserId: opts.lineUserId ?? "",
@@ -995,12 +1060,15 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
    * Dropbox のフォルダ名に要るので、作成後に用意してリンクだけ書き足す
    */
   if (customerInfoRecordId) {
-    customerTNumber = await readCustomerInfoTNumber(
-      customerAppId,
-      customerInfoRecordId,
-      resolvedCustomerKey,
-      customerAuth,
-    );
+    customerTNumber = (
+      await readCustomerInfoExistingValues(
+        customerAppId,
+        customerInfoRecordId,
+        resolvedCustomerKey,
+        null,
+        customerAuth,
+      )
+    ).tNumber;
     if (customerTNumber) {
       const linkRecord: Record<string, unknown> = {};
       await applyDropboxLink(linkRecord, customerTNumber);
