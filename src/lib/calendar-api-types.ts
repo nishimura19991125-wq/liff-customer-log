@@ -27,6 +27,14 @@ export type CalendarMonthApiItem = {
   attachments?: CalendarAttachmentMeta[];
   /** 工事対応者（@pocket 工事アプリ） */
   constructionHandlerName?: string;
+  /**
+   * T番号（@pocket 工事アプリ）。工事日の移動（M-3）で
+   * expectedTNumber としてサーバへ渡し、事前検証に使う。
+   *
+   * カレンダーは最大5分古いキャッシュ越しに表示されるので、その間に
+   * 別の案件へ変わっていることがある。レコードIDだけでは気づけない。
+   */
+  tNumber?: string;
 };
 
 /** 1件の工事レコードを表示月カレンダーに即時反映するための差分 */

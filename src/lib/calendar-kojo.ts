@@ -81,6 +81,8 @@ type CalendarEventInternal = {
 type CalendarMonthRow = {
   dayKey: string;
   title: string;
+  /** 工事アプリの T番号。工事日の移動で事前検証に使う（M-3） */
+  tNumberKey: string | null;
   segmentLabel: string;
   memo: string;
   recordId: string | number | null;
@@ -1134,6 +1136,7 @@ function eventsForDisplayMonth(
           recordId: ev.recordId,
           accessEditUrl: ev.accessEditUrl,
           category: ev.category,
+          tNumberKey: ev.tNumberKey,
           contractorNameForColor: ev.contractorNameForColor,
           housingStatusKey: ev.housingStatusKey,
           reportKankoComplete: rowMatchesReportKanko(ev, seg.label),
@@ -1175,6 +1178,7 @@ function eventsForDisplayMonth(
             recordId: ev.recordId,
             accessEditUrl: ev.accessEditUrl,
             category: ev.category,
+            tNumberKey: ev.tNumberKey,
             contractorNameForColor: ev.contractorNameForColor,
             housingStatusKey: ev.housingStatusKey,
             reportKankoComplete: rowMatchesReportKanko(ev, ""),
@@ -1202,6 +1206,7 @@ function eventsForDisplayMonth(
           recordId: ev.recordId,
           accessEditUrl: ev.accessEditUrl,
           category: ev.category,
+          tNumberKey: ev.tNumberKey,
           contractorNameForColor: ev.contractorNameForColor,
           housingStatusKey: ev.housingStatusKey,
           reportKankoComplete: rowMatchesReportKanko(ev, zx.label),
@@ -1253,6 +1258,7 @@ function rowToApiItem(row: CalendarMonthRow): CalendarMonthApiItem {
     housingShort: shortHousingStatusLabel(row.housingStatusKey),
     category: row.category,
     contractorKey: contractorKeyFromRow(row),
+    tNumber: row.tNumberKey?.trim() || undefined,
     recordId: row.recordId != null ? String(row.recordId) : null,
     accessEditUrl: row.accessEditUrl || "",
     pinpointAddress: row.pinpointAddress ?? "",
