@@ -21,6 +21,7 @@ const AKI_FIELD = "field-101";
 const h = vi.hoisted(() => ({
   writes: [] as Array<{ recordId?: string; payload: Record<string, unknown> }>,
   syncResult: {} as Record<string, unknown>,
+  patchCalls: 0,
 }));
 
 vi.mock("@/lib/sync-construction-to-customer-info", () => ({
@@ -40,7 +41,10 @@ vi.mock("@/lib/atpocket-write-with-import-key", () => ({
 }));
 
 vi.mock("@/lib/calendar-record-patch-server", () => ({
-  buildCalendarPatchAfterConstructionSave: async () => null,
+  buildCalendarPatchAfterConstructionSave: async () => {
+    h.patchCalls += 1;
+    return null;
+  },
 }));
 
 vi.mock("@/lib/calendar-kojo", () => ({
@@ -62,6 +66,7 @@ const BASE = {
 
 beforeEach(() => {
   h.writes.length = 0;
+  h.patchCalls = 0;
   h.syncResult = { kind: "synced", tNumber: "T00003420" };
 });
 
@@ -136,5 +141,50 @@ describe("T番号の書き戻し", () => {
     });
 
     expect(h.writes).toEqual([]);
+  });
+});
+
+/**
+ * カレンダーの即時反映パッチを組み立てない指定（第1段階の速度改善）。
+ *
+ * 工事日の移動のパネルは onSaved(null) を呼んで必ず再取得するので、
+ * patch を組み立てても捨てられる。@pocket の GET を1回節約する。
+ * **既定は従来どおり組み立てる**（他の経路は patch を使っている）。
+ */
+describe("カレンダーパッチの組み立て", () => {
+  it("★ 既定では組み立てる（他の経路は従来どおり）", async () => {
+    await finalizeConstructionCalendarSave({
+      ...BASE,
+      constructionUniqueKey: "T00003420",
+      viewYear: 2026,
+      viewMonth: 12,
+    });
+
+    expect(h.patchCalls).toBe(1);
+  });
+
+  it("★ skipCalendarPatch を渡すと組み立てない", async () => {
+    await finalizeConstructionCalendarSave({
+      ...BASE,
+      constructionUniqueKey: "T00003420",
+      viewYear: 2026,
+      viewMonth: 12,
+      skipCalendarPatch: true,
+    });
+
+    expect(h.patchCalls).toBe(0);
+  });
+
+  it("組み立てなくても応答は成功のまま", async () => {
+    const res = await finalizeConstructionCalendarSave({
+      ...BASE,
+      constructionUniqueKey: "T00003420",
+      skipCalendarPatch: true,
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok?: boolean; calendarPatch?: unknown };
+    expect(body.ok).toBe(true);
+    expect(body.calendarPatch).toBeUndefined();
   });
 });

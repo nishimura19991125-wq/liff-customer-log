@@ -42,6 +42,15 @@ export async function finalizeConstructionCalendarSave(opts: {
   viewMonth?: number;
   /** エラー文言用: 「登録」|「更新」 */
   savedVerb?: "登録" | "更新";
+  /**
+   * カレンダーの即時反映パッチを組み立てない。
+   *
+   * 画面が patch を使わず必ず再取得する経路（工事日の移動）では、
+   * 組み立てた結果がそのまま捨てられる。@pocket の GET を1回減らすため
+   * 呼び出し側から明示的に外せるようにしてある。
+   * 既定（未指定）は従来どおり組み立てる。
+   */
+  skipCalendarPatch?: boolean;
   /** 成功レスポンスに追記する任意フィールド（同日空枠削除の結果など） */
   extraResponse?: Record<string, unknown>;
 }): Promise<NextResponse> {
@@ -137,8 +146,9 @@ export async function finalizeConstructionCalendarSave(opts: {
     }
   }
 
-  const calendarPatch = recordId
-    ? await buildCalendarPatchAfterConstructionSave(
+  const calendarPatch =
+    recordId && !opts.skipCalendarPatch
+      ? await buildCalendarPatchAfterConstructionSave(
         opts.calAppId,
         recordId,
         opts.calendarAuth,
