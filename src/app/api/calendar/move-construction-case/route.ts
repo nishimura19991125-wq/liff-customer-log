@@ -288,15 +288,22 @@ export async function POST(request: Request) {
      * 互いに依存せず、どれも読み取りしかしない
      */
     const [sourceRow, handlerResolved] = await Promise.all([
-      fetchConstructionRecordRow(
-        calAppId,
-        sourceRecordId,
-        readAuth,
-        recordFieldsCsv,
+      // 並列なので mark では区別できない。どちらが遅いかを個別に測る
+      timing.measure(
+        "source-record",
+        fetchConstructionRecordRow(
+          calAppId,
+          sourceRecordId,
+          readAuth,
+          recordFieldsCsv,
+        ),
       ),
-      handlerStaffRecordId
-        ? resolveConstructionHandlerNameForActiveStaff(handlerStaffRecordId)
-        : Promise.resolve(null),
+      timing.measure(
+        "handler-roster",
+        handlerStaffRecordId
+          ? resolveConstructionHandlerNameForActiveStaff(handlerStaffRecordId)
+          : Promise.resolve(null),
+      ),
     ]);
     timing.mark("source-get");
 
@@ -461,16 +468,23 @@ export async function POST(request: Request) {
     let slotAki = "";
     let slotContractor = "";
     if (slotRecordId) {
+      /**
+       * 実測で slot-get が 3.1 秒。1件の GET にしては長すぎるので、
+       * 「fields 指定が拒否されて全項目で取り直しているのか」
+       * 「1往復自体が遅いのか」を分けて出す。
+       * fallback の行が出たら前者、出なければ後者
+       */
       let slotRow = await fetchRecordById(
         calAppId,
         slotRecordId,
         readAuth,
         recordFieldsCsv,
       );
+      timing.mark("slot-get");
       if (!slotRow?.record) {
         slotRow = await fetchRecordById(calAppId, slotRecordId, readAuth);
+        timing.mark("slot-get-fallback");
       }
-      timing.mark("slot-get");
       if (!slotRow?.record || typeof slotRow.record !== "object") {
         return NextResponse.json(
           { error: "移動先の空き枠レコードが見つかりません" },
