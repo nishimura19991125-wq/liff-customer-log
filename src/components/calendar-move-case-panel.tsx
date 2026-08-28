@@ -32,8 +32,10 @@ import {
 } from "@/lib/calendar-slot-verify-client";
 import {
   contractorNameFromKey,
-  dayKeyInMonth,
   emptySlotsFromDayItems,
+  monthKeyOf,
+  resolveMoveTargetMonthState,
+  type LoadedMonthByDay,
 } from "@/lib/calendar-move-target-slots";
 import { formatDisplayYmd } from "@/lib/format-display-ymd";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
@@ -105,13 +107,27 @@ export function CalendarMoveCasePanel({
     text: string;
   } | null>(null);
 
-  /** 別の月を選んだときだけ取りにいく */
-  const [otherMonth, setOtherMonth] = useState<{
-    key: string;
-    status: "loading" | "ok" | "err";
-    byDay: Record<string, CalendarMonthApiItem[]>;
-    error: string;
-  } | null>(null);
+  /**
+   * 別の月を選んだときだけ取りにいく。**取れた月の結果だけ**を持つ。
+   *
+   * ⚠ ここに "loading" のような途中状態を入れて、それをエフェクトの
+   *    依存に含めてはいけない。エフェクトが自分の書いた state で再実行され、
+   *    走っている fetch を自分でキャンセルして永久に読み込み中になる
+   *    （M-3 の不具合）。読み込み中かどうかは
+   *    「欲しい月 === 取れた月か」から導く。
+   */
+  const [loadedMonth, setLoadedMonth] = useState<LoadedMonthByDay | null>(null);
+  /** 失敗したときの手動再取得。依存に入れて回す */
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  /**
+   * onSessionExpired は呼び出し側がインラインで渡すので毎描画で別物になる。
+   * 依存に入れると描画のたびに再取得＝走っている fetch を潰し続ける
+   */
+  const onSessionExpiredRef = useRef(onSessionExpired);
+  useEffect(() => {
+    onSessionExpiredRef.current = onSessionExpired;
+  }, [onSessionExpired]);
 
   const sourceContractor = contractorNameFromKey(item.contractorKey);
 
@@ -122,19 +138,23 @@ export function CalendarMoveCasePanel({
     setSelectedSlotId("");
     setSelectedHandlerStaffId("");
     setConfirming(false);
-    setOtherMonth(null);
+    setLoadedMonth(null);
   }
 
-  const needsOtherMonth = Boolean(
-    targetDayKey && !dayKeyInMonth(targetDayKey, viewYear, viewMonth),
-  );
-  const otherMonthKey = targetDayKey.slice(0, 7);
+  /** 読み込み中／失敗は state に持たず、キー比較から導く（純粋関数） */
+  const monthState = resolveMoveTargetMonthState({
+    targetDayKey,
+    viewYear,
+    viewMonth,
+    viewByDay: byDay,
+    loadedMonth,
+  });
+  const needsOtherMonth = monthState.needsFetch;
+  const otherMonthKey = monthKeyOf(targetDayKey);
 
   useEffect(() => {
-    if (!open || !needsOtherMonth || !idToken) return;
-    if (otherMonth?.key === otherMonthKey && otherMonth.status !== "err") {
-      return;
-    }
+    if (!open || !needsOtherMonth || !idToken || !otherMonthKey) return;
+
     let cancelled = false;
     void (async () => {
       const [y, m] = otherMonthKey.split("-");
@@ -142,12 +162,15 @@ export function CalendarMoveCasePanel({
         year: String(Number(y)),
         month: String(Number(m)),
       });
-      setOtherMonth({
-        key: otherMonthKey,
-        status: "loading",
-        byDay: {},
-        error: "",
-      });
+      /** 失敗しても「取れた月」として置く。読み込み中のまま止めない */
+      const settle = (
+        byDay: Record<string, CalendarMonthApiItem[]>,
+        error: string,
+      ) => {
+        if (cancelled) return;
+        setLoadedMonth({ key: otherMonthKey, byDay, error });
+      };
+
       try {
         const res = await fetch(`${calendarApiPath}?${qs}`, {
           headers: { Authorization: `Bearer ${idToken}` },
@@ -155,62 +178,44 @@ export function CalendarMoveCasePanel({
         const data = (await res.json()) as CalendarApiPayload & {
           error?: string;
         };
-        if (cancelled) return;
         if (res.status === 401 && isLineSessionExpiredPayload(data)) {
-          onSessionExpired?.();
+          onSessionExpiredRef.current?.();
+          settle(
+            {},
+            "ログインの有効期限が切れました。画面を更新してください。",
+          );
           return;
         }
         if (!res.ok) {
-          setOtherMonth({
-            key: otherMonthKey,
-            status: "err",
-            byDay: {},
-            error:
-              typeof data.error === "string"
-                ? data.error
-                : "移動先の月のカレンダーを取得できませんでした",
-          });
+          settle(
+            {},
+            typeof data.error === "string" && data.error.trim()
+              ? data.error
+              : "移動先の月のカレンダーを取得できませんでした",
+          );
           return;
         }
-        setOtherMonth({
-          key: otherMonthKey,
-          status: "ok",
-          byDay: data.byDay ?? {},
-          error: "",
-        });
+        settle(data.byDay ?? {}, "");
       } catch {
-        if (!cancelled) {
-          setOtherMonth({
-            key: otherMonthKey,
-            status: "err",
-            byDay: {},
-            error: "通信に失敗しました",
-          });
-        }
+        settle({}, "通信に失敗しました");
       }
     })();
+
     return () => {
       cancelled = true;
     };
-  }, [
-    open,
-    needsOtherMonth,
-    otherMonthKey,
-    otherMonth?.key,
-    otherMonth?.status,
-    idToken,
-    calendarApiPath,
-    onSessionExpired,
-  ]);
+    // onSessionExpired は ref 経由。依存に入れると毎描画で取り直す
+  }, [open, needsOtherMonth, otherMonthKey, idToken, calendarApiPath, reloadNonce]);
 
-  const slotsSource = needsOtherMonth ? otherMonth?.byDay : byDay;
   const slots = useMemo(
     () =>
-      targetDayKey ? emptySlotsFromDayItems(slotsSource?.[targetDayKey]) : [],
-    [slotsSource, targetDayKey],
+      targetDayKey
+        ? emptySlotsFromDayItems(monthState.byDay?.[targetDayKey])
+        : [],
+    [monthState.byDay, targetDayKey],
   );
-  const slotsLoading = needsOtherMonth && otherMonth?.status === "loading";
-  const slotsError = needsOtherMonth ? (otherMonth?.error ?? "") : "";
+  const slotsLoading = monthState.loading;
+  const slotsError = monthState.error;
 
   const selectedSlot = slots.find((s) => s.recordId === selectedSlotId) ?? null;
 
@@ -403,9 +408,30 @@ export function CalendarMoveCasePanel({
                   移動先の月を読み込み中…
                 </p>
               ) : slotsError ? (
-                <p className="text-[12px] font-semibold text-red-700">
-                  {slotsError}
-                </p>
+                /**
+                 * 枠を読めていないまま進ませない。空き枠があるのに
+                 * 新規作成すると、その日に枠と案件が並ぶ（この機能が
+                 * 直そうとしている状態そのもの）。理由を出して再取得させる
+                 */
+                <div className="rounded-xl bg-red-50 px-3 py-2 ring-1 ring-red-100">
+                  <p
+                    className="text-[12px] font-semibold leading-relaxed text-red-700"
+                    role="alert"
+                  >
+                    {slotsError}
+                  </p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-red-700">
+                    空き枠を確認できないため、この日には移動できません。
+                  </p>
+                  <button
+                    type="button"
+                    className="mt-2 min-h-[44px] rounded-lg border border-red-200 bg-white px-3 py-1.5 text-[12px] font-bold text-red-700 shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+                    disabled={submitting}
+                    onClick={() => setReloadNonce((n) => n + 1)}
+                  >
+                    再読み込み
+                  </button>
+                </div>
               ) : (
                 <select
                   className={INPUT_CLASS}
@@ -456,7 +482,12 @@ export function CalendarMoveCasePanel({
             <button
               type="button"
               className="min-h-[44px] rounded-xl bg-slate-800 py-2.5 text-[13px] font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
-              disabled={submitting || !canConfirm || slotsLoading}
+              disabled={
+                submitting ||
+                !canConfirm ||
+                slotsLoading ||
+                Boolean(slotsError)
+              }
               onClick={() => setConfirming(true)}
             >
               内容を確認する

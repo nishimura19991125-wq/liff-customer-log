@@ -63,3 +63,84 @@ export function dayKeyInMonth(
   if (!m) return false;
   return Number(m[1]) === year && Number(m[2]) === month;
 }
+
+/** 別の月を取りにいったときの結果。**途中状態は持たない** */
+export type LoadedMonthByDay = {
+  /** 取りにいった月（YYYY-MM） */
+  key: string;
+  byDay: Record<string, CalendarMonthApiItem[]>;
+  /** 失敗した理由。空なら成功 */
+  error: string;
+};
+
+export type MoveTargetMonthState = {
+  /** 表示中の月の外なので、その月を取りにいく必要がある */
+  needsFetch: boolean;
+  /** 欲しい月がまだ手元に無い */
+  loading: boolean;
+  /** 取得に失敗した理由。空なら失敗していない */
+  error: string;
+  /** 空き枠を組み立てる元。undefined なら組み立てられない */
+  byDay: Record<string, CalendarMonthApiItem[]> | undefined;
+};
+
+/**
+ * 移動先の日付から、空き枠を組み立てられる状態かを導く。
+ *
+ * ⚠ **「読み込み中」を state に持たないこと。**
+ *    M-3 の実装は loading/ok/err を state に入れ、それをエフェクトの依存にも
+ *    入れていた。エフェクトが自分の書いた state で再実行され、走っている
+ *    fetch を自分でキャンセルするため、別の月を選ぶと**永久に読み込み中**に
+ *    なっていた（空き枠の一覧も新規作成の選択肢も出ず、実行ボタンも押せず、
+ *    どこにもエラーが出ない）。
+ *
+ *    ここでは「欲しい月」と「取れた月」の**キー比較だけ**で導く。
+ *    状態を持たないので、自分で自分を止めることが起こらない。
+ */
+export function resolveMoveTargetMonthState(input: {
+  /** 移動先に選んだ日（YYYY-MM-DD）。未選択なら空文字 */
+  targetDayKey: string;
+  /** 表示中の月 */
+  viewYear: number;
+  viewMonth: number;
+  /** 表示中の月の byDay（月次ペイロード） */
+  viewByDay: Record<string, CalendarMonthApiItem[]> | undefined;
+  /** 別の月を取りにいった結果。まだなら null */
+  loadedMonth: LoadedMonthByDay | null;
+}): MoveTargetMonthState {
+  const targetDayKey = input.targetDayKey.trim();
+  if (!targetDayKey) {
+    return { needsFetch: false, loading: false, error: "", byDay: undefined };
+  }
+
+  if (dayKeyInMonth(targetDayKey, input.viewYear, input.viewMonth)) {
+    // 同じ月。月次ペイロードでそのまま組み立てられる（@pocket は叩かない）
+    return {
+      needsFetch: false,
+      loading: false,
+      error: "",
+      byDay: input.viewByDay,
+    };
+  }
+
+  const wantKey = monthKeyOf(targetDayKey);
+  const ready = Boolean(wantKey) && input.loadedMonth?.key === wantKey;
+  if (!ready) {
+    return { needsFetch: true, loading: true, error: "", byDay: undefined };
+  }
+
+  const error = input.loadedMonth?.error ?? "";
+  return {
+    needsFetch: true,
+    loading: false,
+    error,
+    // 失敗したときは組み立てさせない（枠の有無が分からないまま進ませない）
+    byDay: error ? undefined : input.loadedMonth?.byDay,
+  };
+}
+
+/** YYYY-MM-DD → YYYY-MM。読めない値は空文字 */
+export function monthKeyOf(dayKey: string): string {
+  const m = dayKey.trim().match(/^(\d{4})-(\d{2})-\d{2}$/);
+  return m ? `${m[1]}-${m[2]}` : "";
+}
