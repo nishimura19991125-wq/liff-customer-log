@@ -10,7 +10,10 @@ import {
   resolveReportFieldIds,
 } from "@/lib/calendar-kojo";
 import { resolveConstructionMapAddressFieldIds } from "@/lib/map-address-fields";
-import { fetchCalendarConstructionRecordsCached } from "@/lib/calendar-construction-records-cache";
+import {
+  fetchCalendarConstructionRecordsCached,
+  invalidateCalendarConstructionRecordsCache,
+} from "@/lib/calendar-construction-records-cache";
 import {
   buildCalendarPayloadCacheKey,
   getAnyStaleCalendarPayload,
@@ -108,6 +111,21 @@ export async function GET(request: Request) {
     url.searchParams.get("nocache") === "1";
   if (refresh) {
     invalidateCalendarPayloadCacheForMonth(year, month);
+    /**
+     * 材料である工事レコードのキャッシュ（既定300秒）も捨てる。
+     *
+     * ペイロードだけ作り直しても、材料が古ければ**同じ内容が再構築される**
+     * だけで、保存した内容が最大300秒反映されなかった。
+     *
+     * さらにこれらのキャッシュはモジュールレベルの変数＝**プロセスごと**で、
+     * Netlify は複数インスタンスで動く。保存を処理したインスタンスで
+     * 無効化しても、次の GET が別インスタンスへ届けば古いままになる。
+     * 「取り直す」判断は **GET を受けた側**で下さないと意味がない。
+     *
+     * refresh=1 を投げるのは保存直後の forceRefreshCalendar だけで、
+     * 画面の手動更新からは呼ばれない。取り直しの頻度は保存の頻度に等しい。
+     */
+    invalidateCalendarConstructionRecordsCache();
   }
 
   const cacheKey = buildCalendarPayloadCacheKey(year, month);
