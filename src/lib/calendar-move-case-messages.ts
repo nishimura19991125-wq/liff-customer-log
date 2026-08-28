@@ -74,3 +74,100 @@ export function buildMoveSourceResetFailedMessage(input: {
     "消すまで、この案件の割り当て・キャンセルはエラーになります。",
   ].join("\n");
 }
+
+/** 確認画面の材料。空き枠を使わないときは targetSlotContractor を null にする */
+export type MoveCaseConfirmInput = {
+  customerName: string;
+  tNumber: string;
+  sourceDayKey: string;
+  targetDayKey: string;
+  /** 移動元の施工会社 */
+  sourceContractor: string;
+  /** 移動先の空き枠の施工会社。null＝空き枠を使わず新規作成 */
+  targetSlotContractor: string | null;
+};
+
+function ymd(dayKey: string): string {
+  return formatDisplayYmd(dayKey) || dayKey.trim();
+}
+
+/** 施工会社の比較キー。表記ゆれで「変わります」を誤表示しない */
+function contractorKey(raw: string): string {
+  return raw.normalize("NFKC").replace(/\s/g, "").toLowerCase();
+}
+
+export function moveCaseContractorChanges(
+  input: MoveCaseConfirmInput,
+): boolean {
+  if (input.targetSlotContractor == null) return false;
+  const to = contractorKey(input.targetSlotContractor);
+  if (!to) return false;
+  return contractorKey(input.sourceContractor) !== to;
+}
+
+export function buildMoveCaseConfirmTitle(input: MoveCaseConfirmInput): string {
+  return `工事日を ${ymd(input.sourceDayKey)} → ${ymd(input.targetDayKey)} に変更します`;
+}
+
+export function buildMoveCaseConfirmSubject(
+  input: MoveCaseConfirmInput,
+): string {
+  const name = input.customerName.trim();
+  const t = input.tNumber.trim();
+  if (!name) return t ? `（${t}）` : "";
+  return t ? `${name} 様（${t}）` : `${name} 様`;
+}
+
+/**
+ * 「実行される内容」の箇条書き。
+ *
+ * ■ 施工会社の行は変わるときだけ出す
+ * 変わらないのに出すと、読み飛ばす癖がついて本当に変わるときに効かない。
+ *
+ * ■ Aki番号 は番号を書かない
+ * カレンダーのペイロードに Aki番号 を載せていないため、確認の時点では
+ * 移動先の番号が分からない。番号を出すには表示パイプライン（
+ * buildCalendarPayload → rowToApiItem）に列を1つ通す必要があり、
+ * 「工事カレンダーの表示」を触るリスクに見合わないと判断した。
+ * 「入れ替わる／新規採番される／お客様情報にも反映される」という
+ * 判断に必要な情報は番号なしで伝わる。
+ */
+export function buildMoveCaseConfirmLines(
+  input: MoveCaseConfirmInput,
+): string[] {
+  const to = ymd(input.targetDayKey);
+  const from = ymd(input.sourceDayKey);
+  const usesSlot = input.targetSlotContractor != null;
+
+  const lines: string[] = [];
+
+  lines.push(
+    usesSlot
+      ? `${to} の空き枠（施工会社: ${input.targetSlotContractor?.trim() || "未設定"}）にこの案件を書き込みます`
+      : `${to} に新しいレコードを作成します（Aki番号 は新規採番）`,
+  );
+  lines.push(
+    `${from} のレコードは顧客情報を消して、空き枠として残します（削除しません）`,
+  );
+  if (moveCaseContractorChanges(input)) {
+    lines.push(
+      `施工会社が ${input.sourceContractor.trim() || "未設定"} → ${input.targetSlotContractor?.trim()} に変わります`,
+    );
+  }
+  lines.push(
+    usesSlot
+      ? "Aki番号 が移動先の空き枠のものに入れ替わります（お客様情報にも反映）"
+      : "Aki番号 が新規採番されます（お客様情報にも反映）",
+  );
+
+  return lines;
+}
+
+export const MOVE_CASE_CONFIRM_WARNING =
+  "この操作は元に戻せません。途中で失敗した場合、案件が2日に重複して表示されることがあります。その場合は画面の案内に従ってください。";
+
+export function moveCaseConfirmActionLabel(
+  input: MoveCaseConfirmInput,
+): string {
+  return `${ymd(input.targetDayKey)} へ移動する`;
+}

@@ -23,6 +23,7 @@ import {
 import { CustomerNameSplitInput } from "@/components/customer-name-split-input";
 import { CalendarAssignUndatedCaseForm } from "@/components/calendar-assign-undated-case-form";
 import { CalendarMonthSkeleton } from "@/components/calendar-month-skeleton";
+import { CalendarMoveCasePanel } from "@/components/calendar-move-case-panel";
 import {
   ASSIGN_CUSTOMER_CASE_PATH,
   assignedCaseSuccessMessage,
@@ -2825,6 +2826,25 @@ export function LiffCalendarMonthPage({
                                   idToken={idToken}
                                   viewYear={ym.year}
                                   viewMonth={ym.month}
+                                  handlerListStatus={handlerListStatus}
+                                  handlerListError={handlerListError}
+                                  handlerRows={handlerRows}
+                                  onSaved={applyCalendarSaveToView}
+                                  onSessionExpired={() =>
+                                    setPhase("session-expired")
+                                  }
+                                />
+                              ) : null}
+                              {config.enableEmptySlotFill ? (
+                                <CalendarMoveCasePanel
+                                  item={item}
+                                  sourceDayKey={selectedDayKey}
+                                  idToken={idToken}
+                                  viewYear={ym.year}
+                                  viewMonth={ym.month}
+                                  byDay={data?.byDay}
+                                  calendarApiPath={config.calendarApiPath}
+                                  handlerFromStaff={handlerFromStaff}
                                   handlerListStatus={handlerListStatus}
                                   handlerListError={handlerListError}
                                   handlerRows={handlerRows}
