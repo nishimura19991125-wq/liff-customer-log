@@ -48,6 +48,10 @@ const h = vi.hoisted(() => ({
   finalize: [] as Record<string, unknown>[],
   akiOnCreate: "AKI-NEW" as string | null,
   createdRecordId: "con-new" as string | null,
+  /** fetchRecordById で読んだ recordId の並び */
+  reads: [] as string[],
+  /** true のとき recordAuditLog が投げる */
+  auditThrows: false,
 }));
 
 vi.mock("@/lib/request-auth", () => ({
@@ -65,6 +69,7 @@ vi.mock("@/lib/atpocket", async () => {
     apiKeyForCalendarWrite: () => "kw",
     fetchAppFields: async () => APP_FIELDS,
     fetchRecordById: async (_appId: string, recordId: string) => {
+      h.reads.push(recordId);
       const rec = h.records[recordId];
       return rec ? { recordId, record: rec } : null;
     },
@@ -119,6 +124,7 @@ vi.mock("@/lib/audit-log", () => ({
     targetRecordId: string;
     changes?: Array<{ fieldId: string; after: string }>;
   }) => {
+    if (h.auditThrows) throw new Error("[audit-log] 列を解決できません");
     const moveRow = o.changes?.find(
       (c) => c.fieldId === "__construction_case_move__",
     );
@@ -221,6 +227,8 @@ beforeEach(() => {
   h.finalize.length = 0;
   h.akiOnCreate = "AKI-NEW";
   h.createdRecordId = "con-new";
+  h.reads.length = 0;
+  h.auditThrows = false;
 });
 
 afterEach(() => {
@@ -570,5 +578,65 @@ describe("★ 後処理へ渡すもの", () => {
     h.finalize.length = 0;
     await call(BASE_BODY);
     expect(h.finalize[0]?.constructionRecordId).toBe("con-new");
+  });
+});
+
+/**
+ * 第1段階の速度改善。移動1回で @pocket への往復が30回を超えており、
+ * maxDuration=26 に対して余裕が乏しかった。呼び出しを減らしても
+ * 監査ログ・移動の正しさが落ちないことを固定する。
+ */
+describe("★ 速度改善で落としてはいけないもの", () => {
+  it("★ 監査ログは並走させても必ず記録される", async () => {
+    // 応答を返す前に await している（Lambda はレスポンス後に凍結するので、
+    // 投げっぱなしにすると書かれないまま消える）
+    const { status } = await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+
+    expect(status).toBe(200);
+    expect(h.audits.map((a) => a.recordId)).toEqual(["slot-9", "con-1"]);
+  });
+
+  it("★ 移動元を戻せなかったときも監査ログを書き切る", async () => {
+    h.failWriteFor = "con-1";
+
+    const { status } = await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+
+    expect(status).toBe(502);
+    // W1 の監査ログは残る（W2 は書けていないので記録しない）
+    expect(h.audits.map((a) => a.recordId)).toEqual(["slot-9"]);
+  });
+
+  it("★ 移動先の枠は1回しか読まない（鮮度確認を統合した）", async () => {
+    await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+
+    expect(h.reads.filter((id) => id === "slot-9")).toHaveLength(1);
+  });
+
+  it("★ 枠が埋まっていれば、その1回の読みで弾く", async () => {
+    h.records["slot-9"] = { ...TARGET_SLOT, [NAME_ID]: "先客 花子" };
+
+    const { status, body } = await call({
+      ...BASE_BODY,
+      slotRecordId: "slot-9",
+    });
+
+    expect(status).toBe(409);
+    expect(body.slotConflict).toBe(true);
+    expect(h.writes).toEqual([]);
+  });
+
+  it("★ カレンダーの即時反映パッチを組み立てない（捨てられるため）", async () => {
+    await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+
+    expect(h.finalize[0]?.skipCalendarPatch).toBe(true);
+  });
+
+  it("★ 監査ログが失敗しても移動は成功のまま", async () => {
+    h.auditThrows = true;
+
+    const { status } = await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+
+    expect(status).toBe(200);
+    expect(h.writes).toHaveLength(2);
   });
 });

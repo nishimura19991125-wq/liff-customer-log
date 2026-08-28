@@ -37,10 +37,7 @@ import {
 import { buildMoveSourceResetFailedMessage } from "@/lib/calendar-move-case-messages";
 import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
-import {
-  calendarSlotConflictResponse,
-  readFreshConstructionEmptySlotState,
-} from "@/lib/calendar-slot-reservation";
+import { calendarSlotConflictResponse } from "@/lib/calendar-slot-reservation";
 import { dayKeyFromConstructionRecord } from "@/lib/calendar-consume-empty-slot";
 import { isCustomerTNumberCancelled } from "@/lib/customer-cancelled-t-numbers";
 import { fieldCaptionByUniqueId } from "@/lib/customer-info-record";
@@ -48,6 +45,7 @@ import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
+import { startServerTimingLog } from "@/lib/server-timing-log";
 import {
   constructionHandlerStaffConfigReady,
   resolveConstructionHandlerNameForActiveStaff,
@@ -199,8 +197,29 @@ export async function POST(request: Request) {
   const readAuth = { apiKey: apiKeyForCalendarPocket1() };
   const writeAuth = { apiKey: apiKeyForCalendarWrite() };
 
+  const timing = startServerTimingLog("move-construction-case");
+
   /** W1 が済んだか。ここから先の失敗は「案件は消えていない」で返す */
   let movedWritten = false;
+
+  /**
+   * 監査ログは後続処理と並走させる。
+   *
+   * recordAuditLog は変更1列につき1レコードを直列 POST するので、
+   * 移動1回で 10 件を超える往復になる。順序に意味は無く
+   * （同一操作は executedAt で束ねている）、recordMoveAuditLog は
+   * 例外を握るので、走らせておいて最後にまとめて待つ。
+   *
+   * ⚠ **await せずにレスポンスを返してはいけない。** Lambda は
+   *    レスポンス後に実行環境を凍結するので、投げっぱなしにすると
+   *    監査ログが書かれないまま消える。返す直前に必ず flushAudits()。
+   */
+  const auditTasks: Promise<void>[] = [];
+  const flushAudits = async () => {
+    if (auditTasks.length === 0) return;
+    await Promise.allSettled(auditTasks);
+    timing.mark("audit-flush");
+  };
 
   try {
     const constructionFields = await fetchAppFields(calAppId, readAuth, {
@@ -262,12 +281,25 @@ export async function POST(request: Request) {
       fids.constructionHandler,
     );
 
-    const sourceRow = await fetchConstructionRecordRow(
-      calAppId,
-      sourceRecordId,
-      readAuth,
-      recordFieldsCsv,
-    );
+    timing.mark("fields");
+
+    /**
+     * 移動元の取得と、工事対応者・キャンセル判定の材料を**並列**で取る。
+     * 互いに依存せず、どれも読み取りしかしない
+     */
+    const [sourceRow, handlerResolved] = await Promise.all([
+      fetchConstructionRecordRow(
+        calAppId,
+        sourceRecordId,
+        readAuth,
+        recordFieldsCsv,
+      ),
+      handlerStaffRecordId
+        ? resolveConstructionHandlerNameForActiveStaff(handlerStaffRecordId)
+        : Promise.resolve(null),
+    ]);
+    timing.mark("source-get");
+
     if (!sourceRow?.record || typeof sourceRow.record !== "object") {
       return NextResponse.json(
         { error: "移動元の案件レコードが見つかりません" },
@@ -399,10 +431,11 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       }
-      const resolvedName =
-        await resolveConstructionHandlerNameForActiveStaff(
-          handlerStaffRecordId,
-        );
+      // 上の Promise.all で解決済み（名簿はキャッシュだが冷えると1往復）
+      const resolvedName = handlerResolved ?? {
+        ok: false as const,
+        reason: "not_found" as const,
+      };
       if (!resolvedName.ok) {
         const msg =
           resolvedName.reason === "not_found"
@@ -417,7 +450,13 @@ export async function POST(request: Request) {
       handlerValue = resolvedName.name;
     }
 
-    // 移動先の空き枠を読む（使う場合）
+    /**
+     * 移動先の空き枠は**W1 の直前に1回だけ**読む。
+     *
+     * 以前は「枠 GET →（検証）→ 鮮度確認 → PUT」で 2回読んでいた。
+     * 読む位置を書き込みの直前へ寄せれば、空き枠かどうかの判定・
+     * Aki番号・施工会社をその1回でまかなえる。窓は今までより狭い
+     */
     let slotRec: Record<string, unknown> | null = null;
     let slotAki = "";
     let slotContractor = "";
@@ -431,6 +470,7 @@ export async function POST(request: Request) {
       if (!slotRow?.record) {
         slotRow = await fetchRecordById(calAppId, slotRecordId, readAuth);
       }
+      timing.mark("slot-get");
       if (!slotRow?.record || typeof slotRow.record !== "object") {
         return NextResponse.json(
           { error: "移動先の空き枠レコードが見つかりません" },
@@ -481,24 +521,7 @@ export async function POST(request: Request) {
     let movedTo: "slot" | "new";
 
     if (slotRecordId && slotRec) {
-      // 書き込み直前にもう一度、まだ空き枠かを見る
-      const fresh = await readFreshConstructionEmptySlotState(
-        calAppId,
-        slotRecordId,
-        readAuth,
-        resolvedCustomer,
-      );
-      if (!fresh.ok) {
-        return NextResponse.json(
-          { error: "移動先の空き枠レコードが見つかりません" },
-          { status: 404 },
-        );
-      }
-      if (!fresh.isEmpty) {
-        const { status, body: conflictBody } = calendarSlotConflictResponse();
-        return NextResponse.json(conflictBody, { status });
-      }
-
+      // 空きかどうかは直前の slot-get で見ている（読み直さない）
       await writePocketRecordWithImportKey({
         appId: calAppId,
         recordId: slotRecordId,
@@ -509,12 +532,14 @@ export async function POST(request: Request) {
         readAuth,
         writeAuth,
       });
+      timing.mark("w1-write");
       movedWritten = true;
       movedRecordId = slotRecordId;
       movedAki = slotAki;
       movedTo = "slot";
 
-      await recordMoveAuditLog({
+      auditTasks.push(
+        recordMoveAuditLog({
         lineUserId: auth.lineUserId,
         operation: "update",
         calAppId,
@@ -524,7 +549,7 @@ export async function POST(request: Request) {
         payload: movePatch,
         constructionFields,
         note: `${sourceDayKey || "不明"} のレコード（ID ${sourceRecordId}）から工事日を移動`,
-      });
+      }));
     } else {
       const created = await writePocketRecordWithImportKey({
         appId: calAppId,
@@ -567,7 +592,8 @@ export async function POST(request: Request) {
       }
 
       if (movedRecordId) {
-        await recordMoveAuditLog({
+        auditTasks.push(
+        recordMoveAuditLog({
           lineUserId: auth.lineUserId,
           operation: "create",
           calAppId,
@@ -577,7 +603,7 @@ export async function POST(request: Request) {
           payload: movePatch,
           constructionFields,
           note: `${sourceDayKey || "不明"} のレコード（ID ${sourceRecordId}）から工事日を移動`,
-        });
+        }));
       } else {
         console.error(
           "[api/calendar/move-construction-case] 作成したレコードのIDを特定できません（監査ログを残せません）",
@@ -588,6 +614,8 @@ export async function POST(request: Request) {
 
     invalidateCalendarConstructionRecordsCache();
     invalidateAllCalendarPayloadCache();
+
+    timing.mark("w1-post");
 
     // ── 3〜5) W2: 移動元を空き枠へ戻す ──────────────────────
     const keep = buildConstructionSlotKeepFieldIds((key) =>
@@ -646,8 +674,11 @@ export async function POST(request: Request) {
           })
         : { ok: false as const, reason: "no-columns" as const };
 
+    timing.mark("w2-write");
+
     if (sourceReset.ok) {
-      await recordMoveAuditLog({
+      auditTasks.push(
+        recordMoveAuditLog({
         lineUserId: auth.lineUserId,
         operation: "update",
         calAppId,
@@ -657,7 +688,7 @@ export async function POST(request: Request) {
         payload: reset.patch,
         constructionFields,
         note: `工事日を ${targetDayKey} へ移動し、この枠を空き枠へ戻した`,
-      });
+      }));
       invalidateCalendarConstructionRecordsCache();
       invalidateAllCalendarPayloadCache();
     } else {
@@ -670,6 +701,9 @@ export async function POST(request: Request) {
           reason: sourceReset.reason,
         }),
       );
+      // 監査ログを書き切ってから返す（返した瞬間に実行環境が凍結する）
+      await flushAudits();
+      timing.flush({ result: "source-reset-failed", movedTo });
       return NextResponse.json(
         {
           error: buildMoveSourceResetFailedMessage({
@@ -688,7 +722,7 @@ export async function POST(request: Request) {
     }
 
     // ── 6) 後処理（お客様情報の Aki番号・施工予定日はここで更新される）
-    return finalizeConstructionCalendarSave({
+    const finalized = await finalizeConstructionCalendarSave({
       calAppId,
       constructionRecordId: movedRecordId || null,
       constructionUniqueKey: tNumber,
@@ -703,6 +737,12 @@ export async function POST(request: Request) {
       viewYear: body.viewYear,
       viewMonth: body.viewMonth,
       savedVerb: "更新",
+      /**
+       * カレンダーの即時反映パッチは組み立てない。
+       * 移動のパネルは onSaved(null) を呼んで必ず再取得するので、
+       * 組み立てても捨てられる（@pocket の GET を1回節約）
+       */
+      skipCalendarPatch: true,
       extraResponse: {
         movedTo,
         sourceResetToEmptySlot: true,
@@ -711,8 +751,16 @@ export async function POST(request: Request) {
         slotDeleted: false,
       },
     });
+    timing.mark("finalize");
+
+    // レスポンスを返す前に監査ログを必ず書き切る
+    await flushAudits();
+    timing.flush({ result: "ok", movedTo });
+    return finalized;
   } catch (e) {
     console.error("[api/calendar/move-construction-case]", e);
+    await flushAudits();
+    timing.flush({ result: "error" });
     const detail = formatConstructionCreateRecordError(
       e instanceof Error ? e.message : String(e),
     );
