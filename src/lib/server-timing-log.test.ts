@@ -124,3 +124,70 @@ describe("出力", () => {
     ]);
   });
 });
+
+/**
+ * 並列に走らせた処理の内訳（実測の続き）。
+ *
+ * mark は「前の mark からの経過」なので、Promise.all で同時に走らせた
+ * ものはどちらが遅いか分からない。measure はその Promise だけを測る。
+ */
+describe("並列の内訳", () => {
+  it("★ 無効なら素通し（値はそのまま返る）", async () => {
+    const t = startServerTimingLog("scope");
+
+    await expect(t.measure("a", Promise.resolve(42))).resolves.toBe(42);
+    expect(t.enabled).toBe(false);
+  });
+
+  it("★ steps とは別の parallel に入る（合計を二重計上しない）", async () => {
+    process.env.CALENDAR_TIMING_LOG = "true";
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const t = startServerTimingLog("scope");
+
+    await Promise.all([
+      t.measure("source-record", Promise.resolve(1)),
+      t.measure("handler-roster", Promise.resolve(2)),
+    ]);
+    t.mark("source-get");
+    t.flush();
+
+    const out = JSON.parse(String(info.mock.calls[0]?.[1])) as {
+      steps: Record<string, number>;
+      parallel: Record<string, number>;
+    };
+    expect(Object.keys(out.steps)).toEqual(["source-get"]);
+    expect(Object.keys(out.parallel).sort()).toEqual([
+      "handler-roster",
+      "source-record",
+    ]);
+  });
+
+  it("★ 失敗しても計測して、例外はそのまま投げる", async () => {
+    process.env.CALENDAR_TIMING_LOG = "true";
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const t = startServerTimingLog("scope");
+
+    await expect(
+      t.measure("boom", Promise.reject(new Error("x"))),
+    ).rejects.toThrow("x");
+    t.flush();
+
+    const out = JSON.parse(String(info.mock.calls[0]?.[1])) as {
+      parallel?: Record<string, number>;
+    };
+    expect(out.parallel).toHaveProperty("boom");
+  });
+
+  it("並列が無ければ parallel の行を出さない", () => {
+    process.env.CALENDAR_TIMING_LOG = "true";
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const t = startServerTimingLog("scope");
+
+    t.mark("a");
+    t.flush();
+
+    const out = JSON.parse(String(info.mock.calls[0]?.[1])) as
+      Record<string, unknown>;
+    expect(out).not.toHaveProperty("parallel");
+  });
+});

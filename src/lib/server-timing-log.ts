@@ -22,6 +22,15 @@ import "server-only";
 export type ServerTimingLog = {
   /** 前の mark からの経過を1段階として記録する */
   mark: (step: string) => void;
+  /**
+   * 並列に走らせた処理を**個別に**測る。
+   *
+   * mark は「前の mark からの経過」なので、Promise.all で同時に走らせた
+   * ものは区別できない（どちらが遅いのか分からない）。measure は
+   * その Promise だけの所要時間を測り、**steps とは別の parallel へ**入れる。
+   * 合計（totalMs）と steps の対応を崩さないため、二重計上にならない。
+   */
+  measure: <T>(step: string, task: Promise<T>) => Promise<T>;
   /** 1行にまとめて出す。無効時は何もしない */
   flush: (extra?: Record<string, number | boolean | string>) => void;
   /** 有効かどうか（重い計測を足すかの判断に使える） */
@@ -30,6 +39,7 @@ export type ServerTimingLog = {
 
 const NOOP: ServerTimingLog = {
   mark: () => {},
+  measure: (_step, task) => task,
   flush: () => {},
   enabled: false,
 };
@@ -48,6 +58,8 @@ export function startServerTimingLog(scope: string): ServerTimingLog {
   const startedAt = Date.now();
   let previous = startedAt;
   const steps: Record<string, number> = {};
+  /** 並列に走らせたものの内訳。steps とは足し合わせない */
+  const parallel: Record<string, number> = {};
 
   return {
     enabled: true,
@@ -58,6 +70,15 @@ export function startServerTimingLog(scope: string): ServerTimingLog {
       steps[key] = (steps[key] ?? 0) + (now - previous);
       previous = now;
     },
+    async measure(step, task) {
+      const key = step.trim() || "parallel";
+      const at = Date.now();
+      try {
+        return await task;
+      } finally {
+        parallel[key] = (parallel[key] ?? 0) + (Date.now() - at);
+      }
+    },
     flush(extra) {
       const now = Date.now();
       console.info(
@@ -66,6 +87,7 @@ export function startServerTimingLog(scope: string): ServerTimingLog {
           scope,
           totalMs: now - startedAt,
           steps,
+          ...(Object.keys(parallel).length > 0 ? { parallel } : {}),
           ...(extra ?? {}),
         }),
       );
