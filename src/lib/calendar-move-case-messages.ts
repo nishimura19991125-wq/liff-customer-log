@@ -27,6 +27,11 @@ export type MoveConstructionCaseResponse = {
   constructionSaved?: boolean;
   slotConflict?: boolean;
   movedTo?: MovedCaseTarget;
+  /**
+   * 移動後に案件を持つレコードID（空き枠を使ったならその枠、新規なら作られた方）。
+   * 画面の即時反映で、移動先へ置く行の recordId に使う
+   */
+  recordId?: string;
   /** 移動元を空き枠へ戻せたか */
   sourceResetToEmptySlot?: boolean;
   /** 戻せなかったときに、利用者が @pocket で直す対象 */

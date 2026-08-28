@@ -76,6 +76,7 @@ export function CalendarMoveCasePanel({
   handlerListError,
   handlerRows,
   onSaved,
+  onMoved,
   onSessionExpired,
 }: {
   item: CalendarMonthApiItem;
@@ -92,6 +93,17 @@ export function CalendarMoveCasePanel({
   handlerListError: string;
   handlerRows: HandlerStaffRow[];
   onSaved: (patch?: CalendarRecordMonthPatch | null) => Promise<void>;
+  /**
+   * 移動の即時反映。移動は**2レコード**が変わるので calendarPatch では
+   * 表せない。手元の byDay を組み替えてから再取得する
+   */
+  onMoved?: (move: {
+    caseRecordId: string;
+    sourceDayKey: string;
+    targetDayKey: string;
+    movedRecordId: string | null;
+    slotRecordId: string | null;
+  }) => Promise<void>;
   onSessionExpired?: () => void;
 }) {
   const recordId = item.recordId?.trim() ?? "";
@@ -312,9 +324,27 @@ export function CalendarMoveCasePanel({
 
       setConfirming(false);
       setOpen(false);
+      const movedDayKey = targetDayKey;
+      const usedSlotId = selectedSlotId;
       reset();
       try {
-        await onSaved(null);
+        /**
+         * 再取得だけに任せると、工事レコードのキャッシュ（既定300秒）と
+         * 月ペイロードのキャッシュのぶん、押した直後の画面が変わらない。
+         * 手元の byDay を先に組み替えて、移動先の日へ移す
+         */
+        if (onMoved) {
+          await onMoved({
+            caseRecordId: recordId,
+            sourceDayKey,
+            targetDayKey: movedDayKey,
+            // 空き枠を使ったならその ID、新規作成ならサーバが返した ID
+            movedRecordId: data.recordId?.trim() || null,
+            slotRecordId: usedSlotId || null,
+          });
+        } else {
+          await onSaved(null);
+        }
       } catch (e) {
         setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
         return;

@@ -24,6 +24,7 @@ import { CustomerNameSplitInput } from "@/components/customer-name-split-input";
 import { CalendarAssignUndatedCaseForm } from "@/components/calendar-assign-undated-case-form";
 import { CalendarMonthSkeleton } from "@/components/calendar-month-skeleton";
 import { CalendarMoveCasePanel } from "@/components/calendar-move-case-panel";
+import { dayKeyInMonth } from "@/lib/calendar-move-target-slots";
 import {
   ASSIGN_CUSTOMER_CASE_PATH,
   assignedCaseSuccessMessage,
@@ -54,7 +55,11 @@ import { useLiffSwr } from "@/hooks/use-liff-swr";
 import { joinJapaneseFullName } from "@/lib/customer-info-form/name-parts";
 import { formatDisplayYmd } from "@/lib/format-display-ymd";
 import { mergeStaffNameOptions } from "@/lib/staff-name-options";
-import { applyCalendarRecordPatch, applyConstructionHandlerNameLocal } from "@/lib/calendar-apply-patch";
+import {
+  applyCalendarCaseMove,
+  applyCalendarRecordPatch,
+  applyConstructionHandlerNameLocal,
+} from "@/lib/calendar-apply-patch";
 import { CalendarContractorFilterPanel } from "@/components/calendar-contractor-filter-panel";
 import type { CalendarDisplayMode } from "@/lib/calendar-contractor-filter";
 import {
@@ -2211,6 +2216,37 @@ export function LiffCalendarMonthPage({
     [idToken, forceRefreshCalendar, mutateCalendar],
   );
 
+  /**
+   * 工事日の移動を画面へ反映する（保存直後）。
+   *
+   * 移動は2つのレコードが変わるので calendarPatch では表せない。
+   * サーバに作らせると GET が2回増えるうえ、直後の再取得で上書きされる。
+   * 手元の byDay を組み替えれば **@pocket を1回も呼ばずに**即座に見える。
+   *
+   * そのあと forceRefreshCalendar で正となる値に置き換わる。
+   */
+  const applyCaseMoveToView = useCallback(
+    async (move: {
+      caseRecordId: string;
+      sourceDayKey: string;
+      targetDayKey: string;
+      movedRecordId: string | null;
+      slotRecordId: string | null;
+    }) => {
+      if (!idToken) return;
+      void mutateCalendar(
+        (prev) => (prev ? applyCalendarCaseMove(prev, move) : prev),
+        { revalidate: false },
+      );
+      // 表示中の月の外へ移したときは日を移さない（空の詳細を開いてしまう）
+      if (dayKeyInMonth(move.targetDayKey, ym.year, ym.month)) {
+        setSelectedDayKey(move.targetDayKey);
+      }
+      await forceRefreshCalendar();
+    },
+    [idToken, mutateCalendar, forceRefreshCalendar, ym.year, ym.month],
+  );
+
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
     account.bindingEnabled &&
@@ -2849,6 +2885,7 @@ export function LiffCalendarMonthPage({
                                   handlerListError={handlerListError}
                                   handlerRows={handlerRows}
                                   onSaved={applyCalendarSaveToView}
+                                  onMoved={applyCaseMoveToView}
                                   onSessionExpired={() =>
                                     setPhase("session-expired")
                                   }
