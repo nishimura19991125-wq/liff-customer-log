@@ -106,6 +106,48 @@ describe("確認画面（M-3）", () => {
   });
 });
 
+describe("★ 月をまたぐ移動（読み込み中で固まらない）", () => {
+  it("★ 読み込み中／失敗の判定を純粋関数へ寄せている", () => {
+    // 状態をコンポーネントの useState に持ち、それをエフェクトの依存にも
+    // 入れていたため、走っている fetch を自分でキャンセルして永久に
+    // 読み込み中になっていた。導出はテストできる場所に置く
+    expect(read(PANEL)).toContain("resolveMoveTargetMonthState");
+  });
+
+  it("★ 途中状態を state に持たない", () => {
+    const src = read(PANEL);
+
+    // 持つのは「取れた月の結果」だけ
+    expect(src).toContain("LoadedMonthByDay");
+    expect(src).not.toContain('status: "loading"');
+  });
+
+  it("★ 取得エフェクトが自分の書いた state に依存しない", () => {
+    const src = read(PANEL);
+    const deps = src.slice(
+      src.indexOf("}, [open, needsOtherMonth"),
+      src.indexOf("reloadNonce]") + "reloadNonce]".length,
+    );
+
+    expect(deps).toBeTruthy();
+    expect(deps).not.toContain("loadedMonth");
+    // onSessionExpired は毎描画で別物になるので ref 経由にする
+    expect(deps).not.toContain("onSessionExpired");
+    expect(src).toContain("onSessionExpiredRef");
+  });
+
+  it("★ 失敗したら再読み込みできる", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("再読み込み");
+    expect(src).toContain("setReloadNonce");
+  });
+
+  it("★ 枠を読めていないまま実行させない", () => {
+    expect(read(PANEL)).toContain("Boolean(slotsError)");
+  });
+});
+
 describe("既存の経路を変えていない（M-3）", () => {
   it("★ 3-3 の割り当てフローはそのまま", () => {
     expect(

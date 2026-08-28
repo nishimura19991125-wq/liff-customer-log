@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { AtPocketFieldRow, AtPocketRecordRow } from "@/lib/atpocket";
+import type { CalendarMonthApiItem } from "@/lib/calendar-api-types";
 import { buildCalendarPayload } from "@/lib/calendar-kojo";
 import {
   contractorNameFromKey,
   dayKeyInMonth,
   emptySlotsFromDayItems,
+  monthKeyOf,
+  resolveMoveTargetMonthState,
 } from "@/lib/calendar-move-target-slots";
 
 /**
@@ -160,5 +163,160 @@ describe("★ 別の月かどうか", () => {
   it("壊れた値は false", () => {
     expect(dayKeyInMonth("", 2026, 12)).toBe(false);
     expect(dayKeyInMonth("not-a-date", 2026, 12)).toBe(false);
+  });
+});
+
+/**
+ * 月をまたぐ移動ができなかった件の再発防止。
+ *
+ * 実装は「読み込み中」を state に持ち、それをエフェクトの依存にも入れて
+ * いた。エフェクトが自分の書いた state で再実行され、走っている fetch を
+ * 自分でキャンセルするため、別の月を選ぶと**永久に読み込み中**になった。
+ * 症状は「空き枠の一覧が空・新規作成も出ない・実行ボタンが押せない・
+ * どこにもエラーが出ない」。
+ *
+ * ここでは状態を**キー比較だけ**から導くことを固定する。
+ */
+describe("★ 移動先の月の状態", () => {
+  const VIEW_BY_DAY = { "2026-12-05": [] } as Record<
+    string,
+    CalendarMonthApiItem[]
+  >;
+  const OTHER_BY_DAY = { "2027-05-11": [] } as Record<
+    string,
+    CalendarMonthApiItem[]
+  >;
+
+  const base = {
+    viewYear: 2026,
+    viewMonth: 12,
+    viewByDay: VIEW_BY_DAY,
+  };
+
+  it("日付を選んでいなければ何もしない", () => {
+    expect(
+      resolveMoveTargetMonthState({
+        ...base,
+        targetDayKey: "",
+        loadedMonth: null,
+      }),
+    ).toEqual({
+      needsFetch: false,
+      loading: false,
+      error: "",
+      byDay: undefined,
+    });
+  });
+
+  it("★ 同じ月なら取りにいかず、月次ペイロードをそのまま使う", () => {
+    const state = resolveMoveTargetMonthState({
+      ...base,
+      targetDayKey: "2026-12-20",
+      loadedMonth: null,
+    });
+
+    expect(state.needsFetch).toBe(false);
+    expect(state.loading).toBe(false);
+    expect(state.byDay).toBe(VIEW_BY_DAY);
+  });
+
+  it("★ 別の月で未取得なら読み込み中", () => {
+    const state = resolveMoveTargetMonthState({
+      ...base,
+      targetDayKey: "2027-05-11",
+      loadedMonth: null,
+    });
+
+    expect(state).toEqual({
+      needsFetch: true,
+      loading: true,
+      error: "",
+      byDay: undefined,
+    });
+  });
+
+  it("★ 別の月が取れたら読み込み中を抜け、その月で組み立てる", () => {
+    const state = resolveMoveTargetMonthState({
+      ...base,
+      targetDayKey: "2027-05-11",
+      loadedMonth: { key: "2027-05", byDay: OTHER_BY_DAY, error: "" },
+    });
+
+    expect(state.loading).toBe(false);
+    expect(state.error).toBe("");
+    expect(state.byDay).toBe(OTHER_BY_DAY);
+  });
+
+  it("★ 取れているのが別の月なら、まだ読み込み中（前の月の枠を出さない）", () => {
+    const state = resolveMoveTargetMonthState({
+      ...base,
+      targetDayKey: "2027-05-11",
+      loadedMonth: { key: "2027-06", byDay: OTHER_BY_DAY, error: "" },
+    });
+
+    expect(state.loading).toBe(true);
+    expect(state.byDay).toBeUndefined();
+  });
+
+  it("★ 失敗したら読み込み中を抜け、理由を返す", () => {
+    const state = resolveMoveTargetMonthState({
+      ...base,
+      targetDayKey: "2027-05-11",
+      loadedMonth: { key: "2027-05", byDay: {}, error: "通信に失敗しました" },
+    });
+
+    expect(state.loading).toBe(false);
+    expect(state.error).toBe("通信に失敗しました");
+    // 枠の有無が分からないまま新規作成へ進ませない
+    expect(state.byDay).toBeUndefined();
+  });
+
+  it("★ 失敗しても永久に読み込み中にならない", () => {
+    // 症状の裏返し。loading と error が同時に立つことは無い
+    const state = resolveMoveTargetMonthState({
+      ...base,
+      targetDayKey: "2027-05-11",
+      loadedMonth: { key: "2027-05", byDay: {}, error: "boom" },
+    });
+
+    expect(state.loading && Boolean(state.error)).toBe(false);
+  });
+
+  it("★ 別月で空き枠が0件でも読み込みは終わる（新規作成を選べる）", () => {
+    const state = resolveMoveTargetMonthState({
+      ...base,
+      targetDayKey: "2027-05-11",
+      loadedMonth: { key: "2027-05", byDay: {}, error: "" },
+    });
+
+    expect(state.loading).toBe(false);
+    expect(state.error).toBe("");
+    // byDay はあるが、その日に枠が無いだけ＝新規作成の選択肢が出る状態
+    expect(state.byDay).toEqual({});
+    expect(emptySlotsFromDayItems(state.byDay?.["2027-05-11"])).toEqual([]);
+  });
+
+  it("表示中の月のデータがまだ無くても壊れない", () => {
+    const state = resolveMoveTargetMonthState({
+      ...base,
+      viewByDay: undefined,
+      targetDayKey: "2026-12-20",
+      loadedMonth: null,
+    });
+
+    expect(state.loading).toBe(false);
+    expect(state.byDay).toBeUndefined();
+  });
+});
+
+describe("月キー", () => {
+  it("YYYY-MM-DD から YYYY-MM を作る", () => {
+    expect(monthKeyOf("2027-05-11")).toBe("2027-05");
+  });
+
+  it("読めない値は空文字", () => {
+    expect(monthKeyOf("")).toBe("");
+    expect(monthKeyOf("2027-05")).toBe("");
+    expect(monthKeyOf("not-a-date")).toBe("");
   });
 });
