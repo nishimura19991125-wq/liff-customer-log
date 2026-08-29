@@ -1104,9 +1104,11 @@ function EmptySlotCard({
    *   旧: assign-case-to-slot（案件に日付を書き、この空き枠を**削除**）
    *   新: assign-customer-case（この枠のレコードを案件に変える。削除しない）
    *
-   * 工事登録アプリに同じ案件が既にある場合は、サーバがそちらへ書いて
-   * この枠は残る。押した枠が変わらないことがあるので、結果は
-   * assignedTo を見て伝える
+   * 工事登録アプリに同じ案件が既にある場合は、サーバがそちらへ書き、
+   * **この枠のほうを削除する**（案B）。枠を残すと同じ日に案件と空き枠が
+   * 並び、枠の数を超えて登録できてしまうため。
+   * どちらに転んでも押した枠の見え方が変わるので、結果は
+   * assignedTo・slotDeleted を見て伝える
    */
   async function handleAssignSubmit() {
     if (!rid) return;
@@ -1336,7 +1338,11 @@ function EmptySlotCard({
                 <span className="font-semibold text-slate-800">
                   空き枠は削除しません。
                 </span>
-                この枠のレコードをそのまま案件に変え、Aki番号を引き継ぎます。工事登録アプリに同じ案件が既にあるときは、そちらに日付を入れてこの枠は残します。
+                この枠のレコードをそのまま案件に変え、Aki番号を引き継ぎます。ただし工事登録アプリに同じ案件が既にあるときは、そちらに日付を入れ、
+                <span className="font-semibold text-slate-800">
+                  この空き枠は削除します
+                </span>
+                （同じ日に案件と空き枠が二重に残らないようにするためです）。
               </p>
               {!slotDayKey?.trim() ? (
                 <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-900 ring-1 ring-amber-100">

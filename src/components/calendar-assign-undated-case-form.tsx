@@ -40,16 +40,18 @@ import { mergeStaffNameOptions } from "@/lib/staff-name-options";
  * 新規登録の「未定案件を割り当て」タブ（第3段階 3-3 で送信先を変更）。
  *
  *   旧: assign-case-to-slot（空き枠を削除）/ schedule-undated-case
- *   新: /api/calendar/assign-customer-case（3-2 で追加・削除しない）
+ *   新: /api/calendar/assign-customer-case（3-2 で追加）
  *
- * ■ 確認ダイアログをやめた
+ * ■ 確認ダイアログをやめたまま
  * 3択は「空き枠を使う＝削除される」という**取り返しのつかない操作**への
- * 同意を取るためのものだった。新しい経路は空き枠を削除せず、枠のレコードを
- * 案件に変えるだけなので、同意を取る対象が無い。
+ * 同意を取るためのものだった。
  *
- * さらに「工事登録アプリに同じ案件が既にあれば空き枠を使わない」判定は
- * サーバ側にあり、画面では事前に分からない。守れるとは限らない選択肢を
- * 見せるより、結果（assignedTo）を後から伝えるほうが正確になる。
+ * 案B で削除自体は復活したが、ダイアログは戻さない。削除されるかは
+ * 「工事登録アプリに同じ案件が既にあるか」で決まり、**画面では事前に
+ * 分からない**からで、これは 3-3 の時点と変わらない。守れるとは限らない
+ * 選択肢を見せるより、押す前の説明を下の固定文に書き、結果（assignedTo・
+ * slotDeleted）を後から伝えるほうが正確になる。
+ * 消えるのも中身の無い空き枠で、失敗しても枠が残るだけ。
  *
  * ■ 工事対応者
  * 新しい経路では必須（fill-empty-slot と同じ扱い）。旧経路は書いていな
@@ -315,7 +317,11 @@ export function CalendarAssignUndatedCaseForm({
         <span className="font-semibold text-slate-800">
           空き枠は削除しません
         </span>
-        ）。工事登録アプリに同じ案件が既にあるときは、そちらに日付を入れて空き枠は残します。
+        ）。ただし工事登録アプリに同じ案件が既にあるときは、そちらに日付を入れ、
+        <span className="font-semibold text-slate-800">
+          選んだ空き枠は削除します
+        </span>
+        （同じ日に案件と空き枠が二重に残らないようにするためです）。
       </p>
 
       <div className={invalid("case") ? "rounded-xl ring-2 ring-red-200" : ""}>
