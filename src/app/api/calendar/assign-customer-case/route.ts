@@ -1,15 +1,26 @@
 import { NextResponse } from "next/server";
 
+import type { AtPocketFetchAuth, AtPocketFieldRow } from "@/lib/atpocket";
 import {
   apiKeyForCalendarPocket1,
   apiKeyForCalendarWrite,
+  deleteRecord,
   fetchAppFields,
   fetchRecordById,
 } from "@/lib/atpocket";
 import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
 import { recordAuditLog } from "@/lib/audit-log";
-import { computeAuditChanges } from "@/lib/audit-log-changes";
+import {
+  computeAuditChanges,
+  formatDeletionContent,
+} from "@/lib/audit-log-changes";
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
+import {
+  assignDeletesEmptySlotEnabled,
+  decideEmptySlotDeletion,
+  emptySlotDeleteRefusalIsNotable,
+  emptySlotDeleteRefusalMessage,
+} from "@/lib/calendar-assign-slot-delete-guard";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import {
   buildConstructionFillPatch,
@@ -75,9 +86,27 @@ export const maxDuration = 26;
  * その顧客はもう自動照合できない。カレンダー表示・キャンセル処理・
  * お客様情報との突合まで巻き込むので、この判定は省略できない。
  *
- * ■ 削除しない
- * **deleteRecord を呼ばない。** 空き枠を使う場合もレコードを案件に変えるだけで、
- * 枠は消さない。物理削除は assign-case-to-slot だけの仕事のまま。
+ * ■ 経路1では空き枠を削除する（案B）
+ * 1 は空き枠を使わないため、枠がそのまま残る。同じ日に「案件」と「空き枠」が
+ * 並び、**枠の数を超えて登録できてしまう**。そこで既存レコードへ書いたあと、
+ * 利用者が選んだ空き枠のほうを deleteRecord で消す。
+ *
+ * 逆向き（空き枠を案件に変えて既存レコードを消す）は採らない。
+ * buildConstructionFillPatch が書くのは7〜11列だけで、終了日・メモ・
+ * メーカー・パネル容量・蓄電池容量・APPT/CLPT登録番号などが転記されない。
+ * このリポジトリが知らない列が @pocket にある可能性もあり、案件レコードを
+ * 消すと黙って列が失われる。消すのが中身の無い空き枠なら失うものが無い。
+ *
+ * 順序は**書いてから消す**。
+ *   書けたが消せない → 空き枠が残る。カレンダーに見えるので気づける
+ *   消せたが書けない → 枠が1つ減るだけ。案件は無事
+ * 削除の作法（全項目 GET → 監査ログ → ok を確認 → deleteRecord）は
+ * assign-case-to-slot をそのまま踏襲する。詳細は
+ * deleteEmptySlotAfterExistingWrite と calendar-assign-slot-delete-guard.ts へ。
+ *
+ * ■ 経路2・3では削除しない
+ * 空き枠を案件に変える経路（2）は、枠のレコードそのものが案件になるので
+ * 消す対象が無い。新規作成（3）はそもそも枠を使っていない。
  *
  * ■ 書き戻し
  * finalizeConstructionCalendarSave → sync-construction-to-customer-info が
@@ -123,6 +152,112 @@ function coercePlainString(raw: unknown): string {
 }
 
 const LINK_FAILED_STATUS = 502;
+
+/**
+ * 既存レコードへ書き込んだあと、利用者が選んだ空き枠を削除する（案B）。
+ *
+ * **このリポジトリで2つ目の物理削除の呼び出し口。** もう1つは
+ * assign-case-to-slot（旧経路）で、作法はそちらに合わせてある。
+ *
+ * ■ 削除するのは利用者が選んだ枠だけ
+ * slotRecordId はボタンを押した空き枠カード・フォームの選択がそのまま届く。
+ * ここで枠を探しにいくことはしない。誤爆の余地を作らないため、
+ * 可否の判定は decideEmptySlotDeletion に閉じてテストで固定している。
+ *
+ * ■ 失敗しても割り当ては成功として返す
+ * 消せなくても残るのは空き枠で、カレンダーに見える。呼び出し側へ理由を
+ * 返し、文言で伝えるだけにとどめる（割り当て自体を失敗にはしない）。
+ */
+async function deleteEmptySlotAfterExistingWrite(input: {
+  calAppId: string;
+  /** 利用者が選んだ空き枠。空なら何もしない（枠が無い日への割り当て） */
+  slotRecordId: string;
+  /** 施工予定日を書き込んだ既存レコードのID。空なら削除しない */
+  existingRecordId: string;
+  customerNameFieldId: string;
+  startDateFieldId: string;
+  tNumber: string;
+  constructionFields: AtPocketFieldRow[];
+  readAuth: AtPocketFetchAuth;
+  writeAuth: AtPocketFetchAuth;
+  lineUserId: string;
+}): Promise<{ deleted: boolean; warning?: string }> {
+  const slotRecordId = input.slotRecordId.trim();
+  const enabled = assignDeletesEmptySlotEnabled();
+  // 枠が指定されていない・止められているときは @pocket を1回も触らない
+  if (!slotRecordId || !enabled) return { deleted: false };
+
+  /**
+   * A-4: 物理削除はログが唯一の復元手段なので、削除前に**全項目**を取る。
+   * CSV で列を絞ると、読めていないだけの列を「空欄」として記録してしまう。
+   *
+   * この GET は空き枠かどうかの再確認にもそのまま使う。
+   * readFreshConstructionEmptySlotState を別に呼ぶと @pocket の往復が
+   * 1回増えるだけで、判定（constructionTitleFieldIsEmpty）は同じになる
+   */
+  let freshSlotRecord: Record<string, unknown> | null = null;
+  try {
+    const row = await fetchRecordById(
+      input.calAppId,
+      slotRecordId,
+      input.readAuth,
+    );
+    if (row?.record && typeof row.record === "object") {
+      freshSlotRecord = row.record as Record<string, unknown>;
+    }
+  } catch (e) {
+    // 読めなかった＝中身が分からない。判定側が not_found で止める
+    console.error(
+      "[api/calendar/assign-customer-case] 空き枠の再取得に失敗しました",
+      e instanceof Error ? e.message : String(e),
+    );
+  }
+
+  const decision = decideEmptySlotDeletion({
+    enabled,
+    slotRecordId,
+    existingRecordId: input.existingRecordId,
+    freshSlotRecord,
+    customerNameFieldId: input.customerNameFieldId,
+    startDateFieldId: input.startDateFieldId,
+  });
+  if (!decision.ok || !freshSlotRecord) {
+    const reason = decision.ok ? "not_found" : decision.reason;
+    return {
+      deleted: false,
+      ...(emptySlotDeleteRefusalIsNotable(reason)
+        ? { warning: emptySlotDeleteRefusalMessage(reason) }
+        : {}),
+    };
+  }
+
+  const deletionLog = await recordAuditLog({
+    lineUserId: input.lineUserId,
+    operation: "delete",
+    targetAppId: input.calAppId,
+    targetRecordId: slotRecordId,
+    targetTNumber: input.tNumber,
+    deletionContent: formatDeletionContent(freshSlotRecord, {
+      labelOf: (fieldId) =>
+        fieldCaptionByUniqueId(input.constructionFields, fieldId),
+    }),
+  });
+  // 記録できなかったら消さない（A-4）。残るのは空き枠なので実害は小さい
+  if (!deletionLog.ok) {
+    return { deleted: false, warning: "削除の記録を残せなかったため" };
+  }
+
+  try {
+    await deleteRecord(input.calAppId, slotRecordId, input.writeAuth);
+  } catch (e) {
+    console.error(
+      "[api/calendar/assign-customer-case] 空き枠の削除に失敗しました",
+      e instanceof Error ? e.message : String(e),
+    );
+    return { deleted: false, warning: "空き枠の削除に失敗したため" };
+  }
+  return { deleted: true };
+}
 
 export async function POST(request: Request) {
   const auth = await resolveCallerLineAuth(request);
@@ -379,7 +514,14 @@ export async function POST(request: Request) {
      *    立てると保存経路まで復活してしまう。ここは工事カレンダーからの
      *    明示操作なので、関数を直接呼ぶ
      */
-    const linkAndFinalize = async () => {
+    const linkAndFinalize = async (options?: {
+      /**
+       * 書き込みに成功したら削除する空き枠（案B）。
+       * **未指定なら削除しない。** 枠が無い日への割り当てと、
+       * 空き枠を案件に変える経路はここを通さない
+       */
+      deleteSlotRecordId?: string;
+    }) => {
       const linked = await linkCustomerInfoToConstruction({
         tNumber,
         customerName,
@@ -411,6 +553,28 @@ export async function POST(request: Request) {
         );
       }
 
+      /**
+       * ここまで来たら既存レコードへの書き込みは成立している。
+       * 「書いてから消す」順序を守り、選ばれた空き枠を削除する（案B）。
+       *
+       * existingRecordId には**実際に書いた相手**を渡す。ルート側の照合結果
+       * （existing.recordId）ではなく linked.recordId を使うのは、
+       * 連携が内部でもう一度照合しており、そちらが書き込み先だから
+       */
+      const requestedSlotRecordId = options?.deleteSlotRecordId?.trim() ?? "";
+      const slotDelete = await deleteEmptySlotAfterExistingWrite({
+        calAppId,
+        slotRecordId: requestedSlotRecordId,
+        existingRecordId: linked.kind === "updated" ? linked.recordId : "",
+        customerNameFieldId: resolvedCustomer,
+        startDateFieldId: fids.startDate,
+        tNumber,
+        constructionFields,
+        readAuth,
+        writeAuth,
+        lineUserId: auth.lineUserId,
+      });
+
       invalidateCalendarConstructionRecordsCache();
       invalidateAllCalendarPayloadCache();
 
@@ -437,8 +601,15 @@ export async function POST(request: Request) {
         savedVerb: linked.kind === "created" ? "登録" : "更新",
         extraResponse: {
           assignedTo: linked.kind === "created" ? "new" : "existing",
+          // 枠のレコードを案件に変えてはいない（変えるのは別経路）
           slotUsed: false,
-          slotDeleted: false,
+          slotDeleted: slotDelete.deleted,
+          ...(requestedSlotRecordId
+            ? { slotRecordId: requestedSlotRecordId }
+            : {}),
+          ...(slotDelete.warning
+            ? { slotDeleteWarning: slotDelete.warning }
+            : {}),
         },
       });
     };
@@ -476,8 +647,11 @@ export async function POST(request: Request) {
       );
     }
     if (existing.kind === "found") {
-      // 既存があるので空き枠は使わない（残す）。既存レコードへ書く
-      return linkAndFinalize();
+      /**
+       * 既存があるので空き枠へは書かない。既存レコードへ日付を書き、
+       * 同じ日に案件と空き枠が二重に残らないよう、選ばれた枠を削除する（案B）
+       */
+      return linkAndFinalize({ deleteSlotRecordId: slotRecordId });
     }
 
     /** 空き枠のレコードを案件に変える。削除はしない */

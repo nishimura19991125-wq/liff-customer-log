@@ -3,12 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 /**
  * 第3段階 3-2: お客様情報の案件を工事カレンダーへ載せる割り当て API。
  *
- * ここで固定するのは次の4つ。
- *   - 既存の工事レコードがあるときは**空き枠を使わない**（案A）
+ * ここで固定するのは次の5つ。
+ *   - 既存の工事レコードがあるときは**空き枠へ書かない**（案A）
  *     同じ T番号 が2件になると自動照合が止まるため、この判定は省略できない
+ *   - そのとき**選ばれた空き枠は削除する**（案B）。書かないまま残すと
+ *     同じ日に案件と空き枠が並び、枠の数を超えて登録できてしまう
  *   - 空き枠を使うときは Aki番号 を引き継ぎ、T番号 はお客様情報のものを書く
- *   - **deleteRecord を一度も呼ばない**
+ *     （この経路では**削除しない**。枠のレコードそのものが案件になる）
  *   - 「探せなかった」ときは何も書かない（作りにいくと二重になる）
+ *   - 削除は「書いてから消す」。書けていないときは1件も消さない
  */
 
 const CAL_APP_ID = "cal-1";
@@ -34,10 +37,20 @@ const APP_FIELDS = [
 type Write = { recordId?: string; payload: Record<string, unknown> };
 
 const h = vi.hoisted(() => ({
-  /** @pocket の物理削除。1回でも呼ばれたら設計違反 */
+  /** @pocket の物理削除。消してよいのは「既存あり＋枠指定あり」だけ */
   deleteCalls: [] as string[],
+  deleteThrows: false,
   writes: [] as Write[],
-  audits: [] as { operation: string; recordId: string }[],
+  writeThrows: false,
+  audits: [] as {
+    operation: string;
+    recordId: string;
+    deletionContent?: string;
+  }[],
+  /** 削除ログの記録に失敗させる（A-4 の確認用） */
+  auditDeleteOk: true,
+  /** fetchRecordById の呼ばれ方。削除前は CSV 指定なしでなければならない */
+  recordGets: [] as { recordId: string; fieldsCsv?: string }[],
   /** T番号 での工事レコード検索が返す行 */
   lookupRows: [] as unknown[],
   lookupCalls: 0,
@@ -64,14 +77,22 @@ vi.mock("@/lib/atpocket", async () => {
     apiKeyForCalendarPocket1: () => "k1",
     apiKeyForCalendarWrite: () => "kw",
     fetchAppFields: async () => APP_FIELDS,
-    fetchRecordById: async () =>
-      h.slotRecord ? { recordId: 7, record: h.slotRecord } : null,
+    fetchRecordById: async (
+      _appId: string,
+      recordId: string,
+      _auth: unknown,
+      fieldsCsv?: string,
+    ) => {
+      h.recordGets.push({ recordId, ...(fieldsCsv ? { fieldsCsv } : {}) });
+      return h.slotRecord ? { recordId: 7, record: h.slotRecord } : null;
+    },
     fetchRecordsList: async () => {
       h.lookupCalls += 1;
       if (h.lookupThrows) throw new Error("429 Too Many Requests");
       return { records: h.lookupRows };
     },
     deleteRecord: async (_appId: string, recordId: string) => {
+      if (h.deleteThrows) throw new Error("@pocket delete record failed: 500");
       h.deleteCalls.push(recordId);
     },
   };
@@ -82,6 +103,7 @@ vi.mock("@/lib/atpocket-write-with-import-key", () => ({
     recordId?: string;
     payload: Record<string, unknown>;
   }) => {
+    if (h.writeThrows) throw new Error("@pocket update record failed: 500");
     h.writes.push({
       ...(opts.recordId ? { recordId: opts.recordId } : {}),
       payload: opts.payload,
@@ -94,8 +116,19 @@ vi.mock("@/lib/atpocket-write-with-import-key", () => ({
 
 vi.mock("@/lib/audit-log", () => ({
   auditLogEnabled: () => true,
-  recordAuditLog: async (o: { operation: string; targetRecordId: string }) => {
-    h.audits.push({ operation: o.operation, recordId: o.targetRecordId });
+  recordAuditLog: async (o: {
+    operation: string;
+    targetRecordId: string;
+    deletionContent?: string;
+  }) => {
+    if (o.operation === "delete" && !h.auditDeleteOk) {
+      return { ok: false, error: "更新履歴アプリに書けませんでした" };
+    }
+    h.audits.push({
+      operation: o.operation,
+      recordId: o.targetRecordId,
+      ...(o.deletionContent ? { deletionContent: o.deletionContent } : {}),
+    });
     return { ok: true, written: 1 };
   },
 }));
@@ -162,6 +195,7 @@ const ENV_KEYS = [
   "CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID",
   "CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID",
   "CALENDAR_CONSTRUCTION_IMPORT_KEY_FIELD_ID",
+  "CALENDAR_ASSIGN_DELETE_EMPTY_SLOT",
 ] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -187,10 +221,15 @@ beforeEach(() => {
   process.env.CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID = HANDLER_ID;
   process.env.CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID = T_ID;
   process.env.CALENDAR_CONSTRUCTION_IMPORT_KEY_FIELD_ID = AKI_ID;
+  delete process.env.CALENDAR_ASSIGN_DELETE_EMPTY_SLOT;
 
   h.deleteCalls.length = 0;
+  h.deleteThrows = false;
   h.writes.length = 0;
+  h.writeThrows = false;
   h.audits.length = 0;
+  h.auditDeleteOk = true;
+  h.recordGets.length = 0;
   h.lookupRows = [];
   h.lookupCalls = 0;
   h.lookupThrows = false;
@@ -241,7 +280,7 @@ function existingConstructionRow() {
   };
 }
 
-describe("既存の工事レコードがあるとき（案A）", () => {
+describe("既存の工事レコードがあるとき（案A＋案B）", () => {
   it("★ 既存レコードに施工予定日・施工会社が書かれる", async () => {
     h.lookupRows = [existingConstructionRow()];
 
@@ -254,22 +293,183 @@ describe("既存の工事レコードがあるとき（案A）", () => {
     expect(h.writes[0]?.payload[CONTRACTOR_ID]).toBe("株式会社アルファ");
   });
 
-  it("★ 空き枠に書かない・削除しない", async () => {
+  it("★ 空き枠には書かず、その空き枠を削除する", async () => {
     h.lookupRows = [existingConstructionRow()];
 
     const { body } = await call({ ...BASE_BODY, slotRecordId: "slot-9" });
 
+    // 枠のレコードを案件に変えるのは別経路。ここでは書かない
     expect(h.writes.map((w) => w.recordId)).not.toContain("slot-9");
-    expect(h.deleteCalls).toEqual([]);
+    // 同じ日に案件と空き枠が並ばないよう、枠のほうを消す
+    expect(h.deleteCalls).toEqual(["slot-9"]);
     expect(body.slotUsed).toBe(false);
+    expect(body.slotDeleted).toBe(true);
+    expect(body.assignedTo).toBe("existing");
+    expect(body.slotRecordId).toBe("slot-9");
+    expect(body.slotDeleteWarning).toBeUndefined();
+  });
+
+  it("★ 空き枠を指定しなければ削除しない（枠が無い日への割り当て）", async () => {
+    h.lookupRows = [existingConstructionRow()];
+
+    const { status, body } = await call({ ...BASE_BODY });
+
+    expect(status).toBe(200);
+    expect(h.deleteCalls).toEqual([]);
     expect(body.slotDeleted).toBe(false);
     expect(body.assignedTo).toBe("existing");
+    // 枠を触らないので @pocket の単票 GET も起こさない
+    expect(h.recordGets).toEqual([]);
+  });
+
+  it("★ 削除前に全項目を GET する（CSV で列を絞らない）", async () => {
+    h.lookupRows = [existingConstructionRow()];
+
+    await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+
+    expect(h.recordGets).toEqual([{ recordId: "slot-9" }]);
+  });
+
+  it("★ 削除ログを delete として1件残す（項目が並ぶ）", async () => {
+    h.lookupRows = [existingConstructionRow()];
+
+    await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+
+    const deletes = h.audits.filter((a) => a.operation === "delete");
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0]?.recordId).toBe("slot-9");
+    // 全項目 GET の中身がそのまま復元材料になる
+    expect(deletes[0]?.deletionContent).toContain("Aki番号");
+    expect(deletes[0]?.deletionContent).toContain("AKI-SLOT");
   });
 
   it("工事対応者が既存レコードにも書かれる", async () => {
     h.lookupRows = [existingConstructionRow()];
     await call({ ...BASE_BODY, slotRecordId: "slot-9" });
     expect(h.writes[0]?.payload[HANDLER_ID]).toBe("工事 太郎");
+  });
+
+  it("削除しても、お客様情報への連携は既存レコードを見る", async () => {
+    h.lookupRows = [existingConstructionRow()];
+
+    await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+
+    expect(h.finalize).toHaveLength(1);
+    expect(h.finalize[0]?.constructionRecordId).toBe("55");
+    expect(h.finalize[0]?.constructionUniqueKey).toBe("T00003420");
+    // 書き戻し判定を飛ばさない
+    expect(h.finalize[0]?.constructionRecordTNumber).toBe("");
+  });
+});
+
+describe("空き枠を消してはいけないとき", () => {
+  it("★ 削除直前に枠が埋まっていたら消さない", async () => {
+    h.lookupRows = [existingConstructionRow()];
+    // 再取得したら別の案件が入っていた
+    h.slotRecord = { ...EMPTY_SLOT, [NAME_ID]: "鈴木 花子" };
+
+    const { status, body } = await call({
+      ...BASE_BODY,
+      slotRecordId: "slot-9",
+    });
+
+    // 割り当て自体は成立しているので成功で返す
+    expect(status).toBe(200);
+    expect(h.deleteCalls).toEqual([]);
+    expect(body.slotDeleted).toBe(false);
+    expect(body.slotDeleteWarning).toBe("先に別の案件が入っていたため");
+  });
+
+  it("★ 削除ログを残せなかったら消さない（A-4）", async () => {
+    h.lookupRows = [existingConstructionRow()];
+    h.auditDeleteOk = false;
+
+    const { status, body } = await call({
+      ...BASE_BODY,
+      slotRecordId: "slot-9",
+    });
+
+    expect(status).toBe(200);
+    expect(h.deleteCalls).toEqual([]);
+    expect(body.slotDeleted).toBe(false);
+    expect(body.slotDeleteWarning).toBe("削除の記録を残せなかったため");
+  });
+
+  it("★ 既存レコードへ書けなかったら消さない（書いてから消す）", async () => {
+    h.lookupRows = [existingConstructionRow()];
+    h.writeThrows = true;
+
+    const { status } = await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+
+    expect(status).toBe(502);
+    expect(h.deleteCalls).toEqual([]);
+  });
+
+  it("★ 空き枠と既存レコードが同一IDなら消さない", async () => {
+    h.lookupRows = [existingConstructionRow()];
+
+    const { status, body } = await call({ ...BASE_BODY, slotRecordId: "55" });
+
+    expect(status).toBe(200);
+    expect(h.deleteCalls).toEqual([]);
+    expect(body.slotDeleted).toBe(false);
+    expect(body.slotDeleteWarning).toBe(
+      "空き枠と案件が同じレコードだったため",
+    );
+  });
+
+  it("★ 枠を取得できなかったら消さない", async () => {
+    h.lookupRows = [existingConstructionRow()];
+    h.slotRecord = null;
+
+    const { body } = await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+
+    expect(h.deleteCalls).toEqual([]);
+    expect(body.slotDeleteWarning).toBe("空き枠を取得できなかったため");
+  });
+
+  it("★ 施工予定日を読めない枠は消さない", async () => {
+    h.lookupRows = [existingConstructionRow()];
+    h.slotRecord = { [NAME_ID]: "", [AKI_ID]: "AKI-SLOT" };
+
+    const { body } = await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+
+    expect(h.deleteCalls).toEqual([]);
+    expect(body.slotDeleteWarning).toBe(
+      "空き枠の施工予定日を読み取れなかったため",
+    );
+  });
+
+  it("★ CALENDAR_ASSIGN_DELETE_EMPTY_SLOT=false なら消さない", async () => {
+    h.lookupRows = [existingConstructionRow()];
+    process.env.CALENDAR_ASSIGN_DELETE_EMPTY_SLOT = "false";
+
+    const { status, body } = await call({
+      ...BASE_BODY,
+      slotRecordId: "slot-9",
+    });
+
+    expect(status).toBe(200);
+    expect(h.deleteCalls).toEqual([]);
+    expect(body.slotDeleted).toBe(false);
+    // 意図して止めているので利用者には言わない
+    expect(body.slotDeleteWarning).toBeUndefined();
+    // @pocket の単票 GET も起こさない
+    expect(h.recordGets).toEqual([]);
+  });
+
+  it("削除そのものに失敗しても割り当ては成功で返す", async () => {
+    h.lookupRows = [existingConstructionRow()];
+    h.deleteThrows = true;
+
+    const { status, body } = await call({
+      ...BASE_BODY,
+      slotRecordId: "slot-9",
+    });
+
+    expect(status).toBe(200);
+    expect(body.slotDeleted).toBe(false);
+    expect(body.slotDeleteWarning).toBe("空き枠の削除に失敗したため");
   });
 });
 

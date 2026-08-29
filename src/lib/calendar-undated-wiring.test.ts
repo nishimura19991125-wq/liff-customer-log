@@ -101,13 +101,55 @@ describe("旧経路は残してある（撤去は 3-4）", () => {
   });
 });
 
-describe("物理削除を増やしていない（3-3）", () => {
-  it("★ deleteRecord を呼ぶのは assign-case-to-slot だけのまま", () => {
-    const newRoute = read(
-      "src/app/api/calendar/assign-customer-case/route.ts",
-    );
-    // コメント以外で deleteRecord を参照していない
-    expect(newRoute).not.toContain("deleteRecord(");
-    expect(newRoute).not.toContain("deleteRecord,");
+/**
+ * 3-3 では「deleteRecord を呼ぶのは assign-case-to-slot だけ」を固定していた。
+ * 案B で assign-customer-case にも削除が入ったため、**呼んでよい経路の一覧**
+ * を固定する形へ置き換える。増えたことに誰も気づけない状態にはしない。
+ */
+describe("物理削除の呼び出し口（案B）", () => {
+  /** deleteRecord を呼んでよい経路。ここを増やすときは必ず理由を書くこと */
+  const DELETE_ALLOWED = [
+    "src/app/api/calendar/assign-case-to-slot/route.ts",
+    "src/app/api/calendar/assign-customer-case/route.ts",
+  ] as const;
+
+  /** 削除を1件も増やさない設計にした経路 */
+  const DELETE_FORBIDDEN = [
+    "src/app/api/calendar/move-construction-case/route.ts",
+    "src/app/api/calendar/fill-empty-slot/route.ts",
+    "src/app/api/calendar/schedule-undated-case/route.ts",
+    "src/app/api/calendar/create-record/route.ts",
+  ] as const;
+
+  it("★ 削除を呼ぶのは許可した2経路だけ", () => {
+    for (const rel of DELETE_FORBIDDEN) {
+      const src = read(rel);
+      expect(src, `${rel} が deleteRecord を呼んでいる`).not.toContain(
+        "deleteRecord(",
+      );
+    }
+    for (const rel of DELETE_ALLOWED) {
+      expect(read(rel), `${rel} が deleteRecord を呼んでいない`).toContain(
+        "deleteRecord(",
+      );
+    }
+  });
+
+  it("★ assign-customer-case の削除は判定関数と削除ログを通る", () => {
+    const route = read("src/app/api/calendar/assign-customer-case/route.ts");
+    // 可否判定を素通しして消していない
+    expect(route).toContain("decideEmptySlotDeletion");
+    // A-4: 全項目を記録できたときだけ消す
+    expect(route).toContain("formatDeletionContent");
+    expect(route).toContain("if (!deletionLog.ok)");
+    // 止められる形になっている
+    expect(route).toContain("assignDeletesEmptySlotEnabled");
+  });
+
+  it("★ 空き枠を案件に変える経路では消さない", () => {
+    const route = read("src/app/api/calendar/assign-customer-case/route.ts");
+    // 削除は「既存レコードへ書いたあと」の1箇所だけ
+    expect(route.split("await deleteRecord(").length - 1).toBe(1);
+    expect(route).toContain("deleteEmptySlotAfterExistingWrite");
   });
 });
