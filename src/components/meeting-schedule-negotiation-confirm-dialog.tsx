@@ -2,6 +2,13 @@
 
 import { useEffect, useRef } from "react";
 
+import {
+  DIALOG_BODY_CLASS,
+  DIALOG_FOOTER_CLASS,
+  DIALOG_OVERLAY_CENTERED_CLASS,
+  DIALOG_PANEL_CLASS,
+} from "@/lib/dialog-shell";
+
 /**
  * 商談ステータスを「アラートから消える値」に変更するときの確認。
  *
@@ -56,28 +63,34 @@ export function MeetingScheduleNegotiationConfirmDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+    <div className={DIALOG_OVERLAY_CENTERED_CLASS}>
       <div
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="meeting-negotiation-confirm-title"
         aria-describedby="meeting-negotiation-confirm-body"
-        className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl dark:bg-slate-900"
+        className={`${DIALOG_PANEL_CLASS} bg-white shadow-xl dark:bg-slate-900`}
       >
-        <p
-          id="meeting-negotiation-confirm-title"
-          className="text-[15px] font-bold text-slate-900 dark:text-white"
-        >
-          {title}
-        </p>
-        <p
-          id="meeting-negotiation-confirm-body"
-          className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-slate-700 dark:text-slate-200"
-        >
-          {message}
-        </p>
+        {/* 中身。ここだけスクロールする */}
+        <div className={DIALOG_BODY_CLASS}>
+          <p
+            id="meeting-negotiation-confirm-title"
+            className="text-[15px] font-bold text-slate-900 dark:text-white"
+          >
+            {title}
+          </p>
+          <p
+            id="meeting-negotiation-confirm-body"
+            className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-slate-700 dark:text-slate-200"
+          >
+            {message}
+          </p>
+        </div>
 
-        <div className="mt-4 flex gap-2">
+        {/* 操作。中身がどれだけ長くても必ず見える位置に残す */}
+        <div
+          className={`${DIALOG_FOOTER_CLASS} flex gap-2 dark:border-slate-800`}
+        >
           <button
             type="button"
             ref={cancelRef}

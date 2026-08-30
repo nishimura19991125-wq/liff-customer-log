@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useRef } from "react";
 
 import type { CustomerCancelPlan } from "@/lib/customer-cancel-plan";
+import {
+  DIALOG_BODY_CLASS,
+  DIALOG_FOOTER_CLASS,
+  DIALOG_OVERLAY_CLASS,
+  DIALOG_PANEL_CLASS,
+} from "@/lib/dialog-shell";
 
 /**
  * 顧客ステータスを「キャンセル」にするときの確認（タスクV-6）。
@@ -104,44 +110,48 @@ export function CustomerCancelConfirmDialog({
   if (!open || !plan) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6 sm:items-center">
+    <div className={DIALOG_OVERLAY_CLASS}>
       <div
         ref={panelRef}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="customer-cancel-confirm-title"
         aria-describedby="customer-cancel-confirm-body"
-        className="max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200"
+        className={`${DIALOG_PANEL_CLASS} bg-white shadow-xl ring-1 ring-slate-200`}
         onKeyDown={onPanelKeyDown}
       >
-        <p
-          id="customer-cancel-confirm-title"
-          className="text-[15px] font-bold leading-relaxed text-slate-900"
-        >
-          顧客ステータスを「キャンセル」にします。
-        </p>
-
-        <div id="customer-cancel-confirm-body" className="mt-3">
-          <p className="text-[13px] font-bold text-slate-700">
-            以下が実行されます。
+        {/* 中身。ここだけスクロールする */}
+        <div className={DIALOG_BODY_CLASS}>
+          <p
+            id="customer-cancel-confirm-title"
+            className="text-[15px] font-bold leading-relaxed text-slate-900"
+          >
+            顧客ステータスを「キャンセル」にします。
           </p>
-          <ul className="mt-1.5 space-y-1">
-            {buildCancelActionLines(plan).map((line) => (
-              <li
-                key={line}
-                className="text-[13px] leading-relaxed text-slate-800"
-              >
-                ・{line}
-              </li>
-            ))}
-          </ul>
 
-          <p className="mt-3 rounded-lg border-2 border-red-300 bg-red-50 px-3 py-2 text-[13px] font-bold leading-relaxed text-red-800">
-            この操作は元に戻せません。
-          </p>
+          <div id="customer-cancel-confirm-body" className="mt-3">
+            <p className="text-[13px] font-bold text-slate-700">
+              以下が実行されます。
+            </p>
+            <ul className="mt-1.5 space-y-1">
+              {buildCancelActionLines(plan).map((line) => (
+                <li
+                  key={line}
+                  className="text-[13px] leading-relaxed text-slate-800"
+                >
+                  ・{line}
+                </li>
+              ))}
+            </ul>
+
+            <p className="mt-3 rounded-lg border-2 border-red-300 bg-red-50 px-3 py-2 text-[13px] font-bold leading-relaxed text-red-800">
+              この操作は元に戻せません。
+            </p>
+          </div>
         </div>
 
-        <div className="mt-4 flex flex-col gap-2">
+        {/* 操作。中身がどれだけ長くても必ず見える位置に残す */}
+        <div className={`${DIALOG_FOOTER_CLASS} flex flex-col gap-2`}>
           <button
             type="button"
             className={`${DIALOG_BUTTON_CLASS} bg-red-600 text-white`}
