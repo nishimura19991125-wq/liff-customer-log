@@ -154,14 +154,14 @@ describe("背後のスクロールロック", () => {
       expect(src, d.label).toContain(
         'from "@/hooks/use-dialog-scroll-lock"',
       );
-      expect(src, d.label).toContain("useDialogScrollLock(open)");
+      expect(src, d.label).toContain("useDialogScrollLock(open");
     }
   });
 
   it("★ 開いている間だけ止める", () => {
     const src = read(HOOK);
 
-    expect(src).toContain("if (!open) return;");
+    expect(src).toContain("if (!open || !enabled) return;");
     expect(src).toContain('document.body.style.overflow = "hidden"');
   });
 
@@ -191,5 +191,84 @@ describe("背後のスクロールロック", () => {
   it("★ 背後への伝播はダイアログ側で止めている", () => {
     // スクロールロックと二重に効かせる。片方だけでは端まで送ったときに漏れる
     expect(read("src/lib/dialog-shell.ts")).toContain("overscroll-contain");
+  });
+});
+
+/**
+ * 診断モードの配線（調査用・原因が分かったら消すこと）。
+ *
+ * 実機でボタンが反応しない件を切り分けるための仕掛け。**既定は無効**で、
+ * 本番で誤って出ないことをここで固定する。
+ */
+describe("診断モード（調査用・要削除）", () => {
+  const PANEL = "src/components/calendar-move-case-panel.tsx";
+
+  it("★ 既定では描画されない（有効なときだけ出す）", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("{diagnostics.enabled ? (");
+    expect(src).toContain("診断モード");
+  });
+
+  it("★ 数え上げは診断が有効なときだけ動く", () => {
+    const src = read(PANEL);
+    const bump = src.slice(
+      src.indexOf("const bumpProbe ="),
+      src.indexOf("const bumpProbe =") + 220,
+    );
+
+    expect(bump).toContain("if (!diagnostics.enabled) return;");
+  });
+
+  it("★ 覆い・本体・両ボタンで数える", () => {
+    const src = read(PANEL);
+
+    for (const key of [
+      "overlay",
+      "panel",
+      "confirmDown",
+      "confirmClick",
+      "cancelDown",
+      "cancelClick",
+    ]) {
+      expect(src, key).toContain(`bumpProbe("${key}")`);
+    }
+  });
+
+  it("★ 計測しても本来の処理は必ず呼ぶ", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("onConfirm();");
+    expect(src).toContain("onCancel();");
+  });
+
+  it("★ スクロールロックは診断からだけ切れる", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain(
+      "useDialogScrollLock(open, !diagnostics.scrollLockDisabled)",
+    );
+    // 既定（診断が無効）では切れない側に倒れる
+    expect(read("src/lib/dialog-diagnostics.ts")).toContain(
+      "if (!dialogDiagnosticsEnabled(input)) return false;",
+    );
+  });
+
+  it("★ 環境変数は NEXT_PUBLIC_（クライアントに届く名前）", () => {
+    // それ以外の名前だとクライアントで値が読めず、いつまでも無効になる
+    expect(read("src/hooks/use-dialog-diagnostics.ts")).toContain(
+      "process.env.NEXT_PUBLIC_CALENDAR_DIALOG_DIAGNOSTICS",
+    );
+  });
+
+  it("★ サーバ側では無効に固定する（hydration を壊さない）", () => {
+    const src = read("src/hooks/use-dialog-diagnostics.ts");
+
+    expect(src).toContain("const serverSnapshot = () => false;");
+    expect(src).toContain("useSyncExternalStore");
+  });
+
+  it("★ 消し忘れないよう、コードに印が付いている", () => {
+    expect(read("src/lib/dialog-diagnostics.ts")).toContain("診断モード");
   });
 });

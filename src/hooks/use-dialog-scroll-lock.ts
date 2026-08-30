@@ -16,6 +16,11 @@ import { useEffect } from "react";
  * 退避・復元すると、内側が閉じた時点で外側の分まで戻してしまう。
  * 開いている数を数え、0 になったときだけ元へ戻す。
  *
+ * ■ 診断で切れる
+ * iOS で body の overflow 変更がタッチに影響するという報告があるため、
+ * 診断モード（?dialogDebug=1&dialogNoScrollLock=1）から止められるように
+ * してある。**既定は有効**で、診断が無効なときは切れない。
+ *
  * ■ touch-action は触らない
  * body に touch-action:none を置くと、**ダイアログの中身もスクロール
  * できなくなる**（子孫のタッチ操作まで殺す）。背後へのスクロール伝播は
@@ -25,9 +30,9 @@ import { useEffect } from "react";
 let lockCount = 0;
 let savedOverflow = "";
 
-export function useDialogScrollLock(open: boolean): void {
+export function useDialogScrollLock(open: boolean, enabled = true): void {
   useEffect(() => {
-    if (!open) return;
+    if (!open || !enabled) return;
 
     if (lockCount === 0) {
       savedOverflow = document.body.style.overflow;
@@ -41,7 +46,7 @@ export function useDialogScrollLock(open: boolean): void {
         document.body.style.overflow = savedOverflow;
       }
     };
-  }, [open]);
+  }, [open, enabled]);
 }
 
 /** テスト用。モジュールの数え上げを初期化する */

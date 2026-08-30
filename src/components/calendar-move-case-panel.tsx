@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useDialogDiagnostics } from "@/hooks/use-dialog-diagnostics";
 import { useDialogScrollLock } from "@/hooks/use-dialog-scroll-lock";
 
 import {
@@ -50,6 +51,11 @@ import {
   resolveMoveTargetMonthState,
   type LoadedMonthByDay,
 } from "@/lib/calendar-move-target-slots";
+import {
+  describeDialogTapProbe,
+  EMPTY_DIALOG_TAP_PROBE,
+  type DialogTapProbe,
+} from "@/lib/dialog-diagnostics";
 import {
   DIALOG_BODY_CLASS,
   DIALOG_FOOTER_CLASS,
@@ -773,12 +779,30 @@ export function CalendarMoveCaseConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  // 開いている間は背後を動かさない
-  useDialogScrollLock(open);
+  /**
+   * 診断モード（既定は無効）。?dialogDebug=1 または
+   * NEXT_PUBLIC_CALENDAR_DIALOG_DIAGNOSTICS=1 のときだけ有効。
+   */
+  const diagnostics = useDialogDiagnostics();
+
+  // 開いている間は背後を動かさない。診断からだけ切れる
+  useDialogScrollLock(open, !diagnostics.scrollLockDisabled);
 
   const panelRef = useRef<HTMLDivElement | null>(null);
   const firstButtonRef = useRef<HTMLButtonElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+
+  /**
+   * タップがどこまで届いたかの数え上げ（診断モードのときだけ表示する）。
+   * 数えるだけで、onConfirm / onCancel の呼び出しは一切変えない。
+   */
+  const [tapProbe, setTapProbe] = useState<DialogTapProbe>(
+    EMPTY_DIALOG_TAP_PROBE,
+  );
+  const bumpProbe = (key: keyof DialogTapProbe) => {
+    if (!diagnostics.enabled) return;
+    setTapProbe((prev) => ({ ...prev, [key]: prev[key] + 1 }));
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -837,11 +861,15 @@ export function CalendarMoveCaseConfirmDialog({
    * 覆いは inset: 0 だけで高さが決まるので潰れず、必ず背後を守る。
    */
   return (
-    <div className={DIALOG_BACKDROP_CLASS}>
+    <div
+      className={DIALOG_BACKDROP_CLASS}
+      onPointerDown={() => bumpProbe("overlay")}
+    >
       {/* 位置決め。高さ（dvh）はここが持つ */}
       <div className={DIALOG_VIEWPORT_CLASS}>
         <div
           ref={panelRef}
+          onPointerDown={() => bumpProbe("panel")}
           role="alertdialog"
           aria-modal="true"
           aria-labelledby="calendar-move-case-confirm-title"
@@ -910,6 +938,28 @@ export function CalendarMoveCaseConfirmDialog({
             </p>
           </div>
 
+          {/**
+           * 診断モードのときだけ出す。既定では描画されない。
+           * タップがどこまで届いたかを、数字と一言で示す
+           */}
+          {diagnostics.enabled ? (
+            <div className="shrink-0 border-t border-slate-100 bg-amber-50 px-4 py-2 text-[11px] leading-relaxed text-amber-900">
+              <p className="font-bold">診断モード</p>
+              <p className="font-mono">
+                覆い{tapProbe.overlay} 本体{tapProbe.panel} 実行
+                {tapProbe.confirmDown}/{tapProbe.confirmClick} 取消
+                {tapProbe.cancelDown}/{tapProbe.cancelClick}
+              </p>
+              <p>{describeDialogTapProbe(tapProbe)}</p>
+              <p>
+                背後ロック: {diagnostics.scrollLockDisabled ? "切" : "入"}
+                {diagnostics.scrollLockDisabled
+                  ? ""
+                  : "（&dialogNoScrollLock=1 で切れます）"}
+              </p>
+            </div>
+          ) : null}
+
           {/* 操作。中身がどれだけ長くても必ず見える位置に残す */}
           <div className={`${DIALOG_FOOTER_CLASS} flex flex-col gap-2`}>
             <button
@@ -917,7 +967,11 @@ export function CalendarMoveCaseConfirmDialog({
               type="button"
               className={`${DIALOG_BUTTON_CLASS} bg-[#06C755] text-white`}
               disabled={busy}
-              onClick={onConfirm}
+              onPointerDown={() => bumpProbe("confirmDown")}
+              onClick={() => {
+                bumpProbe("confirmClick");
+                onConfirm();
+              }}
             >
               {busy ? "移動中…" : moveCaseConfirmActionLabel(input)}
             </button>
@@ -925,7 +979,11 @@ export function CalendarMoveCaseConfirmDialog({
               type="button"
               className={`${DIALOG_BUTTON_CLASS} border border-slate-300 bg-white text-slate-700`}
               disabled={busy}
-              onClick={onCancel}
+              onPointerDown={() => bumpProbe("cancelDown")}
+              onClick={() => {
+                bumpProbe("cancelClick");
+                onCancel();
+              }}
             >
               キャンセル
             </button>
