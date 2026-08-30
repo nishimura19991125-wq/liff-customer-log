@@ -503,26 +503,28 @@ export async function POST(request: Request) {
     let slotContractor = "";
     if (slotRecordId) {
       /**
-       * 実測で slot-get が 3.1 秒。1件の GET にしては長すぎるので、
-       * 「fields 指定が拒否されて全項目で取り直しているのか」
-       * 「1往復自体が遅いのか」を分けて出す。
-       * fallback の行が出たら前者、出なければ後者
+       * **fields 指定を付けずに全項目で1回だけ読む。**
        *
-       * ⚠ fetchConstructionRecordRow（移動元と同じ関数）へ揃える案は
-       *    見送った。認証は同じキーで効果が期待できないうえ、
+       * 実測で slot-get が 3.1 秒。移動元（source-get・同じ8列の CSV 指定）が
+       * 0.6〜0.8 秒なので、1往復そのものが遅いわけではない。差が出る要因で
+       * この経路に残っているのは fields= の射影だけだった。
+       *
+       * 削除ログ用の GET（移動元・全項目）は同じアプリを同じ readAuth で
+       * 読んで速い。呼び方を全項目 GET に揃える。
+       *
+       * ⚠ 絞っていたのは転送量のためで、判定に使う列は変わらない。
+       *    ここで見るのは お客様名（空き枠か）・Aki番号・施工会社 の3つで、
+       *    全項目にはすべて含まれる。**鮮度確認は下でそのまま行う。**
+       *
+       * fields が拒否されたときの取り直し（slot-get-fallback）も、そもそも
+       * fields を送らないので不要になった。往復は必ず1回。
+       *
+       * ⚠ fetchConstructionRecordRow（移動元と同じ関数）へ揃える案は別に
+       *    検討して見送った。認証は同じキーで効果が期待できないうえ、
        *    maxRetries が 5 → 1 になり、一時的な失敗で移動が止まりやすくなる。
        */
-      let slotRow = await fetchRecordById(
-        calAppId,
-        slotRecordId,
-        readAuth,
-        recordFieldsCsv,
-      );
+      const slotRow = await fetchRecordById(calAppId, slotRecordId, readAuth);
       timing.mark("slot-get");
-      if (!slotRow?.record) {
-        slotRow = await fetchRecordById(calAppId, slotRecordId, readAuth);
-        timing.mark("slot-get-fallback");
-      }
       if (!slotRow?.record || typeof slotRow.record !== "object") {
         return NextResponse.json(
           { error: "移動先の空き枠レコードが見つかりません" },

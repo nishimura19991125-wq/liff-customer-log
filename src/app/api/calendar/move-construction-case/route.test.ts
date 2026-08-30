@@ -909,23 +909,60 @@ describe("移動元を削除する（M-4）", () => {
 });
 
 /**
- * 枠の読み方と鮮度確認。
+ * 枠の読み方と鮮度確認（D案）。
+ *
+ * fields 指定を外して全項目で1回だけ読む。実測 3.1 秒の slot-get に対し、
+ * 同じアプリ・同じ readAuth で全項目を読む削除ログ用 GET は速い。
  *
  * 移動元と同じ fetchConstructionRecordRow へ揃える案（C案）は見送った。
  * 認証は同じキーで効果が期待できず、maxRetries が 5 → 1 になるぶん
- * 一時的な失敗で移動が止まりやすくなるため。ここで固定するのは
- * **読み方を変えていないこと**と**枠の鮮度確認が消えていないこと**。
+ * 一時的な失敗で移動が止まりやすくなるため。
+ *
+ * ここで固定するのは**往復が1回であること**と
+ * **枠の鮮度確認が消えていないこと**。
  */
-describe("枠の読み方と鮮度確認", () => {
+describe("枠の読み方と鮮度確認（D案）", () => {
+  it("★ fields を指定せず、全項目で1回だけ読む", () => {
+    const src = readFileSync(
+      path.join(process.cwd(), "src/app/api/calendar/move-construction-case/route.ts"),
+      "utf8",
+    );
+
+    expect(src).toContain(
+      "const slotRow = await fetchRecordById(calAppId, slotRecordId, readAuth);",
+    );
+    // 絞って読んでいた頃の呼び方と、その取り直しを残さない
+    expect(src).not.toContain("let slotRow = await fetchRecordById(");
+    // 計測点そのものが消えていること（説明のためコメントには残る）
+    expect(src).not.toContain('timing.mark("slot-get-fallback")');
+  });
+
   it("★ 再試行の効く読み方のまま（maxRetries を下げていない）", () => {
     const src = readFileSync(
       path.join(process.cwd(), "src/app/api/calendar/move-construction-case/route.ts"),
       "utf8",
     );
 
-    expect(src).toContain("let slotRow = await fetchRecordById(");
-    // fields 指定が拒否されたときの取り直しも残っている
-    expect(src).toContain("slot-get-fallback");
+    // C案（fetchConstructionRecordRow）へ寄せ直していない
+    expect(src).not.toContain(
+      "const slotRow = await fetchConstructionRecordRow(",
+    );
+  });
+
+  it("★ 枠は1往復しか読まない", async () => {
+    await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+
+    expect(h.reads.filter((r) => r === "slot-9")).toHaveLength(1);
+  });
+
+  it("★ 移動元の事前検証は今までどおり列を絞る（全項目にしない）", () => {
+    const src = readFileSync(
+      path.join(process.cwd(), "src/app/api/calendar/move-construction-case/route.ts"),
+      "utf8",
+    );
+
+    expect(src).toContain("recordFieldsCsv");
+    expect(src).toContain("fetchConstructionRecordRow(");
   });
 
   it("★ 埋まった枠を弾く判定は残っている", async () => {
