@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   MOVE_SLOT_CHOICE_NEW,
   MOVE_SLOT_CHOICE_NONE,
+  MOVE_SLOT_CONTRACTOR_UNSET_LABEL,
   buildMoveSlotChoices,
   canConfirmMoveCase,
   moveSlotChoiceIsNew,
@@ -11,12 +12,13 @@ import {
   slotRecordIdFromChoice,
 } from "@/lib/calendar-move-slot-choice";
 import type { MoveTargetSlot } from "@/lib/calendar-move-target-slots";
+import { formatDisplayYmd } from "@/lib/format-display-ymd";
 
 /**
  * 工事日変更 M-3: 移動先の選び方（ラジオ）と、実行してよいかの判定。
  *
  * 元に戻せない操作なので、ここで固定するのは次の3つ。
- *   - 空き枠を全部並べ、施工会社が分かり、末尾が「新しく作成する」
+ *   - 空き枠を全部並べ、日付と施工会社が2行で分かり、末尾が「新しく作成する」
  *   - 施工業者の欄は新規作成のときだけ出す
  *   - 選び終えていないものがあれば実行させない
  */
@@ -40,20 +42,57 @@ describe("移動先の選択肢", () => {
     expect(choices[2].isNew).toBe(true);
   });
 
-  it("★ 施工会社が分かる形で表示する", () => {
+  it("★ 空き枠は日付と施工会社の2行に分ける", () => {
     const choices = buildMoveSlotChoices(SLOTS, "2026-12-05");
 
-    expect(choices[0].label).toBe("2026/12/05 の空き枠（施工会社: Roof10）");
-    expect(choices[1].label).toBe("2026/12/05 の空き枠（施工会社: unity）");
+    expect(choices[0]).toEqual({
+      value: "5002",
+      label: "2026/12/05",
+      detail: "施工会社: Roof10",
+      isNew: false,
+    });
+    expect(choices[1]).toEqual({
+      value: "5003",
+      label: "2026/12/05",
+      detail: "施工会社: unity",
+      isNew: false,
+    });
   });
 
-  it("★ 施工会社が入っていない枠は「未設定」と出す（隠さない）", () => {
+  it("★ 1行目は移動先として入力された日付（確認画面と同じ形式）", () => {
+    const choices = buildMoveSlotChoices(SLOTS, "2027-01-05");
+
+    // どの枠も同じ日付になる（その日の枠しか並ばないため）
+    expect(choices[0].label).toBe("2027/01/05");
+    expect(choices[1].label).toBe("2027/01/05");
+    // 確認画面の文言と同じ整形を使う
+    expect(choices[0].label).toBe(formatDisplayYmd("2027-01-05"));
+  });
+
+  it("★ 「新しく作成する」は1行のまま（2行目を持たない）", () => {
+    const choices = buildMoveSlotChoices(SLOTS, "2026-12-05");
+
+    expect(choices[2].detail).toBeNull();
+  });
+
+  it("★ 施工会社が入っていない枠は、移動元のまま残ることまで出す", () => {
     const choices = buildMoveSlotChoices(
       [{ recordId: "5009", contractorName: "" }],
       "2026-12-05",
     );
 
-    expect(choices[0].label).toBe("2026/12/05 の空き枠（施工会社: 未設定）");
+    expect(choices[0].label).toBe("2026/12/05");
+    expect(choices[0].detail).toBe(MOVE_SLOT_CONTRACTOR_UNSET_LABEL);
+    expect(MOVE_SLOT_CONTRACTOR_UNSET_LABEL).toBe("施工会社: 未設定（移動元のまま）");
+  });
+
+  it("空白だけの施工会社も「未設定」として扱う", () => {
+    const choices = buildMoveSlotChoices(
+      [{ recordId: "5009", contractorName: "   " }],
+      "2026-12-05",
+    );
+
+    expect(choices[0].detail).toBe(MOVE_SLOT_CONTRACTOR_UNSET_LABEL);
   });
 
   it("★ 空き枠が無い日は「新しく作成する」だけになる", () => {
@@ -62,12 +101,14 @@ describe("移動先の選択肢", () => {
     expect(choices).toHaveLength(1);
     expect(choices[0].value).toBe(MOVE_SLOT_CHOICE_NEW);
     expect(choices[0].label).toBe("新しく作成する");
+    expect(choices[0].detail).toBeNull();
   });
 
   it("★ 読めない日付でも枠の情報は落とさない", () => {
     const choices = buildMoveSlotChoices(SLOTS, "");
 
-    expect(choices[0].label).toBe("空き枠（施工会社: Roof10）");
+    expect(choices[0].label).toBe("空き枠");
+    expect(choices[0].detail).toBe("施工会社: Roof10");
   });
 });
 
