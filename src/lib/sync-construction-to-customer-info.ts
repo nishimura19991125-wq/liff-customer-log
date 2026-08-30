@@ -264,16 +264,20 @@ async function applyApClStaffFromLineUserToCustomerRecord(
  * 「見つからない」を取り違えると createRecord まで進んでしまい、同じ顧客の
  * レコードが二重にできる。読み取り1回で防げるなら安いほうを選ぶ。
  */
-async function resolveExistingCustomerInfoRecordId(
+/**
+ * キャッシュ越しに1回だけ引く。**空振りしてもここでは引き直さない。**
+ *
+ * 引き直しは findExistingCustomerInfoRecord が、探すキーを全部使い切って
+ * から行う（下の説明を参照）。
+ */
+async function lookupCustomerInfoRecordIdCached(
   keyFieldSchemaId: string,
   uniqueKey: string,
 ): Promise<string | null> {
-  const cached = await findCustomerInfoRecordIdByUniqueKeyCached(
+  return findCustomerInfoRecordIdByUniqueKeyCached(
     keyFieldSchemaId,
     uniqueKey,
   );
-  if (cached) return cached;
-  return refetchCustomerInfoRecordIdByUniqueKey(keyFieldSchemaId, uniqueKey);
 }
 
 /**
@@ -287,6 +291,29 @@ async function resolveExistingCustomerInfoRecordId(
  * そこで見つからなければ T番号 でも探す。見つけたレコードには
  * Aki番号 を書き込むので、一度連携すればその顧客は Aki番号 で引けるようになる。
  * 探す軸を増やすだけなので、取りこぼしは減っても増えない。
+ *
+ * ── キャッシュ由来の null を信じない防御を、どこに置くか ──────────
+ * 「見つからない」の取り違えは新規レコードを増やし、取り返しがつかない。
+ * だからキャッシュが null を返したら、キャッシュ無しで引き直す。この防御は
+ * 外せない。**外せないのは置き場所ではなく、返す前に引き直すこと。**
+ *
+ * 以前は Aki番号 が空振りした時点で引き直していた。だが二重作成が起きるのは
+ * **Aki番号 も T番号 も両方外れて新規作成へ進むとき**だけで、Aki が外れても
+ * T番号 で見つかるなら null を信じたことによる害は起きない。移行前の顧客は
+ * Aki番号 を持たないので、この空振り＋引き直しが毎回1往復ぶん乗っていた
+ * （実測 lookup-aki 961ms ≒ 480ms × 2回）。
+ *
+ * そこで順序を変える。
+ *   1. Aki番号（キャッシュ越し）
+ *   2. T番号（キャッシュ越し）
+ *   3. どちらも外れたときだけ、両方をキャッシュ無しで引き直す
+ * null を返す直前には必ず全キーを引き直しているので、防御は同じ強さのまま
+ * 「T番号 で当たる」経路から1往復が消える。
+ *
+ * ⚠ matchedBy の優先順位は変わる（Aki のキャッシュが古い null を持ち、
+ *    かつ Aki と T番号 が**別のレコード**を指す場合のみ）。呼び出し側は
+ *    recordId しか見ておらず、そもそも別レコードを指すのはデータ側の
+ *    不整合なので、実害は無いと判断した。
  */
 async function findExistingCustomerInfoRecord(opts: {
   akiFieldId: string | null;
@@ -295,21 +322,47 @@ async function findExistingCustomerInfoRecord(opts: {
   tNumberValue: string;
   timing: ServerTimingLog;
 }): Promise<{ recordId: string; matchedBy: "aki" | "tNumber" } | null> {
-  if (opts.akiFieldId && opts.akiValue) {
-    const byAki = await resolveExistingCustomerInfoRecordId(
-      opts.akiFieldId,
+  const hasAki = Boolean(opts.akiFieldId && opts.akiValue);
+  const hasT = Boolean(opts.tNumberFieldId && opts.tNumberValue);
+
+  // 1) Aki番号（キャッシュ越しに1回だけ）
+  if (hasAki) {
+    const byAki = await lookupCustomerInfoRecordIdCached(
+      opts.akiFieldId as string,
       opts.akiValue,
     );
-    // 空振りは「キャッシュの null を信じない」ため2回引く。ここが効く
     opts.timing.mark("lookup-aki");
     if (byAki) return { recordId: byAki, matchedBy: "aki" };
   }
-  if (opts.tNumberFieldId && opts.tNumberValue) {
-    const byT = await resolveExistingCustomerInfoRecordId(
-      opts.tNumberFieldId,
+
+  // 2) T番号（キャッシュ越しに1回だけ）
+  if (hasT) {
+    const byT = await lookupCustomerInfoRecordIdCached(
+      opts.tNumberFieldId as string,
       opts.tNumberValue,
     );
     opts.timing.mark("lookup-tnumber");
+    if (byT) return { recordId: byT, matchedBy: "tNumber" };
+  }
+
+  /**
+   * 3) ここまで来た＝新規作成へ進む。**返す前に必ず引き直す。**
+   * キャッシュ由来の null を信じて createRecord すると顧客が二重になる。
+   */
+  if (hasAki) {
+    const byAki = await refetchCustomerInfoRecordIdByUniqueKey(
+      opts.akiFieldId as string,
+      opts.akiValue,
+    );
+    opts.timing.mark("refetch-aki");
+    if (byAki) return { recordId: byAki, matchedBy: "aki" };
+  }
+  if (hasT) {
+    const byT = await refetchCustomerInfoRecordIdByUniqueKey(
+      opts.tNumberFieldId as string,
+      opts.tNumberValue,
+    );
+    opts.timing.mark("refetch-tnumber");
     if (byT) return { recordId: byT, matchedBy: "tNumber" };
   }
   return null;

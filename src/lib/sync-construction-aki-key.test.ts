@@ -25,6 +25,8 @@ const h = vi.hoisted(() => ({
   /** キー照合の結果。fieldId ごとに value → recordId */
   lookup: {} as Record<string, Record<string, string>>,
   lookupCalls: [] as { fieldId: string; value: string }[],
+  /** キャッシュを捨てて引き直した回数（B案の防御が働いたか） */
+  refetchCalls: [] as { fieldId: string; value: string }[],
   created: [] as Record<string, unknown>[],
   updated: [] as { recordId: string; payload: Record<string, unknown> }[],
   /** 工事アプリのレコード */
@@ -79,7 +81,10 @@ vi.mock("@/lib/customer-info-key-lookup-cache", () => ({
   refetchCustomerInfoRecordIdByUniqueKey: async (
     fieldId: string,
     value: string,
-  ) => h.lookup[fieldId]?.[value] ?? null,
+  ) => {
+    h.refetchCalls.push({ fieldId, value });
+    return h.lookup[fieldId]?.[value] ?? null;
+  },
 }));
 
 vi.mock("@/lib/dropbox", () => ({ dropboxConfigured: () => false }));
@@ -112,6 +117,7 @@ beforeEach(() => {
   h.customerRecords = {};
   h.lookup = {};
   h.lookupCalls = [];
+  h.refetchCalls = [];
   h.created = [];
   h.updated = [];
   // 新規案件: Aki番号 は入っているが T番号 はまだ無い
@@ -317,5 +323,125 @@ describe("★ customerInfoOnly（施工予定日が未定・工事レコード�
 
     expect(res).toEqual({ kind: "skipped" });
     expect(h.created).toHaveLength(0);
+  });
+});
+
+/**
+ * B案: キャッシュ由来の null を信じない防御を、**新規作成へ進む直前**へ移す。
+ *
+ * 防御そのものは外さない。外すと同じ顧客のレコードが二重にできる。
+ * 変えたのは置き場所だけで、
+ *   ・Aki が外れても T番号 で当たるなら引き直さない（1往復減る）
+ *   ・両方外れて新規作成へ進むときは、必ず両方を引き直す
+ * を固定する。
+ */
+describe("★ 照合の引き直し（B案）", () => {
+  const AKI = "field-267";
+  const T = "field-268";
+
+  it("★ Aki番号 で当たれば1回しか引かない", async () => {
+    h.lookup[AKI] = { A0001: "cust-1" };
+    h.customerRecords["cust-1"] = { [T]: "T00003420" };
+
+    await sync();
+
+    expect(h.lookupCalls).toEqual([{ fieldId: AKI, value: "A0001" }]);
+    expect(h.refetchCalls).toEqual([]);
+    expect(h.created).toHaveLength(0);
+  });
+
+  it("★ Aki が外れても T番号 で見つかれば引き直さない", async () => {
+    // 移行前の顧客: Aki番号 が入っていないが T番号 では引ける
+    h.constructionRecord = {
+      "field-101": "A0001",
+      "field-1": "T00003420",
+      "field-2": "山田 太郎",
+    };
+    h.lookup[T] = { T00003420: "cust-1" };
+    h.customerRecords["cust-1"] = { [T]: "T00003420" };
+
+    await sync({ constructionUniqueKey: "T00003420" });
+
+    // キャッシュ越しに2回（Aki → T番号）だけ。引き直しは無い
+    expect(h.lookupCalls).toEqual([
+      { fieldId: AKI, value: "A0001" },
+      { fieldId: T, value: "T00003420" },
+    ]);
+    expect(h.refetchCalls).toEqual([]);
+    // 既存レコードを更新している（二重作成していない）
+    expect(h.created).toHaveLength(0);
+    expect(h.updated.some((u) => u.recordId === "cust-1")).toBe(true);
+  });
+
+  it("★ 両方外れたら、新規作成の前に必ず引き直す", async () => {
+    h.constructionRecord = {
+      "field-101": "A0001",
+      "field-1": "T00003420",
+      "field-2": "山田 太郎",
+    };
+
+    await sync({ constructionUniqueKey: "T00003420" });
+
+    expect(h.lookupCalls).toEqual([
+      { fieldId: AKI, value: "A0001" },
+      { fieldId: T, value: "T00003420" },
+    ]);
+    // 返す前に、探せるキーを全部引き直している
+    expect(h.refetchCalls).toEqual([
+      { fieldId: AKI, value: "A0001" },
+      { fieldId: T, value: "T00003420" },
+    ]);
+  });
+
+  it("★ 引き直しで見つかったら新規作成しない（二重作成の防止）", async () => {
+    // キャッシュ越しは null を返すが、引き直すと当たる状況
+    h.constructionRecord = {
+      "field-101": "A0001",
+      "field-1": "T00003420",
+      "field-2": "山田 太郎",
+    };
+    h.customerRecords["cust-1"] = { [T]: "T00003420" };
+    // 引き直し（refetchCalls に積まれてから）でだけ見つかるようにする
+    Object.defineProperty(h, "lookup", {
+      configurable: true,
+      get: () =>
+        h.refetchCalls.length > 0 ? { [AKI]: { A0001: "cust-1" } } : {},
+    });
+
+    try {
+      await sync({ constructionUniqueKey: "T00003420" });
+    } finally {
+      Object.defineProperty(h, "lookup", {
+        configurable: true,
+        writable: true,
+        value: {},
+      });
+    }
+
+    // キャッシュ越しで2回外し、引き直しで拾っている
+    expect(h.lookupCalls).toHaveLength(2);
+    expect(h.refetchCalls.length).toBeGreaterThan(0);
+    // 新規作成へ進んでいない
+    expect(h.created).toHaveLength(0);
+    expect(h.updated.some((u) => u.recordId === "cust-1")).toBe(true);
+  });
+  it("★ 引き直しても見つからなければ新規作成する", async () => {
+    h.constructionRecord = {
+      "field-101": "A0001",
+      "field-1": "T00003420",
+      "field-2": "山田 太郎",
+    };
+
+    await sync({ constructionUniqueKey: "T00003420" });
+
+    expect(h.refetchCalls).toHaveLength(2);
+    expect(h.created).toHaveLength(1);
+  });
+
+  it("★ 引くキーが無ければ1回も引かない（条件なしで拾わない）", async () => {
+    await sync({ customerInfoOnly: true, constructionRecordId: undefined });
+
+    expect(h.lookupCalls).toHaveLength(0);
+    expect(h.refetchCalls).toHaveLength(0);
   });
 });
