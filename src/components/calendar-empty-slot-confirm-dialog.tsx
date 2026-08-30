@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef } from "react";
 
+import { useDialogScrollLock } from "@/hooks/use-dialog-scroll-lock";
+
 import {
   DIALOG_BODY_CLASS,
   DIALOG_FOOTER_CLASS,
@@ -49,6 +51,9 @@ export function CalendarEmptySlotConfirmDialog({
   onSkipSlot: () => void;
   onCancel: () => void;
 }) {
+  // 開いている間は背後を動かさない
+  useDialogScrollLock(open);
+
   const panelRef = useRef<HTMLDivElement | null>(null);
   const firstButtonRef = useRef<HTMLButtonElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);

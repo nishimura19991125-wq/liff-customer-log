@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useDialogScrollLock } from "@/hooks/use-dialog-scroll-lock";
+
 import {
   ConstructionHandlerStaffSelect,
   type HandlerStaffListStatus,
@@ -771,6 +773,9 @@ export function CalendarMoveCaseConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  // 開いている間は背後を動かさない
+  useDialogScrollLock(open);
+
   const panelRef = useRef<HTMLDivElement | null>(null);
   const firstButtonRef = useRef<HTMLButtonElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);

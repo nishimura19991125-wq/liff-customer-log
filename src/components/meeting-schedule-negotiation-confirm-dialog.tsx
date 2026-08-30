@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
+import { useDialogScrollLock } from "@/hooks/use-dialog-scroll-lock";
+
 import {
   DIALOG_BODY_CLASS,
   DIALOG_FOOTER_CLASS,
@@ -42,6 +44,9 @@ export function MeetingScheduleNegotiationConfirmDialog({
   onConfirm,
   onCancel,
 }: Props) {
+  // 開いている間は背後を動かさない
+  useDialogScrollLock(open);
+
   const cancelRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {

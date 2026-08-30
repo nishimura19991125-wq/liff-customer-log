@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef } from "react";
 
+import { useDialogScrollLock } from "@/hooks/use-dialog-scroll-lock";
+
 import type { CustomerCancelPlan } from "@/lib/customer-cancel-plan";
 import {
   DIALOG_BODY_CLASS,
@@ -58,6 +60,9 @@ export function CustomerCancelConfirmDialog({
   onConfirm: () => void;
   onDismiss: () => void;
 }) {
+  // 開いている間は背後を動かさない
+  useDialogScrollLock(open);
+
   const panelRef = useRef<HTMLDivElement | null>(null);
   /** 開いたときに最初に当てるのは「やめる」。誤爆を減らす */
   const dismissButtonRef = useRef<HTMLButtonElement | null>(null);

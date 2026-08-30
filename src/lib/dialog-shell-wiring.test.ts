@@ -134,3 +134,62 @@ describe("土台の高さ（globals.css）", () => {
     expect(base).toContain("height: 100%;");
   });
 });
+
+/**
+ * 背後のスクロールを止める（ダイアログが開いている間）。
+ *
+ * 勤怠アラート・掲示板・月カレンダーは以前から各自でやっているが、
+ * 確認ダイアログには入っていなかった。実機で「ダイアログが出たまま
+ * 背後のパネルも見えている／触れる」状態になっていた。
+ *
+ * DOM も React も無い環境なので、動きはソースで固定する。
+ */
+describe("背後のスクロールロック", () => {
+  const HOOK = "src/hooks/use-dialog-scroll-lock.ts";
+
+  it("★ 4つのダイアログすべてが使う", () => {
+    for (const d of DIALOGS) {
+      const src = read(d.rel);
+
+      expect(src, d.label).toContain(
+        'from "@/hooks/use-dialog-scroll-lock"',
+      );
+      expect(src, d.label).toContain("useDialogScrollLock(open)");
+    }
+  });
+
+  it("★ 開いている間だけ止める", () => {
+    const src = read(HOOK);
+
+    expect(src).toContain("if (!open) return;");
+    expect(src).toContain('document.body.style.overflow = "hidden"');
+  });
+
+  it("★ 閉じたら元へ戻す（退避した値で復元する）", () => {
+    const src = read(HOOK);
+
+    expect(src).toContain("savedOverflow = document.body.style.overflow;");
+    expect(src).toContain("document.body.style.overflow = savedOverflow;");
+  });
+
+  it("★ 重なって開いても数え上げる（内側が閉じても外側を戻さない）", () => {
+    const src = read(HOOK);
+
+    expect(src).toContain("lockCount += 1;");
+    expect(src).toContain("lockCount -= 1;");
+    // 0 になったときだけ復元する
+    expect(src).toContain("if (lockCount === 0) {");
+  });
+
+  it("★ touch-action は触らない（中身までスクロールできなくなる）", () => {
+    const src = read(HOOK);
+
+    expect(src).not.toContain("touchAction");
+    expect(src).not.toContain("touch-action: none");
+  });
+
+  it("★ 背後への伝播はダイアログ側で止めている", () => {
+    // スクロールロックと二重に効かせる。片方だけでは端まで送ったときに漏れる
+    expect(read("src/lib/dialog-shell.ts")).toContain("overscroll-contain");
+  });
+});
