@@ -420,7 +420,8 @@ describe("確認ダイアログの収まり", () => {
   it("★ 共有の枠を使う（自前で高さを決めない）", () => {
     const src = read(PANEL);
 
-    expect(src).toContain("DIALOG_OVERLAY_CLASS");
+    expect(src).toContain("DIALOG_BACKDROP_CLASS");
+    expect(src).toContain("DIALOG_VIEWPORT_CLASS");
     expect(src).toContain("DIALOG_PANEL_CLASS");
     expect(src).toContain("DIALOG_BODY_CLASS");
     expect(src).toContain("DIALOG_FOOTER_CLASS");

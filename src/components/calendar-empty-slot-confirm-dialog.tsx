@@ -5,7 +5,8 @@ import { useCallback, useEffect, useRef } from "react";
 import {
   DIALOG_BODY_CLASS,
   DIALOG_FOOTER_CLASS,
-  DIALOG_OVERLAY_CLASS,
+  DIALOG_BACKDROP_CLASS,
+  DIALOG_VIEWPORT_CLASS,
   DIALOG_PANEL_CLASS,
 } from "@/lib/dialog-shell";
 
@@ -102,57 +103,64 @@ export function CalendarEmptySlotConfirmDialog({
 
   if (!open) return null;
 
+  /**
+   * 覆い（backdrop）と位置決め（viewport）を分けてある。
+   * 覆いは inset: 0 だけで高さが決まるので潰れず、必ず背後を守る。
+   */
   return (
-    <div className={DIALOG_OVERLAY_CLASS}>
-      <div
-        ref={panelRef}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="calendar-empty-slot-confirm-title"
-        className={`${DIALOG_PANEL_CLASS} bg-white shadow-xl ring-1 ring-slate-200`}
-        onKeyDown={onPanelKeyDown}
-      >
-        {/* 中身。ここだけスクロールする */}
-        <div className={DIALOG_BODY_CLASS}>
-          <p
-            id="calendar-empty-slot-confirm-title"
-            className="text-[15px] font-bold leading-relaxed text-slate-900"
-          >
-            {formatMonthDayLabel(dayKey)}に「{contractorName}」の空き枠があります。
-          </p>
-          <p className="mt-2 text-[12px] leading-relaxed text-slate-600">
-            この空き枠を使うと、案件にこの日付を設定したうえで空き枠が削除されます。
-            使わない場合は案件に日付を設定するだけで、空き枠はそのまま残ります。
-          </p>
-        </div>
+    <div className={DIALOG_BACKDROP_CLASS}>
+      {/* 位置決め。高さ（dvh）はここが持つ */}
+      <div className={DIALOG_VIEWPORT_CLASS}>
+        <div
+          ref={panelRef}
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="calendar-empty-slot-confirm-title"
+          className={`${DIALOG_PANEL_CLASS} bg-white shadow-xl ring-1 ring-slate-200`}
+          onKeyDown={onPanelKeyDown}
+        >
+          {/* 中身。ここだけスクロールする */}
+          <div className={DIALOG_BODY_CLASS}>
+            <p
+              id="calendar-empty-slot-confirm-title"
+              className="text-[15px] font-bold leading-relaxed text-slate-900"
+            >
+              {formatMonthDayLabel(dayKey)}に「{contractorName}」の空き枠があります。
+            </p>
+            <p className="mt-2 text-[12px] leading-relaxed text-slate-600">
+              この空き枠を使うと、案件にこの日付を設定したうえで空き枠が削除されます。
+              使わない場合は案件に日付を設定するだけで、空き枠はそのまま残ります。
+            </p>
+          </div>
 
-        {/* 操作。中身がどれだけ長くても必ず見える位置に残す */}
-        <div className={`${DIALOG_FOOTER_CLASS} flex flex-col gap-2`}>
-          <button
-            ref={firstButtonRef}
-            type="button"
-            className={`${DIALOG_BUTTON_CLASS} bg-[#06C755] text-white`}
-            disabled={busy}
-            onClick={onUseSlot}
-          >
-            この空き枠を使う
-          </button>
-          <button
-            type="button"
-            className={`${DIALOG_BUTTON_CLASS} bg-slate-800 text-white`}
-            disabled={busy}
-            onClick={onSkipSlot}
-          >
-            空き枠を使わずに登録する
-          </button>
-          <button
-            type="button"
-            className={`${DIALOG_BUTTON_CLASS} border border-slate-300 bg-white text-slate-700`}
-            disabled={busy}
-            onClick={onCancel}
-          >
-            キャンセル
-          </button>
+          {/* 操作。中身がどれだけ長くても必ず見える位置に残す */}
+          <div className={`${DIALOG_FOOTER_CLASS} flex flex-col gap-2`}>
+            <button
+              ref={firstButtonRef}
+              type="button"
+              className={`${DIALOG_BUTTON_CLASS} bg-[#06C755] text-white`}
+              disabled={busy}
+              onClick={onUseSlot}
+            >
+              この空き枠を使う
+            </button>
+            <button
+              type="button"
+              className={`${DIALOG_BUTTON_CLASS} bg-slate-800 text-white`}
+              disabled={busy}
+              onClick={onSkipSlot}
+            >
+              空き枠を使わずに登録する
+            </button>
+            <button
+              type="button"
+              className={`${DIALOG_BUTTON_CLASS} border border-slate-300 bg-white text-slate-700`}
+              disabled={busy}
+              onClick={onCancel}
+            >
+              キャンセル
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -1,63 +1,77 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DIALOG_BACKDROP_CLASS,
   DIALOG_BODY_CLASS,
   DIALOG_FOOTER_CLASS,
-  DIALOG_OVERLAY_CENTERED_CLASS,
-  DIALOG_OVERLAY_CLASS,
   DIALOG_PANEL_CLASS,
+  DIALOG_VIEWPORT_CENTERED_CLASS,
+  DIALOG_VIEWPORT_CLASS,
 } from "@/lib/dialog-shell";
 
 /**
  * 確認ダイアログの枠。
  *
- * 実機（iPhone / LIFF）で、中身が増えた確認ダイアログの下部が画面外に出て、
- * 実行ボタンにもキャンセルボタンにも届かなくなった。ここで固定するのは
- *   ・高さを iOS の vh に委ねないこと
+ * 実機で2回続けて事故を出している。1回目は「下部が画面外に出てボタンに
+ * 届かない」、2回目は「ダイアログがタップを受け取らず背後のパネルが反応する」。
+ * どちらも高さの取り方が原因だった。ここで固定するのは
+ *   ・覆いの高さが計算に依存しないこと（潰れたら背後へ抜ける）
  *   ・中身と操作が分かれ、操作がスクロールの外にあること
- * の2つ。どちらが欠けても同じ症状に戻る。
+ * の2つ。
  */
 
 const classes = (raw: string) => raw.split(/\s+/).filter(Boolean);
 
-describe("下敷き（overlay）", () => {
-  it("★ 高さを dvh で取る（globals.css の .liff-dialog-viewport）", () => {
-    for (const c of [DIALOG_OVERLAY_CLASS, DIALOG_OVERLAY_CENTERED_CLASS]) {
+describe("覆い（backdrop）", () => {
+  it("★ inset-0 だけで画面全部を覆う（高さを計算に頼らない）", () => {
+    // 高さのクラスを足すと、それが解けなかったときに覆いが潰れて
+    // タップが背後へ抜ける。実機で起きた事故そのもの
+    expect(classes(DIALOG_BACKDROP_CLASS)).toContain("fixed");
+    expect(classes(DIALOG_BACKDROP_CLASS)).toContain("inset-0");
+    expect(DIALOG_BACKDROP_CLASS).not.toContain("liff-dialog-viewport");
+    expect(DIALOG_BACKDROP_CLASS).not.toContain("h-");
+    expect(DIALOG_BACKDROP_CLASS).not.toContain("dvh");
+    expect(DIALOG_BACKDROP_CLASS).not.toContain("vh]");
+  });
+
+  it("★ タップを止める層である（透過させない指定を持たない）", () => {
+    expect(DIALOG_BACKDROP_CLASS).not.toContain("pointer-events-none");
+  });
+
+  it("★ 背後より前面に出る", () => {
+    expect(classes(DIALOG_BACKDROP_CLASS)).toContain("z-50");
+  });
+
+  it("暗転はここが持つ", () => {
+    expect(classes(DIALOG_BACKDROP_CLASS)).toContain("bg-slate-900/50");
+  });
+});
+
+describe("位置決め（viewport）", () => {
+  it("★ 高さは globals.css の .liff-dialog-viewport が持つ", () => {
+    for (const c of [DIALOG_VIEWPORT_CLASS, DIALOG_VIEWPORT_CENTERED_CLASS]) {
       expect(classes(c)).toContain("liff-dialog-viewport");
     }
   });
 
-  it("★ inset-0 で高さを決めない（iOS の vh に従ってしまう）", () => {
-    for (const c of [DIALOG_OVERLAY_CLASS, DIALOG_OVERLAY_CENTERED_CLASS]) {
+  it("★ 覆いの役目は持たない（fixed も z も置かない）", () => {
+    for (const c of [DIALOG_VIEWPORT_CLASS, DIALOG_VIEWPORT_CENTERED_CLASS]) {
+      expect(classes(c)).not.toContain("fixed");
       expect(classes(c)).not.toContain("inset-0");
-      // 横と上だけ張る
-      expect(classes(c)).toContain("inset-x-0");
-      expect(classes(c)).toContain("top-0");
-    }
-  });
-
-  it("★ 画面を覆い、中央に寄せる", () => {
-    for (const c of [DIALOG_OVERLAY_CLASS, DIALOG_OVERLAY_CENTERED_CLASS]) {
-      expect(classes(c)).toContain("fixed");
-      expect(classes(c)).toContain("z-50");
-      expect(classes(c)).toContain("flex");
-      expect(classes(c)).toContain("justify-center");
+      expect(classes(c)).not.toContain("z-50");
     }
   });
 
   it("★ 下端は safe-area を避ける（ホームバーに潜らせない）", () => {
-    expect(DIALOG_OVERLAY_CLASS).toContain(
-      "pb-[max(1rem,env(safe-area-inset-bottom))]",
-    );
-    expect(DIALOG_OVERLAY_CENTERED_CLASS).toContain(
-      "pb-[max(1rem,env(safe-area-inset-bottom))]",
-    );
+    for (const c of [DIALOG_VIEWPORT_CLASS, DIALOG_VIEWPORT_CENTERED_CLASS]) {
+      expect(c).toContain("pb-[max(1rem,env(safe-area-inset-bottom))]");
+    }
   });
 
   it("スマホは下から、広い画面は中央（従来どおり）", () => {
-    expect(classes(DIALOG_OVERLAY_CLASS)).toContain("items-end");
-    expect(classes(DIALOG_OVERLAY_CLASS)).toContain("sm:items-center");
-    expect(classes(DIALOG_OVERLAY_CENTERED_CLASS)).toContain("items-center");
+    expect(classes(DIALOG_VIEWPORT_CLASS)).toContain("items-end");
+    expect(classes(DIALOG_VIEWPORT_CLASS)).toContain("sm:items-center");
+    expect(classes(DIALOG_VIEWPORT_CENTERED_CLASS)).toContain("items-center");
   });
 });
 

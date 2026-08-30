@@ -5,7 +5,8 @@ import { useEffect, useRef } from "react";
 import {
   DIALOG_BODY_CLASS,
   DIALOG_FOOTER_CLASS,
-  DIALOG_OVERLAY_CENTERED_CLASS,
+  DIALOG_BACKDROP_CLASS,
+  DIALOG_VIEWPORT_CENTERED_CLASS,
   DIALOG_PANEL_CLASS,
 } from "@/lib/dialog-shell";
 
@@ -62,50 +63,57 @@ export function MeetingScheduleNegotiationConfirmDialog({
 
   if (!open) return null;
 
+  /**
+   * 覆い（backdrop）と位置決め（viewport）を分けてある。
+   * 覆いは inset: 0 だけで高さが決まるので潰れず、必ず背後を守る。
+   */
   return (
-    <div className={DIALOG_OVERLAY_CENTERED_CLASS}>
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="meeting-negotiation-confirm-title"
-        aria-describedby="meeting-negotiation-confirm-body"
-        className={`${DIALOG_PANEL_CLASS} bg-white shadow-xl dark:bg-slate-900`}
-      >
-        {/* 中身。ここだけスクロールする */}
-        <div className={DIALOG_BODY_CLASS}>
-          <p
-            id="meeting-negotiation-confirm-title"
-            className="text-[15px] font-bold text-slate-900 dark:text-white"
-          >
-            {title}
-          </p>
-          <p
-            id="meeting-negotiation-confirm-body"
-            className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-slate-700 dark:text-slate-200"
-          >
-            {message}
-          </p>
-        </div>
-
-        {/* 操作。中身がどれだけ長くても必ず見える位置に残す */}
+    <div className={DIALOG_BACKDROP_CLASS}>
+      {/* 位置決め。高さ（dvh）はここが持つ */}
+      <div className={DIALOG_VIEWPORT_CENTERED_CLASS}>
         <div
-          className={`${DIALOG_FOOTER_CLASS} flex gap-2 dark:border-slate-800`}
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="meeting-negotiation-confirm-title"
+          aria-describedby="meeting-negotiation-confirm-body"
+          className={`${DIALOG_PANEL_CLASS} bg-white shadow-xl dark:bg-slate-900`}
         >
-          <button
-            type="button"
-            ref={cancelRef}
-            onClick={onCancel}
-            className={`${buttonBase} bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200`}
+          {/* 中身。ここだけスクロールする */}
+          <div className={DIALOG_BODY_CLASS}>
+            <p
+              id="meeting-negotiation-confirm-title"
+              className="text-[15px] font-bold text-slate-900 dark:text-white"
+            >
+              {title}
+            </p>
+            <p
+              id="meeting-negotiation-confirm-body"
+              className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-slate-700 dark:text-slate-200"
+            >
+              {message}
+            </p>
+          </div>
+
+          {/* 操作。中身がどれだけ長くても必ず見える位置に残す */}
+          <div
+            className={`${DIALOG_FOOTER_CLASS} flex gap-2 dark:border-slate-800`}
           >
-            キャンセル
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className={`${buttonBase} bg-emerald-600 text-white dark:bg-emerald-500`}
-          >
-            変更して保存
-          </button>
+            <button
+              type="button"
+              ref={cancelRef}
+              onClick={onCancel}
+              className={`${buttonBase} bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200`}
+            >
+              キャンセル
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              className={`${buttonBase} bg-emerald-600 text-white dark:bg-emerald-500`}
+            >
+              変更して保存
+            </button>
+          </div>
         </div>
       </div>
     </div>

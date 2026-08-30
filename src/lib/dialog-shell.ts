@@ -1,65 +1,60 @@
 /**
  * 確認ダイアログの**枠だけ**を揃えるクラス定義。
  *
- * ── なぜ切り出したか ────────────────────────────────────────
- * 実機（iPhone / LIFF）で、工事日の移動の確認ダイアログの下部が画面外に
- * 出て、実行ボタンにもキャンセルボタンにも届かなくなった。中身が増えた
- * （移動元の扱いのラジオ2つ・実行される内容の箇条書き・警告）ことが
- * きっかけだが、**原因は高さの取り方**にあり、同じ書き方をしている
- * ダイアログすべてが同じ地雷を踏む。
+ * ── 直したこと ──────────────────────────────────────────────
+ * 実機（iPhone / LIFF）で2つ続けて事故が起きた。どちらも「高さ」が原因。
  *
- * ── iOS の vh は「見えている高さ」ではない ──────────────────
- * iOS Safari（LIFF の WKWebView も同じ）の 100vh は URL バーやツールバーを
- * 畳んだときの高さで、実際に見えている領域より**大きい**。
- * `position: fixed; inset: 0` もこの高さに従うため、
+ *   1回目  下部が画面外に出てボタンに届かない
+ *          iOS の 100vh は URL バーを畳んだ高さで、見えている領域より
+ *          大きい。position: fixed; inset: 0 もこれに従う
  *
- *   1. 下敷き（overlay）の下端が画面の外へ出る
- *   2. items-end で下寄せしたダイアログは、その画面外の下端に貼りつく
- *   3. 中身が max-h-[85vh] に収まっていると overflow-y-auto は働かない
- *      （スクロールするものが無い）
- *   4. 背後のページも fixed の下敷きに覆われて動かせない
+ *   2回目  ダイアログがタップを受け取らず、背後のパネルが反応する
+ *          1回目の対処で土台の高さを
+ *            height: 100vh; height: 100dvh;
+ *          と2行で書いたが、**ミニファイアが前の行を捨てた**。dvh を
+ *          知らない環境では height が丸ごと消え、top だけ指定した土台が
+ *          中身ぶんの高さに潰れて、画面の大半が覆われなくなった
  *
- * ＝ ボタンがどこにも出てこない。実機の症状はこれで説明がつく。
+ * ── 今の作り ────────────────────────────────────────────────
+ * 覆いと位置決めを**別の層に分ける**。
  *
- * dvh（dynamic viewport height）は見えている高さに追従するので、
- * 土台の高さを dvh で取る。dvh を知らない古い環境のために vh も併記して
- * あり、その指定は globals.css の .liff-dialog-viewport にある
- * （Tailwind のクラスでは2段のフォールバックを書けないため）。
+ *   backdrop  position: fixed; inset: 0
+ *             高さを計算に頼らない。常に画面全部を覆い、タップを止める
+ *   viewport  高さ（dvh）を持ち、ダイアログを下／中央へ寄せる
+ *   panel     中身と操作を縦に分ける器
+ *   body      ここだけスクロールする
+ *   footer    スクロールの外。常に見える位置に残る
  *
- * ── 中身をスクロールさせ、ボタンは固定する ──────────────────
- * 高さを直しても、中身が長ければいずれ収まらなくなる。ダイアログを
- * 縦の2段（中身／操作）に分け、**中身だけをスクロールさせて操作は残す**。
- * 中身をどれだけ足しても、ボタンには必ず届く。
+ * 高さが解けなかったときの最悪でも「ボタンに届かない」で、
+ * **タップが背後へ抜けることは起きない**。inset: 0 は計算不要で潰れない。
  *
  * ⚠ ここにあるのは**枠のクラスだけ**。フォーカストラップ・Esc の扱い・
- *    role / aria 属性は各ダイアログが持っている。動きを共通化すると
- *    ボタンの数も初期フォーカス先も違う4つを1つに寄せることになり、
- *    緊急の修正としては risk が見合わない。
+ *    role / aria 属性は各ダイアログが持っている。
  */
-
-/** 土台の高さ（globals.css）。iOS の vh を避けるため dvh で取る */
-const VIEWPORT = "liff-dialog-viewport";
 
 /**
- * 画面を覆う下敷き。スマホでは下から出し、広い画面では中央に置く。
+ * 覆い。**タップを背後へ通さない層。**
  *
- * inset-0 ではなく inset-x-0 top-0 ＋ 高さクラスにしてある。
- * inset-0 だと下端が iOS の vh に従ってしまい、この修正の意味が無くなる。
+ * ⚠ ここに高さのクラスを足さないこと。inset: 0 で上下左右が決まるので
+ *    計算が要らず、dvh が使えない環境でも潰れない。この層が背後を守る。
  */
-export const DIALOG_OVERLAY_CLASS =
-  `${VIEWPORT} fixed inset-x-0 top-0 z-50 flex items-end justify-center bg-slate-900/50 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6 sm:items-center`;
+export const DIALOG_BACKDROP_CLASS = "fixed inset-0 z-50 bg-slate-900/50";
 
-/** 下敷き（常に中央）。下から出す形にしていないダイアログ用 */
-export const DIALOG_OVERLAY_CENTERED_CLASS =
-  `${VIEWPORT} fixed inset-x-0 top-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6`;
+/**
+ * 位置決め。スマホでは下から出し、広い画面では中央に置く。
+ * 高さは globals.css の .liff-dialog-viewport（100% → dvh）。
+ */
+export const DIALOG_VIEWPORT_CLASS =
+  "liff-dialog-viewport flex items-end justify-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6 sm:items-center";
+
+/** 位置決め（常に中央）。下から出す形にしていないダイアログ用 */
+export const DIALOG_VIEWPORT_CENTERED_CLASS =
+  "liff-dialog-viewport flex items-center justify-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6";
 
 /**
  * ダイアログ本体。**見た目（背景・影・枠線）は各ダイアログが足す。**
- * ここで決めるのは「中身と操作を縦に分け、下敷きからはみ出さない」ことだけ。
- *
- * 高さの上限は globals.css の .liff-dialog-panel（85vh → 85dvh）で決める。
- * max-h-full（＝ max-height: 100%）は土台の高さが確定していないと解けず、
- * 解けないと上限が無くなって操作が画面外へ出る。% に頼らない。
+ * ここで決めるのは「中身と操作を縦に分け、土台からはみ出さない」ことだけ。
+ * 高さの上限は globals.css の .liff-dialog-panel（100% → 85dvh）。
  */
 export const DIALOG_PANEL_CLASS =
   "liff-dialog-panel flex w-full max-w-sm flex-col overflow-hidden rounded-2xl";
@@ -79,9 +74,8 @@ export const DIALOG_BODY_CLASS =
  * 操作。**スクロールの外に置き、常に見える位置に残す。**
  *
  * shrink-0 が無いと、中身が長いときにボタン側が潰される。
- * relative z-10 は、スクロールする中身が何かの拍子にボタンの上へ
- * 重なって**押しても反応しない**状態を作らないための保険。
- * 見た目は変わらないが、重なり順は必ずこちらが上になる。
+ * relative z-10 は、スクロールする中身がボタンの上へ重なって
+ * 「押しても反応しない」状態を作らないための保険。
  */
 export const DIALOG_FOOTER_CLASS =
   "relative z-10 shrink-0 border-t border-slate-100 px-4 pb-4 pt-3";

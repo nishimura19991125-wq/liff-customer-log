@@ -25,22 +25,22 @@ const DIALOGS = [
   {
     rel: "src/components/calendar-move-case-panel.tsx",
     label: "工事日の移動",
-    overlay: "DIALOG_OVERLAY_CLASS",
+    viewport: "DIALOG_VIEWPORT_CLASS",
   },
   {
     rel: "src/components/customer-cancel-confirm-dialog.tsx",
     label: "顧客キャンセル",
-    overlay: "DIALOG_OVERLAY_CLASS",
+    viewport: "DIALOG_VIEWPORT_CLASS",
   },
   {
     rel: "src/components/calendar-empty-slot-confirm-dialog.tsx",
     label: "空き枠の確認",
-    overlay: "DIALOG_OVERLAY_CLASS",
+    viewport: "DIALOG_VIEWPORT_CLASS",
   },
   {
     rel: "src/components/meeting-schedule-negotiation-confirm-dialog.tsx",
     label: "商談ステータスの変更",
-    overlay: "DIALOG_OVERLAY_CENTERED_CLASS",
+    viewport: "DIALOG_VIEWPORT_CENTERED_CLASS",
   },
 ] as const;
 
@@ -50,10 +50,19 @@ describe("確認ダイアログの枠", () => {
       it("★ 共有の枠を使う", () => {
         const src = read(d.rel);
 
-        expect(src).toContain(d.overlay);
+        expect(src).toContain("DIALOG_BACKDROP_CLASS");
+        expect(src).toContain(d.viewport);
         expect(src).toContain("DIALOG_PANEL_CLASS");
         expect(src).toContain("DIALOG_BODY_CLASS");
         expect(src).toContain("DIALOG_FOOTER_CLASS");
+      });
+
+      it("★ 覆いが位置決めより外側にある（潰れない層が背後を守る）", () => {
+        const src = read(d.rel);
+
+        expect(src.indexOf("{DIALOG_BACKDROP_CLASS}")).toBeLessThan(
+          src.indexOf("{" + d.viewport + "}"),
+        );
       });
 
       it("★ 自前で高さを決めない（iOS の vh に従わせない）", () => {
@@ -102,22 +111,26 @@ describe("土台の高さ（globals.css）", () => {
     expect(css).toContain("height: 100dvh;");
   });
 
-  it("★ 本体の高さも dvh で決める（% に頼らない）", () => {
+  it("★ 本体の高さも @supports で決める", () => {
     expect(css).toContain(".liff-dialog-panel");
+    expect(css).toContain("@supports (max-height: 85dvh)");
     expect(css).toContain("max-height: 85dvh;");
-    expect(css).toContain("max-height: 85vh;");
   });
 
-  it("★ dvh を知らない環境のために vh を残す", () => {
-    const block = css.slice(
-      css.indexOf(".liff-dialog-viewport"),
-      css.indexOf(".liff-dialog-viewport") + 200,
+  it("★ フォールバックを同じルールに2行並べない（ミニファイアに捨てられる）", () => {
+    // height: 100vh; height: 100dvh; と書くと、ビルドが後ろだけ残して
+    // 前を捨てる。dvh を知らない環境で高さが丸ごと消え、覆いが潰れて
+    // タップが背後へ抜けた（実機で発生）
+    expect(css).not.toContain("height: 100vh;\n  height: 100dvh;");
+    expect(css).not.toContain("max-height: 85vh;\n  max-height: 85dvh;");
+  });
+
+  it("★ dvh を知らない環境でも高さが残る（@supports の外に 100%）", () => {
+    const base = css.slice(
+      css.indexOf(".liff-dialog-viewport {"),
+      css.indexOf("@supports (height: 100dvh)"),
     );
 
-    // 先に vh、あとから dvh。順序が逆だと古い環境で高さが消える
-    expect(block.indexOf("height: 100vh;")).toBeGreaterThan(-1);
-    expect(block.indexOf("height: 100vh;")).toBeLessThan(
-      block.indexOf("height: 100dvh;"),
-    );
+    expect(base).toContain("height: 100%;");
   });
 });
