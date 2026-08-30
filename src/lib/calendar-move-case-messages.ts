@@ -80,6 +80,34 @@ export function buildMoveSourceResetFailedMessage(input: {
   ].join("\n");
 }
 
+/**
+ * 移動元を削除できなかったときの文言（M-4）。
+ *
+ * 空き枠へ戻せなかったとき（buildMoveSourceResetFailedMessage）と
+ * **状態は同じ**（同じ T番号 が2件）だが、直し方が違う。あちらは4列を
+ * 消して枠に戻す、こちらはレコードごと消す。利用者がやることが変わるので
+ * 文言を分ける。
+ *
+ * 削除は監査ログを書いてから実行するので、ここへ来た時点で削除ログだけが
+ * 残っていることがある。レコードが実在するのに削除ログがある状態を
+ * 放置しないためにも、名指しで直させる。
+ */
+export function buildMoveSourceDeleteFailedMessage(input: {
+  sourceRecordId: string;
+  sourceDayKey: string;
+  targetDayKey: string;
+}): string {
+  const from = formatDisplayYmd(input.sourceDayKey) || input.sourceDayKey;
+  const to = formatDisplayYmd(input.targetDayKey) || input.targetDayKey;
+
+  return [
+    `移動先（${to}）への登録は完了しましたが、移動元（${from}・レコードID ${input.sourceRecordId}）を削除できませんでした。`,
+    "現在この案件は2日に重複して表示されています。",
+    `@pocket で${from}のレコードを削除してください。`,
+    "削除するまで、この案件の割り当て・キャンセルはエラーになります。",
+  ].join("\n");
+}
+
 /** 確認画面の材料。空き枠を使わないときは targetSlotContractor を null にする */
 export type MoveCaseConfirmInput = {
   customerName: string;

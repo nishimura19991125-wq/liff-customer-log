@@ -88,7 +88,15 @@ export type MoveSourceDeleteRefusal =
   /** T番号 が読めない。同じ案件だと確かめられない */
   | "no_t_number"
   /** お客様名・T番号 の列を特定できていない。判定そのものが成り立たない */
-  | "unresolved_field";
+  | "unresolved_field"
+  /**
+   * 削除ログを残せなかった（A-4）。
+   *
+   * ⚠ decideMoveSourceDeletion はこれを返さない。監査ログの結果は判定の
+   *    あとに分かるため、**ルート側が立てる**。文言をここに置くのは、
+   *    見送った理由の出し方を1箇所にまとめるため。
+   */
+  | "log_failed";
 
 export type MoveSourceDeleteDecision =
   | { ok: true }
@@ -208,6 +216,8 @@ export function moveSourceDeleteRefusalMessage(
       return "移動元の T番号 を確認できなかったため";
     case "unresolved_field":
       return "工事アプリの列を特定できなかったため";
+    case "log_failed":
+      return "削除の記録を残せなかったため";
     default:
       return "";
   }

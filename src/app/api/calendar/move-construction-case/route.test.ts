@@ -8,7 +8,8 @@ import { CONSTRUCTION_SLOT_KEEP_FIELD_LABELS } from "@/lib/calendar-empty-slot-r
  * ここで固定するのは次の5つ。
  *   - 移動先（空き枠 / 新規）へ案件が書かれ、Aki番号 の扱いが仕様どおり
  *   - 移動元は4列だけ空になり、施工予定日・施工会社・Aki番号 は残る
- *   - **deleteRecord を一度も呼ばない**
+ *   - **既定では deleteRecord を一度も呼ばない**
+ *     （M-4 で sourceDisposition:"delete" を選んだときだけ消す）
  *   - 事前検証で少しでも食い違えば何も書かない
  *   - W2 が失敗しても W1 の結果は残り、名指しのエラーが返る
  */
@@ -52,6 +53,12 @@ const h = vi.hoisted(() => ({
   reads: [] as string[],
   /** true のとき recordAuditLog が投げる */
   auditThrows: false,
+  /** 削除ログの ok。false にすると A-4 で削除が止まる */
+  deleteLogOk: true,
+  /** 削除ログに渡された全項目の文字列 */
+  deletionContents: [] as string[],
+  /** この recordId の deleteRecord だけ失敗させる */
+  failDeleteFor: null as string | null,
 }));
 
 vi.mock("@/lib/request-auth", () => ({
@@ -74,6 +81,9 @@ vi.mock("@/lib/atpocket", async () => {
       return rec ? { recordId, record: rec } : null;
     },
     deleteRecord: async (_appId: string, recordId: string) => {
+      if (recordId === h.failDeleteFor) {
+        throw new Error("@pocket delete record failed: 500");
+      }
       h.deleteCalls.push(recordId);
     },
   };
@@ -122,6 +132,7 @@ vi.mock("@/lib/audit-log", () => ({
   recordAuditLog: async (o: {
     operation: string;
     targetRecordId: string;
+    deletionContent?: string;
     changes?: Array<{ fieldId: string; after: string }>;
   }) => {
     if (h.auditThrows) throw new Error("[audit-log] 列を解決できません");
@@ -133,6 +144,12 @@ vi.mock("@/lib/audit-log", () => ({
       recordId: o.targetRecordId,
       note: moveRow?.after ?? "",
     });
+    if (o.operation === "delete") {
+      h.deletionContents.push(o.deletionContent ?? "");
+      if (!h.deleteLogOk) {
+        return { ok: false, error: "削除対象の項目を取得できなかったため" };
+      }
+    }
     return { ok: true, written: 1 };
   },
 }));
@@ -178,6 +195,7 @@ const { POST } = await import(
 
 const ENV_KEYS = [
   "CALENDAR_APP_ID",
+  "CALENDAR_MOVE_DELETE_SOURCE_RECORD",
   "CALENDAR_EMPTY_FILL_CUSTOMER_NAME_FIELD_ID",
   "CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID",
   "CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID",
@@ -229,6 +247,10 @@ beforeEach(() => {
   h.createdRecordId = "con-new";
   h.reads.length = 0;
   h.auditThrows = false;
+  h.deleteLogOk = true;
+  h.deletionContents.length = 0;
+  h.failDeleteFor = null;
+  delete process.env.CALENDAR_MOVE_DELETE_SOURCE_RECORD;
 });
 
 afterEach(() => {
@@ -638,5 +660,247 @@ describe("★ 速度改善で落としてはいけないもの", () => {
 
     expect(status).toBe(200);
     expect(h.writes).toHaveLength(2);
+  });
+});
+
+/**
+ * M-4: 移動元を削除する選択肢。
+ *
+ * 物理削除なので、固定するのは「消せること」より
+ * **消してはいけない場面で消さないこと**。1つでも条件が外れたら
+ * 空き枠へ戻す動作へフォールバックし、移動そのものは成功させる。
+ */
+/**
+ * 削除直前の取り直しだけ別の値を返す。
+ * 1回目（事前検証）は元のまま、2回目以降を差し替える
+ */
+function sourceChangedOnRefetch(
+  second: Record<string, unknown> | null,
+): Record<string, Record<string, unknown> | null> {
+  const base: Record<string, Record<string, unknown> | null> = {
+    "con-1": { ...SOURCE_CASE },
+    "slot-9": { ...TARGET_SLOT },
+  };
+  let reads = 0;
+  return new Proxy(base, {
+    get(target, prop) {
+      if (prop === "con-1") {
+        reads += 1;
+        return reads >= 2 ? second : target["con-1"];
+      }
+      return target[prop as string];
+    },
+  });
+}
+
+describe("移動元を削除する（M-4）", () => {
+  const DELETE_BODY = {
+    ...BASE_BODY,
+    slotRecordId: "slot-9",
+    sourceDisposition: "delete" as const,
+  };
+
+  it("★ 既定（sourceDisposition なし）は従来どおり空き枠へ戻す", async () => {
+    const { status, body } = await call({
+      ...BASE_BODY,
+      slotRecordId: "slot-9",
+    });
+
+    expect(status).toBe(200);
+    expect(h.deleteCalls).toEqual([]);
+    expect(body.sourceDeleted).toBe(false);
+    expect(body.sourceResetToEmptySlot).toBe(true);
+    // 4列を空にする更新が走っている
+    expect(sourceWrite()?.recordId).toBe("con-1");
+    expect(sourceWrite()?.payload[NAME_ID]).toBe("");
+  });
+
+  it('★ "keep" を明示しても消さない', async () => {
+    const { body } = await call({
+      ...BASE_BODY,
+      slotRecordId: "slot-9",
+      sourceDisposition: "keep",
+    });
+
+    expect(h.deleteCalls).toEqual([]);
+    expect(body.sourceResetToEmptySlot).toBe(true);
+  });
+
+  it("★ 知らない値は keep に倒れる（古いクライアントが消す側へ倒れない）", async () => {
+    const { body } = await call({
+      ...BASE_BODY,
+      slotRecordId: "slot-9",
+      sourceDisposition: "DELETE",
+    });
+
+    expect(h.deleteCalls).toEqual([]);
+    expect(body.sourceResetToEmptySlot).toBe(true);
+  });
+
+  it("★ 「削除する」を選ぶと移動元が削除される", async () => {
+    const { status, body } = await call(DELETE_BODY);
+
+    expect(status).toBe(200);
+    expect(h.deleteCalls).toEqual(["con-1"]);
+    expect(body.sourceDeleted).toBe(true);
+    expect(body.sourceResetToEmptySlot).toBe(false);
+  });
+
+  it("★ 削除したときは空き枠へ戻す更新を走らせない", async () => {
+    await call(DELETE_BODY);
+
+    // 書き込みは移動先の1回だけ
+    expect(h.writes).toHaveLength(1);
+    expect(movedWrite()?.recordId).toBe("slot-9");
+  });
+
+  it("★ 順序は「書いてから消す」（W1 が先）", async () => {
+    await call(DELETE_BODY);
+
+    expect(h.writes).toHaveLength(1);
+    expect(h.deleteCalls).toEqual(["con-1"]);
+  });
+
+  it("★ 削除の前に全項目で取り直す（削除ログの材料）", async () => {
+    await call(DELETE_BODY);
+
+    // 事前検証・空き枠・削除直前 で移動元を2回読む
+    expect(h.reads.filter((r) => r === "con-1")).toHaveLength(2);
+  });
+
+  it("★ 削除の前に監査ログを記録する", async () => {
+    await call(DELETE_BODY);
+
+    const del = h.audits.find((a) => a.operation === "delete");
+    expect(del?.recordId).toBe("con-1");
+    expect(h.deletionContents).toHaveLength(1);
+    // 全項目が入っている（お客様名・T番号・Aki番号）
+    expect(h.deletionContents[0]).toContain("山田 太郎");
+    expect(h.deletionContents[0]).toContain("T00003420");
+    expect(h.deletionContents[0]).toContain("AKI-100");
+  });
+
+  it("★ 移動であることが後から分かる記録を残す", async () => {
+    await call(DELETE_BODY);
+
+    expect(
+      h.audits.some((a) => a.note.includes("削除して工事日を移動")),
+    ).toBe(true);
+  });
+
+  it("★ 削除ログを残せなければ削除しない（A-4）", async () => {
+    h.deleteLogOk = false;
+
+    const { status, body } = await call(DELETE_BODY);
+
+    expect(status).toBe(200);
+    expect(h.deleteCalls).toEqual([]);
+    expect(body.sourceDeleted).toBe(false);
+    // フォールバックして空き枠へ戻っている
+    expect(body.sourceResetToEmptySlot).toBe(true);
+    expect(sourceWrite()?.payload[NAME_ID]).toBe("");
+    expect(String(body.sourceKeptNotice)).toContain("削除の記録を残せなかった");
+  });
+
+  it("★ 環境変数 false で削除が止まり、空き枠へ戻る", async () => {
+    process.env.CALENDAR_MOVE_DELETE_SOURCE_RECORD = "false";
+
+    const { status, body } = await call(DELETE_BODY);
+
+    expect(status).toBe(200);
+    expect(h.deleteCalls).toEqual([]);
+    expect(body.sourceResetToEmptySlot).toBe(true);
+    // 運用者が意図して止めているので、利用者には言わない
+    expect(body.sourceKeptNotice).toBeUndefined();
+  });
+
+  it("★ 移動元が別の案件に変わっていたら削除も更新もしない", async () => {
+    // 削除直前の取り直しで別の T番号 が返る。
+    // 削除を見送ったあと、空き枠へ戻す側の再確認でも同じ理由で弾かれる。
+    // 他人の案件を消すことも空にすることもしない
+    h.records = sourceChangedOnRefetch({
+      ...SOURCE_CASE,
+      [T_ID]: "T00009999",
+      [NAME_ID]: "鈴木 花子",
+    });
+
+    const { status, body } = await call(DELETE_BODY);
+
+    expect(h.deleteCalls).toEqual([]);
+    // 移動元には1文字も書いていない（書き込みは移動先の1回だけ）
+    expect(h.writes).toHaveLength(1);
+    // 空き枠へも戻せていないので、名指しで直させる
+    expect(status).toBe(502);
+    expect(body.constructionSaved).toBe(true);
+    expect(String(body.error)).toContain("レコードID con-1");
+  });
+
+  it("★ 移動元が既に空き枠なら削除しない", async () => {
+    h.records = sourceChangedOnRefetch({ ...SOURCE_CASE, [NAME_ID]: "" });
+
+    const { body } = await call(DELETE_BODY);
+
+    expect(h.deleteCalls).toEqual([]);
+    expect(String(body.sourceKeptNotice)).toContain("既に空き枠");
+  });
+
+  it("★ 削除直前に取り直せなければ削除しない", async () => {
+    h.records = sourceChangedOnRefetch(null);
+
+    const { body } = await call(DELETE_BODY);
+
+    expect(h.deleteCalls).toEqual([]);
+    expect(String(body.sourceKeptNotice)).toContain("取得できなかった");
+  });
+
+  it("★ 削除に失敗したら、名指しのエラーを返す", async () => {
+    h.failDeleteFor = "con-1";
+
+    const { status, body } = await call(DELETE_BODY);
+
+    expect(status).toBe(502);
+    const msg = String(body.error);
+    expect(msg).toContain("レコードID con-1");
+    expect(msg).toContain("2026/12/01");
+    expect(msg).toContain("2026/12/05");
+    expect(msg).toContain("2日に重複して表示されています");
+    expect(msg).toContain("レコードを削除してください");
+    expect(msg).toContain("割り当て・キャンセルはエラー");
+    // W1 の結果は残っている
+    expect(body.constructionSaved).toBe(true);
+    expect(body.sourceDeleted).toBe(false);
+  });
+
+  it("★ 削除に失敗しても空き枠へ戻す更新は走らせない", async () => {
+    h.failDeleteFor = "con-1";
+
+    await call(DELETE_BODY);
+
+    // 削除ログを書いた直後の状態。黙って別の片付け方に倒さない
+    expect(h.writes).toHaveLength(1);
+  });
+
+  it("★ 新規作成で移した場合も削除できる", async () => {
+    const { status, body } = await call({
+      ...BASE_BODY,
+      sourceDisposition: "delete",
+    });
+
+    expect(status).toBe(200);
+    expect(body.movedTo).toBe("new");
+    expect(h.deleteCalls).toEqual(["con-1"]);
+  });
+
+  it("★ 移動先のレコードIDを特定できなければ削除しない", async () => {
+    h.createdRecordId = null;
+
+    const { status, body } = await call({
+      ...BASE_BODY,
+      sourceDisposition: "delete",
+    });
+
+    expect(status).toBe(200);
+    expect(h.deleteCalls).toEqual([]);
+    expect(String(body.sourceKeptNotice)).toContain("移動先のレコードを特定");
   });
 });

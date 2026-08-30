@@ -3,12 +3,16 @@ import { NextResponse } from "next/server";
 import {
   apiKeyForCalendarPocket1,
   apiKeyForCalendarWrite,
+  deleteRecord,
   fetchAppFields,
   fetchRecordById,
 } from "@/lib/atpocket";
 import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
 import { recordAuditLog } from "@/lib/audit-log";
-import { computeAuditChanges } from "@/lib/audit-log-changes";
+import {
+  computeAuditChanges,
+  formatDeletionContent,
+} from "@/lib/audit-log-changes";
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
@@ -34,7 +38,18 @@ import {
   resolveConstructionTNumberFieldId,
   resolveEmptyFillHousingStatusFieldId,
 } from "@/lib/calendar-kojo";
-import { buildMoveSourceResetFailedMessage } from "@/lib/calendar-move-case-messages";
+import {
+  buildMoveSourceDeleteFailedMessage,
+  buildMoveSourceResetFailedMessage,
+} from "@/lib/calendar-move-case-messages";
+import {
+  decideMoveSourceDeletion,
+  moveDeletesSourceRecordEnabled,
+  moveSourceDeleteRefusalIsNotable,
+  moveSourceDispositionFromBody,
+  moveSourceKeptInsteadOfDeleteMessage,
+  type MoveSourceDeleteRefusal,
+} from "@/lib/calendar-move-source-disposition";
 import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { calendarSlotConflictResponse } from "@/lib/calendar-slot-reservation";
@@ -78,8 +93,19 @@ export const maxDuration = 26;
  *                      画面からも直せない＝アプリ内に復旧手段が無い
  * 後者を避ける。
  *
- * ■ 削除しない
- * deleteRecord を import していない。移動元は列を空にして空き枠へ戻す。
+ * ■ 移動元は既定で削除しない（M-4 で選べるようにした）
+ * M-2 では deleteRecord を import すらしていなかった。移動元を空き枠へ
+ * 戻すと元の日の枠数が減らないため、M-4 で「削除する」を選べるようにした。
+ * 選ばれたときだけ消し、**既定は従来どおり空き枠へ戻す**。
+ *
+ * ⚠ 削除すると失うものがある。buildConstructionFillPatch が移動先へ書くのは
+ *    最大11列で、終了日・メモなどは転記されない。空き枠として残していた
+ *    ときはレコード上に残っていたが、削除すると唯一の写しが消える。
+ *    確認画面にもそのことを出す。
+ *
+ * ⚠ 削除の作法は A-4（全項目 GET → 監査ログ → ok を確認 → deleteRecord）。
+ *    判定は calendar-move-source-disposition へ切り出してあり、1つでも
+ *    条件が外れたら消さずに空き枠へ戻す。
  */
 
 type Body = {
@@ -94,6 +120,11 @@ type Body = {
    * 違う施工会社の枠へ移すと、施工会社も書き換わる
    */
   contractor?: string;
+  /**
+   * 移動元のレコードをどうするか。省略時は "keep"（空き枠へ戻す）。
+   * 知らない値もすべて keep に倒す（moveSourceDispositionFromBody）
+   */
+  sourceDisposition?: "keep" | "delete";
   constructionHandlerStaffRecordId?: string;
   /** 後方互換（工事登録者API名） */
   constructionRegistrantStaffRecordId?: string;
@@ -176,6 +207,9 @@ export async function POST(request: Request) {
   const targetDayKey = optionalCalendarYmd(body.targetDayKey);
   const slotRecordId = body.slotRecordId?.trim() ?? "";
   const expectedTNumber = body.expectedTNumber?.trim() ?? "";
+  const sourceDisposition = moveSourceDispositionFromBody(
+    body.sourceDisposition,
+  );
   const handlerStaffRecordId =
     body.constructionHandlerStaffRecordId?.trim() ||
     body.constructionRegistrantStaffRecordId?.trim() ||
@@ -631,110 +665,249 @@ export async function POST(request: Request) {
 
     timing.mark("w1-post");
 
-    // ── 3〜5) W2: 移動元を空き枠へ戻す ──────────────────────
-    const keep = buildConstructionSlotKeepFieldIds((key) =>
-      key === "startDate"
-        ? fids.startDate
-        : key === "contractor"
-          ? fids.contractor
-          : resolvedImportKey,
-    );
-    if (keep.unresolved.length > 0) {
-      console.warn(
-        "[api/calendar/move-construction-case] 残す列を解決できないものがあります",
-        JSON.stringify({ unresolved: keep.unresolved }),
-      );
-    }
+    // ── 3〜5) W2: 移動元を片づける ──────────────────────────
+    //
+    // 「削除する」を選び、判定をすべて通ったときだけ消す。
+    // 1つでも外れたら消さずに空き枠へ戻す（従来どおり）。
 
-    const reset = buildConstructionEmptySlotResetPatch({
-      fieldIdsOf: (key) => {
-        switch (key) {
-          case "customerName":
-            // 見出しと環境変数で列が食い違うことがある。両方消す
-            return [resolvedCustomer, fids.title];
-          case "tNumber":
-            return resolvedTNumber;
-          case "housingStatus":
-            return resolvedHousing;
-          case "constructionHandler":
-            return fids.constructionHandler;
+    /**
+     * 削除を選んだときだけ、W2 の直前に**全項目**で1回取り直す。
+     *
+     * 事前検証で読んだ sourceRec は recordFieldsCsv で8列に絞ってあり、
+     * 削除ログ（formatDeletionContent）の材料にならない。絞った列で
+     * 判定すると「読めていないだけ」を「空だ」と取り違えもする。
+     *
+     * この1回で判定と削除ログの両方をまかない、削除を見送ったときは
+     * 同じレコードを空き枠へ戻す側の existingRecord に回す。取得は1回だけ。
+     */
+    let freshSourceRecord: Record<string, unknown> | null = null;
+    if (sourceDisposition === "delete") {
+      try {
+        // CSV を渡さない。全項目でないと削除ログが作れない
+        const row = await fetchRecordById(calAppId, sourceRecordId, readAuth);
+        if (row?.record && typeof row.record === "object") {
+          freshSourceRecord = row.record as Record<string, unknown>;
         }
-      },
-      keepFieldIds: keep.fieldIds,
-    });
-    if (reset.unresolved.length > 0 || reset.keptFieldIds.length > 0) {
-      console.warn(
-        "[api/calendar/move-construction-case] 移動元で空にできない列があります",
-        JSON.stringify({
-          unresolved: reset.unresolved,
-          keptFieldIds: reset.keptFieldIds,
-        }),
-      );
+      } catch (e) {
+        // 読めなかった＝中身が分からない。判定側が not_found で止める
+        console.error(
+          "[api/calendar/move-construction-case] 移動元の再取得に失敗しました",
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+      timing.mark("source-refetch");
     }
 
-    const sourceReset =
-      Object.keys(reset.patch).length > 0
-        ? await resetSourceToEmptySlot({
-            calAppId,
-            sourceRecordId,
-            resolvedCustomer,
-            resolvedImportKey,
-            tNumber,
-            resolvedTNumber,
-            patch: reset.patch,
-            sourceRec,
-            readAuth,
-            writeAuth,
-          })
-        : { ok: false as const, reason: "no-columns" as const };
+    const deleteDecision = decideMoveSourceDeletion({
+      enabled: moveDeletesSourceRecordEnabled(),
+      disposition: sourceDisposition,
+      sourceRecordId,
+      movedRecordId,
+      movedWritten,
+      freshSourceRecord,
+      customerNameFieldId: resolvedCustomer,
+      tNumberFieldId: resolvedTNumber,
+      expectedTNumber: tNumber,
+    });
 
-    timing.mark("w2-write");
+    let sourceDeleted = false;
+    let deleteRefusal: MoveSourceDeleteRefusal | null = deleteDecision.ok
+      ? null
+      : deleteDecision.reason;
 
-    if (sourceReset.ok) {
+    if (deleteDecision.ok && freshSourceRecord) {
+      /**
+       * A-4: 全項目を記録できたときだけ消す。
+       *
+       * ⚠ auditTasks へ入れてはいけない。あちらは最後にまとめて待つ
+       *    ベストエフォートで、記録できたかを確かめる前に消えてしまう。
+       *    削除ログだけは await して ok を見る。
+       */
+      const deletionLog = await recordAuditLog({
+        lineUserId: auth.lineUserId,
+        operation: "delete",
+        targetAppId: calAppId,
+        targetRecordId: sourceRecordId,
+        targetTNumber: tNumber,
+        deletionContent: formatDeletionContent(freshSourceRecord, {
+          labelOf: (fieldId) =>
+            fieldCaptionByUniqueId(constructionFields, fieldId),
+        }),
+      });
+      timing.mark("delete-log");
+
+      if (!deletionLog.ok) {
+        // 記録を残せないものは消さない。空き枠へ戻す側へ落とす
+        console.error(
+          "[api/calendar/move-construction-case] 削除ログを残せないため移動元を削除しません",
+          JSON.stringify({ calAppId, sourceRecordId, error: deletionLog.error }),
+        );
+        deleteRefusal = "log_failed";
+      } else {
+        try {
+          await deleteRecord(calAppId, sourceRecordId, writeAuth);
+          sourceDeleted = true;
+          invalidateCalendarConstructionRecordsCache();
+          invalidateAllCalendarPayloadCache();
+          timing.mark("w2-delete");
+        } catch (e) {
+          /**
+           * 移動先には書けている＝同じ T番号 が2件。空き枠へ戻す側へは
+           * 落とさない。削除ログを書いた直後で、レコードが実在するのに
+           * 削除ログだけある状態になっている。名指しで直させる
+           */
+          console.error(
+            "[api/calendar/move-construction-case] 移動元の削除に失敗しました",
+            e instanceof Error ? e.message : String(e),
+          );
+          await flushAudits();
+          timing.flush({ result: "source-delete-failed", movedTo });
+          return NextResponse.json(
+            {
+              error: buildMoveSourceDeleteFailedMessage({
+                sourceRecordId,
+                sourceDayKey,
+                targetDayKey,
+              }),
+              constructionSaved: true,
+              movedTo,
+              sourceDeleted: false,
+              sourceResetToEmptySlot: false,
+              sourceRecordId,
+              sourceDayKey,
+            },
+            { status: 502 },
+          );
+        }
+      }
+    }
+
+    /** 削除を見送ったことを画面へ伝える一文。通常運転のときは空 */
+    const sourceKeptNotice =
+      deleteRefusal && moveSourceDeleteRefusalIsNotable(deleteRefusal)
+        ? moveSourceKeptInsteadOfDeleteMessage(deleteRefusal)
+        : "";
+
+    if (sourceDeleted) {
       auditTasks.push(
         recordMoveAuditLog({
-        lineUserId: auth.lineUserId,
-        operation: "update",
-        calAppId,
-        recordId: sourceRecordId,
-        tNumber,
-        before: sourceRec,
-        payload: reset.patch,
-        constructionFields,
-        note: `工事日を ${targetDayKey} へ移動し、この枠を空き枠へ戻した`,
-      }));
-      invalidateCalendarConstructionRecordsCache();
-      invalidateAllCalendarPayloadCache();
-    } else {
-      console.error(
-        "[api/calendar/move-construction-case] 移動元を空き枠へ戻せませんでした",
-        JSON.stringify({
+          lineUserId: auth.lineUserId,
+          operation: "update",
           calAppId,
-          sourceRecordId,
-          movedRecordId,
-          reason: sourceReset.reason,
+          recordId: movedRecordId,
+          tNumber,
+          before: null,
+          payload: {},
+          constructionFields,
+          note: `${sourceDayKey || "不明"} のレコード（ID ${sourceRecordId}）を削除して工事日を移動`,
         }),
       );
-      // 監査ログを書き切ってから返す（返した瞬間に実行環境が凍結する）
-      await flushAudits();
-      timing.flush({ result: "source-reset-failed", movedTo });
-      return NextResponse.json(
-        {
-          error: buildMoveSourceResetFailedMessage({
+    } else {
+      // ── 削除しなかった。従来どおり空き枠へ戻す ──────────────
+      const keep = buildConstructionSlotKeepFieldIds((key) =>
+        key === "startDate"
+          ? fids.startDate
+          : key === "contractor"
+            ? fids.contractor
+            : resolvedImportKey,
+      );
+      if (keep.unresolved.length > 0) {
+        console.warn(
+          "[api/calendar/move-construction-case] 残す列を解決できないものがあります",
+          JSON.stringify({ unresolved: keep.unresolved }),
+        );
+      }
+
+      const reset = buildConstructionEmptySlotResetPatch({
+        fieldIdsOf: (key) => {
+          switch (key) {
+            case "customerName":
+              // 見出しと環境変数で列が食い違うことがある。両方消す
+              return [resolvedCustomer, fids.title];
+            case "tNumber":
+              return resolvedTNumber;
+            case "housingStatus":
+              return resolvedHousing;
+            case "constructionHandler":
+              return fids.constructionHandler;
+          }
+        },
+        keepFieldIds: keep.fieldIds,
+      });
+      if (reset.unresolved.length > 0 || reset.keptFieldIds.length > 0) {
+        console.warn(
+          "[api/calendar/move-construction-case] 移動元で空にできない列があります",
+          JSON.stringify({
+            unresolved: reset.unresolved,
+            keptFieldIds: reset.keptFieldIds,
+          }),
+        );
+      }
+
+      const sourceReset =
+        Object.keys(reset.patch).length > 0
+          ? await resetSourceToEmptySlot({
+              calAppId,
+              sourceRecordId,
+              resolvedCustomer,
+              resolvedImportKey,
+              tNumber,
+              resolvedTNumber,
+              patch: reset.patch,
+              sourceRec,
+              readAuth,
+              writeAuth,
+            })
+          : { ok: false as const, reason: "no-columns" as const };
+
+      timing.mark("w2-write");
+
+      if (sourceReset.ok) {
+        auditTasks.push(
+          recordMoveAuditLog({
+          lineUserId: auth.lineUserId,
+          operation: "update",
+          calAppId,
+          recordId: sourceRecordId,
+          tNumber,
+          before: sourceRec,
+          payload: reset.patch,
+          constructionFields,
+          note: `工事日を ${targetDayKey} へ移動し、この枠を空き枠へ戻した`,
+        }));
+        invalidateCalendarConstructionRecordsCache();
+        invalidateAllCalendarPayloadCache();
+      } else {
+        console.error(
+          "[api/calendar/move-construction-case] 移動元を空き枠へ戻せませんでした",
+          JSON.stringify({
+            calAppId,
+            sourceRecordId,
+            movedRecordId,
+            reason: sourceReset.reason,
+          }),
+        );
+        // 監査ログを書き切ってから返す（返した瞬間に実行環境が凍結する）
+        await flushAudits();
+        timing.flush({ result: "source-reset-failed", movedTo });
+        return NextResponse.json(
+          {
+            error: buildMoveSourceResetFailedMessage({
+              sourceRecordId,
+              sourceDayKey,
+              targetDayKey,
+            }),
+            constructionSaved: true,
+            movedTo,
+            sourceDeleted: false,
+            sourceResetToEmptySlot: false,
             sourceRecordId,
             sourceDayKey,
-            targetDayKey,
-          }),
-          constructionSaved: true,
-          movedTo,
-          sourceResetToEmptySlot: false,
-          sourceRecordId,
-          sourceDayKey,
-        },
-        { status: 502 },
-      );
+          },
+          { status: 502 },
+        );
+      }
     }
-
     // ── 6) 後処理（お客様情報の Aki番号・施工予定日はここで更新される）
     const finalized = await finalizeConstructionCalendarSave({
       calAppId,
@@ -759,7 +932,11 @@ export async function POST(request: Request) {
       skipCalendarPatch: true,
       extraResponse: {
         movedTo,
-        sourceResetToEmptySlot: true,
+        // どちらで片づけたかを画面が見分けられるようにする
+        sourceDeleted,
+        sourceResetToEmptySlot: !sourceDeleted,
+        // 削除を選んだのに見送ったときだけ入る（通常運転では空）
+        ...(sourceKeptNotice ? { sourceKeptNotice } : {}),
         sourceRecordId,
         sourceDayKey,
         slotDeleted: false,

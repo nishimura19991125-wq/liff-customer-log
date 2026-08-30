@@ -107,21 +107,32 @@ describe("旧経路は残してある（撤去は 3-4）", () => {
  * を固定する形へ置き換える。増えたことに誰も気づけない状態にはしない。
  */
 describe("物理削除の呼び出し口（案B）", () => {
-  /** deleteRecord を呼んでよい経路。ここを増やすときは必ず理由を書くこと */
+  /**
+   * deleteRecord を呼んでよい経路。ここを増やすときは必ず理由を書くこと。
+   *
+   * 1. assign-case-to-slot   旧経路。使った空き枠を消す
+   * 2. assign-customer-case  案B。既存レコードへ書いたあと空き枠を消す
+   * 3. move-construction-case
+   *    M-4。移動元を空き枠へ戻すと元の日の枠数が減らないため、
+   *    「削除する」を選べるようにした。**既定は残す**で、明示的に
+   *    選ばれ、かつ calendar-move-source-disposition の判定を
+   *    すべて通ったときだけ消す。1〜2 と違い、消すのは
+   *    **お客様名が入っている案件レコード**なので条件は逆向き。
+   */
   const DELETE_ALLOWED = [
     "src/app/api/calendar/assign-case-to-slot/route.ts",
     "src/app/api/calendar/assign-customer-case/route.ts",
+    "src/app/api/calendar/move-construction-case/route.ts",
   ] as const;
 
   /** 削除を1件も増やさない設計にした経路 */
   const DELETE_FORBIDDEN = [
-    "src/app/api/calendar/move-construction-case/route.ts",
     "src/app/api/calendar/fill-empty-slot/route.ts",
     "src/app/api/calendar/schedule-undated-case/route.ts",
     "src/app/api/calendar/create-record/route.ts",
   ] as const;
 
-  it("★ 削除を呼ぶのは許可した2経路だけ", () => {
+  it("★ 削除を呼ぶのは許可した3経路だけ", () => {
     for (const rel of DELETE_FORBIDDEN) {
       const src = read(rel);
       expect(src, `${rel} が deleteRecord を呼んでいる`).not.toContain(
@@ -151,5 +162,57 @@ describe("物理削除の呼び出し口（案B）", () => {
     // 削除は「既存レコードへ書いたあと」の1箇所だけ
     expect(route.split("await deleteRecord(").length - 1).toBe(1);
     expect(route).toContain("deleteEmptySlotAfterExistingWrite");
+  });
+});
+
+/**
+ * M-4 の削除は、案B と同じ作法（A-4）を通ることを固定する。
+ * 消す対象が案件レコードなので、条件が逆向きであることも見る。
+ */
+describe("移動元の削除（M-4）", () => {
+  const ROUTE = "src/app/api/calendar/move-construction-case/route.ts";
+
+  it("★ 判定関数を素通しして消していない", () => {
+    const src = read(ROUTE);
+
+    expect(src).toContain("decideMoveSourceDeletion");
+    expect(src).toContain("if (deleteDecision.ok && freshSourceRecord)");
+  });
+
+  it("★ A-4: 全項目を記録できたときだけ消す", () => {
+    const src = read(ROUTE);
+
+    expect(src).toContain("formatDeletionContent");
+    expect(src).toContain("if (!deletionLog.ok)");
+    // 削除ログはベストエフォートの箱に入れない（ok を見る前に消える）
+    expect(src).not.toContain("auditTasks.push(\n        recordAuditLog(");
+  });
+
+  it("★ 削除の直前に CSV 指定なしで取り直す", () => {
+    const src = read(ROUTE);
+
+    expect(src).toContain(
+      "await fetchRecordById(calAppId, sourceRecordId, readAuth)",
+    );
+  });
+
+  it("★ 止められる形になっている", () => {
+    expect(read(ROUTE)).toContain("moveDeletesSourceRecordEnabled");
+  });
+
+  it("★ 空き枠を消す判定を流用していない（条件が逆向き）", () => {
+    const src = read(ROUTE);
+
+    expect(src).not.toContain("decideEmptySlotDeletion");
+    expect(src).not.toContain("calendar-assign-slot-delete-guard");
+  });
+
+  it("★ 既定は「残す」（送られてこなければ消さない）", () => {
+    const src = read(ROUTE);
+
+    expect(src).toContain("moveSourceDispositionFromBody");
+    expect(read("src/lib/calendar-move-source-disposition.ts")).toContain(
+      'raw.trim() === "delete" ? "delete" : "keep"',
+    );
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   MOVE_CONSTRUCTION_CASE_PATH,
+  buildMoveSourceDeleteFailedMessage,
   buildMoveSourceResetFailedMessage,
   movedSourceClearedColumnsLabel,
   MOVE_CASE_CONFIRM_WARNING,
@@ -311,5 +312,65 @@ describe("新規作成で施工業者を選んだとき", () => {
 
     expect(moveCaseContractorChanges(withoutField)).toBe(false);
     expect(buildMoveCaseConfirmLines(withoutField)).toHaveLength(3);
+  });
+});
+
+/**
+ * 移動元を削除できなかったときの文言（M-4）。
+ *
+ * 空き枠へ戻せなかったときと**状態は同じ**（同じ T番号 が2件）だが、
+ * 直し方が違う。片方の文言をもう片方へ流用しないことを固定する。
+ */
+describe("移動元を削除できなかったとき", () => {
+  const INPUT = {
+    sourceRecordId: "5001",
+    sourceDayKey: "2026-12-01",
+    targetDayKey: "2026-12-05",
+  };
+
+  it("★ レコードIDと日付を名指しする", () => {
+    const msg = buildMoveSourceDeleteFailedMessage(INPUT);
+
+    expect(msg).toContain("レコードID 5001");
+    expect(msg).toContain("2026/12/01");
+    expect(msg).toContain("2026/12/05");
+  });
+
+  it("★ 重複していること・直し方・直すまでどうなるかを書く", () => {
+    const msg = buildMoveSourceDeleteFailedMessage(INPUT);
+
+    expect(msg).toContain("2日に重複して表示されています");
+    expect(msg).toContain("@pocket で2026/12/01のレコードを削除してください");
+    expect(msg).toContain(
+      "削除するまで、この案件の割り当て・キャンセルはエラーになります",
+    );
+  });
+
+  it("★ 移動先への登録が完了していることを先に伝える", () => {
+    const lines = buildMoveSourceDeleteFailedMessage(INPUT).split("\n");
+
+    expect(lines).toHaveLength(4);
+    expect(lines[0]).toContain("移動先（2026/12/05）への登録は完了しました");
+  });
+
+  it("★ 空き枠へ戻せなかったときの文言とは別物（消す列の話をしない）", () => {
+    const del = buildMoveSourceDeleteFailedMessage(INPUT);
+    const reset = buildMoveSourceResetFailedMessage(INPUT);
+
+    expect(del).not.toBe(reset);
+    // 削除の案内に「列を消してください」と書かない
+    expect(del).not.toContain(movedSourceClearedColumnsLabel());
+    expect(reset).toContain(movedSourceClearedColumnsLabel());
+  });
+
+  it("月をまたいでも年が分かる", () => {
+    const msg = buildMoveSourceDeleteFailedMessage({
+      ...INPUT,
+      sourceDayKey: "2026-12-28",
+      targetDayKey: "2027-01-05",
+    });
+
+    expect(msg).toContain("2026/12/28");
+    expect(msg).toContain("2027/01/05");
   });
 });
