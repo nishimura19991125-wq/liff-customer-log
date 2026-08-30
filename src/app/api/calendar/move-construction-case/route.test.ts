@@ -909,26 +909,23 @@ describe("移動元を削除する（M-4）", () => {
 });
 
 /**
- * 速度: 枠の読みを移動元と同じ関数に揃える（C案）。
+ * 枠の読み方と鮮度確認。
  *
- * 直に fetchRecordById を呼ぶと maxRetries 既定5で、429 のたびに
- * 450→900→1800→3600ms 眠る。移動元が使う fetchConstructionRecordRow は
- * maxRetries:1 で、読取キーが2本以上あれば次のキーへ回る。
- * ここで固定するのは**関数が揃っていること**と、
- * **枠の鮮度確認が消えていないこと**。
+ * 移動元と同じ fetchConstructionRecordRow へ揃える案（C案）は見送った。
+ * 認証は同じキーで効果が期待できず、maxRetries が 5 → 1 になるぶん
+ * 一時的な失敗で移動が止まりやすくなるため。ここで固定するのは
+ * **読み方を変えていないこと**と**枠の鮮度確認が消えていないこと**。
  */
-describe("枠の読み方（C案）", () => {
-  it("★ 枠も移動元と同じ関数で読む", () => {
+describe("枠の読み方と鮮度確認", () => {
+  it("★ 再試行の効く読み方のまま（maxRetries を下げていない）", () => {
     const src = readFileSync(
       path.join(process.cwd(), "src/app/api/calendar/move-construction-case/route.ts"),
       "utf8",
     );
 
-    // 枠の読みに fetchConstructionRecordRow を使う
-    expect(src).toContain("const slotRow = await fetchConstructionRecordRow(");
-    // 直に叩く経路を枠のために残していない（削除直前の全項目 GET は別物）
-    expect(src).not.toContain("let slotRow = await fetchRecordById(");
-    expect(src).not.toContain("slot-get-fallback");
+    expect(src).toContain("let slotRow = await fetchRecordById(");
+    // fields 指定が拒否されたときの取り直しも残っている
+    expect(src).toContain("slot-get-fallback");
   });
 
   it("★ 埋まった枠を弾く判定は残っている", async () => {

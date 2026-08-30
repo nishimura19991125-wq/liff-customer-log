@@ -503,31 +503,26 @@ export async function POST(request: Request) {
     let slotContractor = "";
     if (slotRecordId) {
       /**
-       * 移動元と**同じ関数**で読む。
+       * 実測で slot-get が 3.1 秒。1件の GET にしては長すぎるので、
+       * 「fields 指定が拒否されて全項目で取り直しているのか」
+       * 「1往復自体が遅いのか」を分けて出す。
+       * fallback の行が出たら前者、出なければ後者
        *
-       * 実測で slot-get が 3.1 秒、移動元（source-get）が 0.6〜0.8 秒。
-       * 同じアプリの単票 GET で4倍の差がついていた。fields 指定の拒否では
-       * ない（fallback の行が出ていない）ので、違いは読み方そのものにある。
-       *
-       *   直に fetchRecordById   … options なし＝maxRetries 既定5。
-       *                            429 のたびに 450→900→1800→3600ms 眠る。
-       *                            単一キー（CALENDAR_ATPOCKET_API_KEY_1）
-       *   fetchConstructionRecordRow … maxRetries:1（同一キーで粘らない）
-       *                            読取キーが2本以上あればキーを切り替える
-       *
-       * 450+900+1800 = 3150ms が実測の 3130ms とほぼ一致する。429 の記録が
-       * 手元に無いので断定はできないが、この経路で秒を生む仕組みは
-       * 再試行の待ちしかない。移動元と揃えれば、待つ代わりに次のキーへ回る。
-       *
-       * fields 指定が拒否されたときの全項目 GET も、あちらが中で持っている。
+       * ⚠ fetchConstructionRecordRow（移動元と同じ関数）へ揃える案は
+       *    見送った。認証は同じキーで効果が期待できないうえ、
+       *    maxRetries が 5 → 1 になり、一時的な失敗で移動が止まりやすくなる。
        */
-      const slotRow = await fetchConstructionRecordRow(
+      let slotRow = await fetchRecordById(
         calAppId,
         slotRecordId,
         readAuth,
         recordFieldsCsv,
       );
       timing.mark("slot-get");
+      if (!slotRow?.record) {
+        slotRow = await fetchRecordById(calAppId, slotRecordId, readAuth);
+        timing.mark("slot-get-fallback");
+      }
       if (!slotRow?.record || typeof slotRow.record !== "object") {
         return NextResponse.json(
           { error: "移動先の空き枠レコードが見つかりません" },
