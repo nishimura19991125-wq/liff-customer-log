@@ -510,11 +510,79 @@ describe("無音で失敗しない", () => {
 
   it("★ 理由を出したら確認画面は閉じる（押し続けさせない）", () => {
     const src = read(PANEL);
-    const block = src.slice(
-      src.indexOf("if (confirmBlockedBy) {"),
-      src.indexOf("if (confirmBlockedBy) {") + 300,
+
+    // 閉じる責任は failWith に寄せた（覆いの後ろに出しても見えないため）
+    expect(src).toContain(
+      "failWith(moveBlockedReasonMessage(confirmBlockedBy))",
+    );
+    const helper = src.slice(
+      src.indexOf("function failWith(text: string) {"),
+      src.indexOf("function failWith(text: string) {") + 200,
+    );
+    expect(helper).toContain("setConfirming(false)");
+  });
+});
+
+/**
+ * 失敗が利用者に見えること。
+ *
+ * feedback はパネル側に描画される。確認画面を開いたままだと、その上に
+ * 敷かれる bg-slate-900/50 の覆いに隠れて**一切見えない**。実機で
+ * 「押しても何も起きない」に見えていたのはこれで、実際には失敗の理由が
+ * 背後に出続けていた（診断モードで click まで届いていることを確認済み）。
+ */
+describe("失敗が見えること", () => {
+  it("★ 失敗の伝え方が1本化されている", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("function failWith(text: string) {");
+    // 確認画面を閉じてから出す
+    const helper = src.slice(
+      src.indexOf("function failWith(text: string) {"),
+      src.indexOf("function failWith(text: string) {") + 200,
+    );
+    expect(helper).toContain("setConfirming(false);");
+    expect(helper).toContain('setFeedback({ kind: "err", text });');
+  });
+
+  it("★ handleMove の中に、閉じずに出す失敗が残っていない", () => {
+    const src = read(PANEL);
+    const body = src.slice(
+      src.indexOf("async function handleMove() {"),
+      src.indexOf("  return (\n    <div className=\"border-t"),
     );
 
-    expect(block).toContain("setConfirming(false)");
+    expect(body).not.toContain('kind: "err"');
+  });
+
+  it("★ 失敗の経路がすべて failWith を通る", () => {
+    const src = read(PANEL);
+
+    // 実行できない / トークン切れ / 枠の取り合い / HTTP / 反映失敗 / 例外
+    expect(src).toContain("failWith(moveBlockedReasonMessage(confirmBlockedBy))");
+    expect(src).toContain("ログインの有効期限が切れました");
+    expect(src).toContain("他の方が先にこの空き枠を使いました");
+    expect(src).toContain("failWith(\n          data.error?.trim() ||");
+    expect(src).toContain("failWith(calendarSubmitCatchMessage(e))");
+  });
+
+  it("★ セッション切れ（401）でも確認画面を閉じる", () => {
+    const src = read(PANEL);
+    // 同じ判定が月の取得側にもあるので、handleMove の中だけを見る
+    const move = src.slice(src.indexOf("async function handleMove() {"));
+    const block = move.slice(
+      move.indexOf("isLineSessionExpiredPayload(data)) {"),
+      move.indexOf("isLineSessionExpiredPayload(data)) {") + 300,
+    );
+
+    expect(block).toContain("setConfirming(false);");
+    expect(block).toContain("onSessionExpired?.();");
+  });
+
+  it("★ 成功したときは今までどおり閉じて反映する", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("setConfirming(false);\n      setOpen(false);");
+    expect(src).toContain("reset();");
   });
 });

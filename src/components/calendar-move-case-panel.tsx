@@ -329,6 +329,22 @@ export function CalendarMoveCasePanel({
   });
   const canConfirm = confirmBlockedBy === null;
 
+  /**
+   * 失敗を伝える。**確認画面を閉じてから出す。**
+   *
+   * ⚠ feedback はパネル側（この関数の下、ダイアログより手前の行）に
+   *    描画される。確認画面を開いたままだと、その上に敷かれる
+   *    bg-slate-900/50 の覆いに隠れて**利用者には一切見えない**。
+   *    実機で「押しても何も起きない」に見えていたのはこれで、
+   *    実際には失敗の理由が背後に出続けていた。
+   *
+   *    どの失敗も「選び直してもらう」しかないので、閉じて構わない。
+   */
+  function failWith(text: string) {
+    setConfirming(false);
+    setFeedback({ kind: "err", text });
+  }
+
   async function handleMove() {
     /**
      * ⚠ **黙って戻らないこと。**
@@ -339,11 +355,7 @@ export function CalendarMoveCasePanel({
      * サーバのログにも何も残らなかった。原因を誰も追えない。
      */
     if (confirmBlockedBy) {
-      setConfirming(false);
-      setFeedback({
-        kind: "err",
-        text: moveBlockedReasonMessage(confirmBlockedBy),
-      });
+      failWith(moveBlockedReasonMessage(confirmBlockedBy));
       return;
     }
     setSubmitting(true);
@@ -355,10 +367,9 @@ export function CalendarMoveCasePanel({
       );
       if (!token) {
         // onSessionExpired は呼ばれているが、この画面にも理由を残す
-        setFeedback({
-          kind: "err",
-          text: "ログインの有効期限が切れました。画面を更新してからもう一度お試しください。",
-        });
+        failWith(
+          "ログインの有効期限が切れました。画面を更新してからもう一度お試しください。",
+        );
         return;
       }
 
@@ -403,15 +414,16 @@ export function CalendarMoveCasePanel({
 
       if (!res.ok) {
         if (res.status === 401 && isLineSessionExpiredPayload(data)) {
+          // 呼び出し側の案内も覆いの後ろに出るので、確認画面は閉じる
+          setConfirming(false);
           onSessionExpired?.();
           return;
         }
         if (isCalendarSlotConflictApiResponse(res.status, data)) {
           window.alert(CALENDAR_SLOT_CONFLICT_MESSAGE);
-          setFeedback({
-            kind: "err",
-            text: "他の方が先にこの空き枠を使いました。日付を選び直してください。",
-          });
+          failWith(
+            "他の方が先にこの空き枠を使いました。日付を選び直してください。",
+          );
           return;
         }
         /**
@@ -419,12 +431,10 @@ export function CalendarMoveCasePanel({
          * レコードIDと日付を名指しした案内を返す。**そのまま出す**。
          * 要約すると @pocket で直す対象が分からなくなる
          */
-        setFeedback({
-          kind: "err",
-          text:
-            data.error?.trim() ||
+        failWith(
+          data.error?.trim() ||
             `工事日の変更に失敗しました（HTTP ${res.status}）。しばらくしてから再度お試しください。`,
-        });
+        );
         if (data.constructionSaved) {
           // 片側は書けている。カレンダーを最新にしてから読ませる
           try {
@@ -460,7 +470,7 @@ export function CalendarMoveCasePanel({
           await onSaved(null);
         }
       } catch (e) {
-        setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
+        failWith(calendarSubmitCatchMessage(e));
         return;
       }
       const movedWhere =
@@ -481,7 +491,7 @@ export function CalendarMoveCasePanel({
 ${kept}` : ""}`,
       });
     } catch (e) {
-      setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
+      failWith(calendarSubmitCatchMessage(e));
     } finally {
       setSubmitting(false);
     }
