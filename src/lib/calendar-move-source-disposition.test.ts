@@ -21,24 +21,26 @@ import {
 const NAME_ID = "field-name";
 const T_ID = "field-t";
 
+type DecideInput = Parameters<typeof decideMoveSourceDeletion>[0];
+
 /** すべての条件を満たした入力。各テストは1つだけ崩す */
-const OK = {
+const OK: DecideInput = {
   enabled: true,
-  disposition: "delete" as const,
+  disposition: "delete",
   sourceRecordId: "5001",
   movedRecordId: "5002",
   movedWritten: true,
   freshSourceRecord: {
     [NAME_ID]: "山田 太郎",
     [T_ID]: "T00003420",
-  } as Record<string, unknown>,
+  },
   customerNameFieldId: NAME_ID,
   tNumberFieldId: T_ID,
   expectedTNumber: "T00003420",
 };
 
 function refuse(
-  over: Partial<typeof OK>,
+  over: Partial<DecideInput>,
 ): { ok: false; reason: MoveSourceDeleteRefusal } {
   const out = decideMoveSourceDeletion({ ...OK, ...over });
   if (out.ok) throw new Error("削除を許可してしまった");
