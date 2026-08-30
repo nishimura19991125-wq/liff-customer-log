@@ -6,11 +6,14 @@ import {
   buildMoveSourceResetFailedMessage,
   movedSourceClearedColumnsLabel,
   MOVE_CASE_CONFIRM_WARNING,
+  MOVE_CASE_DELETE_SOURCE_WARNING,
   buildMoveCaseConfirmLines,
   buildMoveCaseConfirmSubject,
   buildMoveCaseConfirmTitle,
   moveCaseConfirmActionLabel,
+  moveCaseConfirmWarning,
   moveCaseContractorChanges,
+  moveCaseDeletesSource,
   type MoveCaseConfirmInput,
 } from "@/lib/calendar-move-case-messages";
 import { CONSTRUCTION_SLOT_RESET_FIELDS } from "@/lib/calendar-empty-slot-reset";
@@ -372,5 +375,90 @@ describe("移動元を削除できなかったとき", () => {
 
     expect(msg).toContain("2026/12/28");
     expect(msg).toContain("2027/01/05");
+  });
+});
+
+/**
+ * 移動元を削除する選択（M-4）の確認画面。
+ *
+ * 元に戻せない操作なので、固定するのは
+ *   ・既定（残す）の文言が1文字も変わらないこと
+ *   ・削除を選んだときだけ、消えること・失うものが出ること
+ */
+describe("移動元を削除するとき", () => {
+  const KEEP: MoveCaseConfirmInput = {
+    customerName: "山田 太郎",
+    tNumber: "T00003420",
+    sourceDayKey: "2026-12-01",
+    targetDayKey: "2026-12-05",
+    sourceContractor: "△△工務店",
+    targetSlotContractor: "◯◯建設",
+  };
+  const DELETE: MoveCaseConfirmInput = {
+    ...KEEP,
+    sourceDisposition: "delete",
+  };
+
+  it("★ 省略時は「残す」（これまでの呼び出しが変わらない）", () => {
+    expect(moveCaseDeletesSource(KEEP)).toBe(false);
+    expect(moveCaseDeletesSource({ ...KEEP, sourceDisposition: "keep" })).toBe(
+      false,
+    );
+    expect(moveCaseDeletesSource(DELETE)).toBe(true);
+  });
+
+  it("★ 「残す」の文言はこれまでと同じ", () => {
+    expect(buildMoveCaseConfirmLines(KEEP)).toEqual([
+      "2026/12/05 の空き枠（施工会社: ◯◯建設）にこの案件を書き込みます",
+      "2026/12/01 のレコードは顧客情報を消して、空き枠として残します（削除しません）",
+      "施工会社が △△工務店 → ◯◯建設 に変わります",
+      "Aki番号 が移動先の空き枠のものに入れ替わります（お客様情報にも反映）",
+    ]);
+    expect(moveCaseConfirmWarning(KEEP)).toBe(MOVE_CASE_CONFIRM_WARNING);
+    expect(moveCaseConfirmActionLabel(KEEP)).toBe("2026/12/05 へ移動する");
+  });
+
+  it("★ 削除を選ぶと、消えることと枠が減ることを出す", () => {
+    expect(buildMoveCaseConfirmLines(DELETE)).toEqual([
+      "2026/12/05 の空き枠（施工会社: ◯◯建設）にこの案件を書き込みます",
+      "2026/12/01 のレコードを削除します（元に戻せません）",
+      "2026/12/01 の空き枠が1つ減ります",
+      "施工会社が △△工務店 → ◯◯建設 に変わります",
+      "Aki番号 が移動先の空き枠のものに入れ替わります（お客様情報にも反映）",
+    ]);
+  });
+
+  it("★ 削除のときは「空き枠として残します」と言わない", () => {
+    const lines = buildMoveCaseConfirmLines(DELETE);
+
+    expect(lines.some((l) => l.includes("空き枠として残します"))).toBe(false);
+    expect(lines.some((l) => l.includes("削除しません"))).toBe(false);
+  });
+
+  it("★ 警告で、転記されない項目が失われることを名指しする", () => {
+    const w = moveCaseConfirmWarning(DELETE);
+
+    expect(w).toBe(MOVE_CASE_DELETE_SOURCE_WARNING);
+    expect(w).toContain("元に戻せません");
+    expect(w).toContain("移動先へ転記されない項目");
+    expect(w).toContain("終了日・メモ");
+    expect(w).toContain("2日に重複");
+  });
+
+  it("★ 実行ボタンにも削除することを出す", () => {
+    expect(moveCaseConfirmActionLabel(DELETE)).toBe(
+      "2026/12/05 へ移動して移動元を削除する",
+    );
+  });
+
+  it("★ 新規作成で移すときも削除の文言になる", () => {
+    const lines = buildMoveCaseConfirmLines({
+      ...DELETE,
+      targetSlotContractor: null,
+    });
+
+    expect(lines[0]).toContain("新しいレコードを作成します");
+    expect(lines[1]).toBe("2026/12/01 のレコードを削除します（元に戻せません）");
+    expect(lines[2]).toBe("2026/12/01 の空き枠が1つ減ります");
   });
 });

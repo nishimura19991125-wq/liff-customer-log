@@ -34,6 +34,13 @@ export type MoveConstructionCaseResponse = {
   recordId?: string;
   /** 移動元を空き枠へ戻せたか */
   sourceResetToEmptySlot?: boolean;
+  /** 移動元を削除したか（M-4）。keep のときは false */
+  sourceDeleted?: boolean;
+  /**
+   * 削除を選んだのに見送ったときの理由（M-4）。
+   * 移動そのものは成功しているので、成功の文言に添えて出す
+   */
+  sourceKeptNotice?: string;
   /** 戻せなかったときに、利用者が @pocket で直す対象 */
   sourceRecordId?: string;
   sourceDayKey?: string;
@@ -126,7 +133,17 @@ export type MoveCaseConfirmInput = {
    *    「空き枠に書き込みます」に化ける。施工会社が変わるかの判定にだけ効かせる
    */
   newRecordContractor?: string | null;
+  /**
+   * 移動元をどうするか（M-4）。省略時は keep（従来どおり空き枠へ戻す）。
+   * delete のときだけ、実行される内容と警告が差し替わる
+   */
+  sourceDisposition?: "keep" | "delete";
 };
+
+/** 移動元を削除する選択になっているか */
+export function moveCaseDeletesSource(input: MoveCaseConfirmInput): boolean {
+  return input.sourceDisposition === "delete";
+}
 
 /** 移動後の施工会社。枠を使うならその枠、新規作成なら画面で選んだもの */
 function targetContractorOf(input: MoveCaseConfirmInput): string | null {
@@ -194,9 +211,14 @@ export function buildMoveCaseConfirmLines(
       ? `${to} の空き枠（施工会社: ${input.targetSlotContractor?.trim() || "未設定"}）にこの案件を書き込みます`
       : `${to} に新しいレコードを作成します（Aki番号 は新規採番）`,
   );
-  lines.push(
-    `${from} のレコードは顧客情報を消して、空き枠として残します（削除しません）`,
-  );
+  if (moveCaseDeletesSource(input)) {
+    lines.push(`${from} のレコードを削除します（元に戻せません）`);
+    lines.push(`${from} の空き枠が1つ減ります`);
+  } else {
+    lines.push(
+      `${from} のレコードは顧客情報を消して、空き枠として残します（削除しません）`,
+    );
+  }
   if (moveCaseContractorChanges(input)) {
     lines.push(
       `施工会社が ${input.sourceContractor.trim() || "未設定"} → ${targetContractorOf(input)?.trim()} に変わります`,
@@ -214,8 +236,31 @@ export function buildMoveCaseConfirmLines(
 export const MOVE_CASE_CONFIRM_WARNING =
   "この操作は元に戻せません。途中で失敗した場合、案件が2日に重複して表示されることがあります。その場合は画面の案内に従ってください。";
 
+/**
+ * 移動元を削除するときの警告。
+ *
+ * ■ 失うものを名指しする
+ * buildConstructionFillPatch が移動先へ書くのは最大11列で、終了日・メモ
+ * などは転記されない。空き枠として残していたときはレコード上に残って
+ * いたが、削除すると唯一の写しが消える。選ぶ人がそれを知らないまま
+ * 選べる状態にしない。
+ */
+export const MOVE_CASE_DELETE_SOURCE_WARNING =
+  "この操作は元に戻せません。移動元のレコードは削除され、移動先へ転記されない項目（終了日・メモなど）は失われます。途中で失敗した場合、案件が2日に重複して表示されることがあります。その場合は画面の案内に従ってください。";
+
+/** 確認画面に出す警告。移動元の扱いで文言が変わる */
+export function moveCaseConfirmWarning(input: MoveCaseConfirmInput): string {
+  return moveCaseDeletesSource(input)
+    ? MOVE_CASE_DELETE_SOURCE_WARNING
+    : MOVE_CASE_CONFIRM_WARNING;
+}
+
 export function moveCaseConfirmActionLabel(
   input: MoveCaseConfirmInput,
 ): string {
-  return `${ymd(input.targetDayKey)} へ移動する`;
+  const to = ymd(input.targetDayKey);
+  // 押す直前に、消えることをもう一度出す
+  return moveCaseDeletesSource(input)
+    ? `${to} へ移動して移動元を削除する`
+    : `${to} へ移動する`;
 }

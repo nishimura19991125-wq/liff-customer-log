@@ -13,12 +13,12 @@ import type {
   CalendarRecordMonthPatch,
 } from "@/lib/calendar-api-types";
 import {
-  MOVE_CASE_CONFIRM_WARNING,
   MOVE_CONSTRUCTION_CASE_PATH,
   buildMoveCaseConfirmLines,
   buildMoveCaseConfirmSubject,
   buildMoveCaseConfirmTitle,
   moveCaseConfirmActionLabel,
+  moveCaseConfirmWarning,
   type MoveCaseConfirmInput,
   type MoveConstructionCaseResponse,
 } from "@/lib/calendar-move-case-messages";
@@ -130,6 +130,13 @@ export function CalendarMoveCasePanel({
   const [slotChoice, setSlotChoice] = useState(MOVE_SLOT_CHOICE_NONE);
   /** 新規作成のときに選ぶ施工業者。空き枠を選んだときは使わない */
   const [newContractor, setNewContractor] = useState("");
+  /**
+   * 移動元をどうするか（M-4）。**既定は「残す」**。
+   * 削除は元に戻せないので、確認画面で明示的に選ばれたときだけ送る
+   */
+  const [sourceDisposition, setSourceDisposition] = useState<
+    "keep" | "delete"
+  >("keep");
   const [selectedHandlerStaffId, setSelectedHandlerStaffId] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -168,6 +175,7 @@ export function CalendarMoveCasePanel({
     setTargetDayKey("");
     setSlotChoice(MOVE_SLOT_CHOICE_NONE);
     setNewContractor("");
+    setSourceDisposition("keep");
     setSelectedHandlerStaffId("");
     setConfirming(false);
     setLoadedMonth(null);
@@ -290,6 +298,7 @@ export function CalendarMoveCasePanel({
     targetSlotContractor: selectedSlot ? selectedSlot.contractorName : null,
     // 新規作成のときだけ。枠を選んだ側の分岐には混ぜない
     newRecordContractor: choosingNew ? newContractor.trim() || null : null,
+    sourceDisposition,
   };
 
   const canConfirm = canConfirmMoveCase({
@@ -327,6 +336,10 @@ export function CalendarMoveCasePanel({
           // 新規作成で選んだ施工業者。枠を選んだときは枠の値が優先される
           ...(choosingNew && newContractor.trim()
             ? { contractor: newContractor.trim() }
+            : {}),
+          // 既定（残す）では送らない。サーバ側も省略を keep として読む
+          ...(sourceDisposition === "delete"
+            ? { sourceDisposition: "delete" }
             : {}),
           ...(item.tNumber?.trim()
             ? { expectedTNumber: item.tNumber.trim() }
@@ -411,12 +424,22 @@ export function CalendarMoveCasePanel({
         setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
         return;
       }
+      const movedWhere =
+        data.movedTo === "new"
+          ? `${formatDisplayYmd(movedDayKey)} に新しいレコードを作成しました。`
+          : `${formatDisplayYmd(movedDayKey)} の空き枠へ移動しました。`;
+      /**
+       * 移動元をどう片づけたかは**サーバの結果で言う**。画面の選択で言うと、
+       * 削除を選んだのに判定で見送られた場合に嘘になる
+       */
+      const sourceWhat = data.sourceDeleted
+        ? "元のレコードは削除しました。"
+        : "元の枠は空き枠に戻しています。";
+      const kept = data.sourceKeptNotice?.trim();
       setFeedback({
         kind: "ok",
-        text:
-          data.movedTo === "new"
-            ? `${formatDisplayYmd(targetDayKey)} に新しいレコードを作成しました。元の枠は空き枠に戻しています。`
-            : `${formatDisplayYmd(targetDayKey)} の空き枠へ移動しました。元の枠は空き枠に戻しています。`,
+        text: `${movedWhere}${sourceWhat}${kept ? `
+${kept}` : ""}`,
       });
     } catch (e) {
       setFeedback({ kind: "err", text: calendarSubmitCatchMessage(e) });
@@ -675,12 +698,26 @@ export function CalendarMoveCasePanel({
         open={confirming}
         input={confirmInput}
         busy={submitting}
+        sourceDisposition={sourceDisposition}
+        onSourceDispositionChange={setSourceDisposition}
         onConfirm={() => void handleMove()}
         onCancel={() => setConfirming(false)}
       />
     </div>
   );
 }
+
+/**
+ * 移動元の扱い。**「残す」を先に置き、既定にする。**
+ * 削除は元に戻せないので、並びでも既定でも消す側へ倒さない。
+ */
+const SOURCE_DISPOSITION_CHOICES: readonly {
+  value: "keep" | "delete";
+  label: string;
+}[] = [
+  { value: "keep", label: "空き枠として残す（従来どおり）" },
+  { value: "delete", label: "削除する" },
+];
 
 /**
  * 移動の確認。元に戻せない操作なので、実行される内容を具体的に並べる。
@@ -690,12 +727,16 @@ export function CalendarMoveCaseConfirmDialog({
   open,
   input,
   busy,
+  sourceDisposition,
+  onSourceDispositionChange,
   onConfirm,
   onCancel,
 }: {
   open: boolean;
   input: MoveCaseConfirmInput;
   busy: boolean;
+  sourceDisposition: "keep" | "delete";
+  onSourceDispositionChange: (next: "keep" | "delete") => void;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -752,6 +793,8 @@ export function CalendarMoveCaseConfirmDialog({
   if (!open) return null;
 
   const subject = buildMoveCaseConfirmSubject(input);
+  const sourceYmd =
+    formatDisplayYmd(input.sourceDayKey) || input.sourceDayKey.trim();
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6 sm:items-center">
@@ -775,6 +818,40 @@ export function CalendarMoveCaseConfirmDialog({
           </p>
         ) : null}
 
+        {/**
+         * 移動元をどうするか。**箇条書きより先に置く。**
+         * この選択が「実行される内容」を書き換えるので、原因が結果より
+         * 先に来る順にする
+         */}
+        <fieldset className="mt-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
+          <legend className="px-1 text-[12px] font-bold text-slate-700">
+            移動元（{sourceYmd}）のレコードをどうしますか？
+          </legend>
+          <div className="mt-1 space-y-1.5">
+            {SOURCE_DISPOSITION_CHOICES.map((choice) => (
+              <label
+                key={choice.value}
+                className={`flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] transition ${
+                  sourceDisposition === choice.value
+                    ? "bg-white font-semibold text-slate-900 ring-1 ring-slate-300"
+                    : "text-slate-700"
+                }`}
+              >
+                <input
+                  type="radio"
+                  className="h-4 w-4 shrink-0 accent-slate-700"
+                  name="calendar-move-source-disposition"
+                  value={choice.value}
+                  checked={sourceDisposition === choice.value}
+                  disabled={busy}
+                  onChange={() => onSourceDispositionChange(choice.value)}
+                />
+                <span className="leading-snug">{choice.label}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
         <p className="mt-3 text-[12px] font-bold text-slate-700">
           実行される内容
         </p>
@@ -785,7 +862,7 @@ export function CalendarMoveCaseConfirmDialog({
         </ul>
 
         <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-amber-900 ring-1 ring-amber-100">
-          ⚠ {MOVE_CASE_CONFIRM_WARNING}
+          ⚠ {moveCaseConfirmWarning(input)}
         </p>
 
         <div className="mt-4 flex flex-col gap-2">

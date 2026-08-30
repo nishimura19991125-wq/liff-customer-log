@@ -96,7 +96,8 @@ describe("確認画面（M-3）", () => {
     const src = read(PANEL);
 
     expect(src).toContain("buildMoveCaseConfirmLines");
-    expect(src).toContain("MOVE_CASE_CONFIRM_WARNING");
+    // M-4 で警告が移動元の扱いによって変わるため、定数から関数になった
+    expect(src).toContain("moveCaseConfirmWarning");
   });
 
   it("★ サーバのエラーはそのまま出す（要約しない）", () => {
@@ -335,5 +336,74 @@ describe("実行ボタンの制御", () => {
 
     expect(src).toContain("slotsLoading ||");
     expect(src).toContain("Boolean(slotsError)");
+  });
+});
+
+/**
+ * 移動元の扱いを確認画面で選ばせる（M-4）。
+ *
+ * 元に戻せない操作なので、**既定が「残す」から動いていないこと**を
+ * 画面側でも固定する。判定と文言は lib のテストが持つ。
+ */
+describe("移動元の扱い（M-4）", () => {
+  it("★ 確認画面でラジオで選ばせる", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("SOURCE_DISPOSITION_CHOICES");
+    expect(src).toContain("空き枠として残す（従来どおり）");
+    expect(src).toContain("削除する");
+    expect(src).toContain('name="calendar-move-source-disposition"');
+  });
+
+  it("★ 「残す」が先頭で既定", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain('useState<\n    "keep" | "delete"\n  >("keep")');
+    // 並びも「残す」が先
+    const keepAt = src.indexOf('{ value: "keep"');
+    const deleteAt = src.indexOf('{ value: "delete"');
+    expect(keepAt).toBeGreaterThan(-1);
+    expect(keepAt).toBeLessThan(deleteAt);
+  });
+
+  it("★ 選択は「実行される内容」より前に出す（原因が結果より先）", () => {
+    const src = read(PANEL);
+
+    expect(src.indexOf("SOURCE_DISPOSITION_CHOICES.map")).toBeLessThan(
+      src.indexOf("buildMoveCaseConfirmLines(input).map"),
+    );
+  });
+
+  it("★ 削除を選んだときだけ送る（既定では body に入れない）", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain('sourceDisposition === "delete"');
+    expect(src).toContain('{ sourceDisposition: "delete" }');
+  });
+
+  it("★ パネルを閉じたら「残す」に戻る", () => {
+    const src = read(PANEL);
+    const reset = src.slice(
+      src.indexOf("function reset() {"),
+      src.indexOf("function reset() {") + 300,
+    );
+
+    expect(reset).toContain('setSourceDisposition("keep")');
+  });
+
+  it("★ 警告の文言も選択で切り替える（画面に直書きしない）", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("moveCaseConfirmWarning(input)");
+    // 定数を直に出していたころの書き方を残さない
+    expect(src).not.toContain("{MOVE_CASE_CONFIRM_WARNING}");
+  });
+
+  it("★ 片づけ方はサーバの結果で言う（画面の選択で言わない）", () => {
+    const src = read(PANEL);
+
+    // 削除を選んでも判定で見送られることがある。選択で言うと嘘になる
+    expect(src).toContain("data.sourceDeleted");
+    expect(src).toContain("data.sourceKeptNotice");
   });
 });
