@@ -157,6 +157,7 @@ export async function POST(request: Request) {
    * カレンダーには出ないが、これは意図した動作
    */
   if (!scheduledStartDate) {
+    // 監査ログを走らせたまま返してくるので、この経路でも必ず合流させる
     const sync = await syncConstructionRecordToCustomerInfoApp({
       calAppId,
       customerInfoOnly: true,
@@ -178,6 +179,9 @@ export async function POST(request: Request) {
         { status: 503 },
       );
     }
+
+    // 返した瞬間に実行環境が凍結する。監査ログを書き切ってから返す
+    await sync.pendingAudit;
 
     return NextResponse.json({
       ok: true,

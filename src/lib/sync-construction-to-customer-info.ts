@@ -78,6 +78,19 @@ export type CustomerInfoSyncResult =
       tNumber?: string;
       /** Dropbox フォルダを用意できなかったときの画面向け警告（E-5） */
       dropboxWarning?: string;
+      /**
+       * まだ書き終えていない監査ログ。**呼び出し側は必ず await すること。**
+       *
+       * 監査ログの書き込み（実測 1.2 秒）と、呼び出し側が続けてやる
+       * T番号 の書き戻し（実測 0.28 秒）は、別のアプリの別のレコードを
+       * 触るだけで順序に意味が無い。直列に待つ理由が無いので、走らせた
+       * まま返して呼び出し側で合流させる。
+       *
+       * ⚠ recordCustomerInfoSyncAuditLog は中で catch していて reject
+       *    しないが、**await を省いてよいという意味ではない**。返す前に
+       *    待たないと、実行環境が凍結して記録が落ちる。
+       */
+      pendingAudit?: Promise<void>;
     }
   | { kind: "failed"; error: string };
 
@@ -1094,7 +1107,8 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       );
     }
 
-    await recordCustomerInfoSyncAuditLog({
+    // 走らせたまま返す。合流は呼び出し側（finalize）が行う
+    const pendingAudit = recordCustomerInfoSyncAuditLog({
       operation: "update",
       lineUserId: opts.lineUserId ?? "",
       customerAppId,
@@ -1104,10 +1118,10 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
       payload: pocketPayload,
       customerFields,
     });
-    timing.mark("audit");
     return {
       kind: "synced",
       customerInfoRecordId: existingId,
+      pendingAudit,
       ...(customerTNumber ? { tNumber: customerTNumber } : {}),
       ...(dropboxWarning ? { dropboxWarning } : {}),
     };
@@ -1176,7 +1190,8 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     }
   }
 
-  await recordCustomerInfoSyncAuditLog({
+  // 走らせたまま返す。合流は呼び出し側（finalize）が行う
+  const pendingAudit = recordCustomerInfoSyncAuditLog({
     operation: "create",
     lineUserId: opts.lineUserId ?? "",
     customerAppId,
@@ -1186,10 +1201,10 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     payload: pocketPayload,
     customerFields,
   });
-  timing.mark("audit");
 
   return {
     kind: "synced",
+    pendingAudit,
     ...(customerInfoRecordId ? { customerInfoRecordId } : {}),
     ...(customerTNumber ? { tNumber: customerTNumber } : {}),
     ...(dropboxWarning ? { dropboxWarning } : {}),

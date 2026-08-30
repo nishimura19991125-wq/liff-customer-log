@@ -188,3 +188,103 @@ describe("カレンダーパッチの組み立て", () => {
     expect(body.calendarPatch).toBeUndefined();
   });
 });
+
+/**
+ * E案: 連携の監査ログと T番号 の書き戻しを並走させる。
+ *
+ * 別のアプリの別のレコードを触るだけで順序に意味が無い。
+ * ここで固定するのは**必ず書き切ってから返すこと**と、
+ * 書き戻しを監査ログの完了まで待たないこと。
+ */
+describe("監査ログの合流（E案）", () => {
+  /** resolve を外から呼べる Promise */
+  function deferred() {
+    let done = false;
+    let release: () => void = () => {};
+    const promise = new Promise<void>((r) => {
+      release = () => {
+        done = true;
+        r();
+      };
+    });
+    return { promise, release, isDone: () => done };
+  }
+
+  it("★ 監査ログを書き切ってから返す", async () => {
+    const audit = deferred();
+    h.syncResult = {
+      kind: "synced",
+      tNumber: "T00003420",
+      pendingAudit: audit.promise,
+    };
+
+    let finished = false;
+    const running = finalizeConstructionCalendarSave({
+      ...BASE,
+      constructionUniqueKey: "T00003420",
+      constructionRecordTNumber: "",
+    }).then((res) => {
+      finished = true;
+      return res;
+    });
+
+    // 監査ログが終わるまで finalize は返らない
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(finished).toBe(false);
+
+    audit.release();
+    await running;
+    expect(finished).toBe(true);
+    expect(audit.isDone()).toBe(true);
+  });
+
+  it("★ 書き戻しは監査ログの完了を待たない（並走している）", async () => {
+    const audit = deferred();
+    h.syncResult = {
+      kind: "synced",
+      tNumber: "T00003420",
+      pendingAudit: audit.promise,
+    };
+
+    const running = finalizeConstructionCalendarSave({
+      ...BASE,
+      constructionUniqueKey: "T00003420",
+      constructionRecordTNumber: "",
+    });
+
+    // 監査ログを止めたままでも、書き戻しは進んでいる
+    await vi.waitFor(() => expect(h.writes).toHaveLength(1));
+    expect(audit.isDone()).toBe(false);
+
+    audit.release();
+    await running;
+  });
+
+  it("★ 連携が監査ログを返さなくても落ちない（後方互換）", async () => {
+    h.syncResult = { kind: "synced", tNumber: "T00003420" };
+
+    const res = await finalizeConstructionCalendarSave({
+      ...BASE,
+      constructionUniqueKey: "T00003420",
+      constructionRecordTNumber: "",
+    });
+
+    expect(res.status).toBe(200);
+    expect(h.writes).toHaveLength(1);
+  });
+
+  it("★ 連携が skipped でも落ちない", async () => {
+    h.syncResult = { kind: "skipped" };
+
+    const res = await finalizeConstructionCalendarSave({
+      ...BASE,
+      constructionUniqueKey: "T00003420",
+      constructionRecordTNumber: "",
+    });
+
+    expect(res.status).toBe(200);
+    // 書き戻す T番号 が無いので書かない
+    expect(h.writes).toHaveLength(0);
+  });
+});

@@ -127,6 +127,16 @@ export async function finalizeConstructionCalendarSave(opts: {
     opts.constructionRecordTNumber === undefined
       ? uniqueKey
       : (opts.constructionRecordTNumber?.trim() || "");
+  /**
+   * 連携が走らせたままの監査ログ。**必ずここで合流させる。**
+   *
+   * 監査ログ（実測 1.2 秒）と下の T番号 書き戻し（0.28 秒）は、
+   * 別のアプリの別のレコードを触るだけで順序に意味が無い。書き戻しの
+   * 往復ぶんを監査ログの裏に隠す。
+   */
+  const pendingAudit =
+    customerSync.kind === "synced" ? customerSync.pendingAudit : undefined;
+
   if (recordId && syncedTNumber && syncedTNumber !== currentRecordTNumber) {
     const tNumberFieldId = resolveConstructionTNumberFieldId(
       opts.constructionFields,
@@ -159,6 +169,12 @@ export async function finalizeConstructionCalendarSave(opts: {
       }
       timing.mark("tnumber-writeback");
     }
+  }
+
+  // 監査ログを書き切ってから先へ進む（返した瞬間に実行環境が凍結する）
+  if (pendingAudit) {
+    await pendingAudit;
+    timing.mark("audit");
   }
 
   const calendarPatch =
