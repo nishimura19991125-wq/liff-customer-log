@@ -126,3 +126,37 @@ export function describeDialogTapProbe(probe: DialogTapProbe): string {
   }
   return "click まで届いています（原因は onClick より後ろ）";
 }
+
+/**
+ * handleMove がどこまで進んだかの記録（診断モードのときだけ溜める）。
+ *
+ * click までは届いていることが分かったので、次に要るのは
+ * **中のどこで止まったか**。段階ごとに1行残し、最後の行が到達点になる。
+ *
+ * 例
+ *   1 開始 → 2 判定OK → 3 送信中 → 4 トークン取得中
+ *   （ここで止まっていれば LIFF の init / getIDToken が返ってきていない）
+ */
+export const DIALOG_TRACE_MAX = 12;
+
+/** 溜めすぎないよう、古いものから捨てる */
+export function appendDialogTrace(
+  prev: readonly string[],
+  line: string,
+): string[] {
+  const next = [...prev, `${prev.length + 1}. ${line}`];
+  return next.length > DIALOG_TRACE_MAX
+    ? next.slice(next.length - DIALOG_TRACE_MAX)
+    : next;
+}
+
+/** 例外を1行に潰す。握り潰さず、必ず読める形にする */
+export function dialogTraceErrorText(e: unknown): string {
+  if (e instanceof Error) return `${e.name}: ${e.message}`;
+  if (typeof e === "string") return e;
+  try {
+    return JSON.stringify(e) ?? String(e);
+  } catch {
+    return String(e);
+  }
+}

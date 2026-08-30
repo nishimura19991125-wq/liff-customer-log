@@ -272,3 +272,69 @@ describe("診断モード（調査用・要削除）", () => {
     expect(read("src/lib/dialog-diagnostics.ts")).toContain("診断モード");
   });
 });
+
+/**
+ * handleMove の到達点を診断で出す（調査用・要削除）。
+ *
+ * click までは届いていることが実機で確認できた。次は中のどこで止まるか。
+ */
+describe("handleMove の到達点（調査用・要削除）", () => {
+  const PANEL = "src/components/calendar-move-case-panel.tsx";
+
+  it("★ 段階ごとに印を残す", () => {
+    const src = read(PANEL);
+
+    for (const step of [
+      'note("開始")',
+      'note("判定OK")',
+      'note("トークン取得中")',
+      'note("送信")',
+      'note("成功")',
+      'note("終了")',
+    ]) {
+      expect(src, step).toContain(step);
+    }
+  });
+
+  it("★ 応答とトークンの結果も残す", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain('note(`応答 HTTP ${res.status}`)');
+    expect(src).toContain('note(token ? "トークンOK" : "トークンなし")');
+  });
+
+  it("★ 失敗と例外も残す", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("note(`失敗: ${text.slice(0, 40)}`)");
+    expect(src).toContain("note(`例外: ${dialogTraceErrorText(e)}`)");
+  });
+
+  it("★ 握り潰された例外を拾う", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain('window.addEventListener("error", onError)');
+    expect(src).toContain(
+      'window.addEventListener("unhandledrejection", onRejection)',
+    );
+    // handleMove が reject しても取りこぼさない
+    expect(src).toContain("handleMove().catch((e) =>");
+  });
+
+  it("★ 診断が無効なら1行も溜めない", () => {
+    const src = read(PANEL);
+    const noteFn = src.slice(
+      src.indexOf("const note = (line: string) => {"),
+      src.indexOf("const note = (line: string) => {") + 200,
+    );
+
+    expect(noteFn).toContain("if (!diagnostics.enabled) return;");
+  });
+
+  it("★ 到達点は確認画面に出す（覆いの後ろに出さない）", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("diagnosticsTrace={diagnostics.enabled ? trace : null}");
+    expect(src).toContain("handleMove の到達点");
+  });
+});

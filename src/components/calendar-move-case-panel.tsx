@@ -52,7 +52,9 @@ import {
   type LoadedMonthByDay,
 } from "@/lib/calendar-move-target-slots";
 import {
+  appendDialogTrace,
   describeDialogTapProbe,
+  dialogTraceErrorText,
   EMPTY_DIALOG_TAP_PROBE,
   type DialogTapProbe,
 } from "@/lib/dialog-diagnostics";
@@ -173,6 +175,42 @@ export function CalendarMoveCasePanel({
   const [loadedMonth, setLoadedMonth] = useState<LoadedMonthByDay | null>(null);
   /** 失敗したときの手動再取得。依存に入れて回す */
   const [reloadNonce, setReloadNonce] = useState(0);
+
+  /**
+   * 診断モード（既定は無効）。?dialogDebug=1 で有効。
+   * handleMove がどこまで進んだかを溜めて、確認画面に出す。
+   */
+  const diagnostics = useDialogDiagnostics();
+  const [trace, setTrace] = useState<string[]>([]);
+  const note = (line: string) => {
+    if (!diagnostics.enabled) return;
+    setTrace((prev) => appendDialogTrace(prev, line));
+  };
+
+  /**
+   * 握り潰された例外を拾う（診断モードのときだけ）。
+   * try/catch の外で落ちていても、ここに残れば到達点が分かる。
+   *
+   * note は毎描画で別物になるので ref 経由にする。依存に入れると
+   * 描画のたびに購読を張り直すことになる（この画面の既存の流儀）。
+   */
+  const noteRef = useRef(note);
+  useEffect(() => {
+    noteRef.current = note;
+  });
+  useEffect(() => {
+    if (!diagnostics.enabled) return;
+    const onError = (e: ErrorEvent) =>
+      noteRef.current(`window.onerror: ${e.message}`);
+    const onRejection = (e: PromiseRejectionEvent) =>
+      noteRef.current(`unhandledrejection: ${dialogTraceErrorText(e.reason)}`);
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
+  }, [diagnostics.enabled]);
 
   /**
    * onSessionExpired は呼び出し側がインラインで渡すので毎描画で別物になる。
@@ -341,6 +379,7 @@ export function CalendarMoveCasePanel({
    *    どの失敗も「選び直してもらう」しかないので、閉じて構わない。
    */
   function failWith(text: string) {
+    note(`失敗: ${text.slice(0, 40)}`);
     setConfirming(false);
     setFeedback({ kind: "err", text });
   }
@@ -354,17 +393,22 @@ export function CalendarMoveCasePanel({
      * return していたため、押しても「移動中…」にすら変わらず、画面にも
      * サーバのログにも何も残らなかった。原因を誰も追えない。
      */
+    note("開始");
     if (confirmBlockedBy) {
+      note(`判定NG: ${confirmBlockedBy}`);
       failWith(moveBlockedReasonMessage(confirmBlockedBy));
       return;
     }
+    note("判定OK");
     setSubmitting(true);
     setFeedback(null);
     try {
+      note("トークン取得中");
       const token = await idTokenForConstructionSubmit(
         idToken,
         onSessionExpired,
       );
+      note(token ? "トークンOK" : "トークンなし");
       if (!token) {
         // onSessionExpired は呼ばれているが、この画面にも理由を残す
         failWith(
@@ -373,6 +417,7 @@ export function CalendarMoveCasePanel({
         return;
       }
 
+      note("送信");
       const res = await fetch(MOVE_CONSTRUCTION_CASE_PATH, {
         method: "POST",
         headers: {
@@ -402,6 +447,7 @@ export function CalendarMoveCasePanel({
         }),
       });
 
+      note(`応答 HTTP ${res.status}`);
       const raw = await res.text();
       let data: MoveConstructionCaseResponse = {};
       if (raw.trim()) {
@@ -446,6 +492,7 @@ export function CalendarMoveCasePanel({
         return;
       }
 
+      note("成功");
       setConfirming(false);
       setOpen(false);
       const movedDayKey = targetDayKey;
@@ -491,8 +538,10 @@ export function CalendarMoveCasePanel({
 ${kept}` : ""}`,
       });
     } catch (e) {
+      note(`例外: ${dialogTraceErrorText(e)}`);
       failWith(calendarSubmitCatchMessage(e));
     } finally {
+      note("終了");
       setSubmitting(false);
     }
   }
@@ -749,7 +798,13 @@ ${kept}` : ""}`,
         busy={submitting}
         sourceDisposition={sourceDisposition}
         onSourceDispositionChange={setSourceDisposition}
-        onConfirm={() => void handleMove()}
+        diagnosticsTrace={diagnostics.enabled ? trace : null}
+        onConfirm={() => {
+          note("onConfirm 到達");
+          handleMove().catch((e) =>
+            note(`handleMove reject: ${dialogTraceErrorText(e)}`),
+          );
+        }}
         onCancel={() => setConfirming(false)}
       />
     </div>
@@ -778,6 +833,7 @@ export function CalendarMoveCaseConfirmDialog({
   busy,
   sourceDisposition,
   onSourceDispositionChange,
+  diagnosticsTrace,
   onConfirm,
   onCancel,
 }: {
@@ -786,6 +842,8 @@ export function CalendarMoveCaseConfirmDialog({
   busy: boolean;
   sourceDisposition: "keep" | "delete";
   onSourceDispositionChange: (next: "keep" | "delete") => void;
+  /** 診断モードのときだけ渡ってくる handleMove の到達点。無効なら null */
+  diagnosticsTrace: string[] | null;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -961,6 +1019,16 @@ export function CalendarMoveCaseConfirmDialog({
                 {tapProbe.cancelDown}/{tapProbe.cancelClick}
               </p>
               <p>{describeDialogTapProbe(tapProbe)}</p>
+              <p className="mt-1 font-bold">handleMove の到達点</p>
+              {diagnosticsTrace && diagnosticsTrace.length > 0 ? (
+                <ol className="font-mono leading-tight">
+                  {diagnosticsTrace.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="font-mono">（まだ押されていません）</p>
+              )}
               <p>
                 背後ロック: {diagnostics.scrollLockDisabled ? "切" : "入"}
                 {diagnostics.scrollLockDisabled

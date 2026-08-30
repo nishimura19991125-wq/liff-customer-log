@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   DIALOG_DIAGNOSTICS_PARAM,
+  DIALOG_TRACE_MAX,
   DIALOG_NO_SCROLL_LOCK_PARAM,
   EMPTY_DIALOG_TAP_PROBE,
+  appendDialogTrace,
   describeDialogTapProbe,
+  dialogTraceErrorText,
   dialogDiagnosticsEnabled,
   dialogScrollLockDisabled,
 } from "@/lib/dialog-diagnostics";
@@ -127,5 +130,47 @@ describe("どこで止まっているかの説明", () => {
         probe({ overlay: 1, panel: 1, confirmDown: 1, confirmClick: 1 }),
       ),
     ).toContain("click まで届いています");
+  });
+});
+
+/**
+ * handleMove の到達点の記録。
+ *
+ * click までは届いていることが分かったので、次に要るのは中のどこで
+ * 止まったか。溜めすぎず、例外も必ず読める形にする。
+ */
+describe("到達点の記録", () => {
+  it("★ 順番が分かるよう番号を振る", () => {
+    let t = appendDialogTrace([], "開始");
+    t = appendDialogTrace(t, "判定OK");
+
+    expect(t).toEqual(["1. 開始", "2. 判定OK"]);
+  });
+
+  it("★ 溜めすぎない（古いものから捨てる）", () => {
+    let t: string[] = [];
+    for (let i = 0; i < DIALOG_TRACE_MAX + 5; i += 1) {
+      t = appendDialogTrace(t, `step${i}`);
+    }
+
+    expect(t).toHaveLength(DIALOG_TRACE_MAX);
+    // 最後の行＝到達点が残る
+    expect(t[t.length - 1]).toContain(`step${DIALOG_TRACE_MAX + 4}`);
+  });
+
+  it("★ 例外は握り潰さず1行にする", () => {
+    expect(dialogTraceErrorText(new TypeError("boom"))).toBe(
+      "TypeError: boom",
+    );
+    expect(dialogTraceErrorText("そのまま")).toBe("そのまま");
+    expect(dialogTraceErrorText({ a: 1 })).toBe('{"a":1}');
+  });
+
+  it("読めない値でも落ちない", () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+
+    expect(() => dialogTraceErrorText(cyclic)).not.toThrow();
+    expect(dialogTraceErrorText(undefined)).toBe("undefined");
   });
 });
