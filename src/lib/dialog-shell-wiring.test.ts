@@ -102,6 +102,12 @@ describe("土台の高さ（globals.css）", () => {
     expect(css).toContain("height: 100dvh;");
   });
 
+  it("★ 本体の高さも dvh で決める（% に頼らない）", () => {
+    expect(css).toContain(".liff-dialog-panel");
+    expect(css).toContain("max-height: 85dvh;");
+    expect(css).toContain("max-height: 85vh;");
+  });
+
   it("★ dvh を知らない環境のために vh を残す", () => {
     const block = css.slice(
       css.indexOf(".liff-dialog-viewport"),

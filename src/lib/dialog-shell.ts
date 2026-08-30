@@ -57,11 +57,12 @@ export const DIALOG_OVERLAY_CENTERED_CLASS =
  * ダイアログ本体。**見た目（背景・影・枠線）は各ダイアログが足す。**
  * ここで決めるのは「中身と操作を縦に分け、下敷きからはみ出さない」ことだけ。
  *
- * max-h-full は下敷きの内側（padding を除いた高さ）いっぱい。
- * 下敷きが dvh なので、実際に見えている範囲を超えない。
+ * 高さの上限は globals.css の .liff-dialog-panel（85vh → 85dvh）で決める。
+ * max-h-full（＝ max-height: 100%）は土台の高さが確定していないと解けず、
+ * 解けないと上限が無くなって操作が画面外へ出る。% に頼らない。
  */
 export const DIALOG_PANEL_CLASS =
-  "flex max-h-full w-full max-w-sm flex-col overflow-hidden rounded-2xl";
+  "liff-dialog-panel flex w-full max-w-sm flex-col overflow-hidden rounded-2xl";
 
 /**
  * 中身。**ここだけがスクロールする。**
@@ -76,7 +77,11 @@ export const DIALOG_BODY_CLASS =
 
 /**
  * 操作。**スクロールの外に置き、常に見える位置に残す。**
+ *
  * shrink-0 が無いと、中身が長いときにボタン側が潰される。
+ * relative z-10 は、スクロールする中身が何かの拍子にボタンの上へ
+ * 重なって**押しても反応しない**状態を作らないための保険。
+ * 見た目は変わらないが、重なり順は必ずこちらが上になる。
  */
 export const DIALOG_FOOTER_CLASS =
-  "shrink-0 border-t border-slate-100 px-4 pb-4 pt-3";
+  "relative z-10 shrink-0 border-t border-slate-100 px-4 pb-4 pt-3";

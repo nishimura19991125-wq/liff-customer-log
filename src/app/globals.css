@@ -60,6 +60,19 @@ body {
   height: 100dvh;
 }
 
+/**
+ * ダイアログ本体の高さの上限。
+ *
+ * max-h-full（max-height: 100%）でも土台の高さから解けるはずだが、
+ * % は「土台の高さが確定していること」に依存する。解けないと上限が
+ * 無くなり、中身が伸びて操作が画面外へ出る＝また押せなくなる。
+ * ここでは % を使わず、土台と同じ単位で直接決める。
+ */
+.liff-dialog-panel {
+  max-height: 85vh;
+  max-height: 85dvh;
+}
+
 .liff-screen {
   width: 100%;
   max-width: 100%;

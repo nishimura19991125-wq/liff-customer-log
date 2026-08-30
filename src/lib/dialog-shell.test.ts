@@ -67,9 +67,11 @@ describe("本体（panel）", () => {
     expect(classes(DIALOG_PANEL_CLASS)).toContain("flex-col");
   });
 
-  it("★ 下敷きからはみ出さない", () => {
-    expect(classes(DIALOG_PANEL_CLASS)).toContain("max-h-full");
-    // 高さを vh で持たない（下敷きに任せる）
+  it("★ 高さの上限を % に頼らない（globals.css の .liff-dialog-panel）", () => {
+    expect(classes(DIALOG_PANEL_CLASS)).toContain("liff-dialog-panel");
+    // max-height: 100% は土台の高さが確定していないと解けない。
+    // 解けないと上限が無くなり、操作が画面外へ出て押せなくなる
+    expect(classes(DIALOG_PANEL_CLASS)).not.toContain("max-h-full");
     expect(DIALOG_PANEL_CLASS).not.toContain("vh]");
   });
 
@@ -118,5 +120,10 @@ describe("操作（footer）", () => {
 
   it("スクロールの境目が分かる", () => {
     expect(classes(DIALOG_FOOTER_CLASS)).toContain("border-t");
+  });
+
+  it("★ 中身がボタンの上に重ならない（押せない状態を作らない）", () => {
+    expect(classes(DIALOG_FOOTER_CLASS)).toContain("relative");
+    expect(classes(DIALOG_FOOTER_CLASS)).toContain("z-10");
   });
 });
