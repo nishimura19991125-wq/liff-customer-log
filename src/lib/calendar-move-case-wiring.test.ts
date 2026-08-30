@@ -452,3 +452,46 @@ describe("無音で失敗しない", () => {
     expect(block).toContain("setConfirming(false)");
   });
 });
+
+/**
+ * ⚠ **調査用の計測。原因が分かったら、このブロックごと消すこと。**
+ *
+ * 実機でボタンが反応しない件を切り分けるため、タップがどの層まで届いて
+ * いるかを画面に出している。手元で再現できず、コードだけでは判断できない。
+ * ここで固定するのは「計測が付いていること」と「本来の動作を邪魔して
+ * いないこと」の2つ。
+ */
+describe("タップの計測（調査用・要削除）", () => {
+  it("★ 覆い・本体・各ボタンのそれぞれで数える", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain('onPointerDown={() => bumpProbe("overlay")}');
+    expect(src).toContain('onPointerDown={() => bumpProbe("panel")}');
+    expect(src).toContain('onPointerDown={() => bumpProbe("confirm")}');
+    expect(src).toContain('onPointerDown={() => bumpProbe("cancel")}');
+  });
+
+  it("★ 実行ボタンは click も数える（pointerdown との差を見る）", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain('bumpProbe("click");');
+  });
+
+  it("★ 計測しても本来の処理は必ず呼ぶ", () => {
+    const src = read(PANEL);
+
+    // 実行は onConfirm、取消は onCancel をそのまま呼ぶ
+    expect(src).toContain("onConfirm();");
+    expect(src).toContain("onClick={onCancel}");
+  });
+
+  it("★ 数え上げが画面に出る", () => {
+    expect(read(PANEL)).toContain("tap 覆い{tapProbe.overlay}");
+  });
+
+  it("★ 消し忘れないよう、コードに印が付いている", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("⚠ 調査用。原因が分かったら消すこと");
+  });
+});

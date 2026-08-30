@@ -768,6 +768,28 @@ export function CalendarMoveCaseConfirmDialog({
   const firstButtonRef = useRef<HTMLButtonElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
 
+  /**
+   * ⚠ **調査用。原因が分かったら消すこと。**
+   *
+   * 実機でボタンが反応しない件を切り分けるための計測。手元で再現できず、
+   * コードだけでは「タップがどこまで届いているか」が分からない。
+   * 数字がどこで止まるかで、止まっている層が分かる。
+   *
+   *   覆い 0 / 本体 0 / ボタン 0  … タップがダイアログに届いていない
+   *   覆い 1 / 本体 0 / ボタン 0  … 覆いで止まっている（本体が前面に無い）
+   *   覆い 1 / 本体 1 / ボタン 0  … 本体までは届くがボタンに当たっていない
+   *   覆い 1 / 本体 1 / ボタン 1  … 届いている。原因は onClick より後ろ
+   */
+  const [tapProbe, setTapProbe] = useState({
+    overlay: 0,
+    panel: 0,
+    confirm: 0,
+    cancel: 0,
+    click: 0,
+  });
+  const bumpProbe = (key: keyof typeof tapProbe) =>
+    setTapProbe((p) => ({ ...p, [key]: p[key] + 1 }));
+
   useEffect(() => {
     if (!open) return;
     restoreFocusRef.current =
@@ -821,7 +843,10 @@ export function CalendarMoveCaseConfirmDialog({
     formatDisplayYmd(input.sourceDayKey) || input.sourceDayKey.trim();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6 sm:items-center">
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6 sm:items-center"
+      onPointerDown={() => bumpProbe("overlay")}
+    >
       <div
         ref={panelRef}
         role="alertdialog"
@@ -829,6 +854,7 @@ export function CalendarMoveCaseConfirmDialog({
         aria-labelledby="calendar-move-case-confirm-title"
         className="max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200"
         onKeyDown={onPanelKeyDown}
+        onPointerDown={() => bumpProbe("panel")}
       >
         <p
           id="calendar-move-case-confirm-title"
@@ -889,13 +915,23 @@ export function CalendarMoveCaseConfirmDialog({
           ⚠ {moveCaseConfirmWarning(input)}
         </p>
 
+        {/* ⚠ 調査用。原因が分かったら消すこと */}
+        <p className="mt-3 rounded-lg bg-slate-100 px-2 py-1 text-center text-[11px] font-mono text-slate-600">
+          tap 覆い{tapProbe.overlay} 本体{tapProbe.panel} 実行
+          {tapProbe.confirm} 取消{tapProbe.cancel} click{tapProbe.click}
+        </p>
+
         <div className="mt-4 flex flex-col gap-2">
           <button
             ref={firstButtonRef}
             type="button"
             className={`${DIALOG_BUTTON_CLASS} bg-[#06C755] text-white`}
             disabled={busy}
-            onClick={onConfirm}
+            onPointerDown={() => bumpProbe("confirm")}
+            onClick={() => {
+              bumpProbe("click");
+              onConfirm();
+            }}
           >
             {busy ? "移動中…" : moveCaseConfirmActionLabel(input)}
           </button>
@@ -903,6 +939,7 @@ export function CalendarMoveCaseConfirmDialog({
             type="button"
             className={`${DIALOG_BUTTON_CLASS} border border-slate-300 bg-white text-slate-700`}
             disabled={busy}
+            onPointerDown={() => bumpProbe("cancel")}
             onClick={onCancel}
           >
             キャンセル
