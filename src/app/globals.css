@@ -43,6 +43,23 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/**
+ * 確認ダイアログの土台の高さ。
+ *
+ * iOS Safari（LIFF の WKWebView も同じ）の 100vh は URL バーやツールバーを
+ * 畳んだときの高さで、実際に見えている領域より大きい。position: fixed の
+ * inset: 0 もこれに従うため、下寄せのダイアログは下端が画面外へ出る。
+ * 中身が max-height に収まっていると内側のスクロールも働かないので、
+ * 実行ボタンにもキャンセルボタンにも届かなくなる（実機で発生）。
+ *
+ * dvh は見えている高さに追従する。dvh を知らない環境には上の vh が残る。
+ * Tailwind のクラスでは同じプロパティを2段に重ねられないので、ここに置く。
+ */
+.liff-dialog-viewport {
+  height: 100vh;
+  height: 100dvh;
+}
+
 .liff-screen {
   width: 100%;
   max-width: 100%;

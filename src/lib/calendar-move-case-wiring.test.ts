@@ -407,3 +407,68 @@ describe("移動元の扱い（M-4）", () => {
     expect(src).toContain("data.sourceKeptNotice");
   });
 });
+
+/**
+ * 確認ダイアログが画面に収まること。
+ *
+ * 実機（iPhone / LIFF）で下部のボタンに届かず、移動を実行できなくなった。
+ * 中身が増えたのがきっかけだが、原因は高さの取り方（iOS の 100vh は
+ * 見えている高さより大きい）。共有の枠へ寄せたことを固定する。
+ */
+describe("確認ダイアログの収まり", () => {
+  it("★ 共有の枠を使う（自前で高さを決めない）", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("DIALOG_OVERLAY_CLASS");
+    expect(src).toContain("DIALOG_PANEL_CLASS");
+    expect(src).toContain("DIALOG_BODY_CLASS");
+    expect(src).toContain("DIALOG_FOOTER_CLASS");
+  });
+
+  it("★ vh で高さを決めていた頃の書き方を残さない", () => {
+    const src = read(PANEL);
+
+    expect(src).not.toContain("max-h-[85vh]");
+    expect(src).not.toContain("fixed inset-0");
+  });
+
+  it("★ ボタンはスクロールの外にある", () => {
+    const src = read(PANEL);
+    const bodyOpen = src.indexOf("<div className={DIALOG_BODY_CLASS}>");
+    const footerOpen = src.indexOf("${DIALOG_FOOTER_CLASS}");
+    const confirmButton = src.indexOf("moveCaseConfirmActionLabel(input)");
+
+    expect(bodyOpen).toBeGreaterThan(-1);
+    expect(footerOpen).toBeGreaterThan(bodyOpen);
+    // 実行ボタンは操作側（＝スクロールする中身より後ろ）にある
+    expect(confirmButton).toBeGreaterThan(footerOpen);
+  });
+
+  it("★ 中身は全部スクロール側に入っている", () => {
+    const src = read(PANEL);
+    const bodyOpen = src.indexOf("<div className={DIALOG_BODY_CLASS}>");
+    const footerOpen = src.indexOf("${DIALOG_FOOTER_CLASS}");
+
+    for (const inBody of [
+      "buildMoveCaseConfirmTitle(input)",
+      "SOURCE_DISPOSITION_CHOICES.map",
+      "buildMoveCaseConfirmLines(input).map",
+      "moveCaseConfirmWarning(input)",
+    ]) {
+      const at = src.indexOf(inBody);
+      expect(at, inBody).toBeGreaterThan(bodyOpen);
+      expect(at, inBody).toBeLessThan(footerOpen);
+    }
+  });
+
+  it("★ ARIA と Esc は維持されている", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain('role="alertdialog"');
+    expect(src).toContain('aria-modal="true"');
+    expect(src).toContain('aria-labelledby="calendar-move-case-confirm-title"');
+    expect(src).toContain('e.key !== "Escape"');
+    // フォーカストラップも残っている
+    expect(src).toContain("onKeyDown={onPanelKeyDown}");
+  });
+});
