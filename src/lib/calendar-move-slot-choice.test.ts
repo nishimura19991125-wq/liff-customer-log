@@ -6,6 +6,8 @@ import {
   MOVE_SLOT_CONTRACTOR_UNSET_LABEL,
   buildMoveSlotChoices,
   canConfirmMoveCase,
+  describeMoveBlockedReason,
+  moveBlockedReasonMessage,
   moveSlotChoiceIsNew,
   moveTargetIsSameDay,
   resolveMoveContractorInput,
@@ -298,5 +300,103 @@ describe("実行してよいか", () => {
 
   it("★ 案件やログインが揃っていなければ押せない", () => {
     expect(canConfirmMoveCase({ ...OK, canOpen: false })).toBe(false);
+  });
+});
+
+/**
+ * 押せない理由を必ず出す。
+ *
+ * 実機で「移動する を押しても何も反応しない」が起きた。handleMove の
+ * 先頭が `if (!canConfirm) return;` で、押しても「移動中…」にすら
+ * 変わらず、画面にもサーバのログにも何も残らなかった。
+ * 判定が false になる条件と理由を1対1にして、必ず言わせる。
+ */
+describe("押せない理由", () => {
+  const OK = {
+    canOpen: true,
+    targetDayKey: "2026-12-05",
+    sourceDayKey: "2026-12-01",
+    slotChoice: "5002",
+    handlerRequired: false,
+    handlerStaffId: "",
+    contractorRequired: false,
+    contractor: "",
+  };
+
+  it("★ すべて満たしていれば理由は無い", () => {
+    expect(describeMoveBlockedReason(OK)).toBeNull();
+  });
+
+  it("★ 条件ごとに理由を返す", () => {
+    expect(describeMoveBlockedReason({ ...OK, canOpen: false })).toBe(
+      "not_ready",
+    );
+    expect(describeMoveBlockedReason({ ...OK, targetDayKey: "" })).toBe(
+      "no_target_day",
+    );
+    expect(
+      describeMoveBlockedReason({ ...OK, targetDayKey: "2026-12-01" }),
+    ).toBe("same_day");
+    expect(
+      describeMoveBlockedReason({
+        ...OK,
+        slotChoice: MOVE_SLOT_CHOICE_NONE,
+      }),
+    ).toBe("no_slot_choice");
+    expect(
+      describeMoveBlockedReason({
+        ...OK,
+        handlerRequired: true,
+        handlerStaffId: "",
+      }),
+    ).toBe("no_handler");
+    expect(
+      describeMoveBlockedReason({
+        ...OK,
+        contractorRequired: true,
+        contractor: "",
+      }),
+    ).toBe("no_contractor");
+  });
+
+  it("★ 押せる／押せないと理由が食い違わない", () => {
+    const patches = [
+      {},
+      { canOpen: false },
+      { targetDayKey: "" },
+      { targetDayKey: "2026-12-01" },
+      { slotChoice: MOVE_SLOT_CHOICE_NONE },
+      { handlerRequired: true, handlerStaffId: "" },
+      { handlerRequired: true, handlerStaffId: "staff-1" },
+      { contractorRequired: true, contractor: "" },
+      { contractorRequired: true, contractor: "Roof10" },
+    ];
+
+    for (const patch of patches) {
+      const input = { ...OK, ...patch };
+      expect(canConfirmMoveCase(input), JSON.stringify(patch)).toBe(
+        describeMoveBlockedReason(input) === null,
+      );
+    }
+  });
+
+  it("★ どの理由にも文言がある（無言にならない）", () => {
+    for (const r of [
+      "not_ready",
+      "no_target_day",
+      "same_day",
+      "no_slot_choice",
+      "no_handler",
+      "no_contractor",
+    ] as const) {
+      const msg = moveBlockedReasonMessage(r);
+      expect(msg, r).not.toBe("");
+      // 何をすればよいかまで書く
+      expect(msg, r).toContain("ください");
+    }
+  });
+
+  it("ログインが切れたときは画面の更新を促す", () => {
+    expect(moveBlockedReasonMessage("not_ready")).toContain("画面を更新");
   });
 });

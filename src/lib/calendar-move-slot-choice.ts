@@ -124,7 +124,22 @@ export function moveTargetIsSameDay(
  * 確認へ進めるか。
  * 枠の読み込み中・読み込み失敗は呼び出し側で別に弾く（理由を出し分けるため）。
  */
-export function canConfirmMoveCase(input: {
+/** 実行できない理由。canConfirmMoveCase が false になる条件と1対1 */
+export type MoveBlockedReason =
+  /** 案件・移動元の日付・ログインのどれかが揃っていない */
+  | "not_ready"
+  /** 移動先の日付を選んでいない */
+  | "no_target_day"
+  /** 移動元と同じ日 */
+  | "same_day"
+  /** 空き枠か新規作成かを選んでいない */
+  | "no_slot_choice"
+  /** 工事対応者を選んでいない */
+  | "no_handler"
+  /** 施工業者を選んでいない */
+  | "no_contractor";
+
+export type MoveConfirmInput = {
   /** 案件と移動元の日付が揃っていて、ログインできている */
   canOpen: boolean;
   targetDayKey: string;
@@ -135,13 +150,59 @@ export function canConfirmMoveCase(input: {
   handlerStaffId: string;
   contractorRequired: boolean;
   contractor: string;
-}): boolean {
-  if (!input.canOpen) return false;
-  if (!input.targetDayKey.trim()) return false;
-  if (moveTargetIsSameDay(input.targetDayKey, input.sourceDayKey)) return false;
+};
+
+/**
+ * 実行できない理由を1つ返す。すべて満たしていれば null。
+ *
+ * ⚠ canConfirmMoveCase と条件がずれないよう、**あちらがこれを呼ぶ**。
+ *    2つ並べて書くと、片方だけ直したときに
+ *    「押せないのに理由が出ない」「理由が出るのに押せる」が生まれる。
+ */
+export function describeMoveBlockedReason(
+  input: MoveConfirmInput,
+): MoveBlockedReason | null {
+  if (!input.canOpen) return "not_ready";
+  if (!input.targetDayKey.trim()) return "no_target_day";
+  if (moveTargetIsSameDay(input.targetDayKey, input.sourceDayKey)) {
+    return "same_day";
+  }
   // 枠を使うのか作るのかを選んでいない
-  if (!input.slotChoice.trim()) return false;
-  if (input.handlerRequired && !input.handlerStaffId.trim()) return false;
-  if (input.contractorRequired && !input.contractor.trim()) return false;
-  return true;
+  if (!input.slotChoice.trim()) return "no_slot_choice";
+  if (input.handlerRequired && !input.handlerStaffId.trim()) {
+    return "no_handler";
+  }
+  if (input.contractorRequired && !input.contractor.trim()) {
+    return "no_contractor";
+  }
+  return null;
+}
+
+/**
+ * 実行できない理由の日本語。**画面にそのまま出す。**
+ *
+ * ボタンは canConfirmMoveCase で無効にしてあるので、ここへ来るのは
+ * 確認画面を開いたあとに条件が崩れたとき（ログインの期限切れ、別タブでの
+ * 操作など）。黙って戻ると「押しても何も反応しない」にしか見えず、
+ * 利用者にも調べる側にも原因が分からない。必ず理由を出す。
+ */
+export function moveBlockedReasonMessage(reason: MoveBlockedReason): string {
+  switch (reason) {
+    case "not_ready":
+      return "ログインの状態を確認できませんでした。画面を更新してからもう一度お試しください。";
+    case "no_target_day":
+      return "移動先の日付が選ばれていません。選び直してください。";
+    case "same_day":
+      return "移動先が現在の工事日と同じです。別の日を選んでください。";
+    case "no_slot_choice":
+      return "移動先の空き枠が選ばれていません。選び直してください。";
+    case "no_handler":
+      return "工事対応者が選ばれていません。選び直してください。";
+    case "no_contractor":
+      return "施工業者が選ばれていません。選び直してください。";
+  }
+}
+
+export function canConfirmMoveCase(input: MoveConfirmInput): boolean {
+  return describeMoveBlockedReason(input) === null;
 }

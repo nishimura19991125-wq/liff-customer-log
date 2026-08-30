@@ -34,7 +34,8 @@ import { useConstructionContractorOptions } from "@/hooks/use-construction-contr
 import {
   MOVE_SLOT_CHOICE_NONE,
   buildMoveSlotChoices,
-  canConfirmMoveCase,
+  describeMoveBlockedReason,
+  moveBlockedReasonMessage,
   moveSlotChoiceIsNew,
   moveTargetIsSameDay,
   resolveMoveContractorInput,
@@ -307,7 +308,7 @@ export function CalendarMoveCasePanel({
     sourceDisposition,
   };
 
-  const canConfirm = canConfirmMoveCase({
+  const confirmBlockedBy = describeMoveBlockedReason({
     canOpen,
     targetDayKey,
     sourceDayKey,
@@ -317,9 +318,25 @@ export function CalendarMoveCasePanel({
     contractorRequired: contractorInput.required,
     contractor: newContractor,
   });
+  const canConfirm = confirmBlockedBy === null;
 
   async function handleMove() {
-    if (!canConfirm) return;
+    /**
+     * ⚠ **黙って戻らないこと。**
+     *
+     * ボタンは canConfirm で無効にしてあるので、ここへ来るのは確認画面を
+     * 開いたあとに条件が崩れたとき（ログインの期限切れなど）。以前はただ
+     * return していたため、押しても「移動中…」にすら変わらず、画面にも
+     * サーバのログにも何も残らなかった。原因を誰も追えない。
+     */
+    if (confirmBlockedBy) {
+      setConfirming(false);
+      setFeedback({
+        kind: "err",
+        text: moveBlockedReasonMessage(confirmBlockedBy),
+      });
+      return;
+    }
     setSubmitting(true);
     setFeedback(null);
     try {
@@ -327,7 +344,14 @@ export function CalendarMoveCasePanel({
         idToken,
         onSessionExpired,
       );
-      if (!token) return;
+      if (!token) {
+        // onSessionExpired は呼ばれているが、この画面にも理由を残す
+        setFeedback({
+          kind: "err",
+          text: "ログインの有効期限が切れました。画面を更新してからもう一度お試しください。",
+        });
+        return;
+      }
 
       const res = await fetch(MOVE_CONSTRUCTION_CASE_PATH, {
         method: "POST",

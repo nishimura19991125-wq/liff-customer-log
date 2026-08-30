@@ -314,7 +314,8 @@ describe("新規作成のときの施工業者", () => {
 
 describe("実行ボタンの制御", () => {
   it("★ 押せるかの判定を純粋関数へ寄せている", () => {
-    expect(read(PANEL)).toContain("canConfirmMoveCase({");
+    // 押せるかと「押せない理由」を同じ判定から作る（M-5 で1本化）
+    expect(read(PANEL)).toContain("describeMoveBlockedReason({");
   });
 
   it("★ 施工業者の未選択を判定に渡している", () => {
@@ -470,5 +471,49 @@ describe("確認ダイアログの収まり", () => {
     expect(src).toContain('e.key !== "Escape"');
     // フォーカストラップも残っている
     expect(src).toContain("onKeyDown={onPanelKeyDown}");
+  });
+});
+
+/**
+ * 押しても何も起きない、を作らない。
+ *
+ * 実機で「移動する を押しても無反応、ログにも残らない」が起きた。
+ * handleMove の先頭が `if (!canConfirm) return;` で、押しても
+ * 「移動中…」にすら変わらなかった。無音の return を残さない。
+ */
+describe("無音で失敗しない", () => {
+  it("★ 実行できないときは理由を出してから戻る", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("if (confirmBlockedBy) {");
+    expect(src).toContain("moveBlockedReasonMessage(confirmBlockedBy)");
+    // 理由を出さずに戻る書き方を残さない
+    expect(src).not.toContain("if (!canConfirm) return;");
+  });
+
+  it("★ 押せるかと理由を1つの判定から作る（食い違わせない）", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("const confirmBlockedBy = describeMoveBlockedReason({");
+    expect(src).toContain("const canConfirm = confirmBlockedBy === null;");
+  });
+
+  it("★ ログインの期限切れでも画面に理由が残る", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("if (!token) {");
+    expect(src).toContain("ログインの有効期限が切れました");
+    // トークンが無いときに黙って戻る書き方を残さない
+    expect(src).not.toContain("if (!token) return;");
+  });
+
+  it("★ 理由を出したら確認画面は閉じる（押し続けさせない）", () => {
+    const src = read(PANEL);
+    const block = src.slice(
+      src.indexOf("if (confirmBlockedBy) {"),
+      src.indexOf("if (confirmBlockedBy) {") + 300,
+    );
+
+    expect(block).toContain("setConfirming(false)");
   });
 });
