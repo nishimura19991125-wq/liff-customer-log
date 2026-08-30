@@ -535,13 +535,22 @@ export function CalendarMoveCasePanel({
                   ) : null}
                   <div className="space-y-2" role="radiogroup">
                     {choices.map((choice) => (
+                      /**
+                       * 2行になるぶん、行そのものを押せる面にする。
+                       * label がラジオを包んでいるので、日付でも施工会社でも
+                       * どこを押しても選べる（指で狙う的が丸だけにならない）
+                       */
                       <label
                         key={choice.value}
-                        className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[14px] text-slate-900 shadow-inner ring-1 ring-slate-100"
+                        className={`flex min-h-[52px] cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-[14px] text-slate-900 shadow-inner transition ${
+                          slotChoice === choice.value
+                            ? "border-emerald-300 bg-emerald-50 ring-2 ring-emerald-200"
+                            : "border-slate-200 bg-white ring-1 ring-slate-100"
+                        }`}
                       >
                         <input
                           type="radio"
-                          className="h-4 w-4 shrink-0 accent-emerald-600"
+                          className="h-5 w-5 shrink-0 accent-emerald-600"
                           name={`calendar-move-slot-${recordId || "unknown"}`}
                           value={choice.value}
                           checked={slotChoice === choice.value}
@@ -552,7 +561,16 @@ export function CalendarMoveCasePanel({
                             if (!choice.isNew) setNewContractor("");
                           }}
                         />
-                        <span className="leading-snug">{choice.label}</span>
+                        <span className="min-w-0 leading-snug">
+                          <span className="block font-semibold">
+                            {choice.label}
+                          </span>
+                          {choice.detail ? (
+                            <span className="mt-0.5 block text-[12px] font-normal text-slate-600">
+                              {choice.detail}
+                            </span>
+                          ) : null}
+                        </span>
                       </label>
                     ))}
                   </div>

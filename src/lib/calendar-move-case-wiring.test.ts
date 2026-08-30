@@ -213,6 +213,31 @@ describe("移動先の選択（ラジオ）", () => {
     expect(src).toContain("choices.map((choice)");
   });
 
+  it("★ 日付と施工会社を2行で出す（文言は画面で組み立てない）", () => {
+    const src = read(PANEL);
+
+    // 1行目＝日付、2行目＝施工会社。どちらも純粋関数が作ったものを出すだけ
+    expect(src).toContain("{choice.label}");
+    expect(src).toContain("{choice.detail}");
+    expect(src).toContain("{choice.detail ? (");
+    // 画面側で「施工会社:」を組み立て直さない
+    expect(src).not.toContain("施工会社: {");
+    expect(src).not.toContain("空き枠（施工会社");
+  });
+
+  it("★ 2行になっても行そのものを押せる", () => {
+    const src = read(PANEL);
+    const row = src.slice(
+      src.indexOf("{choices.map((choice) => ("),
+      src.indexOf("{choice.label}"),
+    );
+
+    // label がラジオを包んでいるので、どこを押しても選べる
+    expect(row).toContain("cursor-pointer");
+    expect(row).toContain("min-h-[52px]");
+    expect(row).toContain('type="radio"');
+  });
+
   it("★ 「未選択」と「新しく作成する」を別の値で持つ", () => {
     const src = read(PANEL);
 
