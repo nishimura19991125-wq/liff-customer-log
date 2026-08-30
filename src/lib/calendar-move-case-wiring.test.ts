@@ -187,3 +187,128 @@ describe("既存の経路を変えていない（M-3）", () => {
     expect(src).not.toContain("/api/calendar/empty-slots-for-day");
   });
 });
+
+/**
+ * 移動先の選び方（ラジオ）と、新規作成のときの施工業者。
+ *
+ * レンダリングを組めないので、ここでも配線を文字列で固定する。
+ * 見るのは「どの選択肢が出るか」ではなく（それは
+ * calendar-move-slot-choice.test.ts が持つ）、**画面が純粋関数へ
+ * 繋がっているか**と、押させない条件が消えていないか。
+ */
+describe("移動先の選択（ラジオ）", () => {
+  it("★ プルダウンではなくラジオで選ばせる", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain('type="radio"');
+    expect(src).toContain('role="radiogroup"');
+    // 空き枠の選択に select は使わない
+    expect(src).not.toContain("value={selectedSlotId}");
+  });
+
+  it("★ 選択肢の組み立ては純粋関数に寄せる（画面で並べ替えない）", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("buildMoveSlotChoices");
+    expect(src).toContain("choices.map((choice)");
+  });
+
+  it("★ 「未選択」と「新しく作成する」を別の値で持つ", () => {
+    const src = read(PANEL);
+
+    // 初期値は未選択。新規作成かどうかは共有の判定に任せる
+    expect(src).toContain("useState(MOVE_SLOT_CHOICE_NONE)");
+    expect(src).toContain("moveSlotChoiceIsNew(slotChoice)");
+    // 空文字が新規作成を兼ねていた頃の state を残さない
+    expect(src).not.toContain("setSelectedSlotId");
+  });
+
+  it("★ 日付を変えたら選び直させる", () => {
+    const src = read(PANEL);
+    const onChange = src.slice(
+      src.indexOf("setTargetDayKey(e.target.value)"),
+      src.indexOf("setTargetDayKey(e.target.value)") + 320,
+    );
+
+    expect(onChange).toContain("setSlotChoice(MOVE_SLOT_CHOICE_NONE)");
+    expect(onChange).toContain('setNewContractor("")');
+  });
+
+  it("★ 送る slotRecordId は選んだ値から導く（新規作成では送らない）", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("slotRecordIdFromChoice(slotChoice)");
+    expect(src).toContain("slotRecordId: selectedSlotId");
+  });
+});
+
+describe("新規作成のときの施工業者", () => {
+  it("★ 新規登録・未定案件の割り当てと同じフックを使う（取得を増やさない）", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("useConstructionContractorOptions");
+    // 取引先会社一覧を自前で叩かない
+    expect(src).not.toContain("/api/calendar/construction-contractors");
+  });
+
+  it("★ 「新しく作成する」を選んでいる間だけ取りにいく", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain(
+      "open && choosingNew && !slotsLoading && !slotsError,",
+    );
+  });
+
+  it("★ 欄を出すかどうかは純粋関数で決める", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("resolveMoveContractorInput");
+    expect(src).toContain("{contractorInput.show && slotChoiceVisible ? (");
+  });
+
+  it("★ 選んだ施工業者を API へ送る", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("contractor: newContractor.trim()");
+    // 空き枠を選んだときは送らない
+    expect(src).toContain("choosingNew && newContractor.trim()");
+  });
+
+  it("★ 確認画面へは新規作成用のフィールドで渡す（枠の分岐に混ぜない）", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain(
+      "newRecordContractor: choosingNew ? newContractor.trim() || null : null,",
+    );
+    expect(src).toContain(
+      "targetSlotContractor: selectedSlot ? selectedSlot.contractorName : null,",
+    );
+  });
+});
+
+describe("実行ボタンの制御", () => {
+  it("★ 押せるかの判定を純粋関数へ寄せている", () => {
+    expect(read(PANEL)).toContain("canConfirmMoveCase({");
+  });
+
+  it("★ 施工業者の未選択を判定に渡している", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("contractorRequired: contractorInput.required,");
+    expect(src).toContain("contractor: newContractor,");
+  });
+
+  it("★ 工事対応者の判定は残っている", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("handlerRequired: handlerFromStaff,");
+    expect(src).toContain("handlerStaffId: selectedHandlerStaffId,");
+  });
+
+  it("★ 枠を読めていない・読み込み中は今までどおり押させない", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("slotsLoading ||");
+    expect(src).toContain("Boolean(slotsError)");
+  });
+});

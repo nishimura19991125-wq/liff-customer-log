@@ -30,6 +30,16 @@ import {
   CALENDAR_SLOT_CONFLICT_MESSAGE,
   isCalendarSlotConflictApiResponse,
 } from "@/lib/calendar-slot-verify-client";
+import { useConstructionContractorOptions } from "@/hooks/use-construction-contractor-options";
+import {
+  MOVE_SLOT_CHOICE_NONE,
+  buildMoveSlotChoices,
+  canConfirmMoveCase,
+  moveSlotChoiceIsNew,
+  moveTargetIsSameDay,
+  resolveMoveContractorInput,
+  slotRecordIdFromChoice,
+} from "@/lib/calendar-move-slot-choice";
 import {
   contractorNameFromKey,
   emptySlotsFromDayItems,
@@ -39,6 +49,7 @@ import {
 } from "@/lib/calendar-move-target-slots";
 import { formatDisplayYmd } from "@/lib/format-display-ymd";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
+import { mergeStaffNameOptions } from "@/lib/staff-name-options";
 
 /**
  * 案件の工事日を別の日へ移す（工事日変更 M-3）。
@@ -56,6 +67,12 @@ import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
  * あちらは施工会社の一致を必須にして1件しか返さない。移動は施工会社を
  * またぐので、その日の枠を**全部出して選ばせる**。3-3 の割り当ては
  * あちらに依存しているので、そちらは触らない。
+ *
+ * ■ 枠か新規作成かはラジオで1回選ばせる
+ * 以前は「未選択」と「新規作成」が同じ空文字だったため、日付を選んだ
+ * 時点で新規作成が選ばれた状態になっていた。元に戻せない操作なので、
+ * 枠を使うのか作るのかを明示させる。施工業者の欄も、新規作成を選んだ
+ * ときにだけ出す（枠を選んだときは枠の施工会社が使われる）。
  */
 
 const INPUT_CLASS =
@@ -109,8 +126,10 @@ export function CalendarMoveCasePanel({
   const recordId = item.recordId?.trim() ?? "";
   const [open, setOpen] = useState(false);
   const [targetDayKey, setTargetDayKey] = useState("");
-  /** 選んだ空き枠の recordId。空文字＝新規作成 */
-  const [selectedSlotId, setSelectedSlotId] = useState("");
+  /** 空き枠の recordId / 新しく作成する / 未選択 のいずれか */
+  const [slotChoice, setSlotChoice] = useState(MOVE_SLOT_CHOICE_NONE);
+  /** 新規作成のときに選ぶ施工業者。空き枠を選んだときは使わない */
+  const [newContractor, setNewContractor] = useState("");
   const [selectedHandlerStaffId, setSelectedHandlerStaffId] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -147,7 +166,8 @@ export function CalendarMoveCasePanel({
 
   function reset() {
     setTargetDayKey("");
-    setSelectedSlotId("");
+    setSlotChoice(MOVE_SLOT_CHOICE_NONE);
+    setNewContractor("");
     setSelectedHandlerStaffId("");
     setConfirming(false);
     setLoadedMonth(null);
@@ -229,7 +249,37 @@ export function CalendarMoveCasePanel({
   const slotsLoading = monthState.loading;
   const slotsError = monthState.error;
 
+  const choices = useMemo(
+    () => buildMoveSlotChoices(slots, targetDayKey),
+    [slots, targetDayKey],
+  );
+  const selectedSlotId = slotRecordIdFromChoice(slotChoice);
   const selectedSlot = slots.find((s) => s.recordId === selectedSlotId) ?? null;
+  const choosingNew = moveSlotChoiceIsNew(slotChoice);
+  const sameDay = moveTargetIsSameDay(targetDayKey, sourceDayKey);
+  /** 枠の一覧を出せているか。読めていないうちは新規作成の続きも出さない */
+  const slotChoiceVisible =
+    Boolean(targetDayKey) && !sameDay && !slotsLoading && !slotsError;
+
+  /**
+   * 施工業者の候補は新規登録・未定案件の割り当てと同じフックで取る。
+   * active を「新しく作成するを選んでいる間」だけ true にするので、
+   * 空き枠を選ぶ通常の移動では**1回も呼ばない**
+   */
+  const contractorOptions = useConstructionContractorOptions(
+    idToken,
+    open && choosingNew && !slotsLoading && !slotsError,
+  );
+  const contractorSelectOptions = useMemo(
+    () => mergeStaffNameOptions(contractorOptions.options, newContractor),
+    [contractorOptions.options, newContractor],
+  );
+  const contractorInput = resolveMoveContractorInput({
+    slotChoice,
+    optionsLoading: contractorOptions.loading,
+    optionsConfigured: contractorOptions.configured,
+    optionCount: contractorOptions.options.length,
+  });
 
   const confirmInput: MoveCaseConfirmInput = {
     customerName: item.line1?.trim() ?? "",
@@ -238,12 +288,20 @@ export function CalendarMoveCasePanel({
     targetDayKey,
     sourceContractor,
     targetSlotContractor: selectedSlot ? selectedSlot.contractorName : null,
+    // 新規作成のときだけ。枠を選んだ側の分岐には混ぜない
+    newRecordContractor: choosingNew ? newContractor.trim() || null : null,
   };
 
-  const handlerMissing = handlerFromStaff && !selectedHandlerStaffId.trim();
-  const sameDay = Boolean(targetDayKey) && targetDayKey === sourceDayKey;
-  const canConfirm =
-    canOpen && Boolean(targetDayKey) && !sameDay && !handlerMissing;
+  const canConfirm = canConfirmMoveCase({
+    canOpen,
+    targetDayKey,
+    sourceDayKey,
+    slotChoice,
+    handlerRequired: handlerFromStaff,
+    handlerStaffId: selectedHandlerStaffId,
+    contractorRequired: contractorInput.required,
+    contractor: newContractor,
+  });
 
   async function handleMove() {
     if (!canConfirm) return;
@@ -266,6 +324,10 @@ export function CalendarMoveCasePanel({
           sourceRecordId: recordId,
           targetDayKey,
           ...(selectedSlotId ? { slotRecordId: selectedSlotId } : {}),
+          // 新規作成で選んだ施工業者。枠を選んだときは枠の値が優先される
+          ...(choosingNew && newContractor.trim()
+            ? { contractor: newContractor.trim() }
+            : {}),
           ...(item.tNumber?.trim()
             ? { expectedTNumber: item.tNumber.trim() }
             : {}),
@@ -414,7 +476,8 @@ export function CalendarMoveCasePanel({
                 onChange={(e) => {
                   setTargetDayKey(e.target.value);
                   // 別の日の枠を掴んだままにしない
-                  setSelectedSlotId("");
+                  setSlotChoice(MOVE_SLOT_CHOICE_NONE);
+                  setNewContractor("");
                 }}
               />
             </div>
@@ -428,7 +491,8 @@ export function CalendarMoveCasePanel({
           {targetDayKey && !sameDay ? (
             <div className="mt-3">
               <span className="mb-1 block text-[12px] font-bold text-slate-700">
-                移動先の空き枠
+                移動先の空き枠{" "}
+                <span className="font-semibold text-red-600">必須</span>
                 <span className="mt-0.5 block text-[11px] font-normal leading-snug text-slate-500">
                   施工会社が違う枠へも移せます（施工会社も書き換わります）
                 </span>
@@ -463,25 +527,77 @@ export function CalendarMoveCasePanel({
                   </button>
                 </div>
               ) : (
-                <select
-                  className={INPUT_CLASS}
-                  value={selectedSlotId}
-                  disabled={submitting}
-                  onChange={(e) => setSelectedSlotId(e.target.value)}
-                >
-                  <option value="">
-                    {slots.length === 0
-                      ? "この日に空き枠はありません（新規作成）"
-                      : "空き枠を使わず新規作成する"}
-                  </option>
-                  {slots.map((slot) => (
-                    <option key={slot.recordId} value={slot.recordId}>
-                      空き枠（施工会社: {slot.contractorName || "未設定"}）
-                    </option>
-                  ))}
-                </select>
+                <>
+                  {slots.length === 0 ? (
+                    <p className="mb-2 text-[12px] leading-relaxed text-slate-500">
+                      この日に空き枠はありません。
+                    </p>
+                  ) : null}
+                  <div className="space-y-2" role="radiogroup">
+                    {choices.map((choice) => (
+                      <label
+                        key={choice.value}
+                        className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[14px] text-slate-900 shadow-inner ring-1 ring-slate-100"
+                      >
+                        <input
+                          type="radio"
+                          className="h-4 w-4 shrink-0 accent-emerald-600"
+                          name={`calendar-move-slot-${recordId || "unknown"}`}
+                          value={choice.value}
+                          checked={slotChoice === choice.value}
+                          disabled={submitting}
+                          onChange={() => {
+                            setSlotChoice(choice.value);
+                            // 枠を選んだら、新規作成用に選んだ施工業者は持ち越さない
+                            if (!choice.isNew) setNewContractor("");
+                          }}
+                        />
+                        <span className="leading-snug">{choice.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
+          ) : null}
+
+          {contractorInput.show && slotChoiceVisible ? (
+            <label className="mt-3 block">
+              <span className="mb-1 block text-[12px] font-bold text-slate-700">
+                施工業者{" "}
+                {contractorInput.required ? (
+                  <span className="font-semibold text-red-600">必須</span>
+                ) : (
+                  <span className="font-medium text-slate-500">（任意）</span>
+                )}
+              </span>
+              <select
+                className={INPUT_CLASS}
+                value={newContractor}
+                disabled={submitting || contractorOptions.loading}
+                onChange={(e) => setNewContractor(e.target.value)}
+              >
+                <option value="">
+                  {contractorOptions.loading
+                    ? "一覧を読み込み中…"
+                    : contractorOptions.configured
+                      ? "選択してください"
+                      : "一覧を取得できません"}
+                </option>
+                {contractorSelectOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                {contractorOptions.loading
+                  ? "取引先会社一覧を読み込み中…"
+                  : contractorOptions.configured
+                    ? "取引先会社一覧（会社種別＝施工店・取引状況＝取引中）から選択"
+                    : "一覧を取得できないため、選ばずに進むと移動元の施工会社を引き継ぎます。TRADING_PARTNER_APP_ID および取引先列の環境変数を確認してください。"}
+              </p>
+            </label>
           ) : null}
 
           {handlerFromStaff ? (
