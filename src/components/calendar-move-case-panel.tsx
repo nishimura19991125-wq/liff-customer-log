@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { useDialogScrollLock } from "@/hooks/use-dialog-scroll-lock";
-
 import {
   ConstructionHandlerStaffSelect,
   type HandlerStaffListStatus,
@@ -50,13 +48,6 @@ import {
   resolveMoveTargetMonthState,
   type LoadedMonthByDay,
 } from "@/lib/calendar-move-target-slots";
-import {
-  DIALOG_BODY_CLASS,
-  DIALOG_FOOTER_CLASS,
-  DIALOG_BACKDROP_CLASS,
-  DIALOG_VIEWPORT_CLASS,
-  DIALOG_PANEL_CLASS,
-} from "@/lib/dialog-shell";
 import { formatDisplayYmd } from "@/lib/format-display-ymd";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { mergeStaffNameOptions } from "@/lib/staff-name-options";
@@ -773,9 +764,6 @@ export function CalendarMoveCaseConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  // 開いている間は背後を動かさない
-  useDialogScrollLock(open);
-
   const panelRef = useRef<HTMLDivElement | null>(null);
   const firstButtonRef = useRef<HTMLButtonElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
@@ -832,104 +820,93 @@ export function CalendarMoveCaseConfirmDialog({
   const sourceYmd =
     formatDisplayYmd(input.sourceDayKey) || input.sourceDayKey.trim();
 
-  /**
-   * 覆い（backdrop）と位置決め（viewport）を分けてある。
-   * 覆いは inset: 0 だけで高さが決まるので潰れず、必ず背後を守る。
-   */
   return (
-    <div className={DIALOG_BACKDROP_CLASS}>
-      {/* 位置決め。高さ（dvh）はここが持つ */}
-      <div className={DIALOG_VIEWPORT_CLASS}>
-        <div
-          ref={panelRef}
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="calendar-move-case-confirm-title"
-          className={`${DIALOG_PANEL_CLASS} bg-white shadow-xl ring-1 ring-slate-200`}
-          onKeyDown={onPanelKeyDown}
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6 sm:items-center">
+      <div
+        ref={panelRef}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="calendar-move-case-confirm-title"
+        className="max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200"
+        onKeyDown={onPanelKeyDown}
+      >
+        <p
+          id="calendar-move-case-confirm-title"
+          className="text-[15px] font-bold leading-relaxed text-slate-900"
         >
-          {/* 中身。ここだけスクロールする */}
-          <div className={DIALOG_BODY_CLASS}>
-            <p
-              id="calendar-move-case-confirm-title"
-              className="text-[15px] font-bold leading-relaxed text-slate-900"
-            >
-              {buildMoveCaseConfirmTitle(input)}
-            </p>
-            {subject ? (
-              <p className="mt-2 text-[13px] font-semibold text-slate-800">
-                {subject}
-              </p>
-            ) : null}
+          {buildMoveCaseConfirmTitle(input)}
+        </p>
+        {subject ? (
+          <p className="mt-2 text-[13px] font-semibold text-slate-800">
+            {subject}
+          </p>
+        ) : null}
 
-            {/**
-             * 移動元をどうするか。**箇条書きより先に置く。**
-             * この選択が「実行される内容」を書き換えるので、原因が結果より
-             * 先に来る順にする
-             */}
-            <fieldset className="mt-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
-              <legend className="px-1 text-[12px] font-bold text-slate-700">
-                移動元（{sourceYmd}）のレコードをどうしますか？
-              </legend>
-              <div className="mt-1 space-y-1.5">
-                {SOURCE_DISPOSITION_CHOICES.map((choice) => (
-                  <label
-                    key={choice.value}
-                    className={`flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] transition ${
-                      sourceDisposition === choice.value
-                        ? "bg-white font-semibold text-slate-900 ring-1 ring-slate-300"
-                        : "text-slate-700"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      className="h-4 w-4 shrink-0 accent-slate-700"
-                      name="calendar-move-source-disposition"
-                      value={choice.value}
-                      checked={sourceDisposition === choice.value}
-                      disabled={busy}
-                      onChange={() => onSourceDispositionChange(choice.value)}
-                    />
-                    <span className="leading-snug">{choice.label}</span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-
-            <p className="mt-3 text-[12px] font-bold text-slate-700">
-              実行される内容
-            </p>
-            <ul className="mt-1 list-disc space-y-1 pl-5 text-[12px] leading-relaxed text-slate-600">
-              {buildMoveCaseConfirmLines(input).map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-
-            <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-amber-900 ring-1 ring-amber-100">
-              ⚠ {moveCaseConfirmWarning(input)}
-            </p>
+        {/**
+         * 移動元をどうするか。**箇条書きより先に置く。**
+         * この選択が「実行される内容」を書き換えるので、原因が結果より
+         * 先に来る順にする
+         */}
+        <fieldset className="mt-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
+          <legend className="px-1 text-[12px] font-bold text-slate-700">
+            移動元（{sourceYmd}）のレコードをどうしますか？
+          </legend>
+          <div className="mt-1 space-y-1.5">
+            {SOURCE_DISPOSITION_CHOICES.map((choice) => (
+              <label
+                key={choice.value}
+                className={`flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] transition ${
+                  sourceDisposition === choice.value
+                    ? "bg-white font-semibold text-slate-900 ring-1 ring-slate-300"
+                    : "text-slate-700"
+                }`}
+              >
+                <input
+                  type="radio"
+                  className="h-4 w-4 shrink-0 accent-slate-700"
+                  name="calendar-move-source-disposition"
+                  value={choice.value}
+                  checked={sourceDisposition === choice.value}
+                  disabled={busy}
+                  onChange={() => onSourceDispositionChange(choice.value)}
+                />
+                <span className="leading-snug">{choice.label}</span>
+              </label>
+            ))}
           </div>
+        </fieldset>
 
-          {/* 操作。中身がどれだけ長くても必ず見える位置に残す */}
-          <div className={`${DIALOG_FOOTER_CLASS} flex flex-col gap-2`}>
-            <button
-              ref={firstButtonRef}
-              type="button"
-              className={`${DIALOG_BUTTON_CLASS} bg-[#06C755] text-white`}
-              disabled={busy}
-              onClick={onConfirm}
-            >
-              {busy ? "移動中…" : moveCaseConfirmActionLabel(input)}
-            </button>
-            <button
-              type="button"
-              className={`${DIALOG_BUTTON_CLASS} border border-slate-300 bg-white text-slate-700`}
-              disabled={busy}
-              onClick={onCancel}
-            >
-              キャンセル
-            </button>
-          </div>
+        <p className="mt-3 text-[12px] font-bold text-slate-700">
+          実行される内容
+        </p>
+        <ul className="mt-1 list-disc space-y-1 pl-5 text-[12px] leading-relaxed text-slate-600">
+          {buildMoveCaseConfirmLines(input).map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+
+        <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-amber-900 ring-1 ring-amber-100">
+          ⚠ {moveCaseConfirmWarning(input)}
+        </p>
+
+        <div className="mt-4 flex flex-col gap-2">
+          <button
+            ref={firstButtonRef}
+            type="button"
+            className={`${DIALOG_BUTTON_CLASS} bg-[#06C755] text-white`}
+            disabled={busy}
+            onClick={onConfirm}
+          >
+            {busy ? "移動中…" : moveCaseConfirmActionLabel(input)}
+          </button>
+          <button
+            type="button"
+            className={`${DIALOG_BUTTON_CLASS} border border-slate-300 bg-white text-slate-700`}
+            disabled={busy}
+            onClick={onCancel}
+          >
+            キャンセル
+          </button>
         </div>
       </div>
     </div>
