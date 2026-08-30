@@ -43,6 +43,47 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/**
+ * 確認ダイアログの土台。
+ *
+ * iOS Safari（LIFF の WKWebView も同じ）の 100vh は URL バーやツールバーを
+ * 畳んだときの高さで、実際に見えている領域より大きい。下寄せのダイアログは
+ * 下端が画面外へ出て、ボタンに届かなくなる。dvh は見えている高さに追従する。
+ *
+ * ⚠ **同じプロパティを2行並べるフォールバックは使えない。**
+ *    height: 100vh; height: 100dvh; と書くと、ビルドのミニファイアが
+ *    「後ろが勝つのだから前は要らない」と判断して前の行を捨てる
+ *    （実際に .next の出力で height:100dvh だけになっていた）。
+ *    dvh を知らない環境では height が丸ごと無くなり、position: fixed で
+ *    top だけ指定した土台の高さが auto ＝ 中身ぶんに潰れる。画面の大半が
+ *    覆われなくなり、**タップが背後の要素へ通り抜ける**。実機で
+ *    「ダイアログのキャンセルを押すと背後のパネルが反応する」が起きたのは
+ *    これが原因。@supports は別ブロックなので潰されない。
+ *
+ * 100% の側は、親（.liff-dialog-backdrop = position:fixed; inset:0）の
+ * 高さから解ける。dvh が無くても土台は必ず画面いっぱいになる。
+ */
+.liff-dialog-viewport {
+  height: 100%;
+}
+
+@supports (height: 100dvh) {
+  .liff-dialog-viewport {
+    height: 100dvh;
+  }
+}
+
+/** ダイアログ本体の高さの上限。土台と同じ理由で @supports にする */
+.liff-dialog-panel {
+  max-height: 100%;
+}
+
+@supports (max-height: 85dvh) {
+  .liff-dialog-panel {
+    max-height: 85dvh;
+  }
+}
+
 .liff-screen {
   width: 100%;
   max-width: 100%;
