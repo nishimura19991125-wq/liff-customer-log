@@ -90,7 +90,20 @@ export type MoveCaseConfirmInput = {
   sourceContractor: string;
   /** 移動先の空き枠の施工会社。null＝空き枠を使わず新規作成 */
   targetSlotContractor: string | null;
+  /**
+   * 新規作成のときに画面で選んだ施工業者。選んでいなければ null。
+   *
+   * ⚠ targetSlotContractor に入れてはいけない。あちらは「空き枠を使うか／
+   *    新規作成か」の分岐も兼ねているので、値を入れると箇条書きの1行目が
+   *    「空き枠に書き込みます」に化ける。施工会社が変わるかの判定にだけ効かせる
+   */
+  newRecordContractor?: string | null;
 };
+
+/** 移動後の施工会社。枠を使うならその枠、新規作成なら画面で選んだもの */
+function targetContractorOf(input: MoveCaseConfirmInput): string | null {
+  return input.targetSlotContractor ?? input.newRecordContractor ?? null;
+}
 
 function ymd(dayKey: string): string {
   return formatDisplayYmd(dayKey) || dayKey.trim();
@@ -104,8 +117,9 @@ function contractorKey(raw: string): string {
 export function moveCaseContractorChanges(
   input: MoveCaseConfirmInput,
 ): boolean {
-  if (input.targetSlotContractor == null) return false;
-  const to = contractorKey(input.targetSlotContractor);
+  const target = targetContractorOf(input);
+  if (target == null) return false;
+  const to = contractorKey(target);
   if (!to) return false;
   return contractorKey(input.sourceContractor) !== to;
 }
@@ -142,6 +156,7 @@ export function buildMoveCaseConfirmLines(
 ): string[] {
   const to = ymd(input.targetDayKey);
   const from = ymd(input.sourceDayKey);
+  // 分岐は空き枠かどうかだけで決める（新規作成で施工業者を選んでも新規作成）
   const usesSlot = input.targetSlotContractor != null;
 
   const lines: string[] = [];
@@ -156,7 +171,7 @@ export function buildMoveCaseConfirmLines(
   );
   if (moveCaseContractorChanges(input)) {
     lines.push(
-      `施工会社が ${input.sourceContractor.trim() || "未設定"} → ${input.targetSlotContractor?.trim()} に変わります`,
+      `施工会社が ${input.sourceContractor.trim() || "未設定"} → ${targetContractorOf(input)?.trim()} に変わります`,
     );
   }
   lines.push(

@@ -216,3 +216,100 @@ describe("確認画面", () => {
     expect(lines.some((l) => l.includes("施工会社が"))).toBe(false);
   });
 });
+
+/**
+ * 新規作成で施工業者を選べるようにしたぶん（M-3）。
+ *
+ * 確認画面の**構成は変えない**ことを固定する。新規作成は新規作成のまま
+ * 見え、増えるのは「施工会社が変わります」の1行だけ。
+ */
+describe("新規作成で施工業者を選んだとき", () => {
+  const NEW_RECORD: MoveCaseConfirmInput = {
+    customerName: "山田 太郎",
+    tNumber: "T00003420",
+    sourceDayKey: "2026-12-01",
+    targetDayKey: "2026-12-05",
+    sourceContractor: "△△工務店",
+    targetSlotContractor: null,
+    newRecordContractor: null,
+  };
+
+  it("★ 移動元と違う施工業者を選んだら「変わります」を出す", () => {
+    const input = { ...NEW_RECORD, newRecordContractor: "◯◯建設" };
+
+    expect(moveCaseContractorChanges(input)).toBe(true);
+    expect(buildMoveCaseConfirmLines(input)).toEqual([
+      "2026/12/05 に新しいレコードを作成します（Aki番号 は新規採番）",
+      "2026/12/01 のレコードは顧客情報を消して、空き枠として残します（削除しません）",
+      "施工会社が △△工務店 → ◯◯建設 に変わります",
+      "Aki番号 が新規採番されます（お客様情報にも反映）",
+    ]);
+  });
+
+  it("★ 移動元と同じ施工業者なら出さない", () => {
+    const input = { ...NEW_RECORD, newRecordContractor: "△△工務店" };
+
+    expect(moveCaseContractorChanges(input)).toBe(false);
+    expect(buildMoveCaseConfirmLines(input).some((l) => l.includes("施工会社が"))).toBe(
+      false,
+    );
+  });
+
+  it("★ 施工業者を選んでいなければ、これまでと同じ文言のまま", () => {
+    expect(buildMoveCaseConfirmLines(NEW_RECORD)).toEqual([
+      "2026/12/05 に新しいレコードを作成します（Aki番号 は新規採番）",
+      "2026/12/01 のレコードは顧客情報を消して、空き枠として残します（削除しません）",
+      "Aki番号 が新規採番されます（お客様情報にも反映）",
+    ]);
+  });
+
+  it("★ 施工業者を選んでも「新しいレコードを作成します」のまま（枠に化けない）", () => {
+    const lines = buildMoveCaseConfirmLines({
+      ...NEW_RECORD,
+      newRecordContractor: "◯◯建設",
+    });
+
+    expect(lines[0]).toBe(
+      "2026/12/05 に新しいレコードを作成します（Aki番号 は新規採番）",
+    );
+    expect(lines[0]).not.toContain("空き枠");
+    expect(lines[lines.length - 1]).toBe(
+      "Aki番号 が新規採番されます（お客様情報にも反映）",
+    );
+  });
+
+  it("★ 空き枠を選んだときは、枠の施工会社が優先される", () => {
+    // 画面が取り違えて両方入れても、枠の値で判断する
+    const input: MoveCaseConfirmInput = {
+      ...NEW_RECORD,
+      targetSlotContractor: "◯◯建設",
+      newRecordContractor: "無関係な会社",
+    };
+
+    expect(buildMoveCaseConfirmLines(input)[0]).toContain(
+      "空き枠（施工会社: ◯◯建設）",
+    );
+    expect(
+      buildMoveCaseConfirmLines(input).some((l) =>
+        l.includes("→ ◯◯建設 に変わります"),
+      ),
+    ).toBe(true);
+  });
+
+  it("表記ゆれでは「変わります」を出さない（枠のときと同じ扱い）", () => {
+    expect(
+      moveCaseContractorChanges({
+        ...NEW_RECORD,
+        sourceContractor: "△△ 工務店",
+        newRecordContractor: "△△工務店",
+      }),
+    ).toBe(false);
+  });
+
+  it("フィールドが無くても（既存の呼び出し）壊れない", () => {
+    const { newRecordContractor: _omit, ...withoutField } = NEW_RECORD;
+
+    expect(moveCaseContractorChanges(withoutField)).toBe(false);
+    expect(buildMoveCaseConfirmLines(withoutField)).toHaveLength(3);
+  });
+});
