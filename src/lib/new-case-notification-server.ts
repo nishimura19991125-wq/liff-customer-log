@@ -213,7 +213,8 @@ async function runNewCaseNotification(
   }
 
   // ⑤ 送信でエラー。
-  // 出してよいのは T番号・エラーの種類・HTTP ステータスまで。
+  // 出してよいのは T番号・エラーの種類・HTTP ステータス・応答本文まで。
+  // detail は google-chat 側で URL を落としてある。
   // Webhook URL とお客様名・担当者名は出さない
   console.error(
     `${LOG_TAG} 送信に失敗しました`,
@@ -222,6 +223,8 @@ async function runNewCaseNotification(
       tNumber,
       reason: result.reason,
       status: result.status,
+      // 400 の理由は本文にしか入らない（スペースが無い・Webhook が無効 等）
+      detail: result.detail,
     }),
   );
   return { kind: "failed" };

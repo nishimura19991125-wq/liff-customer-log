@@ -32,7 +32,19 @@ export type GoogleChatSendResult =
   | { kind: "sent" }
   | { kind: "skipped"; reason: "not-configured" | "empty-text" }
   /** status は HTTP 応答があったときだけ入る。URL は含めない */
-  | { kind: "failed"; reason: "http" | "timeout" | "network"; status?: number };
+  | {
+      kind: "failed";
+      reason: "http" | "timeout" | "network";
+      status?: number;
+      /**
+       * 失敗した応答の本文（先頭 200 文字・URL 除去済み）。
+       *
+       * logLabel を渡した送信でだけ入る。Google Chat は 400 の理由を
+       * 本文でしか返さない（スペースが消えている・Webhook が無効など）ので、
+       * ステータスだけでは直しようがない。
+       */
+      detail?: string;
+    };
 
 function attendanceWebhookUrl(): string {
   return process.env.GOOGLE_CHAT_ATTENDANCE_WEBHOOK_URL?.trim() ?? "";
@@ -124,7 +136,31 @@ export async function sendGoogleChatNewCaseMessage(
   text: string,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<GoogleChatSendResult> {
-  return sendGoogleChatMessage(newCaseWebhookUrl(), text, timeoutMs);
+  // fetch まで届いたかを追えるようにする（届かない件の切り分け用）
+  return sendGoogleChatMessage(newCaseWebhookUrl(), text, timeoutMs, "new-case");
+}
+
+/** 失敗した応答から読む本文の上限。原因の見当がつけば十分 */
+const FAILURE_BODY_MAX = 200;
+
+/**
+ * 応答本文から URL らしき文字列を落とす。
+ *
+ * Google Chat の失敗応答は理由の文言だけを返し Webhook URL を含めないが、
+ * **含まない前提には立たない**。ログへ出す前にここを必ず通す。
+ */
+function withoutUrls(raw: string): string {
+  return raw.replace(/https?:\/\/\S+/gi, "[url]");
+}
+
+/** 失敗の理由は本文にしか入らない。読めなければ空文字 */
+async function failureDetail(res: Response): Promise<string> {
+  try {
+    const body = await res.text();
+    return withoutUrls(body).replace(/\s+/g, " ").trim().slice(0, FAILURE_BODY_MAX);
+  } catch {
+    return "";
+  }
 }
 
 /** 送信の実体。URL の出どころだけが違うので1本にまとめている */
@@ -132,6 +168,11 @@ async function sendGoogleChatMessage(
   url: string,
   text: string,
   timeoutMs: number,
+  /**
+   * ログに出す送信元の名前。**渡したときだけ**送信の前後を記録する。
+   * 既存の送信（契約速報・出勤打刻・定時リスト）の挙動は変えない。
+   */
+  logLabel?: string,
 ): Promise<GoogleChatSendResult> {
   if (!url) return { kind: "skipped", reason: "not-configured" };
   if (!text.trim()) return { kind: "skipped", reason: "empty-text" };
@@ -139,13 +180,34 @@ async function sendGoogleChatMessage(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    // 「fetch まで来たか」を切り分けるための1行。URL は出さない
+    if (logLabel) {
+      console.info(
+        "[google-chat] fetch を呼びます",
+        JSON.stringify({ label: logLabel, textLength: text.length, timeoutMs }),
+      );
+    }
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json; charset=UTF-8" },
       body: JSON.stringify({ text }),
       signal: controller.signal,
     });
-    if (!res.ok) return { kind: "failed", reason: "http", status: res.status };
+    if (logLabel) {
+      console.info(
+        "[google-chat] 応答を受け取りました",
+        JSON.stringify({ label: logLabel, status: res.status, ok: res.ok }),
+      );
+    }
+    if (!res.ok) {
+      const detail = logLabel ? await failureDetail(res) : "";
+      return {
+        kind: "failed",
+        reason: "http",
+        status: res.status,
+        ...(detail ? { detail } : {}),
+      };
+    }
     return { kind: "sent" };
   } catch (e) {
     // e には URL が載りうる。中身は見ず、打ち切りかどうかだけ判定する
