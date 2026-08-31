@@ -33,6 +33,16 @@ const h = vi.hoisted(() => ({
   constructionRecord: {} as Record<string, unknown>,
   /** お客様情報アプリの GET 回数（採番待ちの往復数を数える） */
   customerGetCount: 0,
+  /** createRecord が recordId を返すか（実機では返らないことがある） */
+  createReturnsId: true,
+  /** 一覧照合の応答を呼ばれた順に返す */
+  listQueue: [] as unknown[],
+  listCalls: [] as (string | undefined)[],
+  /**
+   * 作成後にだけ照合が当たる（作成前はまだレコードが無い）。
+   * 作成前に当たってしまうと更新経路へ入り、作成の検証にならない
+   */
+  lookupAfterCreateOnly: false,
   /**
    * この回数までは T番号 を空で返す（@pocket の採番が間に合わない状況）。
    * 0 なら1回目から採番済み。
@@ -72,7 +82,17 @@ vi.mock("@/lib/atpocket", () => ({
     h.created.push(payload);
     // @pocket が T番号 を採番する
     h.customerRecords["cust-new"] = { ...payload, "field-268": "T00003420" };
-    return { recordIdHint: "cust-new", row: null, location: null };
+    return h.createReturnsId
+      ? { recordIdHint: "cust-new", row: null, location: null }
+      : // 実機では ID を返さないことがある（location も本文も空）
+        { recordIdHint: null, row: null, location: null };
+  },
+  fetchRecordsList: async (
+    _appId: string,
+    params?: { query?: string },
+  ) => {
+    h.listCalls.push(params?.query);
+    return h.listQueue.shift() ?? { records: [] };
   },
   updateRecord: async (
     _appId: string,
@@ -89,6 +109,7 @@ vi.mock("@/lib/customer-info-key-lookup-cache", () => ({
     value: string,
   ) => {
     h.lookupCalls.push({ fieldId, value });
+    if (h.lookupAfterCreateOnly && h.created.length === 0) return null;
     return h.lookup[fieldId]?.[value] ?? null;
   },
   refetchCustomerInfoRecordIdByUniqueKey: async (
@@ -96,6 +117,7 @@ vi.mock("@/lib/customer-info-key-lookup-cache", () => ({
     value: string,
   ) => {
     h.refetchCalls.push({ fieldId, value });
+    if (h.lookupAfterCreateOnly && h.created.length === 0) return null;
     return h.lookup[fieldId]?.[value] ?? null;
   },
 }));
@@ -135,6 +157,10 @@ beforeEach(() => {
   h.updated = [];
   h.customerGetCount = 0;
   h.tNumberEmptyUntil = 0;
+  h.createReturnsId = true;
+  h.listQueue = [];
+  h.listCalls = [];
+  h.lookupAfterCreateOnly = false;
   // 新規案件: Aki番号 は入っているが T番号 はまだ無い
   h.constructionRecord = { "field-101": "A0001", "field-2": "山田 太郎" };
 });
@@ -535,5 +561,109 @@ describe("★ T番号 の採番待ち", () => {
 
     // 既存レコードは1回読むだけ
     expect(h.customerGetCount).toBe(1);
+  });
+});
+
+/**
+ * 作成した recordId を特定できないときの最後の手。
+ *
+ * 施工予定日なしの経路は工事レコードを作らないので Aki番号 が無い。
+ * @pocket が作成応答で ID を返さないと引き直す手がかりが1つも無くなり、
+ * T番号 を読む先が消える。実機で通知が落ちていた経路がこれ。
+ *
+ * 作成前後の一覧を突き合わせて「増えた1件」を採る。アポ取得の登録で
+ * 使っている方式をそのまま共通化して使う。
+ */
+describe("★ recordId の作成前後差分（施工予定日なし）", () => {
+  function undated(over: Record<string, unknown> = {}) {
+    return sync({
+      customerInfoOnly: true,
+      constructionRecordId: undefined,
+      ...over,
+    });
+  }
+
+  it("★ 作成応答に ID が無くても、増えた1件から特定して T番号 を読む", async () => {
+    h.createReturnsId = false;
+    h.listQueue = [
+      { records: [{ recordId: "cust-old" }] },
+      { records: [{ recordId: "cust-old" }, { recordId: "cust-new" }] },
+    ];
+
+    const res = await undated();
+
+    expect((res as { tNumber?: string }).tNumber).toBe("T00003420");
+    expect((res as { customerInfoRecordId?: string }).customerInfoRecordId).toBe(
+      "cust-new",
+    );
+  });
+
+  it("★ 同姓同名の既存レコードは掴まない（増えていなければ採らない）", async () => {
+    h.createReturnsId = false;
+    h.listQueue = [
+      { records: [{ recordId: "cust-old" }] },
+      { records: [{ recordId: "cust-old" }] },
+    ];
+
+    const res = await undated();
+
+    expect(res.kind).toBe("synced");
+    expect((res as { customerInfoRecordId?: string }).customerInfoRecordId)
+      .toBeUndefined();
+  });
+
+  it("★ 2件以上増えていたら特定しない", async () => {
+    h.createReturnsId = false;
+    h.listQueue = [
+      { records: [] },
+      { records: [{ recordId: "cust-a" }, { recordId: "cust-b" }] },
+    ];
+
+    const res = await undated();
+
+    expect((res as { customerInfoRecordId?: string }).customerInfoRecordId)
+      .toBeUndefined();
+  });
+
+  it("★ 特定できなくても登録は成功のまま（押し直しによる重複を招かない）", async () => {
+    h.createReturnsId = false;
+    h.listQueue = [{ records: [] }, { records: [] }];
+
+    const res = await undated();
+
+    expect(res.kind).toBe("synced");
+    expect(h.created).toHaveLength(1);
+  });
+
+  it("★ 作成応答から ID が取れたら作成後の一覧は取らない（往復を増やさない）", async () => {
+    h.listQueue = [{ records: [] }];
+
+    await undated();
+
+    // 作成前の1回だけ
+    expect(h.listCalls).toHaveLength(1);
+  });
+
+  it("★ お客様名で絞って照合する", async () => {
+    h.createReturnsId = false;
+    h.listQueue = [{ records: [] }, { records: [{ recordId: "cust-new" }] }];
+
+    await undated();
+
+    expect(h.listCalls[0]).toContain("field-2");
+    expect(h.listCalls[0]).toContain("山田 太郎");
+  });
+
+  it("★ Aki番号 で引き直せる経路では一覧照合をしない", async () => {
+    // 施工予定日あり（Aki番号 が採番済み）。作成後に Aki で引き直せる
+    h.createReturnsId = false;
+    h.lookupAfterCreateOnly = true;
+    h.lookup = { "field-267": { A0001: "cust-new" } };
+
+    const res = await sync();
+
+    // Aki番号 で引けるので、一覧の往復は1回も足さない
+    expect(h.listCalls).toEqual([]);
+    expect((res as { tNumber?: string }).tNumber).toBe("T00003420");
   });
 });

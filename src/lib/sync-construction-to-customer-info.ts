@@ -5,6 +5,10 @@ import {
   pollConstructionTNumberByRecordId,
   SYNC_TNUMBER_POLL_DELAYS_MS,
 } from "@/lib/atpocket-record-id";
+import {
+  pickCreatedRecordId,
+  snapshotRecordIdsByFieldValue,
+} from "@/lib/atpocket-created-record-lookup";
 import type { AtPocketFieldRow, AtPocketFetchAuth } from "@/lib/atpocket";
 import {
   apiKeyForCustomerInfoWrite,
@@ -1165,6 +1169,42 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     };
   }
 
+  /**
+   * Aki番号 で引き直せるか。
+   *
+   * 施工予定日ありは工事アプリが Aki番号 を採番済みなので引き直せる。
+   * **施工予定日なし（customerInfoOnly）は工事レコードを作らないため
+   * Aki番号 が無く、この手が使えない。** 実機で T番号 が取れなかったのは
+   * ここに手がかりが1つも無いのが効いている。
+   */
+  const canRefetchByAki = Boolean(customerAkiFieldId && akiKey);
+
+  /**
+   * 引き直す手が無いときだけ、作成**前**の一覧を控えておく。
+   *
+   * 作成後の一覧と突き合わせて「増えた1件」を採る。お客様名で絞って
+   * 一番新しい行を採る当て方は、同姓同名や再登録で既存の別レコードを
+   * 掴むので使わない（アポ取得で同じ判断をしている）。
+   *
+   * @pocket の呼び出しは1回増える。作成応答から ID が取れれば作成後の
+   * 一覧は取らないので、増えるのは基本この1回だけ。
+   * 取れなくても登録は続ける（recordId が空になるだけ）。
+   */
+  const beforeSnapshot =
+    !canRefetchByAki && resolvedCustomerName
+      ? await snapshotRecordIdsByFieldValue({
+        appId: customerAppId,
+        fieldId: resolvedCustomerName,
+        value: opts.customerName,
+        auth: customerAuth,
+        ctx: {
+          operation: "sync-construction:登録直後のrecordId照合",
+          appEnv: "CUSTOMER_INFO_APP_ID",
+        },
+        logPrefix: "[sync-construction-to-customer-info]",
+      })
+      : null;
+
   const created = await createRecord(
     customerAppId,
     pocketPayload,
@@ -1176,12 +1216,53 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
    * その場合は今書いた Aki番号 で引き直す（この時点なら必ず1件ある）
    */
   let customerInfoRecordId = atPocketRecordIdFromCreateResult(created) ?? "";
-  if (!customerInfoRecordId && customerAkiFieldId && akiKey) {
+  if (!customerInfoRecordId && canRefetchByAki) {
     customerInfoRecordId =
       (await refetchCustomerInfoRecordIdByUniqueKey(
-        customerAkiFieldId,
+        customerAkiFieldId as string,
         akiKey,
       )) ?? "";
+  }
+  /**
+   * Aki番号 が無い経路の最後の手。増えた1件がはっきりしているときだけ採る。
+   *
+   * ここで取れないと T番号 を読む先が無くなり、新規案件通知も
+   * 工事アプリへの書き戻しも落ちる。
+   */
+  if (!customerInfoRecordId && beforeSnapshot) {
+    const afterSnapshot = await snapshotRecordIdsByFieldValue({
+      appId: customerAppId,
+      fieldId: resolvedCustomerName as string,
+      value: opts.customerName,
+      auth: customerAuth,
+      ctx: {
+        operation: "sync-construction:登録直後のrecordId照合",
+        appEnv: "CUSTOMER_INFO_APP_ID",
+      },
+      logPrefix: "[sync-construction-to-customer-info]",
+    });
+    customerInfoRecordId =
+      pickCreatedRecordId(beforeSnapshot, afterSnapshot) ?? "";
+    console.info(
+      "[sync-construction-to-customer-info] 作成前後の差分で recordId を照合しました",
+      JSON.stringify({ found: Boolean(customerInfoRecordId) }),
+    );
+  }
+
+  if (!customerInfoRecordId) {
+    /**
+     * ここまで来ると T番号 を読む先が無い。登録自体は済んでいるので
+     * 失敗にはしないが、通知も書き戻しも落ちることを記録しておく。
+     * お客様名は出さない（後から Aki番号・作成時刻で辿れる）
+     */
+    console.error(
+      "[sync-construction-to-customer-info] 作成した recordId を特定できず、T番号 を読めません",
+      JSON.stringify({
+        customerInfoOnly,
+        triedAki: canRefetchByAki,
+        triedDiff: Boolean(beforeSnapshot),
+      }),
+    );
   }
 
   /**
