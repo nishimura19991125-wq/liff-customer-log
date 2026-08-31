@@ -9,6 +9,7 @@ import {
   resolveConstructionImportKeyFieldId,
   resolveConstructionTNumberFieldId,
 } from "@/lib/calendar-kojo";
+import { notifyNewCaseCreated } from "@/lib/new-case-notification-server";
 import { startServerTimingLog } from "@/lib/server-timing-log";
 import { syncConstructionRecordToCustomerInfoApp } from "@/lib/sync-construction-to-customer-info";
 
@@ -52,6 +53,14 @@ export async function finalizeConstructionCalendarSave(opts: {
    * 既定（未指定）は従来どおり組み立てる。
    */
   skipCalendarPatch?: boolean;
+  /**
+   * 新規案件通知（Google Chat）を送る。
+   *
+   * **T番号 を新規発行する経路だけが true を渡す**（工事カレンダーの新規登録）。
+   * 空き枠入力・未定案件の割り当て・工事日の移動は既存の T番号 を使い回すので
+   * 既定（未指定）のまま送らない。
+   */
+  notifyNewCase?: boolean;
   /** 成功レスポンスに追記する任意フィールド（同日空枠削除の結果など） */
   extraResponse?: Record<string, unknown>;
 }): Promise<NextResponse> {
@@ -119,6 +128,23 @@ export async function finalizeConstructionCalendarSave(opts: {
    */
   const syncedTNumber =
     customerSync.kind === "synced" ? customerSync.tNumber?.trim() : "";
+  /**
+   * 新規案件通知。**T番号 が分かった時点で走らせる。**
+   *
+   * 送信は Google Chat への1往復（最長5秒）で、下の T番号 書き戻し・
+   * 監査ログ・カレンダーパッチとは互いに関係が無い。直列に待つ理由が
+   * 無いので走らせたまま進み、返す前に合流させる。
+   * notifyNewCaseCreated は例外を投げないので、ここで catch は要らない。
+   */
+  const pendingNewCaseNotification =
+    opts.notifyNewCase && syncedTNumber
+      ? notifyNewCaseCreated({
+        tNumber: syncedTNumber,
+        customerName: opts.customerName,
+        lineUserId: opts.lineUserId,
+      })
+      : undefined;
+
   /**
    * 工事レコードに今入っている T番号。
    * 明示されていなければ、従来どおり突合キーを「レコードの値」とみなす。
@@ -189,6 +215,13 @@ export async function finalizeConstructionCalendarSave(opts: {
     : null;
 
   timing.mark("calendar-patch");
+
+  // 返した瞬間に実行環境が凍結する。送り終えてから返す
+  if (pendingNewCaseNotification) {
+    await pendingNewCaseNotification;
+    timing.mark("new-case-notify");
+  }
+
   timing.flush({
     result: "ok",
     // どこへ書いた結果かの目安（数値・固定文字列のみ）

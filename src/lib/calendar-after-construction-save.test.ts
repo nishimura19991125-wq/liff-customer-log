@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   writes: [] as Array<{ recordId?: string; payload: Record<string, unknown> }>,
   syncResult: {} as Record<string, unknown>,
   patchCalls: 0,
+  newCaseNotifications: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("@/lib/sync-construction-to-customer-info", () => ({
@@ -47,6 +48,13 @@ vi.mock("@/lib/calendar-record-patch-server", () => ({
   },
 }));
 
+vi.mock("@/lib/new-case-notification-server", () => ({
+  notifyNewCaseCreated: async (input: Record<string, unknown>) => {
+    h.newCaseNotifications.push(input);
+    return { kind: "sent" };
+  },
+}));
+
 vi.mock("@/lib/calendar-kojo", () => ({
   resolveConstructionTNumberFieldId: () => T_FIELD,
   resolveConstructionImportKeyFieldId: () => AKI_FIELD,
@@ -67,6 +75,7 @@ const BASE = {
 beforeEach(() => {
   h.writes.length = 0;
   h.patchCalls = 0;
+  h.newCaseNotifications.length = 0;
   h.syncResult = { kind: "synced", tNumber: "T00003420" };
 });
 
@@ -286,5 +295,65 @@ describe("監査ログの合流（E案）", () => {
     expect(res.status).toBe(200);
     // 書き戻す T番号 が無いので書かない
     expect(h.writes).toHaveLength(0);
+  });
+});
+
+/**
+ * 新規案件通知を送るのは、T番号 を新規発行する経路だけ。
+ *
+ * この後処理は新規登録・空き枠入力・未定案件の割り当て・工事日の移動が
+ * 共通で通る。ここで既定が「送らない」でなくなると、既存の T番号 を
+ * 使い回すだけの操作にまで通知が飛ぶ。
+ */
+describe("新規案件通知", () => {
+  it("★ 既定では送らない（空き枠入力・割り当て・工事日の移動）", async () => {
+    await finalizeConstructionCalendarSave({
+      ...BASE,
+      constructionUniqueKey: "T00003420",
+    });
+
+    expect(h.newCaseNotifications).toEqual([]);
+  });
+
+  it("★ notifyNewCase を渡した経路だけ送る（工事カレンダーの新規登録）", async () => {
+    await finalizeConstructionCalendarSave({
+      ...BASE,
+      constructionUniqueKey: "",
+      lineUserId: "U-line-1",
+      notifyNewCase: true,
+    });
+
+    expect(h.newCaseNotifications).toEqual([
+      {
+        tNumber: "T00003420",
+        customerName: "山田 太郎",
+        lineUserId: "U-line-1",
+      },
+    ]);
+  });
+
+  it("連携が T番号 を返さなければ送らない", async () => {
+    h.syncResult = { kind: "synced" };
+
+    await finalizeConstructionCalendarSave({
+      ...BASE,
+      constructionUniqueKey: "",
+      notifyNewCase: true,
+    });
+
+    expect(h.newCaseNotifications).toEqual([]);
+  });
+
+  it("連携が失敗したときは送らない", async () => {
+    h.syncResult = { kind: "failed", error: "boom" };
+
+    const res = await finalizeConstructionCalendarSave({
+      ...BASE,
+      constructionUniqueKey: "",
+      notifyNewCase: true,
+    });
+
+    expect(res.status).toBe(502);
+    expect(h.newCaseNotifications).toEqual([]);
   });
 });

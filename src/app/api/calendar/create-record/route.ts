@@ -17,6 +17,7 @@ import {
   uniqueFieldsCsv,
 } from "@/lib/calendar-construction-pocket-common";
 import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
+import { notifyNewCaseCreated } from "@/lib/new-case-notification-server";
 import { syncConstructionRecordToCustomerInfoApp } from "@/lib/sync-construction-to-customer-info";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
@@ -75,6 +76,12 @@ type Body = {
  *
  * T番号 を採番するのは**お客様情報アプリ**で、工事アプリではない。
  * 工事アプリの T番号 は転記されてくる値を入れるだけのテキスト列。
+ *
+ * ■ 新規案件通知（Google Chat）
+ *   T番号 が新規発行されるのはこのルートだけなので、通知もここからだけ送る。
+ *   施工予定日の有無は問わず、両方の経路で送る。空き枠入力・未定案件の
+ *   割り当て・工事日の移動・お客様情報からの保存は既存の T番号 を使い回す
+ *   ので送らない（finalizeConstructionCalendarSave の notifyNewCase 参照）。
  */
 export async function POST(request: Request) {
   const auth = await resolveCallerLineAuth(request);
@@ -180,8 +187,20 @@ export async function POST(request: Request) {
       );
     }
 
+    /**
+     * 新規案件通知。監査ログとは互いに関係が無いので走らせたまま進み、
+     * どちらも返す前に合流させる（返した瞬間に実行環境が凍結する）。
+     * T番号 が読めなかったときは notifyNewCaseCreated 側で送らない。
+     */
+    const pendingNewCaseNotification = notifyNewCaseCreated({
+      tNumber: sync.tNumber,
+      customerName,
+      lineUserId: auth.lineUserId,
+    });
+
     // 返した瞬間に実行環境が凍結する。監査ログを書き切ってから返す
     await sync.pendingAudit;
+    await pendingNewCaseNotification;
 
     return NextResponse.json({
       ok: true,
@@ -460,6 +479,8 @@ export async function POST(request: Request) {
       viewYear: body.viewYear,
       viewMonth: body.viewMonth,
       savedVerb: "登録",
+      // T番号 を新規発行するのはこの経路だけ。通知もここからだけ送る
+      notifyNewCase: true,
     });
   } catch (e) {
     console.error("[api/calendar/create-record]", e);

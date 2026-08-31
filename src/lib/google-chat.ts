@@ -1,7 +1,7 @@
 import "server-only";
 
 /**
- * Google Chat の Incoming Webhook 送信（タスクR: 契約速報／タスクW: 出勤打刻）。
+ * Google Chat の Incoming Webhook 送信（タスクR: 契約速報／タスクW: 出勤打刻／新規案件通知）。
  *
  * ── Webhook URL の扱い ─────────────────────────────────────
  * URL 自体が認証情報を兼ねる。漏れると誰でもそのスペースへ投稿できるため、
@@ -47,6 +47,21 @@ function attendanceWebhookUrl(): string {
  */
 export function googleChatAttendanceWebhookConfigured(): boolean {
   return attendanceWebhookUrl() !== "";
+}
+
+function newCaseWebhookUrl(): string {
+  return process.env.GOOGLE_CHAT_NEW_CASE_WEBHOOK_URL?.trim() ?? "";
+}
+
+/**
+ * 新規案件通知の Webhook が設定されているか。
+ *
+ * 契約速報・出勤打刻とは**別の Webhook**。同じスペースへ送りたい場合は、
+ * 運用側で同じ URL を両方に設定すればよい。
+ * 未設定でもエラーにしない（工事カレンダーの新規登録が止まらないようにする）。
+ */
+export function googleChatNewCaseWebhookConfigured(): boolean {
+  return newCaseWebhookUrl() !== "";
 }
 
 function attendanceListWebhookUrl(): string {
@@ -98,6 +113,18 @@ export async function sendGoogleChatAttendanceListMessage(
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<GoogleChatSendResult> {
   return sendGoogleChatMessage(attendanceListWebhookUrl(), text, timeoutMs);
+}
+
+/**
+ * 新規案件通知を Google Chat へ送る。
+ *
+ * 例外は投げない。呼び出し側は登録を成功させたまま先へ進む。
+ */
+export async function sendGoogleChatNewCaseMessage(
+  text: string,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<GoogleChatSendResult> {
+  return sendGoogleChatMessage(newCaseWebhookUrl(), text, timeoutMs);
 }
 
 /** 送信の実体。URL の出どころだけが違うので1本にまとめている */

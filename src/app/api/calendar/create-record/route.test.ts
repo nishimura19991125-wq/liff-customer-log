@@ -25,6 +25,10 @@ const h = vi.hoisted(() => ({
   } as Record<string, unknown>,
   auditOps: [] as string[],
   fieldsFetched: 0,
+  /** finalizeConstructionCalendarSave に渡した引数 */
+  finalizeCalls: [] as Record<string, unknown>[],
+  /** 新規案件通知の呼び出し（施工予定日が空の経路） */
+  newCaseNotifications: [] as Record<string, unknown>[],
 }));
 
 const CONSTRUCTION_FIELDS = [
@@ -92,11 +96,20 @@ vi.mock("@/lib/sync-construction-to-customer-info", () => ({
 }));
 
 vi.mock("@/lib/calendar-after-construction-save", () => ({
-  finalizeConstructionCalendarSave: async () =>
-    new Response(JSON.stringify({ ok: true, customerInfoSynced: true }), {
+  finalizeConstructionCalendarSave: async (o: Record<string, unknown>) => {
+    h.finalizeCalls.push(o);
+    return new Response(JSON.stringify({ ok: true, customerInfoSynced: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
-    }),
+    });
+  },
+}));
+
+vi.mock("@/lib/new-case-notification-server", () => ({
+  notifyNewCaseCreated: async (o: Record<string, unknown>) => {
+    h.newCaseNotifications.push(o);
+    return { kind: "sent" };
+  },
 }));
 
 vi.mock("@/lib/audit-log", () => ({
@@ -139,6 +152,8 @@ beforeEach(() => {
   h.syncCalls = [];
   h.auditOps = [];
   h.fieldsFetched = 0;
+  h.finalizeCalls = [];
+  h.newCaseNotifications = [];
   h.syncResult = {
     kind: "synced",
     customerInfoRecordId: "cust-1",
@@ -282,5 +297,64 @@ describe("入力の検証（両経路共通）", () => {
 
     expect(res.status).toBe(400);
     expect(h.syncCalls).toHaveLength(0);
+  });
+});
+
+/**
+ * 新規案件通知（Google Chat）。
+ *
+ * T番号 が新規発行されるのはこのルートだけなので、通知もここからだけ出す。
+ * 施工予定日の有無で経路が分かれるが、**どちらでも送る**。
+ * 空き枠入力・未定案件の割り当て・工事日の移動は別のルートで、
+ * finalizeConstructionCalendarSave に notifyNewCase を渡さない。
+ */
+describe("新規案件通知", () => {
+  it("★ 施工予定日が空でも送る（操作した人を案件作成者にする）", async () => {
+    await post(BASE);
+
+    expect(h.newCaseNotifications).toEqual([
+      {
+        tNumber: "T00003420",
+        customerName: "山田 太郎",
+        lineUserId: "U1",
+      },
+    ]);
+  });
+
+  it("★ 施工予定日ありは後処理へ notifyNewCase を渡して送らせる", async () => {
+    await post({ ...BASE, scheduledStartDate: "2026-12-05" });
+
+    expect(h.finalizeCalls).toHaveLength(1);
+    expect(h.finalizeCalls[0]).toMatchObject({
+      notifyNewCase: true,
+      customerName: "山田 太郎",
+      lineUserId: "U1",
+    });
+    // この経路の送信は後処理側が行う。ルートからは直接送らない
+    expect(h.newCaseNotifications).toEqual([]);
+  });
+
+  it("連携が T番号 を返さなくても登録は成功する（送信側で送らない判定）", async () => {
+    h.syncResult = { kind: "synced", customerInfoRecordId: "cust-1" };
+
+    const res = await post(BASE);
+
+    expect(res.status).toBe(200);
+    expect(h.newCaseNotifications).toEqual([
+      {
+        tNumber: undefined,
+        customerName: "山田 太郎",
+        lineUserId: "U1",
+      },
+    ]);
+  });
+
+  it("連携に失敗したときは送らない", async () => {
+    h.syncResult = { kind: "failed", error: "boom" };
+
+    const res = await post(BASE);
+
+    expect(res.status).toBe(502);
+    expect(h.newCaseNotifications).toEqual([]);
   });
 });
