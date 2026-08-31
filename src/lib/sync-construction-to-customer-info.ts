@@ -387,47 +387,85 @@ async function findExistingCustomerInfoRecord(opts: {
  * 採番元がこちらへ移ったので、書き込んだあとに読み取って
  * 工事アプリへ返すのが連携の要になる。読めなければ空文字。
  */
+/** 採番待ちの間隔。@pocket の反映を待つ用途にしか使わない */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function readCustomerInfoExistingValues(
   customerAppId: string,
   recordId: string,
   tNumberFieldId: string,
   dropboxLinkFieldId: string | null,
   customerAuth: AtPocketFetchAuth,
+  /**
+   * T番号 が空だったときに待ち直す間隔。
+   *
+   * **作成直後だけ渡す。** お客様情報アプリの自動採番は反映に一瞬かかり、
+   * 作成応答の直後に読むと空で返ることがある。ここが空のままだと、
+   * 新規案件通知も工事アプリへの T番号 書き戻しも丸ごと落ちる。
+   * 既存レコードを読むときは既に採番済みなので渡さない（空振りの往復になる）。
+   */
+  pollDelaysMs: readonly number[] = [0],
 ): Promise<{ tNumber: string; dropboxLink: string }> {
   const empty = { tNumber: "", dropboxLink: "" };
   const fieldsCsv = [tNumberFieldId, dropboxLinkFieldId]
     .map((id) => id?.trim())
     .filter((id): id is string => Boolean(id))
     .join(",");
-  try {
-    let row = await fetchRecordById(
-      customerAppId,
-      recordId,
-      customerAuth,
-      fieldsCsv,
-    );
-    if (!row?.record) {
-      row = await fetchRecordById(customerAppId, recordId, customerAuth);
+
+  // T番号 が取れた時点で抜ける。取れなければ最後の結果を返す
+  let last = empty;
+  for (const [attempt, delay] of pollDelaysMs.entries()) {
+    if (delay > 0) await sleep(delay);
+    try {
+      let row = await fetchRecordById(
+        customerAppId,
+        recordId,
+        customerAuth,
+        fieldsCsv,
+      );
+      if (!row?.record) {
+        row = await fetchRecordById(customerAppId, recordId, customerAuth);
+      }
+      if (!row?.record || typeof row.record !== "object") continue;
+      const recObj = row.record as Record<string, unknown>;
+      last = {
+        tNumber: coercePocketPlainString(
+          pickRecordValueByFieldAliases(recObj, tNumberFieldId),
+        ),
+        dropboxLink: dropboxLinkFieldId
+          ? coercePocketPlainString(
+              pickRecordValueByFieldAliases(recObj, dropboxLinkFieldId),
+            )
+          : "",
+      };
+      if (last.tNumber) {
+        if (attempt > 0) {
+          // 何回目で出たかが分かると、待ち時間が足りているか判断できる
+          console.info(
+            "[sync-construction-to-customer-info] T番号 の採番を待って取得しました",
+            JSON.stringify({ attempt: attempt + 1, recordId }),
+          );
+        }
+        return last;
+      }
+    } catch (e) {
+      console.warn(
+        "[sync-construction-to-customer-info] T番号・Dropboxリンクの読み取りに失敗",
+        e instanceof Error ? e.message : String(e),
+      );
     }
-    if (!row?.record || typeof row.record !== "object") return empty;
-    const recObj = row.record as Record<string, unknown>;
-    return {
-      tNumber: coercePocketPlainString(
-        pickRecordValueByFieldAliases(recObj, tNumberFieldId),
-      ),
-      dropboxLink: dropboxLinkFieldId
-        ? coercePocketPlainString(
-            pickRecordValueByFieldAliases(recObj, dropboxLinkFieldId),
-          )
-        : "",
-    };
-  } catch (e) {
-    console.warn(
-      "[sync-construction-to-customer-info] T番号・Dropboxリンクの読み取りに失敗",
-      e instanceof Error ? e.message : String(e),
-    );
-    return empty;
   }
+
+  if (!last.tNumber && pollDelaysMs.length > 1) {
+    // 待っても出なかった。通知も書き戻しもここで落ちる
+    console.error(
+      "[sync-construction-to-customer-info] T番号 を採番待ちしても読めませんでした",
+      JSON.stringify({ recordId, attempts: pollDelaysMs.length }),
+    );
+  }
+  return last;
 }
 
 /**
@@ -1158,6 +1196,8 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
         resolvedCustomerKey,
         null,
         customerAuth,
+        // 作成直後は採番が間に合わないことがある。短く待ち直す
+        SYNC_TNUMBER_POLL_DELAYS_MS,
       )
     ).tNumber;
     if (customerTNumber) {

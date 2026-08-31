@@ -31,6 +31,13 @@ const h = vi.hoisted(() => ({
   updated: [] as { recordId: string; payload: Record<string, unknown> }[],
   /** 工事アプリのレコード */
   constructionRecord: {} as Record<string, unknown>,
+  /** お客様情報アプリの GET 回数（採番待ちの往復数を数える） */
+  customerGetCount: 0,
+  /**
+   * この回数までは T番号 を空で返す（@pocket の採番が間に合わない状況）。
+   * 0 なら1回目から採番済み。
+   */
+  tNumberEmptyUntil: 0,
 }));
 
 const CUSTOMER_FIELDS = [
@@ -53,7 +60,13 @@ vi.mock("@/lib/atpocket", () => ({
   fetchRecordById: async (_appId: string, recordId: string) => {
     if (recordId === "con-1") return { record: h.constructionRecord };
     const rec = h.customerRecords[recordId];
-    return rec ? { record: rec } : null;
+    if (!rec) return null;
+    h.customerGetCount += 1;
+    // 採番が間に合っていない間は T番号 が空で返る
+    if (h.customerGetCount <= h.tNumberEmptyUntil) {
+      return { record: { ...rec, "field-268": "" } };
+    }
+    return { record: rec };
   },
   createRecord: async (_appId: string, payload: Record<string, unknown>) => {
     h.created.push(payload);
@@ -120,6 +133,8 @@ beforeEach(() => {
   h.refetchCalls = [];
   h.created = [];
   h.updated = [];
+  h.customerGetCount = 0;
+  h.tNumberEmptyUntil = 0;
   // 新規案件: Aki番号 は入っているが T番号 はまだ無い
   h.constructionRecord = { "field-101": "A0001", "field-2": "山田 太郎" };
 });
@@ -443,5 +458,82 @@ describe("★ 照合の引き直し（B案）", () => {
 
     expect(h.lookupCalls).toHaveLength(0);
     expect(h.refetchCalls).toHaveLength(0);
+  });
+});
+
+/**
+ * T番号 の採番待ち。
+ *
+ * お客様情報アプリの自動採番は反映に一瞬かかる。作成応答の直後に読むと
+ * 空で返ることがあり、実機ではこれで新規案件通知が丸ごと落ちていた
+ * （[new-case-notification] stage:no-t-number）。
+ * 工事アプリへの T番号 書き戻しも同じ値を見ているので一緒に落ちる。
+ *
+ * ここで固定するのは次の3つ。
+ *   - 空なら短く待ち直し、出たら使う
+ *   - 1回目で取れたなら待たない（毎回の空振りを増やさない）
+ *   - 待っても出なければ諦める。登録は成功のままにする
+ */
+describe("★ T番号 の採番待ち", () => {
+  it("★ 作成直後に空でも、待ち直して取得する", async () => {
+    // 1回目の GET は空。2回目で採番が見える
+    h.tNumberEmptyUntil = 1;
+
+    const res = await sync();
+
+    expect(res.kind).toBe("synced");
+    expect((res as { tNumber?: string }).tNumber).toBe("T00003420");
+    expect(h.customerGetCount).toBe(2);
+  });
+
+  it("★ 2回空でも3回目で取れる", async () => {
+    h.tNumberEmptyUntil = 2;
+
+    const res = await sync();
+
+    expect((res as { tNumber?: string }).tNumber).toBe("T00003420");
+    expect(h.customerGetCount).toBe(3);
+  });
+
+  it("★ 1回目で取れたら待ち直さない（往復を増やさない）", async () => {
+    const res = await sync();
+
+    expect((res as { tNumber?: string }).tNumber).toBe("T00003420");
+    expect(h.customerGetCount).toBe(1);
+  });
+
+  it("★ 待っても出なければ諦めるが、登録は成功のまま", async () => {
+    h.tNumberEmptyUntil = 99;
+
+    const res = await sync();
+
+    expect(res.kind).toBe("synced");
+    expect((res as { tNumber?: string }).tNumber).toBeUndefined();
+    // 上限は3回。無限には待たない
+    expect(h.customerGetCount).toBe(3);
+  });
+
+  it("★ 施工予定日が未定の経路でも待ち直す", async () => {
+    h.tNumberEmptyUntil = 1;
+
+    const res = await sync({
+      customerInfoOnly: true,
+      constructionRecordId: undefined,
+    });
+
+    expect((res as { tNumber?: string }).tNumber).toBe("T00003420");
+  });
+
+  it("既存レコードの更新では待ち直さない（採番済みのため）", async () => {
+    h.customerRecords["cust-9"] = {
+      "field-268": "T00009999",
+      "field-267": "A0001",
+    };
+    h.lookup = { "field-267": { A0001: "cust-9" } };
+
+    await sync();
+
+    // 既存レコードは1回読むだけ
+    expect(h.customerGetCount).toBe(1);
   });
 });
