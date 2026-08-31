@@ -377,3 +377,44 @@ describe("新規案件通知", () => {
     expect(h.newCaseNotifications).toEqual([]);
   });
 });
+
+/**
+ * 書き戻しが飛んだことを残す。
+ *
+ * 通知が落ちていたのと同じ原因（T番号 が空）でここも落ちるが、通知と違い
+ * 誰も気付けない。工事アプリの T番号 が空のまま残ると、カレンダー表示・
+ * 工事報告アプリとの突合・キャンセル処理に後から効いてくる。
+ */
+describe("T番号 が空のときの記録", () => {
+  it("★ 書き戻せないことを error に残す", async () => {
+    h.syncResult = { kind: "synced" };
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await finalizeConstructionCalendarSave({
+      ...BASE,
+      constructionUniqueKey: "",
+    });
+
+    const logged = errorSpy.mock.calls.flat().join(" ");
+    expect(logged).toContain("書き戻せません");
+    expect(logged).toContain("con-1");
+    expect(h.writes).toEqual([]);
+
+    errorSpy.mockRestore();
+  });
+
+  it("T番号 が取れていれば残さない（正常時にログを汚さない）", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await finalizeConstructionCalendarSave({
+      ...BASE,
+      constructionUniqueKey: "",
+    });
+
+    const logged = errorSpy.mock.calls.flat().join(" ");
+    expect(logged).not.toContain("書き戻せません");
+    expect(h.writes).toHaveLength(1);
+
+    errorSpy.mockRestore();
+  });
+});

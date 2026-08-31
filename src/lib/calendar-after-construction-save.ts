@@ -168,6 +168,26 @@ export async function finalizeConstructionCalendarSave(opts: {
   const pendingAudit =
     customerSync.kind === "synced" ? customerSync.pendingAudit : undefined;
 
+  /**
+   * T番号 が空だと書き戻しは丸ごと飛ぶ。
+   *
+   * 新規案件通知が落ちていたのと**同じ原因**（お客様情報の採番を読めて
+   * いない）でここも落ちる。通知は届かないので気付けるが、書き戻しは
+   * 誰も見ていないと気付けない。工事アプリの T番号 はカレンダー表示・
+   * 工事報告アプリとの突合・キャンセル処理が見ているので、静かに欠けると
+   * 後から効いてくる。飛んだことを必ず残す。
+   */
+  if (recordId && !syncedTNumber) {
+    console.error(
+      "[calendar-after-construction-save] T番号 が空のため工事アプリへ書き戻せません",
+      JSON.stringify({
+        calAppId: opts.calAppId,
+        recordId,
+        syncKind: customerSync.kind,
+      }),
+    );
+  }
+
   if (recordId && syncedTNumber && syncedTNumber !== currentRecordTNumber) {
     const tNumberFieldId = resolveConstructionTNumberFieldId(
       opts.constructionFields,
