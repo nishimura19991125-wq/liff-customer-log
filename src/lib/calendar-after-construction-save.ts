@@ -135,15 +135,18 @@ export async function finalizeConstructionCalendarSave(opts: {
    * 監査ログ・カレンダーパッチとは互いに関係が無い。直列に待つ理由が
    * 無いので走らせたまま進み、返す前に合流させる。
    * notifyNewCaseCreated は例外を投げないので、ここで catch は要らない。
+   *
+   * ⚠ **送らないときも必ず呼ぶ。** ここで握り潰すと、送らなかった理由が
+   *   ログに残らない。実装直後に「通知が届かない」が起きたとき、
+   *   notifyNewCase・T番号・環境変数のどれで止まったのかを切り分けられ
+   *   なかったのがこれ。判断と記録は notifyNewCaseCreated に集約する。
    */
-  const pendingNewCaseNotification =
-    opts.notifyNewCase && syncedTNumber
-      ? notifyNewCaseCreated({
-        tNumber: syncedTNumber,
-        customerName: opts.customerName,
-        lineUserId: opts.lineUserId,
-      })
-      : undefined;
+  const pendingNewCaseNotification = notifyNewCaseCreated({
+    enabled: opts.notifyNewCase === true,
+    tNumber: syncedTNumber,
+    customerName: opts.customerName,
+    lineUserId: opts.lineUserId,
+  });
 
   /**
    * 工事レコードに今入っている T番号。
@@ -217,10 +220,8 @@ export async function finalizeConstructionCalendarSave(opts: {
   timing.mark("calendar-patch");
 
   // 返した瞬間に実行環境が凍結する。送り終えてから返す
-  if (pendingNewCaseNotification) {
-    await pendingNewCaseNotification;
-    timing.mark("new-case-notify");
-  }
+  await pendingNewCaseNotification;
+  timing.mark("new-case-notify");
 
   timing.flush({
     result: "ok",

@@ -306,16 +306,24 @@ describe("監査ログの合流（E案）", () => {
  * 使い回すだけの操作にまで通知が飛ぶ。
  */
 describe("新規案件通知", () => {
-  it("★ 既定では送らない（空き枠入力・割り当て・工事日の移動）", async () => {
+  it("★ 既定では enabled:false で呼ぶ（空き枠入力・割り当て・工事日の移動）", async () => {
     await finalizeConstructionCalendarSave({
       ...BASE,
       constructionUniqueKey: "T00003420",
     });
 
-    expect(h.newCaseNotifications).toEqual([]);
+    // 送らないと決めた理由をログに残させるため、握り潰さず必ず呼ぶ
+    expect(h.newCaseNotifications).toEqual([
+      {
+        enabled: false,
+        tNumber: "T00003420",
+        customerName: "山田 太郎",
+        lineUserId: undefined,
+      },
+    ]);
   });
 
-  it("★ notifyNewCase を渡した経路だけ送る（工事カレンダーの新規登録）", async () => {
+  it("★ notifyNewCase を渡した経路だけ enabled:true で呼ぶ（新規登録）", async () => {
     await finalizeConstructionCalendarSave({
       ...BASE,
       constructionUniqueKey: "",
@@ -325,6 +333,7 @@ describe("新規案件通知", () => {
 
     expect(h.newCaseNotifications).toEqual([
       {
+        enabled: true,
         tNumber: "T00003420",
         customerName: "山田 太郎",
         lineUserId: "U-line-1",
@@ -332,7 +341,7 @@ describe("新規案件通知", () => {
     ]);
   });
 
-  it("連携が T番号 を返さなければ送らない", async () => {
+  it("★ 連携が T番号 を返さなくても呼ぶ（空で渡し、送信側が理由を残す）", async () => {
     h.syncResult = { kind: "synced" };
 
     await finalizeConstructionCalendarSave({
@@ -341,10 +350,18 @@ describe("新規案件通知", () => {
       notifyNewCase: true,
     });
 
-    expect(h.newCaseNotifications).toEqual([]);
+    expect(h.newCaseNotifications).toEqual([
+      {
+        enabled: true,
+        // 連携が読めなければ undefined のまま渡す（送信側が空と判定する）
+        tNumber: undefined,
+        customerName: "山田 太郎",
+        lineUserId: undefined,
+      },
+    ]);
   });
 
-  it("連携が失敗したときは送らない", async () => {
+  it("連携が失敗したときは呼ばない（登録が成立していない）", async () => {
     h.syncResult = { kind: "failed", error: "boom" };
 
     const res = await finalizeConstructionCalendarSave({
