@@ -314,6 +314,7 @@ describe("新規案件通知", () => {
 
     expect(h.newCaseNotifications).toEqual([
       {
+        source: "create-record:undated",
         tNumber: "T00003420",
         customerName: "山田 太郎",
         lineUserId: "U1",
@@ -342,6 +343,7 @@ describe("新規案件通知", () => {
     expect(res.status).toBe(200);
     expect(h.newCaseNotifications).toEqual([
       {
+        source: "create-record:undated",
         tNumber: undefined,
         customerName: "山田 太郎",
         lineUserId: "U1",

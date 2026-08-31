@@ -193,6 +193,7 @@ export async function POST(request: Request) {
      * T番号 が読めなかったときは notifyNewCaseCreated 側で送らない。
      */
     const pendingNewCaseNotification = notifyNewCaseCreated({
+      source: "create-record:undated",
       tNumber: sync.tNumber,
       customerName,
       lineUserId: auth.lineUserId,

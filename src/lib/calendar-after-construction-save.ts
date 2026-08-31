@@ -142,6 +142,8 @@ export async function finalizeConstructionCalendarSave(opts: {
    *   なかったのがこれ。判断と記録は notifyNewCaseCreated に集約する。
    */
   const pendingNewCaseNotification = notifyNewCaseCreated({
+    // 新規登録の施工予定日ありだけが enabled:true でここを通る
+    source: "finalize",
     enabled: opts.notifyNewCase === true,
     tNumber: syncedTNumber,
     customerName: opts.customerName,

@@ -47,7 +47,24 @@ export type NewCaseNotificationOutcome =
     }
   | { kind: "failed" };
 
+/**
+ * どの呼び出し口から来たか。**ログの切り分け用**。
+ *
+ * 「T番号 が空」で止まったとき、施工予定日ありとなしでは原因が違う。
+ *   - なし（create-record:undated）… 工事レコードが無く Aki番号 も無い。
+ *     作成応答から recordId が取れないと引き直す手がかりが無くなる
+ *   - あり（finalize）… Aki番号 で引き直せる。空なら採番待ちを疑う
+ * 区別が付かないと、どちらを直すべきか決められない。
+ */
+export type NewCaseNotificationSource =
+  /** 工事カレンダーの新規登録（施工予定日なし。工事アプリを触らない） */
+  | "create-record:undated"
+  /** 工事レコード保存の後処理（新規登録の施工予定日ありがここを通る） */
+  | "finalize";
+
 export type NewCaseNotificationInputs = {
+  /** どの呼び出し口か。ログにそのまま出す */
+  source: NewCaseNotificationSource;
   /**
    * この操作で T番号 が新規発行されたか。
    *
@@ -121,6 +138,7 @@ export async function notifyNewCaseCreated(
     console.error(
       `${LOG_TAG} 想定外の例外で送れませんでした`,
       JSON.stringify({
+        source: input.source,
         tNumber: input.tNumber ?? "",
         name: e instanceof Error ? e.name : "unknown",
       }),
@@ -144,6 +162,7 @@ async function runNewCaseNotification(
   if (input.enabled === false) {
     logStage("送りません（この操作では T番号 を新規発行していない）", {
       stage: "not-requested",
+      source: input.source,
       hasTNumber: Boolean(tNumber),
     });
     return { kind: "skipped", reason: "not-requested" };
@@ -158,6 +177,7 @@ async function runNewCaseNotification(
   if (!tNumber) {
     logStage("送りません（T番号 が空。お客様情報の採番を読めていない）", {
       stage: "no-t-number",
+      source: input.source,
       hasCustomerName: Boolean(input.customerName.trim()),
       hasLineUserId: Boolean(input.lineUserId?.trim()),
     });
@@ -171,10 +191,11 @@ async function runNewCaseNotification(
    * 第一候補**なので必ず残す。値は出さず、設定の有無だけを出す。
    */
   if (!googleChatNewCaseWebhookConfigured()) {
-    logStage(
-      "送りません（GOOGLE_CHAT_NEW_CASE_WEBHOOK_URL が未設定）",
-      { stage: "not-configured", tNumber },
-    );
+    logStage("送りません（GOOGLE_CHAT_NEW_CASE_WEBHOOK_URL が未設定）", {
+      stage: "not-configured",
+      source: input.source,
+      tNumber,
+    });
     return { kind: "skipped", reason: "not-configured" };
   }
 
@@ -189,6 +210,7 @@ async function runNewCaseNotification(
 
   logStage("送信します", {
     stage: "sending",
+    source: input.source,
     tNumber,
     hasCustomerName: Boolean(input.customerName.trim()),
     hasCreatorName: Boolean(creatorName),
@@ -198,7 +220,7 @@ async function runNewCaseNotification(
   const result = await sendGoogleChatNewCaseMessage(text);
 
   if (result.kind === "sent") {
-    logStage("送信しました", { stage: "sent", tNumber });
+    logStage("送信しました", { stage: "sent", source: input.source, tNumber });
     return { kind: "sent" };
   }
 
@@ -206,6 +228,7 @@ async function runNewCaseNotification(
     // 上で設定済みと判定しているので、通常ここには来ない
     logStage("送信側がスキップしました", {
       stage: "send-skipped",
+      source: input.source,
       tNumber,
       reason: result.reason,
     });
@@ -220,6 +243,7 @@ async function runNewCaseNotification(
     `${LOG_TAG} 送信に失敗しました`,
     JSON.stringify({
       stage: "send-failed",
+      source: input.source,
       tNumber,
       reason: result.reason,
       status: result.status,

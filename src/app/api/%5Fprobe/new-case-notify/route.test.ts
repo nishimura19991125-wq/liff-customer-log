@@ -128,6 +128,7 @@ describe("調査用ルートの入口", () => {
     expect(body.outcome).toEqual({ kind: "sent" });
     expect(h.notifyCalls).toEqual([
       {
+        source: "create-record:undated",
         tNumber: "T00003420",
         customerName: "（通知テスト）",
         lineUserId: "U-line-1",

@@ -118,6 +118,8 @@ export async function POST(request: Request) {
 
   // 本番と同じ関数を通す。判定・ログ・送信をここで作り直さない
   const outcome = await notifyNewCaseCreated({
+    // 施工予定日なしと同じ入口を通す（工事アプリを触らない経路）
+    source: "create-record:undated",
     tNumber,
     customerName,
     lineUserId: auth.lineUserId,

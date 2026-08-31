@@ -56,6 +56,7 @@ afterEach(() => {
 describe("notifyNewCaseCreated", () => {
   it("T番号があれば送る。案件作成者は操作した人の名前", async () => {
     const outcome = await notifyNewCaseCreated({
+   source: "create-record:undated",
       tNumber: "T-1234",
       customerName: "山田太郎",
       lineUserId: "U-line-1",
@@ -72,6 +73,7 @@ describe("notifyNewCaseCreated", () => {
 
   it("T番号が空なら送らない", async () => {
     const outcome = await notifyNewCaseCreated({
+   source: "create-record:undated",
       tNumber: "  ",
       customerName: "山田太郎",
       lineUserId: "U-line-1",
@@ -85,6 +87,7 @@ describe("notifyNewCaseCreated", () => {
 
   it("T番号が未取得（undefined）でも送らない", async () => {
     const outcome = await notifyNewCaseCreated({
+   source: "create-record:undated",
       tNumber: undefined,
       customerName: "山田太郎",
     });
@@ -97,6 +100,7 @@ describe("notifyNewCaseCreated", () => {
     h.configured = false;
 
     const outcome = await notifyNewCaseCreated({
+   source: "create-record:undated",
       tNumber: "T-1234",
       customerName: "山田太郎",
       lineUserId: "U-line-1",
@@ -110,6 +114,7 @@ describe("notifyNewCaseCreated", () => {
     h.staffLookupError = true;
 
     const outcome = await notifyNewCaseCreated({
+   source: "create-record:undated",
       tNumber: "T-1234",
       customerName: "山田太郎",
       lineUserId: "U-line-1",
@@ -122,6 +127,7 @@ describe("notifyNewCaseCreated", () => {
 
   it("lineUserId が無ければ名簿を引かず案件作成者を空にする", async () => {
     const outcome = await notifyNewCaseCreated({
+   source: "create-record:undated",
       tNumber: "T-1234",
       customerName: "山田太郎",
     });
@@ -135,6 +141,7 @@ describe("notifyNewCaseCreated", () => {
     h.staffName = null;
 
     const outcome = await notifyNewCaseCreated({
+   source: "create-record:undated",
       tNumber: "T-1234",
       customerName: "山田太郎",
       lineUserId: "U-line-1",
@@ -151,6 +158,7 @@ describe("notifyNewCaseCreated", () => {
       .mockImplementation(() => {});
 
     const outcome = await notifyNewCaseCreated({
+   source: "create-record:undated",
       tNumber: "T-1234",
       customerName: "山田太郎",
       lineUserId: "U-line-1",
@@ -169,6 +177,7 @@ describe("notifyNewCaseCreated", () => {
     h.result = { kind: "skipped", reason: "not-configured" };
 
     const outcome = await notifyNewCaseCreated({
+   source: "create-record:undated",
       tNumber: "T-1234",
       customerName: "山田太郎",
       lineUserId: "U-line-1",
@@ -200,6 +209,7 @@ describe("スキップ理由のログ", () => {
 
   it("★ notifyNewCase が false（新規発行ではない操作）を残す", async () => {
     const outcome = await notifyNewCaseCreated({
+   source: "create-record:undated",
       enabled: false,
       tNumber: "T-1234",
       customerName: "山田太郎",
@@ -213,6 +223,7 @@ describe("スキップ理由のログ", () => {
 
   it("★ T番号 が空を残す", async () => {
     await notifyNewCaseCreated({
+      source: "create-record:undated",
       tNumber: "",
       customerName: "山田太郎",
       lineUserId: "U-line-1",
@@ -225,6 +236,7 @@ describe("スキップ理由のログ", () => {
     h.configured = false;
 
     await notifyNewCaseCreated({
+      source: "create-record:undated",
       tNumber: "T-1234",
       customerName: "山田太郎",
       lineUserId: "U-line-1",
@@ -239,6 +251,7 @@ describe("スキップ理由のログ", () => {
     h.staffLookupError = true;
 
     const outcome = await notifyNewCaseCreated({
+   source: "create-record:undated",
       tNumber: "T-1234",
       customerName: "山田太郎",
       lineUserId: "U-line-1",
@@ -250,6 +263,7 @@ describe("スキップ理由のログ", () => {
 
   it("★ 送信の直前と成功を残す（fetch まで届いたかが分かる）", async () => {
     await notifyNewCaseCreated({
+      source: "create-record:undated",
       tNumber: "T-1234",
       customerName: "山田太郎",
       lineUserId: "U-line-1",
@@ -264,6 +278,7 @@ describe("スキップ理由のログ", () => {
     h.result = { kind: "failed", reason: "timeout" };
 
     await notifyNewCaseCreated({
+      source: "create-record:undated",
       tNumber: "T-1234",
       customerName: "山田太郎",
       lineUserId: "U-line-1",
@@ -290,6 +305,7 @@ describe("スキップ理由のログ", () => {
       setup();
 
       await notifyNewCaseCreated({
+        source: "create-record:undated",
         tNumber: "T-1234",
         customerName: "山田太郎",
         lineUserId: "U-line-1",
@@ -300,5 +316,57 @@ describe("スキップ理由のログ", () => {
       expect(logged).not.toContain("西村");
       expect(logged).not.toContain("U-line-1");
     }
+  });
+});
+
+/**
+ * どちらの経路で止まったかをログから判別できること。
+ *
+ * 「T番号 が空」は施工予定日ありとなしの両方で起きうるが、原因が違う。
+ * 区別が付かないと直す場所を決められない。
+ */
+describe("経路の判別", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+  });
+
+  function infoText(): string {
+    const spy = console.info as unknown as { mock: { calls: unknown[][] } };
+    return spy.mock.calls.flat().join(" ");
+  }
+
+  it("★ 施工予定日なしの経路が分かる", async () => {
+    await notifyNewCaseCreated({
+      source: "create-record:undated",
+      tNumber: "",
+      customerName: "山田太郎",
+      lineUserId: "U-line-1",
+    });
+
+    expect(infoText()).toContain("create-record:undated");
+  });
+
+  it("★ 施工予定日ありの経路（後処理）が分かる", async () => {
+    await notifyNewCaseCreated({
+      source: "finalize",
+      tNumber: "",
+      customerName: "山田太郎",
+      lineUserId: "U-line-1",
+    });
+
+    expect(infoText()).toContain("finalize");
+  });
+
+  it("★ 送れたときも経路が残る", async () => {
+    await notifyNewCaseCreated({
+      source: "finalize",
+      tNumber: "T-1234",
+      customerName: "山田太郎",
+      lineUserId: "U-line-1",
+    });
+
+    const logged = infoText();
+    expect(logged).toContain('"stage":"sent"');
+    expect(logged).toContain("finalize");
   });
 });

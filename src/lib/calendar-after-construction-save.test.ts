@@ -315,6 +315,7 @@ describe("新規案件通知", () => {
     // 送らないと決めた理由をログに残させるため、握り潰さず必ず呼ぶ
     expect(h.newCaseNotifications).toEqual([
       {
+        source: "finalize",
         enabled: false,
         tNumber: "T00003420",
         customerName: "山田 太郎",
@@ -333,6 +334,7 @@ describe("新規案件通知", () => {
 
     expect(h.newCaseNotifications).toEqual([
       {
+        source: "finalize",
         enabled: true,
         tNumber: "T00003420",
         customerName: "山田 太郎",
@@ -352,6 +354,7 @@ describe("新規案件通知", () => {
 
     expect(h.newCaseNotifications).toEqual([
       {
+        source: "finalize",
         enabled: true,
         // 連携が読めなければ undefined のまま渡す（送信側が空と判定する）
         tNumber: undefined,
