@@ -55,6 +55,9 @@ import {
   appendDialogTrace,
   describeDialogTapProbe,
   dialogTraceErrorText,
+  formatDialogElapsed,
+  formatDialogTrace,
+  type DialogTraceEntry,
   EMPTY_DIALOG_TAP_PROBE,
   type DialogTapProbe,
 } from "@/lib/dialog-diagnostics";
@@ -138,6 +141,12 @@ export function CalendarMoveCasePanel({
     targetDayKey: string;
     movedRecordId: string | null;
     slotRecordId: string | null;
+    /**
+     * 診断モードの計測点。**呼んでも呼ばなくても動作は変わらない。**
+     * 反映とリフレッシュは呼び出し側の中で起きるので、区間を分けるには
+     * あちらから知らせてもらうしかない
+     */
+    note?: (label: string) => void;
   }) => Promise<void>;
   onSessionExpired?: () => void;
 }) {
@@ -181,10 +190,14 @@ export function CalendarMoveCasePanel({
    * handleMove がどこまで進んだかを溜めて、確認画面に出す。
    */
   const diagnostics = useDialogDiagnostics();
-  const [trace, setTrace] = useState<string[]>([]);
+  const [trace, setTrace] = useState<DialogTraceEntry[]>([]);
+  /**
+   * 段階を1行残す。時刻は performance.now()（単調増加）で取る。
+   * Date.now() だと端末の時計合わせで巻き戻ることがある
+   */
   const note = (line: string) => {
     if (!diagnostics.enabled) return;
-    setTrace((prev) => appendDialogTrace(prev, line));
+    setTrace((prev) => appendDialogTrace(prev, line, performance.now()));
   };
 
   /**
@@ -194,6 +207,12 @@ export function CalendarMoveCasePanel({
    * note は毎描画で別物になるので ref 経由にする。依存に入れると
    * 描画のたびに購読を張り直すことになる（この画面の既存の流儀）。
    */
+  /** handleMove の中から最新の trace を読む（state は閉じ込められる） */
+  const traceRef = useRef(trace);
+  useEffect(() => {
+    traceRef.current = trace;
+  }, [trace]);
+
   const noteRef = useRef(note);
   useEffect(() => {
     noteRef.current = note;
@@ -493,6 +512,8 @@ export function CalendarMoveCasePanel({
       }
 
       note("成功");
+      // 応答からここまでが「反映＋リフレッシュ」の待ち時間
+      const afterResponseAt = performance.now();
       setConfirming(false);
       setOpen(false);
       const movedDayKey = targetDayKey;
@@ -512,6 +533,7 @@ export function CalendarMoveCasePanel({
             // 空き枠を使ったならその ID、新規作成ならサーバが返した ID
             movedRecordId: data.recordId?.trim() || null,
             slotRecordId: usedSlotId || null,
+            note,
           });
         } else {
           await onSaved(null);
@@ -520,6 +542,7 @@ export function CalendarMoveCasePanel({
         failWith(calendarSubmitCatchMessage(e));
         return;
       }
+      note("完了");
       const movedWhere =
         data.movedTo === "new"
           ? `${formatDisplayYmd(movedDayKey)} に新しいレコードを作成しました。`
@@ -532,10 +555,26 @@ export function CalendarMoveCasePanel({
         ? "元のレコードは削除しました。"
         : "元の枠は空き枠に戻しています。";
       const kept = data.sourceKeptNotice?.trim();
+      /**
+       * 診断モードのときだけ、待ち時間と各段階の内訳を添える。
+       *
+       * 成功するとダイアログもパネルも閉じるので、診断枠は消えてしまう。
+       * feedback はパネルが閉じても残る唯一の表示なので、ここへ出す。
+       * **既定では1文字も足さない。**
+       */
+      const diagnosticsTail = diagnostics.enabled
+        ? [
+            "",
+            `[診断] 応答後の待ち ${formatDialogElapsed(
+              performance.now() - afterResponseAt,
+            )}`,
+            ...formatDialogTrace(traceRef.current),
+          ].join("\n")
+        : "";
       setFeedback({
         kind: "ok",
         text: `${movedWhere}${sourceWhat}${kept ? `
-${kept}` : ""}`,
+${kept}` : ""}${diagnosticsTail}`,
       });
     } catch (e) {
       note(`例外: ${dialogTraceErrorText(e)}`);
@@ -798,7 +837,7 @@ ${kept}` : ""}`,
         busy={submitting}
         sourceDisposition={sourceDisposition}
         onSourceDispositionChange={setSourceDisposition}
-        diagnosticsTrace={diagnostics.enabled ? trace : null}
+        diagnosticsTrace={diagnostics.enabled ? formatDialogTrace(trace) : null}
         onConfirm={() => {
           note("onConfirm 到達");
           handleMove().catch((e) =>

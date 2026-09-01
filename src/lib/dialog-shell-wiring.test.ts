@@ -334,7 +334,95 @@ describe("handleMove の到達点（調査用・要削除）", () => {
   it("★ 到達点は確認画面に出す（覆いの後ろに出さない）", () => {
     const src = read(PANEL);
 
-    expect(src).toContain("diagnosticsTrace={diagnostics.enabled ? trace : null}");
+    expect(src).toContain(
+      "diagnosticsTrace={diagnostics.enabled ? formatDialogTrace(trace) : null}",
+    );
     expect(src).toContain("handleMove の到達点");
+  });
+});
+
+/**
+ * 各段階の所要時間（調査用・要削除）。
+ *
+ * iOS でのみ極端に遅い件の切り分け。区間ごとの実測が要る。
+ * とくに「トークン取得中 → トークンOK」は liff.init() の時間で、
+ * 送信のたびに実行しているため疑わしい。
+ */
+describe("段階の所要時間（調査用・要削除）", () => {
+  const PANEL = "src/components/calendar-move-case-panel.tsx";
+  const PAGE = "src/components/liff-calendar-month-page.tsx";
+
+  it("★ 時刻は performance.now() で取る（時計合わせで巻き戻らない）", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("appendDialogTrace(prev, line, performance.now())");
+    expect(src).not.toContain("appendDialogTrace(prev, line)");
+  });
+
+  it("★ liff.init() の区間が測れる", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain('note("トークン取得中")');
+    expect(src).toContain('note(token ? "トークンOK" : "トークンなし")');
+  });
+
+  it("★ サーバ処理の区間が測れる", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain('note("送信")');
+    expect(src).toContain("note(`応答 HTTP ${res.status}`)");
+  });
+
+  it("★ 反映とリフレッシュを分けて測れる", () => {
+    const page = read(PAGE);
+
+    expect(page).toContain('move.note?.("反映")');
+    expect(page).toContain('move.note?.("リフレッシュ完了")');
+    // 反映は楽観更新の直後、リフレッシュはその待ちの後。
+    // forceRefreshCalendar は他の保存経路にもあるので、移動の関数だけを見る
+    const move = page.slice(page.indexOf("const applyCaseMoveToView"));
+    const refreshAt = move.indexOf("await forceRefreshCalendar()");
+
+    expect(move.indexOf('move.note?.("反映")')).toBeLessThan(refreshAt);
+    expect(move.indexOf('move.note?.("リフレッシュ完了")')).toBeGreaterThan(
+      refreshAt,
+    );
+  });
+
+  it("★ 計測点は任意（呼ばなくても動く）", () => {
+    const page = read(PAGE);
+
+    // ?. で呼ぶので、note を渡さない呼び出し元でも落ちない
+    expect(page).toContain("note?: (label: string) => void;");
+    expect(page).toContain("move.note?.(");
+  });
+
+  it("★ 成功後は feedback に内訳を添える（画面が閉じても残る唯一の表示）", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("const diagnosticsTail = diagnostics.enabled");
+    expect(src).toContain("[診断] 応答後の待ち");
+    expect(src).toContain("formatDialogTrace(traceRef.current)");
+  });
+
+  it("★ 既定では成功メッセージに1文字も足さない", () => {
+    const src = read(PANEL);
+    const tail = src.slice(
+      src.indexOf("const diagnosticsTail = diagnostics.enabled"),
+      src.indexOf("const diagnosticsTail = diagnostics.enabled") + 400,
+    );
+
+    // 診断が無効なら空文字
+    expect(tail).toContain(': "";');
+  });
+
+  it("★ 挙動は変えない（閉じる順序も待ち方もそのまま）", () => {
+    const src = read(PANEL);
+
+    // 成功したらダイアログとパネルを先に閉じる（従来どおり）
+    expect(src).toContain('note("成功");');
+    expect(src).toContain("setConfirming(false);\n      setOpen(false);");
+    // onMoved は今までどおり待つ
+    expect(src).toContain("await onMoved({");
   });
 });

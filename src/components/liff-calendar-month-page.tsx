@@ -2238,6 +2238,12 @@ export function LiffCalendarMonthPage({
       targetDayKey: string;
       movedRecordId: string | null;
       slotRecordId: string | null;
+      /**
+       * 診断モードの計測点（任意）。**呼んでも呼ばなくても動作は変わらない。**
+       * 反映とリフレッシュはこの関数の中で起きるので、区間を分けるには
+       * ここから知らせるしかない
+       */
+      note?: (label: string) => void;
     }) => {
       if (!idToken) return;
       void mutateCalendar(
@@ -2248,7 +2254,9 @@ export function LiffCalendarMonthPage({
       if (dayKeyInMonth(move.targetDayKey, ym.year, ym.month)) {
         setSelectedDayKey(move.targetDayKey);
       }
+      move.note?.("反映");
       await forceRefreshCalendar();
+      move.note?.("リフレッシュ完了");
     },
     [idToken, mutateCalendar, forceRefreshCalendar, ym.year, ym.month],
   );
