@@ -286,3 +286,66 @@ describe("当たり判定の実測（調査用・要削除）", () => {
     expect(read(PANEL)).toContain("formatDialogHitReport(hitReport).map");
   });
 });
+
+/**
+ * 確認ダイアログを body 直下へ出す。
+ *
+ * iOS の実測で、覆いにはタップが届くのに本体には届かず、実行ボタンの矩形が
+ * 触った位置から約370px ずれていた。position: fixed が祖先に閉じ込められ、
+ * 見た目と当たり判定がずれていた。body 直下なら祖先に依存しない。
+ */
+describe("ダイアログを body 直下へ出す", () => {
+  const PANEL = "src/components/calendar-move-case-panel.tsx";
+
+  it("★ createPortal で document.body へ出す", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain('import { createPortal } from "react-dom";');
+    expect(src).toContain("return createPortal(");
+    expect(src).toContain("document.body,");
+  });
+
+  it("★ SSR では描画しない（document が無い）", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("const isClient = useIsClient();");
+    expect(src).toContain("if (!open || !isClient) return null;");
+  });
+
+  it("★ サーバ側は必ず false（hydration を壊さない）", () => {
+    const hook = read("src/hooks/use-is-client.ts");
+
+    expect(hook).toContain("const serverSnapshot = () => false;");
+    expect(hook).toContain("useSyncExternalStore");
+    // 効果の中で setState する形は使わない（説明のためコメントには出る）
+    expect(hook).not.toContain("useEffect(");
+  });
+
+  it("★ フックは早期 return より前にある（数をそろえる）", () => {
+    const src = read(PANEL);
+
+    expect(src.indexOf("const isClient = useIsClient();")).toBeLessThan(
+      src.indexOf("if (!open || !isClient) return null;"),
+    );
+  });
+
+  it("★ ARIA と Esc は維持されている", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain('role="alertdialog"');
+    expect(src).toContain('aria-modal="true"');
+    expect(src).toContain('aria-labelledby="calendar-move-case-confirm-title"');
+    expect(src).toContain('e.key !== "Escape"');
+    expect(src).toContain("onKeyDown={onPanelKeyDown}");
+  });
+
+  it("★ 診断の計測点は portal の中に残っている", () => {
+    const src = read(PANEL);
+    const portal = src.slice(src.indexOf("return createPortal("));
+
+    expect(portal).toContain('bumpProbe("overlay")');
+    expect(portal).toContain('bumpProbe("panel")');
+    expect(portal).toContain('bumpProbe("confirmDown")');
+    expect(portal).toContain("recordHit(e)");
+  });
+});

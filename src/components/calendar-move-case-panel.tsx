@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { useDialogDiagnostics } from "@/hooks/use-dialog-diagnostics";
+import { useIsClient } from "@/hooks/use-is-client";
 
 import {
   ConstructionHandlerStaffSelect,
@@ -887,6 +889,12 @@ export function CalendarMoveCaseConfirmDialog({
    */
   const diagnostics = useDialogDiagnostics();
 
+  /**
+   * createPortal を使うので、サーバ側では描画しない。
+   * 早期 return より前に呼ぶこと（フックの数を毎回そろえる）
+   */
+  const isClient = useIsClient();
+
   const panelRef = useRef<HTMLDivElement | null>(null);
   const firstButtonRef = useRef<HTMLButtonElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
@@ -976,7 +984,7 @@ export function CalendarMoveCaseConfirmDialog({
     }
   }, []);
 
-  if (!open) return null;
+  if (!open || !isClient) return null;
 
   const subject = buildMoveCaseConfirmSubject(input);
   const sourceYmd =
@@ -991,150 +999,166 @@ export function CalendarMoveCaseConfirmDialog({
    *
    *    画面に収まらない端末では下部に届かなくなるが、**押せないよりまし**。
    */
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6 sm:items-center"
-      onPointerDown={(e) => {
-        bumpProbe("overlay");
-        recordHit(e);
-      }}
-    >
-      <div
-        ref={panelRef}
-        onPointerDown={() => bumpProbe("panel")}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="calendar-move-case-confirm-title"
-        className="max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200"
-        onKeyDown={onPanelKeyDown}
-      >
-        <p
-          id="calendar-move-case-confirm-title"
-          className="text-[15px] font-bold leading-relaxed text-slate-900"
+  /**
+   * ⚠ **document.body 直下へ出す（createPortal）。**
+   *
+   * iOS の実測で、覆いにはタップが届くのに本体には届かず、実行ボタンの
+   * 矩形が触った位置から約370px ずれていた（y=438 を触ったのに
+   * ボタンは y=807）。position: fixed が祖先に閉じ込められ、見た目と
+   * 当たり判定がずれていた。祖先に transform / filter / will-change の
+   * どれかがあると fixed はその祖先を基準に置かれる。
+   *
+   * body 直下へ出せば**祖先に依存しなくなる**。どの画面から呼ばれても
+   * 同じ位置に出る。
+   *
+   * ⚠ フォーカストラップも Esc も panelRef / document に付いているので、
+   *    出す場所を変えても効く。診断の計測点も中に入ったままになる。
+   */
+  return createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6 sm:items-center"
+          onPointerDown={(e) => {
+            bumpProbe("overlay");
+            recordHit(e);
+          }}
         >
-          {buildMoveCaseConfirmTitle(input)}
-        </p>
-        {subject ? (
-          <p className="mt-2 text-[13px] font-semibold text-slate-800">
-            {subject}
-          </p>
-        ) : null}
-
-          {/**
-           * 移動元をどうするか。**箇条書きより先に置く。**
-           * この選択が「実行される内容」を書き換えるので、原因が結果より
-           * 先に来る順にする
-           */}
-          <fieldset className="mt-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
-            <legend className="px-1 text-[12px] font-bold text-slate-700">
-              移動元（{sourceYmd}）のレコードをどうしますか？
-            </legend>
-            <div className="mt-1 space-y-1.5">
-              {SOURCE_DISPOSITION_CHOICES.map((choice) => (
-                <label
-                  key={choice.value}
-                  className={`flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] transition ${
-                    sourceDisposition === choice.value
-                      ? "bg-white font-semibold text-slate-900 ring-1 ring-slate-300"
-                      : "text-slate-700"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    className="h-4 w-4 shrink-0 accent-slate-700"
-                    name="calendar-move-source-disposition"
-                    value={choice.value}
-                    checked={sourceDisposition === choice.value}
-                    disabled={busy}
-                    onChange={() => onSourceDispositionChange(choice.value)}
-                  />
-                  <span className="leading-snug">{choice.label}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-
-          <p className="mt-3 text-[12px] font-bold text-slate-700">
-            実行される内容
-          </p>
-          <ul className="mt-1 list-disc space-y-1 pl-5 text-[12px] leading-relaxed text-slate-600">
-            {buildMoveCaseConfirmLines(input).map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-
-          <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-amber-900 ring-1 ring-amber-100">
-            ⚠ {moveCaseConfirmWarning(input)}
-          </p>
-
-        {/**
-         * 診断モードのときだけ出す。既定では描画されない。
-         * タップがどこまで届いたかを、数字と一言で示す
-         */}
-        {diagnostics.enabled ? (
-          <div className="shrink-0 border-t border-slate-100 bg-amber-50 px-4 py-2 text-[11px] leading-relaxed text-amber-900">
-            <p className="font-bold">診断モード</p>
-            <p className="font-mono">
-              覆い{tapProbe.overlay} 本体{tapProbe.panel} 実行
-              {tapProbe.confirmDown}/{tapProbe.confirmClick} 取消
-              {tapProbe.cancelDown}/{tapProbe.cancelClick}
+          <div
+            ref={panelRef}
+            onPointerDown={() => bumpProbe("panel")}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="calendar-move-case-confirm-title"
+            className="max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200"
+            onKeyDown={onPanelKeyDown}
+          >
+            <p
+              id="calendar-move-case-confirm-title"
+              className="text-[15px] font-bold leading-relaxed text-slate-900"
+            >
+              {buildMoveCaseConfirmTitle(input)}
             </p>
-            <p>{describeDialogTapProbe(tapProbe)}</p>
-            {formatDialogHitReport(hitReport).map((line) => (
-              <p key={line} className="font-mono leading-tight">
-                {line}
+            {subject ? (
+              <p className="mt-2 text-[13px] font-semibold text-slate-800">
+                {subject}
               </p>
-            ))}
-            <p className="mt-1 font-bold">handleMove の到達点</p>
-            {diagnosticsTrace && diagnosticsTrace.length > 0 ? (
-              <ol className="font-mono leading-tight">
-                {diagnosticsTrace.map((line) => (
+            ) : null}
+
+              {/**
+               * 移動元をどうするか。**箇条書きより先に置く。**
+               * この選択が「実行される内容」を書き換えるので、原因が結果より
+               * 先に来る順にする
+               */}
+              <fieldset className="mt-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
+                <legend className="px-1 text-[12px] font-bold text-slate-700">
+                  移動元（{sourceYmd}）のレコードをどうしますか？
+                </legend>
+                <div className="mt-1 space-y-1.5">
+                  {SOURCE_DISPOSITION_CHOICES.map((choice) => (
+                    <label
+                      key={choice.value}
+                      className={`flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] transition ${
+                        sourceDisposition === choice.value
+                          ? "bg-white font-semibold text-slate-900 ring-1 ring-slate-300"
+                          : "text-slate-700"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        className="h-4 w-4 shrink-0 accent-slate-700"
+                        name="calendar-move-source-disposition"
+                        value={choice.value}
+                        checked={sourceDisposition === choice.value}
+                        disabled={busy}
+                        onChange={() => onSourceDispositionChange(choice.value)}
+                      />
+                      <span className="leading-snug">{choice.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <p className="mt-3 text-[12px] font-bold text-slate-700">
+                実行される内容
+              </p>
+              <ul className="mt-1 list-disc space-y-1 pl-5 text-[12px] leading-relaxed text-slate-600">
+                {buildMoveCaseConfirmLines(input).map((line) => (
                   <li key={line}>{line}</li>
                 ))}
-              </ol>
-            ) : (
-              <p className="font-mono">（まだ押されていません）</p>
-            )}
-            <p>
-              背後ロック: {diagnostics.scrollLockDisabled ? "切" : "入"}
-              {diagnostics.scrollLockDisabled
-                ? ""
-                : "（&dialogNoScrollLock=1 で切れます）"}
-            </p>
-          </div>
-        ) : null}
+              </ul>
 
-        <div className="mt-4 flex flex-col gap-2">
-          <button
-            ref={(el) => {
-              firstButtonRef.current = el;
-              confirmButtonRef.current = el;
-            }}
-            type="button"
-            className={`${DIALOG_BUTTON_CLASS} bg-[#06C755] text-white`}
-            disabled={busy}
-            onPointerDown={() => bumpProbe("confirmDown")}
-            onClick={() => {
-              bumpProbe("confirmClick");
-              onConfirm();
-            }}
-          >
-            {busy ? "移動中…" : moveCaseConfirmActionLabel(input)}
-          </button>
-          <button
-            type="button"
-            className={`${DIALOG_BUTTON_CLASS} border border-slate-300 bg-white text-slate-700`}
-            disabled={busy}
-            onPointerDown={() => bumpProbe("cancelDown")}
-            onClick={() => {
-              bumpProbe("cancelClick");
-              onCancel();
-            }}
-          >
-            キャンセル
-          </button>
-        </div>
-      </div>
-    </div>
+              <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-amber-900 ring-1 ring-amber-100">
+                ⚠ {moveCaseConfirmWarning(input)}
+              </p>
+
+            {/**
+             * 診断モードのときだけ出す。既定では描画されない。
+             * タップがどこまで届いたかを、数字と一言で示す
+             */}
+            {diagnostics.enabled ? (
+              <div className="shrink-0 border-t border-slate-100 bg-amber-50 px-4 py-2 text-[11px] leading-relaxed text-amber-900">
+                <p className="font-bold">診断モード</p>
+                <p className="font-mono">
+                  覆い{tapProbe.overlay} 本体{tapProbe.panel} 実行
+                  {tapProbe.confirmDown}/{tapProbe.confirmClick} 取消
+                  {tapProbe.cancelDown}/{tapProbe.cancelClick}
+                </p>
+                <p>{describeDialogTapProbe(tapProbe)}</p>
+                {formatDialogHitReport(hitReport).map((line) => (
+                  <p key={line} className="font-mono leading-tight">
+                    {line}
+                  </p>
+                ))}
+                <p className="mt-1 font-bold">handleMove の到達点</p>
+                {diagnosticsTrace && diagnosticsTrace.length > 0 ? (
+                  <ol className="font-mono leading-tight">
+                    {diagnosticsTrace.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="font-mono">（まだ押されていません）</p>
+                )}
+                <p>
+                  背後ロック: {diagnostics.scrollLockDisabled ? "切" : "入"}
+                  {diagnostics.scrollLockDisabled
+                    ? ""
+                    : "（&dialogNoScrollLock=1 で切れます）"}
+                </p>
+              </div>
+            ) : null}
+
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                ref={(el) => {
+                  firstButtonRef.current = el;
+                  confirmButtonRef.current = el;
+                }}
+                type="button"
+                className={`${DIALOG_BUTTON_CLASS} bg-[#06C755] text-white`}
+                disabled={busy}
+                onPointerDown={() => bumpProbe("confirmDown")}
+                onClick={() => {
+                  bumpProbe("confirmClick");
+                  onConfirm();
+                }}
+              >
+                {busy ? "移動中…" : moveCaseConfirmActionLabel(input)}
+              </button>
+              <button
+                type="button"
+                className={`${DIALOG_BUTTON_CLASS} border border-slate-300 bg-white text-slate-700`}
+                disabled={busy}
+                onPointerDown={() => bumpProbe("cancelDown")}
+                onClick={() => {
+                  bumpProbe("cancelClick");
+                  onCancel();
+                }}
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>,
+    document.body,
   );
 }
