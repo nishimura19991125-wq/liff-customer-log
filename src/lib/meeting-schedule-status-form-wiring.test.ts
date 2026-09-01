@@ -111,3 +111,80 @@ describe("フックが扱うのは値だけ（段階 C で使い回せる）", (
     expect(hook).toContain("scheduleEditable: boolean;");
   });
 });
+
+/**
+ * 入力欄と保存バーを部品にした件（段階 B-2）。
+ *
+ * アポ情報一覧（段階C）でも**同じ見た目**にするため、JSX を切り出した。
+ * 部品側に条件を書くと、そこからずれが始まる。
+ */
+describe("入力欄と保存バーは部品が持つ", () => {
+  const FIELDS = "src/components/meeting-schedule-status-fields.tsx";
+
+  it("★ カードは入力欄を自前で描かない", () => {
+    const card = read(CARD);
+
+    expect(card).toContain("<MeetingScheduleNegotiationFields");
+    expect(card).toContain("<MeetingScheduleSaveBar");
+    // 移した JSX が残っていない
+    expect(card).not.toContain("商談セット作成済みの入力項目");
+    expect(card).not.toContain("この商談ステータスからは変更できません");
+    expect(card).not.toContain("未保存の変更があります");
+  });
+
+  it("★ 部品は判定を持たない（受け取った値を描くだけ）", () => {
+    const fields = read(FIELDS);
+
+    for (const owned of [
+      "isMeetingScheduleSetCreatedStatus",
+      "showsMeetingScheduleHenmachiForm",
+      "isMeetingScheduleInputLocked",
+      "meetingScheduleNegotiationOptionsFor",
+      "planMeetingScheduleCardSave",
+      "buildMeetingScheduleSaveConfirm",
+      "useState",
+      "useEffect",
+    ]) {
+      expect(fields, owned).not.toContain(owned);
+    }
+  });
+
+  it("★ 部品は MeetingScheduleItem を受け取らない（段階C で使い回せる）", () => {
+    const fields = read(FIELDS);
+
+    expect(fields).not.toContain("MeetingScheduleItem");
+    expect(fields).toContain("values: MeetingScheduleCardValues;");
+    expect(fields).toContain("server: MeetingScheduleCardValues;");
+  });
+
+  it("★ 確認ダイアログは保存バーの中にある", () => {
+    const fields = read(FIELDS);
+    const card = read(CARD);
+
+    expect(fields).toContain("<MeetingScheduleNegotiationConfirmDialog");
+    // カード側には残っていない
+    expect(card).not.toContain("<MeetingScheduleNegotiationConfirmDialog");
+  });
+
+  it("★ 見た目の定数も部品側へ寄せた（両画面で同じ見た目になる）", () => {
+    const fields = read(FIELDS);
+
+    for (const name of [
+      "export const inputClass",
+      "export const dateTimeInputClass",
+      "export const saveButtonClass",
+      "export const readOnlyValueClass",
+      "export function LockedInputRow",
+    ]) {
+      expect(fields, name).toContain(name);
+    }
+  });
+
+  it("★ 見積ステータス・日時の表示はカードに残っている（商談予定固有）", () => {
+    const card = read(CARD);
+
+    expect(card).toContain("見積ステータス");
+    expect(card).toContain("商談・資料送付予定日時");
+    expect(card).toContain("<MapNavigationButton");
+  });
+});
