@@ -26,18 +26,31 @@ export type LiffCalendarPageConfig = {
   fitAttachmentToViewport?: boolean;
   /** 選択中の日付をカレンダー上で強調表示する */
   emphasizeSelectedDay?: boolean;
+  /**
+   * 案件カードをタップして @pocket を開けるようにするか。**既定は開ける。**
+   *
+   * 工事カレンダーでは false にしてある。管理者以外は @pocket 側で編集
+   * できない設定になっているが、導線があると参照から編集につながる。
+   * アプリ側（工事日を変更・工事対応者の変更）で操作してもらう。
+   *
+   * ⚠ この画面部品はコミュニケーションブリッジと共用している。あちらは
+   *    別の画面なので既定のまま（開ける）。閉じるなら false を足すだけ。
+   */
+  showCaseAccessLink?: boolean;
 };
 
 export const CONSTRUCTION_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig = {
   title: "工事カレンダー",
   description:
-    "日付をタップで下に一覧表示。工事空枠は「情報を入力」からお客様名を登録できます。案件は @pocket を開けます。",
+    "日付をタップで下に一覧表示。工事空枠は「情報を入力」からお客様名を登録できます。",
   calendarApiPath: "/api/calendar",
   disabledFallbackMessage:
     "工事カレンダーは環境変数 CALENDAR_APP_ID 設定後に利用できます。",
   enableNewRecordPanel: true,
   enableEmptySlotFill: true,
   showEmptySlotGridStyle: true,
+  // 案件カードから @pocket を開かせない（アプリ側で操作してもらう）
+  showCaseAccessLink: false,
 };
 
 export const COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig =
