@@ -2342,6 +2342,12 @@ export function LiffCalendarMonthPage({
     return new Set(contractorKeys);
   }, [contractorFilter, contractorSignature, contractorKeys]);
 
+  /**
+   * 案件カードから @pocket を開けるか。**既定は開ける。**
+   * 工事カレンダーだけ false にしてある（liff-calendar-page-config）
+   */
+  const caseAccessLinkEnabled = config.showCaseAccessLink !== false;
+
   const filteredByDay = useMemo(
     () =>
       filterCalendarByDay(data?.byDay, {
@@ -2824,6 +2830,39 @@ export function LiffCalendarMonthPage({
                       ) => {
                         const hue = contractorHue(item.contractorKey);
                         const leftBorder = `4px solid hsl(${hue} 44% 46%)`;
+                        /** カードの本文。@pocket を開ける／開けないで器だけ変える */
+                        const caseCardBody = (
+                          <>
+                            <div className="mb-2 flex flex-wrap items-center gap-2">
+                              <span className="inline-flex rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-extrabold tracking-wide text-white shadow-sm ring-1 ring-emerald-800/20">
+                                案件
+                              </span>
+                              {item.housingShort ? (
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 ring-1 ring-slate-200/80">
+                                  {item.housingShort}
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="text-[17px] font-bold leading-snug text-slate-900 sm:text-lg">
+                              {item.line1}
+                              {item.showKankoCheck ? (
+                                <span className="ml-1 text-xl text-emerald-600 sm:text-[1.35rem]">
+                                  ✅
+                                </span>
+                              ) : null}
+                            </p>
+                            {item.line2 ? (
+                              <p className="mt-2 text-[15px] font-semibold leading-relaxed text-slate-600 sm:text-base">
+                                {item.line2}
+                              </p>
+                            ) : null}
+                            {item.memo ? (
+                              <p className="mt-3 rounded-xl bg-white/80 px-3 py-2 text-[13px] leading-relaxed text-slate-700 whitespace-pre-wrap ring-1 ring-slate-100">
+                                {item.memo}
+                              </p>
+                            ) : null}
+                          </>
+                        );
                         return (
                           <li
                             key={`detail-${selectedDayKey}-case-${i}-${item.recordId ?? i}`}
@@ -2832,44 +2871,39 @@ export function LiffCalendarMonthPage({
                               className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100"
                               style={{ borderLeft: leftBorder }}
                             >
+                            {/**
+                             * 工事カレンダーでは @pocket への導線を出さない
+                             * （showCaseAccessLink: false）。管理者以外は
+                             * @pocket 側で編集できない設定だが、導線があると
+                             * 参照から編集につながる。アプリ側で操作させる。
+                             *
+                             * ⚠ 既定は出す。この画面部品はコミュニケーション
+                             *    ブリッジと共用しており、あちらは別の画面なので
+                             *    従来どおり開ける。
+                             *
+                             * ⚠ 下の「工事対応者の変更」「工事日を変更」「地図」は
+                             *    **この要素の外**にある兄弟なので、ここを
+                             *    ボタンでなくしても影響しない。
+                             */}
+                            {caseAccessLinkEnabled ? (
                               <button
                                 type="button"
                                 className="w-full px-4 py-4 text-left transition active:scale-[0.99] active:bg-slate-50 disabled:opacity-60"
                                 disabled={!item.accessEditUrl?.trim()}
-                                onClick={() => openExternal(item.accessEditUrl)}
+                                onClick={() =>
+                                  openExternal(item.accessEditUrl)
+                                }
                               >
-                                <div className="mb-2 flex flex-wrap items-center gap-2">
-                                  <span className="inline-flex rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-extrabold tracking-wide text-white shadow-sm ring-1 ring-emerald-800/20">
-                                    案件
-                                  </span>
-                                  {item.housingShort ? (
-                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 ring-1 ring-slate-200/80">
-                                      {item.housingShort}
-                                    </span>
-                                  ) : null}
-                                </div>
-                                <p className="text-[17px] font-bold leading-snug text-slate-900 sm:text-lg">
-                                  {item.line1}
-                                  {item.showKankoCheck ? (
-                                    <span className="ml-1 text-xl text-emerald-600 sm:text-[1.35rem]">
-                                      ✅
-                                    </span>
-                                  ) : null}
-                                </p>
-                                {item.line2 ? (
-                                  <p className="mt-2 text-[15px] font-semibold leading-relaxed text-slate-600 sm:text-base">
-                                    {item.line2}
-                                  </p>
-                                ) : null}
-                                {item.memo ? (
-                                  <p className="mt-3 rounded-xl bg-white/80 px-3 py-2 text-[13px] leading-relaxed text-slate-700 whitespace-pre-wrap ring-1 ring-slate-100">
-                                    {item.memo}
-                                  </p>
-                                ) : null}
+                                {caseCardBody}
                                 <p className="mt-3 text-[11px] font-semibold text-[#06C755]">
                                   タップして @pocket で開く →
                                 </p>
                               </button>
+                            ) : (
+                              <div className="w-full px-4 py-4 text-left">
+                                {caseCardBody}
+                              </div>
+                            )}
                               {handlerFromStaff ? (
                                 <CaseConstructionHandlerEditor
                                   item={item}
