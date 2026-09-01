@@ -45,6 +45,27 @@ import {
   liffAuthedJsonFetch,
 } from "@/lib/liff-swr";
 
+/**
+ * アポ取得時入力（/apo-acquisition）。
+ *
+ * ⚠ **アプリ内にこの画面への導線は無い。**
+ *
+ * アポ情報一覧（/apo-list）の「新規登録」ボタンから来ていたが、そのボタンは
+ * 削除済み。アポの新規登録は別のウェブページで行う運用に変更された。
+ * 画面とコードは残してあるが、URL を直に開かないと到達できない。
+ *
+ * 残してある理由は、使わないことが確定してから消すほうが安全なため。
+ * この画面は Dropbox 連携・監査ログ・自動採番に繋がっており、消すと
+ * それらへ影響が及ぶ可能性がある。
+ *
+ * 消すときは、少なくとも次を一緒に確認すること。
+ *   src/app/api/apo-acquisition/**        フォーム定義・登録・添付
+ *   src/lib/apo-acquisition-*             項目定義・必須条件・サーバ処理
+ *   src/lib/apo-attachment-upload.ts      添付の Dropbox 連携
+ *   src/lib/apo-record-lookup.ts          登録直後の recordId 照合
+ *   src/lib/apo-detail-fields.ts          一覧の詳細表示（**こちらは使用中**）
+ */
+
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
 const inputClass =
