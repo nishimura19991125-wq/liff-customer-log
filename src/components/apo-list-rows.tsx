@@ -15,6 +15,7 @@ import {
 import type { ApoDetailPayload } from "@/lib/apo-detail-types";
 import type { ApoListRow } from "@/lib/apo-list-types";
 import { LIFF_SWR_DEFAULT_OPTIONS } from "@/lib/liff-swr";
+import { safeHttpsUrl } from "@/lib/safe-external-url";
 
 type Props = {
   rows: ApoListRow[];
@@ -106,6 +107,36 @@ function ApoListRowCard({
           商談・資料送付予定日時: {formatApoListScheduledDateTime(row)}
         </p>
       </button>
+
+      {/**
+       * Dropbox フォルダ。**開閉トグルの外**に置く。
+       * 上は詳細を開くための button なので、その中に更にリンクを入れると
+       * 入れ子になり、押しても開閉かリンクかが定まらない。
+       *
+       * URL はサーバ側でも https のみ通しているが、href に置く直前でも
+       * もう一度確かめる（お客様情報の書類フォルダと同じ流儀）。
+       * 通らなければリンクにせず「未設定」と出す。押せないボタンを
+       * 置くより状態が分かる。
+       */}
+      <div className="px-4 pb-4">
+        {(() => {
+          const href = safeHttpsUrl(row.dropboxUrl);
+          return href ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex min-h-[36px] items-center rounded-lg border border-sky-300 bg-sky-50 px-2.5 py-1 text-[13px] font-bold text-sky-900 transition active:scale-[0.98] active:bg-sky-100 dark:border-sky-700 dark:bg-sky-950 dark:text-sky-200"
+            >
+              Dropbox を開く
+            </a>
+          ) : (
+            <p className="text-[13px] text-slate-500 dark:text-slate-400">
+              Dropbox: 未設定
+            </p>
+          );
+        })()}
+      </div>
 
       {open ? (
         <div
