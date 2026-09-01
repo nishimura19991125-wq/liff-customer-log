@@ -67,6 +67,12 @@ export type MeetingScheduleFieldMap = {
    * 変わらない（＝キャッシュキーも変わらない）
    */
   giftCoupon: string | null;
+  /**
+   * ドロップボックスURL。アポ情報一覧のリンク表示にだけ使う。
+   * 列が見つからないときは null になり、要求フィールドの CSV も
+   * 変わらない（＝キャッシュキーも変わらない）
+   */
+  dropboxUrl: string | null;
 };
 
 export function meetingScheduleCloseTypeOptions(): string[] {
@@ -193,6 +199,21 @@ export function resolveMeetingScheduleFieldMap(
     ["ギフト券", "ギフト", "商品券"],
     ["ギフト券"],
   );
+  /**
+   * ドロップボックスURL。環境変数は添付の保存側
+   * （apo-attachment-upload.ts の DROPBOX_LINK_FIELD）と同じものを使う。
+   * 同じアプリの同じ列なので、別の名前で二重に持たない。
+   *
+   * 見出しでも識別名でも引けなかったときのために field-59 まで見る。
+   * あちらが fallbackFieldId として持っているのと同じ値
+   */
+  const dropboxUrl =
+    pickByEnvOrKeywords(
+      "APO_ACQUISITION_DROPBOX_LINK_FIELD_ID",
+      fields,
+      ["ドロップボックス", "dropbox"],
+      ["ドロップボックスURL"],
+    ) ?? resolveConfiguredFieldToSchemaUniqueId("field-59", fields);
 
   return {
     clPerson,
@@ -209,6 +230,7 @@ export function resolveMeetingScheduleFieldMap(
     responseDate,
     negotiationStatus,
     giftCoupon,
+    dropboxUrl,
   };
 }
 

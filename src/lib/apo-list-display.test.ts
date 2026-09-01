@@ -22,6 +22,7 @@ function row(over: Partial<ApoListRow> = {}): ApoListRow {
     estimateStatus: over.estimateStatus ?? "見積依頼済み",
     giftCoupon: over.giftCoupon ?? "無",
     negotiationStatus: over.negotiationStatus ?? "商談待ち",
+    dropboxUrl: "",
   };
 }
 
@@ -124,6 +125,7 @@ describe("アポ情報一覧の日付グルーピング", () => {
         scheduledYmd: "2026-06-13",
         scheduledDateLabel: "6月13日（土）",
         negotiationStatus: "商談待ち",
+        dropboxUrl: "",
       }),
     ];
 

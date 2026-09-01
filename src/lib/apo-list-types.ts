@@ -21,6 +21,11 @@ export type ApoListRow = {
   giftCoupon: string;
   /** 進行中の絞り込みに使う。表示はしない */
   negotiationStatus: string;
+  /**
+   * Dropbox フォルダの URL。**https のみ**（サーバ側で safeHttpsUrl を通す）。
+   * 未設定・不正な値はどちらも空文字になり、画面では「未設定」と出す
+   */
+  dropboxUrl: string;
 };
 
 export type ApoListPayload = {

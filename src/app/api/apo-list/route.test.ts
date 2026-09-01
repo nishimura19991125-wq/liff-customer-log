@@ -15,6 +15,8 @@ const h = vi.hoisted(() => ({
   records: [] as Array<Record<string, unknown>>,
   /** ギフト券の列。null は「@pocket に列が見つからない」場合 */
   giftCouponFieldId: "f_gift" as string | null,
+  /** ドロップボックスURL の列。null は「@pocket に列が見つからない」場合 */
+  dropboxUrlFieldId: "f_dropbox" as string | null,
 }));
 
 const FIELD = {
@@ -36,9 +38,16 @@ const FIELD = {
 /** ギフト券の列ID（テスト用の固定値） */
 const FIELD_GIFT = "f_gift";
 
-/** 列が見つからない場合を再現できるよう、ギフト券だけ差し替え可能にする */
+/** ドロップボックスURL の列ID（テスト用の固定値） */
+const FIELD_DROPBOX = "f_dropbox";
+
+/** 列が見つからない場合を再現できるよう、後から足した2列は差し替え可能にする */
 function fieldMap() {
-  return { ...FIELD, giftCoupon: h.giftCouponFieldId };
+  return {
+    ...FIELD,
+    giftCoupon: h.giftCouponFieldId,
+    dropboxUrl: h.dropboxUrlFieldId,
+  };
 }
 
 vi.mock("@/lib/request-auth", () => ({
@@ -115,6 +124,7 @@ beforeEach(() => {
   h.requestedCsv.length = 0;
   h.records = [];
   h.giftCouponFieldId = "f_gift";
+  h.dropboxUrlFieldId = "f_dropbox";
 });
 
 describe("GET /api/apo-list", () => {
@@ -347,5 +357,83 @@ describe("ギフト券の列とキャッシュキー", () => {
     const body = (await res.json()) as ApoListPayload;
 
     expect(body.rows[0]?.giftCoupon).toBe("");
+  });
+});
+
+/**
+ * ドロップボックスURL の列も CSV に足したので、ギフト券と同じく
+ * 全経路が同じ CSV を使い続けることを固定する。
+ *
+ * URL は @pocket の任意入力なので、https 以外はサーバ側で落とす。
+ */
+describe("ドロップボックスURL の列とキャッシュキー", () => {
+  it("★★ 列を足しても、商談進捗と同じ fieldsCsv のまま", async () => {
+    await apoListGet(get("/api/apo-list"));
+    await meetingScheduleGet(get("/api/meeting-schedule?scope=list"));
+
+    expect(h.requestedCsv).toHaveLength(2);
+    expect(h.requestedCsv[0]).toBe(h.requestedCsv[1]);
+    expect(h.requestedCsv[0]).toContain("f_dropbox");
+  });
+
+  it("★★ 列が見つからないときは CSV に増えない（キャッシュキーが変わらない）", async () => {
+    h.dropboxUrlFieldId = null;
+
+    await apoListGet(get("/api/apo-list"));
+    await meetingScheduleGet(get("/api/meeting-schedule?scope=list"));
+
+    expect(h.requestedCsv[0]).toBe(h.requestedCsv[1]);
+    expect(h.requestedCsv[0]).not.toContain("f_dropbox");
+    expect(h.requestedCsv[0]?.split(",").every(Boolean)).toBe(true);
+  });
+
+  it("★ https の URL はそのまま行に載る", async () => {
+    h.records = [
+      record({ [FIELD_DROPBOX]: "https://www.dropbox.com/scl/fo/abc" }),
+    ];
+
+    const res = await apoListGet(get("/api/apo-list"));
+    const body = (await res.json()) as ApoListPayload;
+
+    expect(body.rows[0]?.dropboxUrl).toBe(
+      "https://www.dropbox.com/scl/fo/abc",
+    );
+  });
+
+  it("★ 空なら空文字（画面では「未設定」）", async () => {
+    h.records = [record({ [FIELD_DROPBOX]: "" })];
+
+    const res = await apoListGet(get("/api/apo-list"));
+    const body = (await res.json()) as ApoListPayload;
+
+    expect(body.rows[0]?.dropboxUrl).toBe("");
+  });
+
+  it("★ https 以外は落とす（未設定と同じ扱い）", async () => {
+    for (const bad of [
+      "http://www.dropbox.com/scl/fo/abc",
+      "javascript:alert(1)",
+      "www.dropbox.com/scl/fo/abc",
+      "-",
+      "ほげ",
+    ]) {
+      h.records = [record({ [FIELD_DROPBOX]: bad })];
+
+      const res = await apoListGet(get("/api/apo-list"));
+      const body = (await res.json()) as ApoListPayload;
+
+      expect(body.rows[0]?.dropboxUrl, bad).toBe("");
+    }
+  });
+
+  it("★ 列が無くても行は作れる（空文字になる）", async () => {
+    h.dropboxUrlFieldId = null;
+    h.records = [record()];
+
+    const res = await apoListGet(get("/api/apo-list"));
+    const body = (await res.json()) as ApoListPayload;
+
+    expect(body.rows).toHaveLength(1);
+    expect(body.rows[0]?.dropboxUrl).toBe("");
   });
 });

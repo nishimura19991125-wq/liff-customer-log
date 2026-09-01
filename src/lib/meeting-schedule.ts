@@ -373,6 +373,9 @@ export function meetingScheduleWantedFieldCsv(
     // 同じ CSV を要求し続け、キャッシュキーが割れない（429 の再発防止）。
     // 列が見つからないときは null で、CSV も従来どおりになる
     fieldMap.giftCoupon,
+    // アポ情報一覧の Dropbox リンクにだけ使う。ギフト券と同じ理由で
+    // ここに足す（全経路が同じ CSV を要求し続ける）
+    fieldMap.dropboxUrl,
     ...collectMapAddressFieldsCsv(mapAddressIds),
   ]) {
     if (id?.trim()) ids.add(id.trim());

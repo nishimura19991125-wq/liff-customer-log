@@ -48,6 +48,7 @@ function row(over: Partial<ApoListRow> = {}): ApoListRow {
     estimateStatus: over.estimateStatus ?? "見積依頼済み",
     giftCoupon: over.giftCoupon ?? "無",
     negotiationStatus: over.negotiationStatus ?? "商談待ち",
+    dropboxUrl: "",
   };
 }
 

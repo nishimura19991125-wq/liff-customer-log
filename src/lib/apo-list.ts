@@ -21,6 +21,7 @@ import {
 } from "@/lib/meeting-schedule-fields";
 import { fetchMeetingScheduleRecordsCached } from "@/lib/meeting-schedule-records-cache";
 import { salesDashboardApoAppId } from "@/lib/sales-dashboard-fields";
+import { safeHttpsUrl } from "@/lib/safe-external-url";
 import { salesDashboardApoListAuths } from "@/lib/sales-dashboard-list-fetch";
 import type { ApoListPayload, ApoListRow } from "@/lib/apo-list-types";
 
@@ -153,6 +154,12 @@ function buildApoListRow(
     estimateStatus: readField(recObj, fieldMap.estimateStatus),
     giftCoupon: readField(recObj, fieldMap.giftCoupon),
     negotiationStatus: readField(recObj, fieldMap.negotiationStatus),
+    /**
+     * @pocket の任意入力なので、そのまま href に置かない。
+     * https のみ通し、通らなければ空文字＝「未設定」と同じ扱いにする
+     * （お客様情報の書類フォルダと同じ流儀。画面側でももう一度確かめる）
+     */
+    dropboxUrl: safeHttpsUrl(readField(recObj, fieldMap.dropboxUrl)) ?? "",
   };
 }
 
