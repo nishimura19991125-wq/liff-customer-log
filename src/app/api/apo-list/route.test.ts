@@ -437,3 +437,109 @@ describe("ドロップボックスURL の列とキャッシュキー", () => {
     expect(body.rows[0]?.dropboxUrl).toBe("");
   });
 });
+
+/**
+ * 商談ステータスの編集（段階 A）。
+ *
+ * 段階 A では**画面を変えない**。行と選択肢を揃えるだけで、表示も動作も
+ * 変わらないこと、そして**取得列が増えていない**ことをここで固定する。
+ */
+describe("商談ステータス編集のためのデータ（段階 A）", () => {
+  it("★★ 4項目を足しても fieldsCsv は変わらない（キャッシュ共有のまま）", async () => {
+    await apoListGet(get("/api/apo-list"));
+    await meetingScheduleGet(get("/api/meeting-schedule?scope=list"));
+
+    expect(h.requestedCsv).toHaveLength(2);
+    expect(h.requestedCsv[0]).toBe(h.requestedCsv[1]);
+    // 4項目は元から CSV に入っている（増やしていない）
+    for (const id of [
+      FIELD.meetingDate,
+      FIELD.closeType,
+      FIELD.meetingPlace,
+      FIELD.responseDate,
+    ]) {
+      expect(h.requestedCsv[0]).toContain(id);
+    }
+  });
+
+  it("★ 4項目が行に載る", async () => {
+    h.records = [
+      record({
+        [FIELD.meetingDate]: "2026-06-20 10:00:00",
+        [FIELD.closeType]: "両クロ",
+        [FIELD.meetingPlace]: "自宅",
+        [FIELD.responseDate]: "2026-06-25",
+      }),
+    ];
+
+    const res = await apoListGet(get("/api/apo-list"));
+    const body = (await res.json()) as ApoListPayload;
+
+    expect(body.rows[0]?.firstMeetingDateYmd).toBe("2026-06-20");
+    expect(body.rows[0]?.closeType).toBe("両クロ");
+    expect(body.rows[0]?.meetingPlace).toBe("自宅");
+    expect(body.rows[0]?.responseDateYmd).toBe("2026-06-25");
+  });
+
+  it("★ 日付は時刻を落として YYYY-MM-DD にする（商談予定と同じ）", async () => {
+    h.records = [record({ [FIELD.meetingDate]: "2026-06-20 14:30:00" })];
+
+    const res = await apoListGet(get("/api/apo-list"));
+    const body = (await res.json()) as ApoListPayload;
+
+    expect(body.rows[0]?.firstMeetingDateYmd).toBe("2026-06-20");
+  });
+
+  it("★ 値が空でも壊れない（すべて空文字）", async () => {
+    h.records = [record()];
+
+    const res = await apoListGet(get("/api/apo-list"));
+    const body = (await res.json()) as ApoListPayload;
+
+    expect(body.rows).toHaveLength(1);
+    expect(body.rows[0]?.firstMeetingDateYmd).toBe("");
+    expect(body.rows[0]?.closeType).toBe("");
+    expect(body.rows[0]?.meetingPlace).toBe("");
+    expect(body.rows[0]?.responseDateYmd).toBe("");
+  });
+
+  it("★ 選択肢と編集可否がペイロードに入る", async () => {
+    const res = await apoListGet(get("/api/apo-list"));
+    const body = (await res.json()) as ApoListPayload;
+
+    expect(Array.isArray(body.statusOptions)).toBe(true);
+    expect(Array.isArray(body.closeTypeOptions)).toBe(true);
+    expect(Array.isArray(body.meetingPlaceOptions)).toBe(true);
+    expect(typeof body.statusEditable).toBe("boolean");
+  });
+
+  it("★★ 選択肢は商談予定とまったく同じ（画面ごとにずれない）", async () => {
+    const apo = (await (
+      await apoListGet(get("/api/apo-list"))
+    ).json()) as ApoListPayload;
+    const meeting = (await (
+      await meetingScheduleGet(get("/api/meeting-schedule?scope=list"))
+    ).json()) as {
+      statusOptions?: string[];
+      closeTypeOptions?: string[];
+      meetingPlaceOptions?: string[];
+      statusEditable?: boolean;
+    };
+
+    expect(apo.statusOptions).toEqual(meeting.statusOptions);
+    expect(apo.closeTypeOptions).toEqual(meeting.closeTypeOptions);
+    expect(apo.meetingPlaceOptions).toEqual(meeting.meetingPlaceOptions);
+    expect(apo.statusEditable).toBe(meeting.statusEditable);
+  });
+
+  it("既存の項目は変わっていない", async () => {
+    h.records = [record({ [FIELD_GIFT]: "有" })];
+
+    const res = await apoListGet(get("/api/apo-list"));
+    const body = (await res.json()) as ApoListPayload;
+
+    expect(body.rows[0]?.customerName).toBe("テスト様");
+    expect(body.rows[0]?.giftCoupon).toBe("有");
+    expect(body.rows[0]?.negotiationStatus).toBe("商談待ち");
+  });
+});

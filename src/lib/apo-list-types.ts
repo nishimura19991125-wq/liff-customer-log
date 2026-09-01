@@ -26,11 +26,43 @@ export type ApoListRow = {
    * 未設定・不正な値はどちらも空文字になり、画面では「未設定」と出す
    */
   dropboxUrl: string;
+  /**
+   * ここから4つは商談ステータスの編集（段階 C）で使う付随項目。
+   *
+   * ⚠ **取得列は増えていない。** 4つとも meetingScheduleWantedFieldCsv に
+   *    元から入っており、buildApoListRow が読んでいなかっただけ。
+   *    キャッシュキーは変わらず、@pocket の呼び出しも増えない。
+   *
+   * 読み方は商談予定（MeetingScheduleItem）と同じ関数を使う。
+   */
+  /** 初回商談実施日（YYYY-MM-DD。未設定時は空） */
+  firstMeetingDateYmd: string;
+  /** 片クロor両クロ */
+  closeType: string;
+  /** 商談場所 */
+  meetingPlace: string;
+  /** 返待ち回答日（YYYY-MM-DD。未設定時は空） */
+  responseDateYmd: string;
 };
 
 export type ApoListPayload = {
   configured: boolean;
   staffName: string;
   rows: ApoListRow[];
+  /**
+   * ここから4つは商談ステータスの編集（段階 C）で使う。
+   * すべて環境変数から作る純粋関数の結果で、**@pocket は叩かない**。
+   * 商談予定と同じ meetingScheduleMetaExtras() から取るので、
+   * 画面ごとに選択肢がずれることがない。
+   *
+   * ⚠ statusOptions は**見積ステータス**の選択肢。商談ステータスの
+   *    選択肢は現在値から導く（meetingScheduleNegotiationOptionsFor）
+   *    ので、ペイロードには持たない。
+   */
+  statusOptions?: string[];
+  /** 見積ステータス・付随項目を編集できるか（書き込み用APIキーの有無） */
+  statusEditable?: boolean;
+  closeTypeOptions?: string[];
+  meetingPlaceOptions?: string[];
   error?: string;
 };

@@ -23,6 +23,10 @@ function row(over: Partial<ApoListRow> = {}): ApoListRow {
     giftCoupon: over.giftCoupon ?? "無",
     negotiationStatus: over.negotiationStatus ?? "商談待ち",
     dropboxUrl: "",
+    firstMeetingDateYmd: "",
+    closeType: "",
+    meetingPlace: "",
+    responseDateYmd: "",
   };
 }
 
@@ -126,6 +130,10 @@ describe("アポ情報一覧の日付グルーピング", () => {
         scheduledDateLabel: "6月13日（土）",
         negotiationStatus: "商談待ち",
         dropboxUrl: "",
+        firstMeetingDateYmd: "",
+        closeType: "",
+        meetingPlace: "",
+        responseDateYmd: "",
       }),
     ];
 

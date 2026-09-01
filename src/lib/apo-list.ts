@@ -11,9 +11,12 @@ import {
   apoTypeDisplayLabel,
   formatCityLabel,
   formatMeetingDateLabel,
+  meetingScheduleMetaExtras,
   meetingScheduleWantedFieldCsv,
   parseScheduledParts,
   recordMatchesStaff,
+  resolveFirstMeetingDateYmd,
+  resolveResponseDateYmd,
 } from "@/lib/meeting-schedule";
 import {
   resolveMeetingScheduleFieldMap,
@@ -103,7 +106,17 @@ export async function buildApoListForStaff(
 
     sortApoListRows(rows);
 
-    return { configured: true, staffName: boundStaffName, rows };
+    return {
+      configured: true,
+      staffName: boundStaffName,
+      rows,
+      /**
+       * 商談ステータスの編集（段階 C）で使う選択肢と編集可否。
+       * 商談予定と**同じ関数**から取るので、画面ごとにずれない。
+       * 環境変数だけを見る純粋関数で、@pocket は叩かない
+       */
+      ...meetingScheduleMetaExtras(),
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[apo-list]", e);
@@ -160,6 +173,16 @@ function buildApoListRow(
      * （お客様情報の書類フォルダと同じ流儀。画面側でももう一度確かめる）
      */
     dropboxUrl: safeHttpsUrl(readField(recObj, fieldMap.dropboxUrl)) ?? "",
+    /**
+     * 商談ステータスの編集（段階 C）で使う付随項目。
+     *
+     * 日付2つは商談予定と同じ関数で読む（時刻付きの値から日付だけを取る）。
+     * 文字列2つは他の項目と同じ readField。列が無ければどれも空文字になる
+     */
+    firstMeetingDateYmd: resolveFirstMeetingDateYmd(recObj, fieldMap),
+    closeType: readField(recObj, fieldMap.closeType),
+    meetingPlace: readField(recObj, fieldMap.meetingPlace),
+    responseDateYmd: resolveResponseDateYmd(recObj, fieldMap),
   };
 }
 

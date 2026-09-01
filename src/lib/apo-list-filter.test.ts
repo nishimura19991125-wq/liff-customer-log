@@ -49,6 +49,10 @@ function row(over: Partial<ApoListRow> = {}): ApoListRow {
     giftCoupon: over.giftCoupon ?? "無",
     negotiationStatus: over.negotiationStatus ?? "商談待ち",
     dropboxUrl: "",
+    firstMeetingDateYmd: "",
+    closeType: "",
+    meetingPlace: "",
+    responseDateYmd: "",
   };
 }
 
