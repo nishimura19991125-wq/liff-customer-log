@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
+
+import { useIsClient } from "@/hooks/use-is-client";
 
 import type { CustomerCancelPlan } from "@/lib/customer-cancel-plan";
 
@@ -51,6 +54,9 @@ export function CustomerCancelConfirmDialog({
   onConfirm: () => void;
   onDismiss: () => void;
 }) {
+  /** createPortal を使うので、サーバ側では描画しない */
+  const isClient = useIsClient();
+
   const panelRef = useRef<HTMLDivElement | null>(null);
   /** 開いたときに最初に当てるのは「やめる」。誤爆を減らす */
   const dismissButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -101,66 +107,73 @@ export function CustomerCancelConfirmDialog({
     }
   }, []);
 
-  if (!open || !plan) return null;
+  if (!open || !plan || !isClient) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6 sm:items-center">
-      <div
-        ref={panelRef}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="customer-cancel-confirm-title"
-        aria-describedby="customer-cancel-confirm-body"
-        className="max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200"
-        onKeyDown={onPanelKeyDown}
-      >
-        <p
-          id="customer-cancel-confirm-title"
-          className="text-[15px] font-bold leading-relaxed text-slate-900"
+  /**
+   * ⚠ **document.body 直下へ出す（createPortal）。**
+   *    工事日の移動の確認ダイアログで、position: fixed が祖先に
+   *    閉じ込められ、見た目と当たり判定が約370px ずれていた（iOS 実測）。
+   *    同じ作りなのでこちらも body 直下へ出す。祖先に依存しなくなる。
+   */
+  return createPortal(
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6 sm:items-center">
+        <div
+          ref={panelRef}
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="customer-cancel-confirm-title"
+          aria-describedby="customer-cancel-confirm-body"
+          className="max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200"
+          onKeyDown={onPanelKeyDown}
         >
-          顧客ステータスを「キャンセル」にします。
-        </p>
-
-        <div id="customer-cancel-confirm-body" className="mt-3">
-          <p className="text-[13px] font-bold text-slate-700">
-            以下が実行されます。
-          </p>
-          <ul className="mt-1.5 space-y-1">
-            {buildCancelActionLines(plan).map((line) => (
-              <li
-                key={line}
-                className="text-[13px] leading-relaxed text-slate-800"
-              >
-                ・{line}
-              </li>
-            ))}
-          </ul>
-
-          <p className="mt-3 rounded-lg border-2 border-red-300 bg-red-50 px-3 py-2 text-[13px] font-bold leading-relaxed text-red-800">
-            この操作は元に戻せません。
-          </p>
-        </div>
-
-        <div className="mt-4 flex flex-col gap-2">
-          <button
-            type="button"
-            className={`${DIALOG_BUTTON_CLASS} bg-red-600 text-white`}
-            disabled={busy}
-            onClick={onConfirm}
+          <p
+            id="customer-cancel-confirm-title"
+            className="text-[15px] font-bold leading-relaxed text-slate-900"
           >
-            {busy ? "処理中…" : "キャンセルにする"}
-          </button>
-          <button
-            ref={dismissButtonRef}
-            type="button"
-            className={`${DIALOG_BUTTON_CLASS} border border-slate-300 bg-white text-slate-700`}
-            disabled={busy}
-            onClick={onDismiss}
-          >
-            やめる
-          </button>
+            顧客ステータスを「キャンセル」にします。
+          </p>
+
+          <div id="customer-cancel-confirm-body" className="mt-3">
+            <p className="text-[13px] font-bold text-slate-700">
+              以下が実行されます。
+            </p>
+            <ul className="mt-1.5 space-y-1">
+              {buildCancelActionLines(plan).map((line) => (
+                <li
+                  key={line}
+                  className="text-[13px] leading-relaxed text-slate-800"
+                >
+                  ・{line}
+                </li>
+              ))}
+            </ul>
+
+            <p className="mt-3 rounded-lg border-2 border-red-300 bg-red-50 px-3 py-2 text-[13px] font-bold leading-relaxed text-red-800">
+              この操作は元に戻せません。
+            </p>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2">
+            <button
+              type="button"
+              className={`${DIALOG_BUTTON_CLASS} bg-red-600 text-white`}
+              disabled={busy}
+              onClick={onConfirm}
+            >
+              {busy ? "処理中…" : "キャンセルにする"}
+            </button>
+            <button
+              ref={dismissButtonRef}
+              type="button"
+              className={`${DIALOG_BUTTON_CLASS} border border-slate-300 bg-white text-slate-700`}
+              disabled={busy}
+              onClick={onDismiss}
+            >
+              やめる
+            </button>
+          </div>
         </div>
-      </div>
-    </div>
+      </div>,
+    document.body,
   );
 }

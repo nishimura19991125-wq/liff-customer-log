@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
+
+import { useIsClient } from "@/hooks/use-is-client";
 
 /**
  * 同じ日・同じ施工会社の空き枠が見つかったときの確認（タスクS-2）。
@@ -41,6 +44,9 @@ export function CalendarEmptySlotConfirmDialog({
   onSkipSlot: () => void;
   onCancel: () => void;
 }) {
+  /** createPortal を使うので、サーバ側では描画しない */
+  const isClient = useIsClient();
+
   const panelRef = useRef<HTMLDivElement | null>(null);
   const firstButtonRef = useRef<HTMLButtonElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
@@ -93,56 +99,63 @@ export function CalendarEmptySlotConfirmDialog({
     }
   }, []);
 
-  if (!open) return null;
+  if (!open || !isClient) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6 sm:items-center">
-      <div
-        ref={panelRef}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="calendar-empty-slot-confirm-title"
-        className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200"
-        onKeyDown={onPanelKeyDown}
-      >
-        <p
-          id="calendar-empty-slot-confirm-title"
-          className="text-[15px] font-bold leading-relaxed text-slate-900"
+  /**
+   * ⚠ **document.body 直下へ出す（createPortal）。**
+   *    工事日の移動の確認ダイアログで、position: fixed が祖先に
+   *    閉じ込められ、見た目と当たり判定が約370px ずれていた（iOS 実測）。
+   *    同じ作りなのでこちらも body 直下へ出す。祖先に依存しなくなる。
+   */
+  return createPortal(
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6 sm:items-center">
+        <div
+          ref={panelRef}
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="calendar-empty-slot-confirm-title"
+          className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200"
+          onKeyDown={onPanelKeyDown}
         >
-          {formatMonthDayLabel(dayKey)}に「{contractorName}」の空き枠があります。
-        </p>
-        <p className="mt-2 text-[12px] leading-relaxed text-slate-600">
-          この空き枠を使うと、案件にこの日付を設定したうえで空き枠が削除されます。
-          使わない場合は案件に日付を設定するだけで、空き枠はそのまま残ります。
-        </p>
-        <div className="mt-4 flex flex-col gap-2">
-          <button
-            ref={firstButtonRef}
-            type="button"
-            className={`${DIALOG_BUTTON_CLASS} bg-[#06C755] text-white`}
-            disabled={busy}
-            onClick={onUseSlot}
+          <p
+            id="calendar-empty-slot-confirm-title"
+            className="text-[15px] font-bold leading-relaxed text-slate-900"
           >
-            この空き枠を使う
-          </button>
-          <button
-            type="button"
-            className={`${DIALOG_BUTTON_CLASS} bg-slate-800 text-white`}
-            disabled={busy}
-            onClick={onSkipSlot}
-          >
-            空き枠を使わずに登録する
-          </button>
-          <button
-            type="button"
-            className={`${DIALOG_BUTTON_CLASS} border border-slate-300 bg-white text-slate-700`}
-            disabled={busy}
-            onClick={onCancel}
-          >
-            キャンセル
-          </button>
+            {formatMonthDayLabel(dayKey)}に「{contractorName}」の空き枠があります。
+          </p>
+          <p className="mt-2 text-[12px] leading-relaxed text-slate-600">
+            この空き枠を使うと、案件にこの日付を設定したうえで空き枠が削除されます。
+            使わない場合は案件に日付を設定するだけで、空き枠はそのまま残ります。
+          </p>
+          <div className="mt-4 flex flex-col gap-2">
+            <button
+              ref={firstButtonRef}
+              type="button"
+              className={`${DIALOG_BUTTON_CLASS} bg-[#06C755] text-white`}
+              disabled={busy}
+              onClick={onUseSlot}
+            >
+              この空き枠を使う
+            </button>
+            <button
+              type="button"
+              className={`${DIALOG_BUTTON_CLASS} bg-slate-800 text-white`}
+              disabled={busy}
+              onClick={onSkipSlot}
+            >
+              空き枠を使わずに登録する
+            </button>
+            <button
+              type="button"
+              className={`${DIALOG_BUTTON_CLASS} border border-slate-300 bg-white text-slate-700`}
+              disabled={busy}
+              onClick={onCancel}
+            >
+              キャンセル
+            </button>
+          </div>
         </div>
-      </div>
-    </div>
+      </div>,
+    document.body,
   );
 }

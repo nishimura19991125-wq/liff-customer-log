@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
+
+import { useIsClient } from "@/hooks/use-is-client";
 
 /**
  * 商談ステータスを「アラートから消える値」に変更するときの確認。
@@ -34,6 +37,9 @@ export function MeetingScheduleNegotiationConfirmDialog({
   onConfirm,
   onCancel,
 }: Props) {
+  /** createPortal を使うので、サーバ側では描画しない */
+  const isClient = useIsClient();
+
   const cancelRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -53,48 +59,55 @@ export function MeetingScheduleNegotiationConfirmDialog({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onCancel]);
 
-  if (!open) return null;
+  if (!open || !isClient) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="meeting-negotiation-confirm-title"
-        aria-describedby="meeting-negotiation-confirm-body"
-        className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl dark:bg-slate-900"
-      >
-        <p
-          id="meeting-negotiation-confirm-title"
-          className="text-[15px] font-bold text-slate-900 dark:text-white"
+  /**
+   * ⚠ **document.body 直下へ出す（createPortal）。**
+   *    工事日の移動の確認ダイアログで、position: fixed が祖先に
+   *    閉じ込められ、見た目と当たり判定が約370px ずれていた（iOS 実測）。
+   *    同じ作りなのでこちらも body 直下へ出す。祖先に依存しなくなる。
+   */
+  return createPortal(
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="meeting-negotiation-confirm-title"
+          aria-describedby="meeting-negotiation-confirm-body"
+          className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl dark:bg-slate-900"
         >
-          {title}
-        </p>
-        <p
-          id="meeting-negotiation-confirm-body"
-          className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-slate-700 dark:text-slate-200"
-        >
-          {message}
-        </p>
+          <p
+            id="meeting-negotiation-confirm-title"
+            className="text-[15px] font-bold text-slate-900 dark:text-white"
+          >
+            {title}
+          </p>
+          <p
+            id="meeting-negotiation-confirm-body"
+            className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-slate-700 dark:text-slate-200"
+          >
+            {message}
+          </p>
 
-        <div className="mt-4 flex gap-2">
-          <button
-            type="button"
-            ref={cancelRef}
-            onClick={onCancel}
-            className={`${buttonBase} bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200`}
-          >
-            キャンセル
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className={`${buttonBase} bg-emerald-600 text-white dark:bg-emerald-500`}
-          >
-            変更して保存
-          </button>
+          <div className="mt-4 flex gap-2">
+            <button
+              type="button"
+              ref={cancelRef}
+              onClick={onCancel}
+              className={`${buttonBase} bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200`}
+            >
+              キャンセル
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              className={`${buttonBase} bg-emerald-600 text-white dark:bg-emerald-500`}
+            >
+              変更して保存
+            </button>
+          </div>
         </div>
-      </div>
-    </div>
+      </div>,
+    document.body,
   );
 }

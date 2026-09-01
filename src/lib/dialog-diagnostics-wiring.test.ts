@@ -349,3 +349,55 @@ describe("ダイアログを body 直下へ出す", () => {
     expect(portal).toContain("recordHit(e)");
   });
 });
+
+/**
+ * 他の3ダイアログも body 直下へ出す。
+ *
+ * iOS で動いているか未確認だが、移動のダイアログと**同じ作り**なので
+ * 同じ閉じ込めを受ける。まとめて祖先から切り離す。
+ */
+describe("他のダイアログも body 直下へ出す", () => {
+  const OTHERS = [
+    ["空き枠の確認", "src/components/calendar-empty-slot-confirm-dialog.tsx"],
+    ["顧客キャンセル", "src/components/customer-cancel-confirm-dialog.tsx"],
+    [
+      "商談ステータスの変更",
+      "src/components/meeting-schedule-negotiation-confirm-dialog.tsx",
+    ],
+  ] as const;
+
+  for (const [label, rel] of OTHERS) {
+    describe(label, () => {
+      it("★ createPortal で document.body へ出す", () => {
+        const src = read(rel);
+
+        expect(src).toContain('import { createPortal } from "react-dom";');
+        expect(src).toContain("return createPortal(");
+        expect(src).toContain("document.body,");
+      });
+
+      it("★ SSR では描画しない", () => {
+        const src = read(rel);
+
+        expect(src).toContain("const isClient = useIsClient();");
+        expect(src).toContain("!isClient) return null;");
+      });
+
+      it("★ ARIA と Esc は維持されている", () => {
+        const src = read(rel);
+
+        expect(src).toContain('role="alertdialog"');
+        expect(src).toContain('aria-modal="true"');
+        expect(src).toContain('"Escape"');
+      });
+    });
+  }
+
+  it("★ 覆うダイアログを取りこぼしていない", () => {
+    // 移動のぶんを足して4つ。増えたらここへ足すこと
+    expect(OTHERS).toHaveLength(3);
+    expect(read("src/components/calendar-move-case-panel.tsx")).toContain(
+      "return createPortal(",
+    );
+  });
+});
