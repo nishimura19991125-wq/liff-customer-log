@@ -270,7 +270,14 @@ function sortMeetingItems(items: MeetingScheduleItem[]): void {
   });
 }
 
-function meetingScheduleMetaExtras(): Pick<
+/**
+ * ステータス変更 UI の選択肢と編集可否。
+ *
+ * すべて環境変数から作る純粋関数で、**@pocket は叩かない**。
+ * アポ情報一覧（apo-list.ts）でも同じ値を返すので export している。
+ * 別々に組み立てると、片方の画面だけ選択肢がずれる
+ */
+export function meetingScheduleMetaExtras(): Pick<
   MeetingSchedulePayload,
   | "statusOptions"
   | "statusEditable"
@@ -288,7 +295,13 @@ function meetingScheduleMetaExtras(): Pick<
   };
 }
 
-function resolveFirstMeetingDateYmd(
+/**
+ * 初回商談実施日（YYYY-MM-DD）。列が無ければ空文字。
+ *
+ * アポ情報一覧（apo-list.ts）でも同じ値を出すので export している。
+ * 別々に書くと、片方だけ直したときに同じレコードで違う値が出る
+ */
+export function resolveFirstMeetingDateYmd(
   recObj: Record<string, unknown>,
   fieldMap: MeetingScheduleFieldMap,
 ): string {
@@ -299,7 +312,8 @@ function resolveFirstMeetingDateYmd(
   return parsed?.ymd ?? "";
 }
 
-function resolveResponseDateYmd(
+/** 返待ち回答日（YYYY-MM-DD）。列が無ければ空文字。アポ情報一覧と共有 */
+export function resolveResponseDateYmd(
   recObj: Record<string, unknown>,
   fieldMap: MeetingScheduleFieldMap,
 ): string {
