@@ -105,11 +105,80 @@ describe("案件カードの配線", () => {
     expect(src.indexOf("<MapNavigationButton")).toBeGreaterThan(branchEnd);
   });
 
-  it("★ 空き枠カードの導線は残っている（今回の対象外）", () => {
+  it("★ 案件カードの @pocket 呼び出しは分岐の中だけ", () => {
     const src = read(PAGE);
 
-    // EmptySlotCard の「@pocket で開く」
-    expect(src).toContain("@pocket で開く");
-    expect(src).toContain("onClick={() => openExternal(item.accessEditUrl)}");
+    // 工事カレンダーは showCaseAccessLink: false なのでこの分岐を通らない
+    expect(src.indexOf("{caseAccessLinkEnabled ? (")).toBeLessThan(
+      src.indexOf("openExternal(item.accessEditUrl)"),
+    );
+  });
+});
+
+
+/**
+ * 空き枠カードの @pocket 導線も消した件。
+ *
+ * 案件カードと同じ理由（参照から編集につながる）。
+ *
+ * ⚠ 空き枠のカードは**画面ごとに別の部品**になっている。
+ *    enableEmptySlotFill が true なら EmptySlotCard（工事カレンダー）、
+ *    false なら CalendarEmptySlotReadOnly（コミュニケーションブリッジ）。
+ *    共用ではないので、設定での出し分けは要らない。
+ */
+describe("空き枠カードの導線", () => {
+  /** 関数定義の本体だけを切り出す（次の関数定義の手前まで） */
+  function bodyOf(src: string, signature: string): string {
+    const from = src.indexOf(signature);
+    if (from < 0) throw new Error(`見つからない: ${signature}`);
+    const to = src.indexOf("\nfunction ", from + 1);
+    return to > from ? src.slice(from, to) : src.slice(from);
+  }
+
+  it("★ 画面ごとに別の部品が出る（共用ではない）", () => {
+    expect(CONSTRUCTION_CALENDAR_PAGE_CONFIG.enableEmptySlotFill).toBe(true);
+    expect(COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG.enableEmptySlotFill).toBe(
+      false,
+    );
+
+    const src = read(PAGE);
+    expect(src).toContain("{config.enableEmptySlotFill ? (");
+    expect(src.indexOf("<EmptySlotCard")).toBeLessThan(
+      src.indexOf("<CalendarEmptySlotReadOnly"),
+    );
+  });
+
+  it("★ 工事カレンダー側（EmptySlotCard）から @pocket を開けない", () => {
+    const card = bodyOf(read(PAGE), "function EmptySlotCard({");
+
+    expect(card).not.toContain("openExternal(");
+    expect(card).not.toContain("@pocket で開く");
+  });
+
+  it("★ 「情報を入力」は残っている", () => {
+    const card = bodyOf(read(PAGE), "function EmptySlotCard({");
+
+    expect(card).toContain('{open ? "入力を閉じる" : "情報を入力"}');
+  });
+
+  it("★ ブリッジ側（CalendarEmptySlotReadOnly）は触っていない", () => {
+    const card = bodyOf(read(PAGE), "function CalendarEmptySlotReadOnly({");
+
+    // 添付画像の下のボタンと、カード全体のタップ。どちらも従来どおり
+    expect(card).toContain("@pocket で開く →");
+    expect(card).toContain("タップして @pocket で開く →");
+    expect(card).toContain("onOpenPocket(url)");
+  });
+
+  it("★ 工事カレンダーの実行経路に @pocket の導線が残っていない", () => {
+    const src = read(PAGE);
+
+    // 残る呼び出しは、どちらも工事カレンダーでは通らない分岐の中にある
+    //   renderCaseCard            … showCaseAccessLink: false で通らない
+    //   CalendarEmptySlotReadOnly … enableEmptySlotFill: true なので出ない
+    expect(CONSTRUCTION_CALENDAR_PAGE_CONFIG.showCaseAccessLink).toBe(false);
+    expect(CONSTRUCTION_CALENDAR_PAGE_CONFIG.enableEmptySlotFill).toBe(true);
+    expect(src.split("openExternal(item.accessEditUrl)").length - 1).toBe(1);
+    expect(src).toContain("onOpenPocket={openExternal}");
   });
 });

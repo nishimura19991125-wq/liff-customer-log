@@ -1260,15 +1260,16 @@ function EmptySlotCard({
         >
           {open ? "入力を閉じる" : "情報を入力"}
         </button>
-        {item.accessEditUrl?.trim() ? (
-          <button
-            type="button"
-            className="inline-flex flex-1 min-w-[8rem] items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-bold text-slate-700 shadow-sm transition active:scale-[0.99] sm:flex-none"
-            onClick={() => openExternal(item.accessEditUrl)}
-          >
-            @pocket で開く
-          </button>
-        ) : null}
+        {/**
+         * @pocket への導線は出さない（案件カードと同じ理由）。
+         * 管理者以外は @pocket 側で編集できない設定だが、導線があると
+         * 参照から編集につながる。「情報を入力」で登録してもらう。
+         *
+         * ⚠ この部品は config.enableEmptySlotFill が true のときだけ
+         *    描画される＝**工事カレンダー専用**。コミュニケーション
+         *    ブリッジは CalendarEmptySlotReadOnly を使うので影響しない。
+         *    そのため設定での出し分けは要らない。
+         */}
       </div>
 
       {!rid ? (
