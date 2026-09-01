@@ -248,3 +248,41 @@ describe("段階の所要時間（調査用・要削除）", () => {
     expect(src).toContain("await onMoved({");
   });
 });
+
+/**
+ * 当たり判定の実測（調査用・要削除）。
+ */
+describe("当たり判定の実測（調査用・要削除）", () => {
+  const PANEL = "src/components/calendar-move-case-panel.tsx";
+
+  it("★ 触った座標を拾う", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain("tap: { x: e.clientX, y: e.clientY }");
+    expect(src).toContain("document.elementFromPoint(e.clientX, e.clientY)");
+  });
+
+  it("★ 実行ボタンの矩形を取る", () => {
+    const src = read(PANEL);
+
+    expect(src).toContain(
+      "confirmButtonRef.current?.getBoundingClientRect()",
+    );
+    // 既存のフォーカス用 ref も壊さない
+    expect(src).toContain("firstButtonRef.current = el;");
+  });
+
+  it("★ 診断が無効なら測らない", () => {
+    const src = read(PANEL);
+    const fn = src.slice(
+      src.indexOf("const recordHit = (e: React.PointerEvent) => {"),
+      src.indexOf("const recordHit = (e: React.PointerEvent) => {") + 160,
+    );
+
+    expect(fn).toContain("if (!diagnostics.enabled) return;");
+  });
+
+  it("★ 結果を画面に出す", () => {
+    expect(read(PANEL)).toContain("formatDialogHitReport(hitReport).map");
+  });
+});

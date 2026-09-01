@@ -3,13 +3,16 @@ import { describe, expect, it } from "vitest";
 import {
   DIALOG_DIAGNOSTICS_PARAM,
   DIALOG_TRACE_MAX,
+  EMPTY_DIALOG_HIT_REPORT,
   DIALOG_NO_SCROLL_LOCK_PARAM,
   EMPTY_DIALOG_TAP_PROBE,
   appendDialogTrace,
   describeDialogTapProbe,
   dialogTraceErrorText,
   formatDialogElapsed,
+  formatDialogHitReport,
   formatDialogTrace,
+  tapIsInsideRect,
   dialogDiagnosticsEnabled,
   dialogScrollLockDisabled,
 } from "@/lib/dialog-diagnostics";
@@ -208,5 +211,63 @@ describe("到達点の記録", () => {
 
     expect(() => dialogTraceErrorText(cyclic)).not.toThrow();
     expect(dialogTraceErrorText(undefined)).toBe("undefined");
+  });
+});
+
+/**
+ * 当たり判定のずれ（調査用・要削除）。
+ *
+ * iOS で「本体には届くがボタンに当たらない」。座標がボタンの矩形の中に
+ * あるのに pointerdown が来ていなければ当たり判定を奪われている。
+ * 外にあれば見た目と位置がずれている。**この2つを分けるための判定。**
+ */
+describe("当たり判定の実測", () => {
+  const RECT = { x: 20, y: 500, width: 300, height: 48 };
+
+  it("★ 矩形の中なら中と判定する", () => {
+    expect(tapIsInsideRect({ x: 100, y: 520 }, RECT)).toBe(true);
+    // 境界は含む
+    expect(tapIsInsideRect({ x: 20, y: 500 }, RECT)).toBe(true);
+    expect(tapIsInsideRect({ x: 320, y: 548 }, RECT)).toBe(true);
+  });
+
+  it("★ 矩形の外なら外と判定する", () => {
+    expect(tapIsInsideRect({ x: 100, y: 400 }, RECT)).toBe(false);
+    expect(tapIsInsideRect({ x: 400, y: 520 }, RECT)).toBe(false);
+  });
+
+  it("★ 取れていないときは中と言わない", () => {
+    expect(tapIsInsideRect(null, RECT)).toBe(false);
+    expect(tapIsInsideRect({ x: 100, y: 520 }, null)).toBe(false);
+  });
+
+  it("★ 中なら「当たり判定を奪われている」と出す", () => {
+    const lines = formatDialogHitReport({
+      tap: { x: 100, y: 520 },
+      confirmRect: RECT,
+      topElement: "div.fixed",
+    });
+
+    expect(lines.join("\n")).toContain("当たり判定を奪われている");
+    expect(lines.join("\n")).toContain("タップ (100, 520)");
+    expect(lines.join("\n")).toContain("最前面の要素: div.fixed");
+  });
+
+  it("★ 外なら「見た目と位置がずれている」と出す", () => {
+    const lines = formatDialogHitReport({
+      tap: { x: 100, y: 100 },
+      confirmRect: RECT,
+      topElement: "button.w-full",
+    });
+
+    expect(lines.join("\n")).toContain("見た目と位置がずれている");
+  });
+
+  it("まだ触っていなければ判定しない", () => {
+    const lines = formatDialogHitReport(EMPTY_DIALOG_HIT_REPORT);
+
+    expect(lines.join("\n")).toContain("まだ触っていません");
+    expect(lines.join("\n")).not.toContain("当たり判定");
+    expect(lines.join("\n")).not.toContain("ずれている");
   });
 });

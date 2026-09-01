@@ -53,6 +53,9 @@ import {
 import {
   appendDialogTrace,
   describeDialogTapProbe,
+  EMPTY_DIALOG_HIT_REPORT,
+  formatDialogHitReport,
+  type DialogHitReport,
   dialogTraceErrorText,
   formatDialogElapsed,
   formatDialogTrace,
@@ -895,6 +898,33 @@ export function CalendarMoveCaseConfirmDialog({
   const [tapProbe, setTapProbe] = useState<DialogTapProbe>(
     EMPTY_DIALOG_TAP_PROBE,
   );
+  /**
+   * 触った座標と、実行ボタンの矩形。**診断モードのときだけ記録する。**
+   * 「本体には届くがボタンに当たらない」が、当たり判定を奪われているのか
+   * 見た目と位置がずれているのかを分けるため
+   */
+  const [hitReport, setHitReport] = useState<DialogHitReport>(
+    EMPTY_DIALOG_HIT_REPORT,
+  );
+  const confirmButtonRef = useRef<HTMLButtonElement | null>(null);
+  const recordHit = (e: React.PointerEvent) => {
+    if (!diagnostics.enabled) return;
+    const rect = confirmButtonRef.current?.getBoundingClientRect() ?? null;
+    const top = document.elementFromPoint(e.clientX, e.clientY);
+    setHitReport({
+      tap: { x: e.clientX, y: e.clientY },
+      confirmRect: rect
+        ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+        : null,
+      topElement: top
+        ? `${top.tagName.toLowerCase()}${
+            top.className && typeof top.className === "string"
+              ? "." + top.className.split(/s+/).slice(0, 2).join(".")
+              : ""
+          }`
+        : null,
+    });
+  };
   const bumpProbe = (key: keyof DialogTapProbe) => {
     if (!diagnostics.enabled) return;
     setTapProbe((prev) => ({ ...prev, [key]: prev[key] + 1 }));
@@ -964,7 +994,10 @@ export function CalendarMoveCaseConfirmDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6 sm:items-center"
-      onPointerDown={() => bumpProbe("overlay")}
+      onPointerDown={(e) => {
+        bumpProbe("overlay");
+        recordHit(e);
+      }}
     >
       <div
         ref={panelRef}
@@ -1047,6 +1080,11 @@ export function CalendarMoveCaseConfirmDialog({
               {tapProbe.cancelDown}/{tapProbe.cancelClick}
             </p>
             <p>{describeDialogTapProbe(tapProbe)}</p>
+            {formatDialogHitReport(hitReport).map((line) => (
+              <p key={line} className="font-mono leading-tight">
+                {line}
+              </p>
+            ))}
             <p className="mt-1 font-bold">handleMove の到達点</p>
             {diagnosticsTrace && diagnosticsTrace.length > 0 ? (
               <ol className="font-mono leading-tight">
@@ -1068,7 +1106,10 @@ export function CalendarMoveCaseConfirmDialog({
 
         <div className="mt-4 flex flex-col gap-2">
           <button
-            ref={firstButtonRef}
+            ref={(el) => {
+              firstButtonRef.current = el;
+              confirmButtonRef.current = el;
+            }}
             type="button"
             className={`${DIALOG_BUTTON_CLASS} bg-[#06C755] text-white`}
             disabled={busy}

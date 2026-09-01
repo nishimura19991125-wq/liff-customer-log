@@ -204,3 +204,78 @@ export function dialogTraceErrorText(e: unknown): string {
     return String(e);
   }
 }
+
+/**
+ * ボタンの見た目の位置と、実際に触った座標。
+ *
+ * iOS では「本体には届くがボタンに当たらない」が起きた。要素の当たり判定が
+ * 見た目とずれているのか、そもそも別の要素が上にあるのかを分けるため、
+ * **押した座標**と**ボタンの矩形**の両方を出す。
+ *
+ * 座標が矩形の中にあるのにボタンの pointerdown が来ていなければ、
+ * 当たり判定が奪われている。外にあれば、見た目と位置がずれている。
+ */
+export type DialogHitReport = {
+  /** 最後に触った座標（ビューポート基準） */
+  tap: { x: number; y: number } | null;
+  /** 実行ボタンの矩形。取れなければ null */
+  confirmRect: DialogRect | null;
+  /** 実際にその座標にある要素の名前（document.elementFromPoint） */
+  topElement: string | null;
+};
+
+export type DialogRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export const EMPTY_DIALOG_HIT_REPORT: DialogHitReport = {
+  tap: null,
+  confirmRect: null,
+  topElement: null,
+};
+
+/** 座標が矩形の中にあるか */
+export function tapIsInsideRect(
+  tap: { x: number; y: number } | null,
+  rect: DialogRect | null,
+): boolean {
+  if (!tap || !rect) return false;
+  return (
+    tap.x >= rect.x &&
+    tap.x <= rect.x + rect.width &&
+    tap.y >= rect.y &&
+    tap.y <= rect.y + rect.height
+  );
+}
+
+/** 実測を1行にする。数字は丸めて読めるようにする */
+export function formatDialogHitReport(report: DialogHitReport): string[] {
+  const out: string[] = [];
+  const r = (n: number) => Math.round(n);
+
+  out.push(
+    report.tap
+      ? `タップ (${r(report.tap.x)}, ${r(report.tap.y)})`
+      : "タップ (まだ触っていません)",
+  );
+  out.push(
+    report.confirmRect
+      ? `実行ボタン x${r(report.confirmRect.x)} y${r(report.confirmRect.y)} w${r(
+          report.confirmRect.width,
+        )} h${r(report.confirmRect.height)}`
+      : "実行ボタン (取得できません)",
+  );
+  out.push(`最前面の要素: ${report.topElement ?? "不明"}`);
+
+  if (report.tap && report.confirmRect) {
+    out.push(
+      tapIsInsideRect(report.tap, report.confirmRect)
+        ? "座標はボタンの中 → 当たり判定を奪われている"
+        : "座標はボタンの外 → 見た目と位置がずれている",
+    );
+  }
+  return out;
+}
