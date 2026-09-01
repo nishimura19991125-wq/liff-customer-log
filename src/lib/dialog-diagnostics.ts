@@ -131,23 +131,67 @@ export function describeDialogTapProbe(probe: DialogTapProbe): string {
  * handleMove がどこまで進んだかの記録（診断モードのときだけ溜める）。
  *
  * click までは届いていることが分かったので、次に要るのは
- * **中のどこで止まったか**。段階ごとに1行残し、最後の行が到達点になる。
+ * **中のどこで、どれだけかかったか**。段階ごとに時刻を持たせ、
+ * 直前の段階からの差分で出す。
  *
  * 例
- *   1 開始 → 2 判定OK → 3 送信中 → 4 トークン取得中
- *   （ここで止まっていれば LIFF の init / getIDToken が返ってきていない）
+ *   1. onConfirm 到達
+ *   2. 開始 (+2ms)
+ *   3. 判定OK (+1ms)
+ *   4. トークン取得中 (+0ms)
+ *   5. トークンOK (+3200ms)   ← liff.init() の時間
+ *   6. 送信 (+1ms)
+ *   7. 応答 HTTP 200 (+9300ms) ← サーバ処理の時間
+ *   8. 反映 (+50ms)
+ *   9. リフレッシュ完了 (+2100ms)
+ *
+ * ⚠ 時刻は**呼び出し側が渡す**（performance.now()）。ここを純粋関数に
+ *    保つと、node のテストでも同じ結果になる。
  */
-export const DIALOG_TRACE_MAX = 12;
+
+/** 1段階ぶん。at は performance.now() の値（ミリ秒・単調増加） */
+export type DialogTraceEntry = {
+  label: string;
+  at: number;
+};
+
+/** 溜める上限。段階＋失敗の行が入るので少し余裕を見る */
+export const DIALOG_TRACE_MAX = 16;
 
 /** 溜めすぎないよう、古いものから捨てる */
 export function appendDialogTrace(
-  prev: readonly string[],
-  line: string,
-): string[] {
-  const next = [...prev, `${prev.length + 1}. ${line}`];
+  prev: readonly DialogTraceEntry[],
+  label: string,
+  at: number,
+): DialogTraceEntry[] {
+  const next = [...prev, { label, at }];
   return next.length > DIALOG_TRACE_MAX
     ? next.slice(next.length - DIALOG_TRACE_MAX)
     : next;
+}
+
+/**
+ * 表示用に整形する。**直前の段階からの差分**を添える。
+ *
+ * 最初の1行には差分が無いので付けない。古い行が捨てられていても、
+ * 残っている範囲での差分は正しい（先頭だけ基準が無くなる）。
+ */
+export function formatDialogTrace(
+  entries: readonly DialogTraceEntry[],
+): string[] {
+  return entries.map((entry, i) => {
+    const head = `${i + 1}. ${entry.label}`;
+    if (i === 0) return head;
+    const diff = Math.round(entry.at - entries[i - 1].at);
+    return `${head} (+${diff}ms)`;
+  });
+}
+
+/** 応答後にどれだけ待たされたか。成功メッセージへ併記する用 */
+export function formatDialogElapsed(ms: number): string {
+  const rounded = Math.round(ms);
+  if (rounded < 1000) return `${rounded}ms`;
+  return `${(rounded / 1000).toFixed(1)}秒`;
 }
 
 /** 例外を1行に潰す。握り潰さず、必ず読める形にする */

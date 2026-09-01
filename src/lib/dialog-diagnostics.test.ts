@@ -8,6 +8,8 @@ import {
   appendDialogTrace,
   describeDialogTapProbe,
   dialogTraceErrorText,
+  formatDialogElapsed,
+  formatDialogTrace,
   dialogDiagnosticsEnabled,
   dialogScrollLockDisabled,
 } from "@/lib/dialog-diagnostics";
@@ -141,21 +143,55 @@ describe("どこで止まっているかの説明", () => {
  */
 describe("到達点の記録", () => {
   it("★ 順番が分かるよう番号を振る", () => {
-    let t = appendDialogTrace([], "開始");
-    t = appendDialogTrace(t, "判定OK");
+    let t = appendDialogTrace([], "開始", 100);
+    t = appendDialogTrace(t, "判定OK", 102);
 
-    expect(t).toEqual(["1. 開始", "2. 判定OK"]);
+    expect(formatDialogTrace(t)).toEqual(["1. 開始", "2. 判定OK (+2ms)"]);
+  });
+
+  it("★ 直前の段階からの差分を出す（区間が読める）", () => {
+    let t = appendDialogTrace([], "トークン取得中", 1000);
+    t = appendDialogTrace(t, "トークンOK", 4200);
+    t = appendDialogTrace(t, "送信", 4201);
+    t = appendDialogTrace(t, "応答 HTTP 200", 13501);
+
+    expect(formatDialogTrace(t)).toEqual([
+      "1. トークン取得中",
+      "2. トークンOK (+3200ms)",
+      "3. 送信 (+1ms)",
+      "4. 応答 HTTP 200 (+9300ms)",
+    ]);
+  });
+
+  it("★ 最初の1行には差分を付けない（基準が無い）", () => {
+    const t = appendDialogTrace([], "onConfirm 到達", 50);
+
+    expect(formatDialogTrace(t)).toEqual(["1. onConfirm 到達"]);
+  });
+
+  it("小数は丸める", () => {
+    let t = appendDialogTrace([], "a", 0);
+    t = appendDialogTrace(t, "b", 12.6);
+
+    expect(formatDialogTrace(t)[1]).toBe("2. b (+13ms)");
   });
 
   it("★ 溜めすぎない（古いものから捨てる）", () => {
-    let t: string[] = [];
+    let t: ReturnType<typeof appendDialogTrace> = [];
     for (let i = 0; i < DIALOG_TRACE_MAX + 5; i += 1) {
-      t = appendDialogTrace(t, `step${i}`);
+      t = appendDialogTrace(t, `step${i}`, i);
     }
 
     expect(t).toHaveLength(DIALOG_TRACE_MAX);
     // 最後の行＝到達点が残る
-    expect(t[t.length - 1]).toContain(`step${DIALOG_TRACE_MAX + 4}`);
+    expect(t[t.length - 1].label).toBe(`step${DIALOG_TRACE_MAX + 4}`);
+  });
+
+  it("★ 応答後の待ち時間を読める形にする", () => {
+    expect(formatDialogElapsed(0)).toBe("0ms");
+    expect(formatDialogElapsed(999)).toBe("999ms");
+    expect(formatDialogElapsed(1000)).toBe("1.0秒");
+    expect(formatDialogElapsed(2149)).toBe("2.1秒");
   });
 
   it("★ 例外は握り潰さず1行にする", () => {
