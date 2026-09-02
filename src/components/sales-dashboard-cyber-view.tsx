@@ -316,14 +316,30 @@ function formatAchievementRate(rate: number): string {
 }
 
 /**
+ * 目標未設定の棒に敷く斜線。
+ *
+ * 空のトラックだと「目標に対して 0」に見えるが、実際は**測れない**だけ。
+ * 色は currentColor に任せ、要素側の text-* で明暗に追随させる
+ * （Tailwind の動的クラス名は作らない）。
+ */
+const PT_NO_TARGET_HATCH =
+  "repeating-linear-gradient(45deg, currentColor 0 4px, transparent 4px 8px)";
+
+/** 目標が無いときの控えめな色。このファイルの補足テキストと同じ濃さ */
+const PT_NO_TARGET_TEXT = "text-slate-400 dark:text-slate-500";
+
+/**
  * 総合PTランキングの、目標を基準にした横棒。
  *
  * トラックが目標（100%）で、塗りは達成率。**100%を超えても満タンで止める**。
  * 超過分まで伸ばすと1人の突出で他の行が潰れ、横に並べて比べられなくなる。
  * 超過は数字（1行目の達成率）で読む。barRatio が min(100, …) を担うので、
- * ここでクランプは書かない。目標が 0 なら barRatio は 0 を返し、棒は空になる。
+ * ここでクランプは書かない。
  *
- * 値は「実績 / 目標」を棒の下に置く。7桁が2つ並ぶため棒の中には収まらない。
+ * **目標が無い行は塗らず、斜線のトラックにする。** 全体の3割ほどが未設定で、
+ * 空の棒のままだと実績があっても成績不振に見えてしまう。
+ *
+ * 値は棒の下に置く。7桁が2つ並ぶため棒の中には収まらない。
  * 棒自体は数値の言い換えなので aria から外し、数字は読み上げに残す。
  */
 function PtTargetBar({
@@ -335,27 +351,49 @@ function PtTargetBar({
   target: number;
   rate: number;
 }) {
+  const hasTarget = target > 0;
+
   return (
     <>
-      <div
-        className="mt-2 h-6 rounded-full bg-slate-200 dark:bg-slate-700/60"
-        aria-hidden
-      >
+      {hasTarget ? (
         <div
-          className={`h-6 rounded-full transition-[width] duration-300 ${RANK_BAR_TONES[ptRateTone(rate)]}`}
-          style={{ width: `${barRatio(actual, target)}%` }}
+          className="mt-2 h-6 rounded-full bg-slate-200 dark:bg-slate-700/60"
+          aria-hidden
+        >
+          <div
+            className={`h-6 rounded-full transition-[width] duration-300 ${RANK_BAR_TONES[ptRateTone(rate)]}`}
+            style={{ width: `${barRatio(actual, target)}%` }}
+          />
+        </div>
+      ) : (
+        <div
+          className="mt-2 h-6 rounded-full border border-dashed border-slate-300 text-slate-200 dark:border-slate-600 dark:text-slate-700"
+          style={{ backgroundImage: PT_NO_TARGET_HATCH }}
+          aria-hidden
         />
-      </div>
+      )}
       <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-        実績 {formatPt(actual)} PT / 目標{" "}
-        {target > 0 ? `${formatPt(target)} PT` : "—"}
+        {hasTarget
+          ? `実績 ${formatPt(actual)} PT / 目標 ${formatPt(target)} PT`
+          : `${formatPt(actual)} PT`}
       </p>
     </>
   );
 }
 
-/** 1行目の右端に出す達成率 */
-function PtRateLabel({ rate }: { rate: number }) {
+/**
+ * 1行目の右端。達成率、または目標が無いことの断り。
+ *
+ * 未設定は太字にせず控えめな色にして、達成率が出ている行と重みを変える。
+ */
+function PtRateLabel({ rate, hasTarget }: { rate: number; hasTarget: boolean }) {
+  if (!hasTarget) {
+    return (
+      <span className={`shrink-0 text-[12px] ${PT_NO_TARGET_TEXT}`}>
+        目標未設定
+      </span>
+    );
+  }
   return (
     <span
       className={`shrink-0 text-[15px] font-bold tabular-nums ${PT_RATE_TEXT_TONES[ptRateTone(rate)]}`}
@@ -456,7 +494,7 @@ function PtPodiumCard({
             </span>
           </p>
         </div>
-        <PtRateLabel rate={row.achievementRate} />
+        <PtRateLabel rate={row.achievementRate} hasTarget={row.targetPt > 0} />
       </button>
       <PtTargetBar
         actual={row.pt}
@@ -514,7 +552,7 @@ function PtListRow({
             </span>
           </p>
         </div>
-        <PtRateLabel rate={row.achievementRate} />
+        <PtRateLabel rate={row.achievementRate} hasTarget={row.targetPt > 0} />
       </button>
       <PtTargetBar
         actual={row.pt}
