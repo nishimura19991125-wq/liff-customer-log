@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { LiffCard } from "@/components/liff-chrome";
 import { formatDisplayYmd } from "@/lib/format-display-ymd";
+import { barRatio } from "@/lib/sales-dashboard-bar-ratio";
 
 export type DashboardPeriod = "current" | "previous";
 export type DashboardDepartment = "pt" | "sales" | "apo" | "tenka";
@@ -245,6 +246,27 @@ function ptValueClass(): string {
   return "font-bold text-emerald-600 dark:font-black dark:text-emerald-400 dark:drop-shadow-[0_0_16px_rgba(52,211,153,0.45)]";
 }
 
+/**
+ * 順位比較の横棒（総合PTランキングのみ）。1位を100%とした割合で伸ばす。
+ *
+ * 幅は算出値なので style で渡す。Tailwind は動的なクラス名を生成しない。
+ * 色は PT 値と同じ緑にそろえ、順位バッジ（琥珀・銀）とは競合させない。
+ * 数値は同じ行に出ているので、読み上げの対象からは外す。
+ */
+function PtRankBar({ pt, topPt }: { pt: number; topPt: number }) {
+  return (
+    <div
+      className="mt-1 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700/60"
+      aria-hidden
+    >
+      <div
+        className="h-1.5 rounded-full bg-emerald-500 transition-[width] duration-300 dark:bg-emerald-400"
+        style={{ width: `${barRatio(pt, topPt)}%` }}
+      />
+    </div>
+  );
+}
+
 function rankBadgeClass(rank: number): string {
   if (rank === 1) return "bg-amber-400 text-amber-950 shadow-[0_0_10px_rgba(234,179,8,0.5)]";
   if (rank === 2) return "bg-slate-300 text-slate-800 dark:bg-slate-400 dark:text-slate-900 shadow-[0_0_8px_rgba(148,163,184,0.45)]";
@@ -295,11 +317,14 @@ function PtBreakdownPanel({ rows }: { rows: PtBreakdownRow[] }) {
 function PtPodiumCard({
   row,
   breakdown,
+  topPt,
   expanded,
   onToggle,
 }: {
   row: RankingRow;
   breakdown: PtBreakdownRow[];
+  /** 1位の PT。棒の基準（0 なら棒は伸びない） */
+  topPt: number;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -341,6 +366,7 @@ function PtPodiumCard({
           </p>
         </div>
       </button>
+      <PtRankBar pt={row.pt} topPt={topPt} />
       {expanded ? (
         <PtBreakdownPanel rows={breakdown} />
       ) : null}
@@ -351,11 +377,14 @@ function PtPodiumCard({
 function PtListRow({
   row,
   breakdown,
+  topPt,
   expanded,
   onToggle,
 }: {
   row: RankingRow;
   breakdown: PtBreakdownRow[];
+  /** 1位の PT。棒の基準（0 なら棒は伸びない） */
+  topPt: number;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -399,6 +428,7 @@ function PtListRow({
           </p>
         </div>
       </button>
+      <PtRankBar pt={row.pt} topPt={topPt} />
       {expanded ? (
         <PtBreakdownPanel rows={breakdown} />
       ) : null}
@@ -426,6 +456,8 @@ function PtRankingSection({
   }
   const podium = rows.filter((r) => r.rank <= 3);
   const rest = rows.filter((r) => r.rank > 3);
+  /** 棒の基準。rows はサーバ側で PT 降順なので先頭が1位 */
+  const topPt = rows[0]?.pt ?? 0;
 
   const toggle = (staffName: string) => {
     setExpandedName((cur) => (cur === staffName ? null : staffName));
@@ -440,6 +472,7 @@ function PtRankingSection({
               key={`podium-${row.rank}-${row.staffName}`}
               row={row}
               breakdown={breakdownByStaff[row.staffName] ?? []}
+              topPt={topPt}
               expanded={expandedName === row.staffName}
               onToggle={() => toggle(row.staffName)}
             />
@@ -453,6 +486,7 @@ function PtRankingSection({
               key={`${row.rank}-${row.staffName}`}
               row={row}
               breakdown={breakdownByStaff[row.staffName] ?? []}
+              topPt={topPt}
               expanded={expandedName === row.staffName}
               onToggle={() => toggle(row.staffName)}
             />
