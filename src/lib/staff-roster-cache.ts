@@ -175,8 +175,6 @@ function staffRosterListFieldsCsv(): string {
     "STAFF_DEPARTMENT_FIELD_ID",
     "STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID",
     "STAFF_PIN_HASH_FIELD_ID",
-    // ランキングの顔写真（/api/staff/photo が名簿キャッシュから読む）
-    "STAFF_PHOTO_FIELD_ID",
   ] as const) {
     const id = process.env[envKey]?.trim();
     if (id) parts.push(id);

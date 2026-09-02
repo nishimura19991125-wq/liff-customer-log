@@ -20,7 +20,8 @@ import {
   type StaffPhotoPayload,
 } from "@/lib/staff-photo-cache";
 import {
-  findStaffPhotoRawValue,
+  fetchStaffPhotoRawValue,
+  findStaffRecordIdByName,
   resolveStaffPhotoLookupConfig,
 } from "@/lib/staff-photo-lookup";
 
@@ -34,9 +35,11 @@ export const dynamic = "force-dynamic";
  * 作りにすると、名簿以外のアプリの添付まで読み出せる中継口になる。
  * アプリIDと列IDはサーバ側で固定し、名前から名簿キャッシュを引く。
  *
- * ■ 名簿は共有キャッシュから読む
- * @pocket への往復は「外部URL形式の写真を取りに行くとき」だけで、
- * それも結果をサーバ内にキャッシュする（全員が同じ3人を見るため）。
+ * ■ 名簿は共有キャッシュ、写真は1件ずつ
+ * 名前から recordId を引くところまでは名簿の共有キャッシュ。写真列は
+ * 名簿の取得列に含めていない（base64 で返る仕様だと名簿を共有する
+ * 全画面が重くなるため）。写真はその1件だけを取り直す。
+ * 上位3人ぶんで最大3回、結果は30分キャッシュするので往復は増えない。
  *
  * ■ 返すのは画像だけ
  * Content-Type が image/ で始まらないものは返さない。上限も設ける。
@@ -139,7 +142,11 @@ export async function GET(request: Request) {
     if (!cfg) return notFound();
 
     const photo = await getOrLoadStaffPhoto(staffName, async () => {
-      const raw = await findStaffPhotoRawValue(staffName, cfg);
+      // 名前 → recordId は名簿キャッシュから。写真だけ1件取り直す
+      const recordId = await findStaffRecordIdByName(staffName, cfg);
+      if (!recordId) return null;
+
+      const raw = await fetchStaffPhotoRawValue(recordId, cfg);
       if (raw == null) return null;
 
       const files = parseAtPocketFileField(raw).filter(

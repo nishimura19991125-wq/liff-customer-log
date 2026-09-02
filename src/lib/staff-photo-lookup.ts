@@ -4,6 +4,7 @@ import type { AtPocketFieldRow, AtPocketRequestContext } from "@/lib/atpocket";
 import {
   apiKeyForStaffPocketReadApClList,
   fetchAppFields,
+  fetchRecordById,
 } from "@/lib/atpocket";
 import {
   pickRecordValueByFieldAliases,
@@ -107,16 +108,20 @@ export async function resolveStaffPhotoLookupConfig(): Promise<StaffPhotoLookupC
 }
 
 /**
- * 担当者名 → 名簿レコードの写真列の生値。
+ * 担当者名 → 名簿レコードの recordId。
  *
  * **名前だけを入口にする。**レコードIDや列IDを外から受け取る作りにすると、
- * 名簿以外のアプリの添付まで読み出せる中継口になる。
- * 名簿は共有キャッシュから読むので @pocket への往復は増えない。
+ * 名簿以外のアプリの添付まで読み出せる中継口になる。ここで名前から引いた
+ * ID だけを、呼び出し側が写真の取得に使う。
+ *
+ * 写真列は名簿の共有キャッシュに載せていない。@pocket が base64 を返す
+ * 仕様だった場合、名簿を共有する全画面（紐付け・勤怠・工事対応者）の
+ * 取得が重くなるため。写真は1件ずつ取りにいく。
  */
-export async function findStaffPhotoRawValue(
+export async function findStaffRecordIdByName(
   staffName: string,
   cfg: StaffPhotoLookupConfig,
-): Promise<unknown | null> {
+): Promise<string | null> {
   const target = normApClStaffName(staffName);
   if (!target) return null;
 
@@ -131,7 +136,32 @@ export async function findStaffPhotoRawValue(
       ),
     );
     if (name !== target) continue;
-    return pickRecordValueByFieldAliases(ro, cfg.photoFieldId) ?? null;
+    const id = row.recordId != null ? String(row.recordId) : (row.uniqueId ?? "");
+    return id.trim() || null;
   }
   return null;
+}
+
+/**
+ * 名簿の1件だけを写真列付きで取り直す。
+ *
+ * 上位3人ぶんで最大3回。結果は staff-photo-cache が30分持つので、
+ * 何人が画面を開いても往復はほとんど起きない。
+ */
+export async function fetchStaffPhotoRawValue(
+  recordId: string,
+  cfg: StaffPhotoLookupConfig,
+): Promise<unknown | null> {
+  const row = await fetchRecordById(
+    cfg.staffAppId,
+    recordId,
+    staffPocketAuth(),
+    cfg.photoFieldId,
+  );
+  const rec = row?.record;
+  if (!rec || typeof rec !== "object") return null;
+  return (
+    pickRecordValueByFieldAliases(rec as Record<string, unknown>, cfg.photoFieldId) ??
+    null
+  );
 }
