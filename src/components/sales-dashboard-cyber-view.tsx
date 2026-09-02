@@ -210,8 +210,32 @@ const PT_BAR_TONES = {
 /** 塗りに重なるラベル。赤・紺とも濃色なので、明暗どちらでも白で通す */
 const PT_BAR_LABEL_ON_FILL = "text-white";
 
+function isPtTargetAchieved(rate: number): boolean {
+  return rate >= PT_TARGET_ACHIEVED_RATE;
+}
+
 function ptBarTone(rate: number): "navy" | "red" {
-  return rate >= PT_TARGET_ACHIEVED_RATE ? "red" : "navy";
+  return isPtTargetAchieved(rate) ? "red" : "navy";
+}
+
+/**
+ * 目標達成の印。表に花丸・裏にバラを持つコインが回り続ける。
+ *
+ * 2枚を重ねて片方を180度回し、backface-visibility で裏返った面を隠す。
+ * 動きの定義は globals.css の .pt-coin（preserve-3d と幅・高さが必須）。
+ *
+ * ラベルは**この親1箇所だけ**に置く。子の絵文字にも付けると同じ内容が
+ * 3回読み上げられる。
+ * 回転中に 1.35 倍へ膨らむので、余白は margin ではなく親の gap で確保する
+ * （margin だと拡縮のたびに行の幅が動きうる）。
+ */
+function PtAchievedCoin() {
+  return (
+    <span className="pt-coin shrink-0 self-center" role="img" aria-label="目標達成">
+      <span className="pt-coin-face">💮</span>
+      <span className="pt-coin-face pt-coin-back">🌹</span>
+    </span>
+  );
 }
 
 /** 棒の中・外に出す達成率。桁を詰めるため整数（149%） */
@@ -377,6 +401,7 @@ function PtPodiumCard({
             </span>
           </p>
         </div>
+        {isPtTargetAchieved(row.achievementRate) ? <PtAchievedCoin /> : null}
       </button>
       <PtRankingBar
         pt={row.pt}
@@ -438,6 +463,7 @@ function PtListRow({
             </span>
           </p>
         </div>
+        {isPtTargetAchieved(row.achievementRate) ? <PtAchievedCoin /> : null}
       </button>
       <PtRankingBar
         pt={row.pt}
