@@ -35,7 +35,14 @@ export const dynamic = "force-dynamic";
  * 自分がランキングに居ないときは rank を null にし、値は 0 で返す
  * （呼び出し側は順位の表示だけを省く）。
  */
-function selfSummaryResponse(payload: SalesDashboardPayload): NextResponse {
+function selfSummaryResponse(
+  payload: SalesDashboardPayload,
+  /**
+   * 429 で古い集計を返したときの目印。**古い順位を最新として見せない**ため、
+   * 絞った応答でも落とさない（文言 rosterMessage はホームで使わないので除く）。
+   */
+  extra?: { rateLimited: true; dashboardStale: true },
+): NextResponse {
   const self = payload.ranking.find((r) => r.isSelf);
   return NextResponse.json({
     rank: self?.rank ?? null,
@@ -44,6 +51,7 @@ function selfSummaryResponse(payload: SalesDashboardPayload): NextResponse {
     targetPt: self?.targetPt ?? 0,
     achievementRate: self?.achievementRate ?? 0,
     periodLabel: payload.periodLabel,
+    ...(extra ?? {}),
   });
 }
 
@@ -134,8 +142,12 @@ export async function GET(request: Request) {
           return NextResponse.json({ needsStaffBind: true });
         }
         const payload = personalizeSalesDashboardPayload(stale, boundStaffName);
-        // 絞った応答では古い旨のフラグも落とす（ホームは順位しか見ない）
-        if (selfOnly) return selfSummaryResponse(payload);
+        if (selfOnly) {
+          return selfSummaryResponse(payload, {
+            rateLimited: true,
+            dashboardStale: true,
+          });
+        }
         return NextResponse.json({
           ...payload,
           rateLimited: true,

@@ -52,6 +52,9 @@ type SalesRankSelfResponse = {
   achievementRate?: number;
   periodLabel?: string;
   needsStaffBind?: boolean;
+  /** 429 で古い集計を返したとき（順位が最新でない可能性がある） */
+  rateLimited?: boolean;
+  dashboardStale?: boolean;
 };
 
 /**
@@ -283,29 +286,61 @@ export function HomeCompactSummaries({
           disabled={needsStaffBind}
           trailing={<SalesRankBadge rank={selfRank} loading={selfRankLoading} />}
         >
-          {selfRank != null ? (
-            <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-              {selfSummary?.periodLabel?.trim() ? `${selfSummary.periodLabel}・` : ""}
-              全{selfSummary?.totalCount ?? 0}人中
-            </p>
-          ) : null}
-          {showSelfTarget ? (
+          {selfRankLoading ? (
+            /*
+             * 読み込み中の場所取り。**実際の行と同じ要素・同じ余白**にして、
+             * 届いた瞬間にカードが伸びないようにする（下のカードが動くと
+             * 誤タップにつながる）。文字は透明にし、幅だけ帯で示す。
+             * 取得後に「順位なし」「目標未設定」と分かって縮むのは許容する。
+             */
             <>
+              <p className="mt-1 text-[12px] text-transparent" aria-hidden>
+                <span className="inline-block w-28 rounded bg-slate-200 dark:bg-slate-700">
+                  &nbsp;
+                </span>
+              </p>
               <div
                 className="mt-1.5 h-1 rounded-full bg-slate-200 dark:bg-slate-700/60"
                 aria-hidden
-              >
-                <div
-                  className="h-1 rounded-full bg-emerald-500 dark:bg-emerald-400"
-                  style={{ width: `${barRatio(selfPt, selfTargetPt)}%` }}
-                />
-              </div>
-              <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-                目標まであと {formatSalesPt(Math.max(0, selfTargetPt - selfPt))} PT
-                （{Math.round(selfRate)}%）
+              />
+              <p className="mt-1 text-[12px] text-transparent" aria-hidden>
+                <span className="inline-block w-40 rounded bg-slate-200 dark:bg-slate-700">
+                  &nbsp;
+                </span>
               </p>
             </>
-          ) : null}
+          ) : (
+            <>
+              {selfRank != null ? (
+                <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
+                  {selfSummary?.periodLabel?.trim()
+                    ? `${selfSummary.periodLabel}・`
+                    : ""}
+                  全{selfSummary?.totalCount ?? 0}人中
+                  {/* 429 で古い集計を出しているときの断り。行は増やさない */}
+                  {selfSummary?.dashboardStale ? "・前回の集計" : ""}
+                </p>
+              ) : null}
+              {showSelfTarget ? (
+                <>
+                  <div
+                    className="mt-1.5 h-1 rounded-full bg-slate-200 dark:bg-slate-700/60"
+                    aria-hidden
+                  >
+                    <div
+                      className="h-1 rounded-full bg-emerald-500 dark:bg-emerald-400"
+                      style={{ width: `${barRatio(selfPt, selfTargetPt)}%` }}
+                    />
+                  </div>
+                  <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
+                    目標まであと{" "}
+                    {formatSalesPt(Math.max(0, selfTargetPt - selfPt))} PT（
+                    {Math.round(selfRate)}%）
+                  </p>
+                </>
+              ) : null}
+            </>
+          )}
         </LiffMenuCard>
 
         {/* 下段：書類未回収 | 商談進捗 */}
