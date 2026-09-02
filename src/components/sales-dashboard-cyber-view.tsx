@@ -101,16 +101,6 @@ function tabClass(active: boolean): string {
   }`;
 }
 
-type PersonalKpi = {
-  /** 総合PT（売上PTのみ。アポ件数は加算しない） */
-  totalPt: number;
-  salesAmount: number;
-  apoCount: number;
-  contractCount: number;
-  /** 本人のPT対象レコード（お客様名・PT） */
-  breakdown: PtBreakdownRow[];
-};
-
 /** AP担当者・CL担当者を両方表示（未設定は省略） */
 function formatApClAssignees(apPerson: string, clPerson: string): string {
   const ap = apPerson.normalize("NFKC").replace(/\s+/g, " ").trim();
@@ -127,102 +117,6 @@ function formatContractDateLabel(dateYmd: string): string {
     ? formatDisplayYmd(dateYmd) || dateYmd.trim()
     : "";
   return display ? `契約日：${display}` : "契約日：—";
-}
-
-function resolvePersonalKpi(data: DashboardPayload): PersonalKpi {
-  const self = data.ranking.find((r) => r.isSelf);
-  const selfApo = data.apoRanking.find((r) => r.isSelf);
-  const salesPt = self?.pt ?? 0;
-  const staffKey = self?.staffName?.trim() || "";
-  const breakdown =
-    staffKey && data.ptBreakdownByStaff
-      ? (data.ptBreakdownByStaff[staffKey] ?? [])
-      : [];
-  return {
-    totalPt: salesPt,
-    salesAmount: self?.salesAmount ?? 0,
-    apoCount: selfApo?.apoCount ?? 0,
-    contractCount: self?.contractCount ?? 0,
-    breakdown,
-  };
-}
-
-function PersonalKpiHero({ personal, periodLabel }: { personal: PersonalKpi; periodLabel: string }) {
-  return (
-    <section className="relative overflow-hidden rounded-xl border border-slate-100 bg-white p-6 text-center shadow-sm dark:border-emerald-500/20 dark:bg-slate-900/60 dark:shadow-[0_0_12px_rgba(16,185,129,0.08)]">
-      <div
-        className="pointer-events-none absolute inset-0 bg-gradient-to-b from-emerald-50/80 via-transparent to-transparent dark:from-emerald-400/10"
-        aria-hidden
-      />
-      <p className="relative text-[12px] font-medium tracking-wide text-slate-500 dark:text-emerald-200/70">
-        {periodLabel}の獲得総PT
-      </p>
-      <p className="relative mt-2 text-[3rem] font-extrabold leading-none tracking-tight text-emerald-600 sm:text-[3.25rem] dark:font-black dark:text-emerald-400 dark:drop-shadow-[0_0_28px_rgba(52,211,153,0.55)]">
-        {formatPt(personal.totalPt)}
-        <span className="ml-2 text-[1.25rem] font-bold sm:text-[1.35rem]">PT</span>
-      </p>
-
-      <div className="relative mt-4 text-left">
-        {personal.breakdown.length === 0 ? (
-          <p className="rounded-lg bg-slate-50/90 px-3 py-2.5 text-center text-[12px] text-slate-500 dark:bg-slate-950/40 dark:text-slate-400">
-            対象期間のPTレコードがありません
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-1.5">
-            {personal.breakdown.map((item, i) => {
-              const assignees = formatApClAssignees(item.apPerson, item.clPerson);
-              const contractDate = formatContractDateLabel(item.dateYmd);
-              return (
-                <li
-                  key={`self-pt-${i}-${item.dateYmd}-${item.pt}-${item.customerName}`}
-                  className="flex items-center justify-between gap-3 rounded-lg bg-slate-50/90 px-3 py-2 text-[13px] dark:bg-slate-950/40"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-slate-700 dark:text-slate-200">
-                      {item.customerName.trim() || "（お客様名なし）"}
-                    </p>
-                    {assignees ? (
-                      <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
-                        {assignees}
-                      </p>
-                    ) : null}
-                    <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
-                      {contractDate}
-                    </p>
-                  </div>
-                  <span className={`shrink-0 ${ptValueClass()}`}>
-                    {formatPt(item.pt)}
-                    <span className="ml-0.5 text-[11px] font-bold">PT</span>
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-
-      <div className="relative mt-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[12px] text-slate-500 dark:text-slate-400">
-        <span>
-          当月売上{" "}
-          <span className="font-medium text-slate-600 dark:font-semibold dark:text-slate-200">
-            {formatYen(personal.salesAmount)}
-          </span>
-        </span>
-        <span>
-          アポ{" "}
-          <span className="font-medium text-slate-600 dark:font-semibold dark:text-slate-200">
-            {formatCount(personal.apoCount)}件
-          </span>
-        </span>
-        <span>
-          契約{" "}
-          <span className="font-medium text-slate-600 dark:font-semibold dark:text-slate-200">
-            {formatCount(personal.contractCount)}件
-          </span>
-        </span>
-      </div>
-    </section>
-  );
 }
 
 function podiumCardShell(rank: number): string {
@@ -315,43 +209,20 @@ function formatAchievementRateCompact(rate: number): string {
   return `${Math.round(Number.isFinite(rate) ? rate : 0)}%`;
 }
 
-/** 内外どちらでも確保するラベル枠。2行の広いほう＝PT値7桁に合わせる */
-const PT_LABEL_SLOT_CLASS = "w-[72px]";
-
-/**
- * PT値＋達成率を棒の内側に置ける最小の割合（%）。
- *
- * ラベルは2行なので、要る横幅は**広いほうの1行＝PT値7桁**だけになる。
- * 11px で「3,764,008」を、数字1文字 ≒ 0.6em＝6.6px・カンマ ≒ 3.3px として
- *   7桁 46.2 ＋ カンマ2つ 6.6 ＝ 約 53px
- * 棒の左右 px-2 を足して約 71px。達成率（約 30px）は下の行へ回ったので
- * 横幅には効かない。
- * LIFF の狭い端末（幅 320px）では、カードの左右余白 32px・順位バッジと
- * その gap 48px・右のラベル枠 72px と gap 8px を引いて棒は約 160px。
- * 71 / 160 ≒ 0.44 なので 45 とする。1行に並べていた頃（75）より下がり、
- * 内側に入る行が増える。
- *
- * ⚠ **実測ではなく字幅からの算出**（レンダリングして測る手段が無いため）。
- *   画面幅が広い端末では棒が伸びるので、内側に入る行はこれより増える。
- *   目標未設定の行はラベルが1行だけだが、必要な横幅は同じ（PT値）なので
- *   判定は一本のままでよい。
- */
-const PT_LABEL_INSIDE_MIN_RATIO = 45;
-
 /**
  * 総合PTランキングの横棒。**長さは PT 順（1位を100%）。**
  *
  * 長さに達成率を使うと、目標が小さい人ほど棒が長くなり、PT の順位と棒の
- * 並びが食い違う。長さは PT で決め、達成率は棒の中の文字で伝える。
- * 棒が目標と無関係になったので、目標未設定の行も**通常の塗り**にする
- * （その行のラベルは PT値の1行だけになる）。
+ * 並びが食い違う。長さは PT で決め、目標と達成率はラベルの文字で伝える。
  *
- * ラベルは2行（PT値・達成率）。1行に並べるより必要な横幅が半分になるので、
- * 棒の高さを2行ぶん（h-10）に取って内側に入る行を増やしている。
+ * ■ ラベルを2枚重ねる
+ * 同じ文字列を塗りの上下に置き、上のコピーだけ clip-path で塗りの幅ぶんに
+ * 切り出す。塗りに覆われた部分は明色、はみ出した部分は通常色で読めるので、
+ * 棒が短い行でも全文が出る。「入るか外へ出すか」の閾値判定が要らなくなり、
+ * 棒は常に全幅（＝行ごとの基準がそろう）。
+ * 上のコピーは同じ文を繰り返すだけなので読み上げからは外す。
  *
  * 色は達成率で変える（100%以上 amber・未満と未設定 emerald）。
- * ラベルの枠は内外どちらでも固定幅で確保する。桁数で棒の長さが揺れず、
- * 行ごとの棒の基準幅もそろうので、長さをそのまま比べられる。
  */
 function PtRankingBar({
   pt,
@@ -367,50 +238,32 @@ function PtRankingBar({
 }) {
   const ratio = barRatio(pt, topPt);
   const tone = ptRateTone(rate);
-  const hasTarget = target > 0;
-  const inside = ratio >= PT_LABEL_INSIDE_MIN_RATIO;
-  /**
-   * 2行のラベル。内側でも外側でも同じものを出す
-   * （行数が変わると行の高さがそろわない）。
-   * 目標が無い行は達成率そのものが無いので、PT値の1行だけになる。
-   */
-  const label = (
-    <span className="block whitespace-nowrap text-right leading-tight">
-      <span className="block">{formatPt(pt)}</span>
-      {hasTarget ? (
-        <span className="block">{formatAchievementRateCompact(rate)}</span>
-      ) : null}
-    </span>
-  );
+  // 目標が無い行は達成率そのものが無いので、括弧ごと出さない
+  const label =
+    target > 0
+      ? `${formatPt(pt)} / ${formatPt(target)}（${formatAchievementRateCompact(rate)}）`
+      : `${formatPt(pt)} / ${formatPt(target)}`;
+  const labelClass =
+    "absolute inset-0 flex items-center px-3 text-[11px] font-bold tabular-nums";
 
   return (
-    <>
-      <div className="mt-2 flex items-center gap-2">
-        <div className="h-10 flex-1 rounded-full bg-slate-200 dark:bg-slate-700/60">
-          <div
-            className={`flex h-10 items-center justify-end overflow-hidden rounded-full transition-[width] duration-300 ${RANK_BAR_TONES[tone]}`}
-            style={{ width: `${ratio}%` }}
-          >
-            {inside ? (
-              <span
-                className={`px-2 text-[11px] font-bold tabular-nums ${PT_BAR_INSIDE_TEXT_TONES[tone]}`}
-              >
-                {label}
-              </span>
-            ) : null}
-          </div>
-        </div>
-        {/* 内側に置いたときも枠は空けておく（棒の基準幅を行ごとにそろえる） */}
-        <span
-          className={`${PT_LABEL_SLOT_CLASS} shrink-0 text-[11px] tabular-nums text-slate-600 dark:text-slate-300`}
-        >
-          {inside ? null : label}
-        </span>
-      </div>
-      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-        目標 {formatPt(target)}
-      </p>
-    </>
+    <div className="relative mt-2 h-6 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700/60">
+      {/* 塗り。left 基準で伸ばす（inset-0 と width は同時に効かない） */}
+      <div
+        className={`absolute inset-y-0 left-0 rounded-full transition-[width] duration-300 ${RANK_BAR_TONES[tone]}`}
+        style={{ width: `${ratio}%` }}
+      />
+      <span className={`${labelClass} text-slate-700 dark:text-slate-200`}>
+        {label}
+      </span>
+      <span
+        className={`${labelClass} ${PT_BAR_INSIDE_TEXT_TONES[tone]}`}
+        style={{ clipPath: `inset(0 ${100 - ratio}% 0 0)` }}
+        aria-hidden
+      >
+        {label}
+      </span>
+    </div>
   );
 }
 
@@ -822,7 +675,6 @@ export function SalesDashboardCyberView({
   department,
   onDepartmentChange,
 }: Props) {
-  const personal = resolvePersonalKpi(data);
   const apoConfigured = data.apoEnabled;
   const apoReady = data.apoReady;
 
@@ -843,8 +695,6 @@ export function SalesDashboardCyberView({
       <p className="text-[13px] text-slate-500 dark:text-emerald-200/50">
         {data.periodLabel}（JST）· {data.periodHint}
       </p>
-
-      <PersonalKpiHero personal={personal} periodLabel={data.periodLabel} />
 
       <section>
         <div className="relative mb-3">
