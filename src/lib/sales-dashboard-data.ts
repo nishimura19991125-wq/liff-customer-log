@@ -31,6 +31,10 @@ import { achievementRate } from "@/lib/sales-dashboard-achievement";
 import { fetchSalesDashboardRecordPages, salesDashboardPtListAuths } from "@/lib/sales-dashboard-list-fetch";
 import { fetchSalesDashboardPtTargets } from "@/lib/sales-dashboard-target-lookup";
 import {
+  lookupStaffWorkplaceByStaffName,
+  resolveStaffWorkplaceLookupConfig,
+} from "@/lib/staff-workplace-lookup";
+import {
   isYmInPeriod,
   resolveSalesDashboardPeriod,
   type SalesDashboardPeriodKey,
@@ -63,6 +67,8 @@ export type SalesDashboardRankingRow = {
   targetPt: number;
   /** 達成率(%)。targetPt <= 0 のときは 0 */
   achievementRate: number;
+  /** スタッフ名簿の勤務場所（所属支社）。引けなければ空文字 */
+  branch: string;
 };
 
 /** PT集計表レコード単位の明細（お客様情報の登録番号突合付き） */
@@ -376,12 +382,46 @@ function sortStaffAgg(items: StaffAgg[]): StaffAgg[] {
   );
 }
 
+/**
+ * 正規化担当者名 → 勤務場所（所属支社）。
+ *
+ * スタッフ名簿は既にこのリクエストで読んでいる（route が
+ * resolveBoundStaffNameForLineUser を通す）。**レコード取得は増えない。**
+ * 突合も同じ normApClStaffName で、新しい判定は足していない。
+ *
+ * 引けなくても集計は続ける（支社は付加情報）。
+ */
+async function resolveBranchByStaff(
+  names: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  try {
+    const cfg = await resolveStaffWorkplaceLookupConfig();
+    if (!cfg) return out;
+    const found = await Promise.all(
+      names.map((name) => lookupStaffWorkplaceByStaffName(name, cfg)),
+    );
+    names.forEach((name, i) => {
+      const branch = found[i]?.trim();
+      if (branch) out.set(name, branch);
+    });
+  } catch (e) {
+    console.warn(
+      "[sales-dashboard] 所属支社を引けませんでした（支社は表示しません）",
+      e instanceof Error ? e.message : String(e),
+    );
+  }
+  return out;
+}
+
 function buildRanking(
   sorted: StaffAgg[],
   companyPt: number,
   bound: string,
   /** 正規化担当者名 → PT 目標。引けない担当者は 0 になる */
   targetPtByStaff: Map<string, number>,
+  /** 正規化担当者名 → 所属支社。引けない担当者は空文字になる */
+  branchByStaff: Map<string, string>,
 ): SalesDashboardRankingRow[] {
   return sorted.map((item, i) => {
     const targetPt = targetPtByStaff.get(item.name) ?? 0;
@@ -397,6 +437,7 @@ function buildRanking(
       isPodium: i < 3,
       targetPt,
       achievementRate: achievementRate(item.pt, targetPt),
+      branch: branchByStaff.get(item.name) ?? "",
     };
   });
 }
@@ -420,6 +461,16 @@ function warnMissingSalesTargets(
       total: ranking.length,
       targetsAvailable,
     }),
+  );
+}
+
+/** 支社を引けなかった人数を残す。**氏名は出さない**（件数のみ） */
+function warnMissingSalesBranches(ranking: SalesDashboardRankingRow[]): void {
+  const missing = ranking.filter((r) => !r.branch).length;
+  if (missing === 0) return;
+  console.warn(
+    "[sales-dashboard] 所属支社を引けなかった担当者がいます",
+    JSON.stringify({ missing, total: ranking.length }),
   );
 }
 
@@ -602,8 +653,16 @@ export async function buildSalesDashboardPayload(
       companyCount > 0 ? Math.round(companySales / companyCount) : 0,
   };
 
-  const ranking = buildRanking(sorted, companyPt, bound, targets.ptByStaff);
+  const branchByStaff = await resolveBranchByStaff(sorted.map((s) => s.name));
+  const ranking = buildRanking(
+    sorted,
+    companyPt,
+    bound,
+    targets.ptByStaff,
+    branchByStaff,
+  );
   warnMissingSalesTargets(ranking, targets.available);
+  warnMissingSalesBranches(ranking);
 
   return {
     staffName: boundStaffName,

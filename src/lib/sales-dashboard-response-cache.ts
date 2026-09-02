@@ -40,8 +40,8 @@ function cacheTtlMs(): number {
 
 function cacheKey(periodKey: SalesDashboardPeriodKey): string {
   return JSON.stringify({
-    // v4: ランキング行に targetPt・achievementRate を足した
-    v: 4,
+    // v5: ランキング行に branch（所属支社）を足した
+    v: 5,
     period: periodKey,
     pt: salesDashboardPtAppId() ?? "",
     contract: salesDashboardContractAppId() ?? "",

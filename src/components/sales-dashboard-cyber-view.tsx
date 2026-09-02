@@ -29,6 +29,8 @@ export type RankingRow = {
   targetPt: number;
   /** 達成率(%)。targetPt <= 0 のときは 0 */
   achievementRate: number;
+  /** スタッフ名簿の勤務場所（所属支社）。引けなければ空文字 */
+  branch: string;
 };
 
 export type ApoRankingRow = {
@@ -229,6 +231,22 @@ function ptBarTone(rate: number): "navy" | "red" {
  * 回転中に 1.35 倍へ膨らむので、余白は margin ではなく親の gap で確保する
  * （margin だと拡縮のたびに行の幅が動きうる）。
  */
+/**
+ * 所属支社。氏名の右に小さく添える。
+ *
+ * 氏名側が truncate で先に縮み、支社は flex-none で幅を保つ。
+ * 支社名そのものが長いときだけ、45% を上限に省略記号で切る。
+ * 空文字（名簿から引けない）のときは何も出さない — 「未設定」とは書かない。
+ */
+function PtBranchLabel({ branch }: { branch: string }) {
+  if (!branch.trim()) return null;
+  return (
+    <span className="max-w-[45%] flex-none truncate text-[11px] font-normal text-slate-500 dark:text-slate-400">
+      {branch.trim()}
+    </span>
+  );
+}
+
 function PtAchievedCoin() {
   return (
     <span className="pt-coin shrink-0 self-center" role="img" aria-label="目標達成">
@@ -386,14 +404,19 @@ function PtPodiumCard({
           {row.rank}
         </span>
         <div className="min-w-0 flex-1">
-          <p className={`truncate text-[15px] font-bold ${podiumNameClass(row.rank)}`}>
-            {row.staffName}
-            {row.isSelf ? (
-              <span className="ml-2 text-[11px] font-medium text-cyan-700 dark:text-cyan-300">
-                あなた
-              </span>
-            ) : null}
-          </p>
+          <div className="flex min-w-0 items-baseline gap-1.5">
+            <p
+              className={`min-w-0 truncate text-[15px] font-bold ${podiumNameClass(row.rank)}`}
+            >
+              {row.staffName}
+              {row.isSelf ? (
+                <span className="ml-2 text-[11px] font-medium text-cyan-700 dark:text-cyan-300">
+                  あなた
+                </span>
+              ) : null}
+            </p>
+            <PtBranchLabel branch={row.branch} />
+          </div>
           <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
             {formatYen(row.salesAmount)}
             <span className="ml-2 text-[11px] text-slate-400 dark:text-slate-500">
@@ -448,14 +471,17 @@ function PtListRow({
           {row.rank}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[14px] font-semibold text-slate-800 dark:text-white">
-            {row.staffName}
-            {row.isSelf ? (
-              <span className="ml-2 text-[11px] font-medium text-cyan-700 dark:text-cyan-300">
-                あなた
-              </span>
-            ) : null}
-          </p>
+          <div className="flex min-w-0 items-baseline gap-1.5">
+            <p className="min-w-0 truncate text-[14px] font-semibold text-slate-800 dark:text-white">
+              {row.staffName}
+              {row.isSelf ? (
+                <span className="ml-2 text-[11px] font-medium text-cyan-700 dark:text-cyan-300">
+                  あなた
+                </span>
+              ) : null}
+            </p>
+            <PtBranchLabel branch={row.branch} />
+          </div>
           <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">
             {formatYen(row.salesAmount)}
             <span className="ml-2 text-[11px] text-slate-400 dark:text-slate-500">
