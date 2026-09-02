@@ -247,21 +247,45 @@ function ptValueClass(): string {
 }
 
 /**
- * 順位比較の横棒（総合PTランキングのみ）。1位を100%とした割合で伸ばす。
+ * 棒の色。**その行で棒が表している数値の文字色に合わせる。**
+ *
+ * 売上金額部門はカードに PT（緑）と売上（黒／白）が並ぶので、棒まで緑だと
+ * どちらの棒か分からない。売上だけ色を変える。
+ * 順位バッジ（琥珀・銀）とは競合させない。
+ *
+ * Tailwind は動的なクラス名を生成しないので、完成形の文字列を並べておく。
+ */
+const RANK_BAR_TONES = {
+  emerald: "bg-emerald-500 dark:bg-emerald-400",
+  sky: "bg-sky-500 dark:bg-sky-400",
+} as const;
+
+type RankBarTone = keyof typeof RANK_BAR_TONES;
+
+/**
+ * 順位比較の横棒。1位を100%とした割合で伸ばす。
  *
  * 幅は算出値なので style で渡す。Tailwind は動的なクラス名を生成しない。
- * 色は PT 値と同じ緑にそろえ、順位バッジ（琥珀・銀）とは競合させない。
  * 数値は同じ行に出ているので、読み上げの対象からは外す。
  */
-function PtRankBar({ pt, topPt }: { pt: number; topPt: number }) {
+function RankBar({
+  value,
+  top,
+  tone = "emerald",
+}: {
+  value: number;
+  /** 1位の値。棒の基準（0 なら棒は伸びない） */
+  top: number;
+  tone?: RankBarTone;
+}) {
   return (
     <div
       className="mt-1 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700/60"
       aria-hidden
     >
       <div
-        className="h-1.5 rounded-full bg-emerald-500 transition-[width] duration-300 dark:bg-emerald-400"
-        style={{ width: `${barRatio(pt, topPt)}%` }}
+        className={`h-1.5 rounded-full transition-[width] duration-300 ${RANK_BAR_TONES[tone]}`}
+        style={{ width: `${barRatio(value, top)}%` }}
       />
     </div>
   );
@@ -366,7 +390,7 @@ function PtPodiumCard({
           </p>
         </div>
       </button>
-      <PtRankBar pt={row.pt} topPt={topPt} />
+      <RankBar value={row.pt} top={topPt} />
       {expanded ? (
         <PtBreakdownPanel rows={breakdown} />
       ) : null}
@@ -428,7 +452,7 @@ function PtListRow({
           </p>
         </div>
       </button>
-      <PtRankBar pt={row.pt} topPt={topPt} />
+      <RankBar value={row.pt} top={topPt} />
       {expanded ? (
         <PtBreakdownPanel rows={breakdown} />
       ) : null}
@@ -508,6 +532,11 @@ function SalesRankingSection({ rows }: { rows: RankingRow[] }) {
     );
   }
   const sorted = [...rows].sort((a, b) => b.salesAmount - a.salesAmount);
+  /**
+   * 棒の基準。**この部門だけ並べ替えが画面側**なので、rows[0]（PT順の1位）
+   * ではなく並べ替えた後の先頭を見る
+   */
+  const topSales = sorted[0]?.salesAmount ?? 0;
   return (
     <div className="flex flex-col gap-2">
       {sorted.map((row, i) => {
@@ -546,6 +575,7 @@ function SalesRankingSection({ rows }: { rows: RankingRow[] }) {
                 {formatYen(row.salesAmount)}
               </p>
             </div>
+            <RankBar value={row.salesAmount} top={topSales} tone="sky" />
           </div>
         );
       })}
@@ -553,7 +583,14 @@ function SalesRankingSection({ rows }: { rows: RankingRow[] }) {
   );
 }
 
-function ApoPodiumCard({ row }: { row: ApoRankingRow }) {
+function ApoPodiumCard({
+  row,
+  topCount,
+}: {
+  row: ApoRankingRow;
+  /** 1位の件数。棒の基準（0 なら棒は伸びない） */
+  topCount: number;
+}) {
   return (
     <div
       className={`${podiumCardShell(row.rank)} ${
@@ -579,11 +616,19 @@ function ApoPodiumCard({ row }: { row: ApoRankingRow }) {
           <span className="ml-0.5 text-[13px] font-bold">件</span>
         </p>
       </div>
+      <RankBar value={row.apoCount} top={topCount} />
     </div>
   );
 }
 
-function ApoListRow({ row }: { row: ApoRankingRow }) {
+function ApoListRow({
+  row,
+  topCount,
+}: {
+  row: ApoRankingRow;
+  /** 1位の件数。棒の基準（0 なら棒は伸びない） */
+  topCount: number;
+}) {
   return (
     <div
       className={`rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm dark:border-emerald-500/15 dark:bg-slate-900/50 ${
@@ -606,10 +651,18 @@ function ApoListRow({ row }: { row: ApoRankingRow }) {
         </div>
         <p className={`shrink-0 text-[15px] ${ptValueClass()}`}>{formatCount(row.apoCount)}件</p>
       </div>
+      <RankBar value={row.apoCount} top={topCount} />
     </div>
   );
 }
 
+/**
+ * アポ件数部門と AP天下賞で共用。
+ *
+ * 天下賞の対象件数はサーバ側で apoCount に載って届く
+ * （sales-dashboard-apo-tenka-bundle.ts の buildTenkaRanking）。
+ * 画面側に targetCount という項目は無いので、値の出し分けは要らない
+ */
 function ApoRankingSection({ rows }: { rows: ApoRankingRow[] }) {
   if (rows.length === 0) {
     return (
@@ -622,13 +675,15 @@ function ApoRankingSection({ rows }: { rows: ApoRankingRow[] }) {
   }
   const podium = rows.filter((r) => r.rank <= 3);
   const rest = rows.filter((r) => r.rank > 3);
+  /** 棒の基準。rows はサーバ側で件数の降順なので先頭が1位 */
+  const topCount = rows[0]?.apoCount ?? 0;
   return (
     <div className="flex flex-col gap-3">
       {podium.map((row) => (
-        <ApoPodiumCard key={`apo-p-${row.rank}`} row={row} />
+        <ApoPodiumCard key={`apo-p-${row.rank}`} row={row} topCount={topCount} />
       ))}
       {rest.map((row) => (
-        <ApoListRow key={`apo-${row.rank}`} row={row} />
+        <ApoListRow key={`apo-${row.rank}`} row={row} topCount={topCount} />
       ))}
     </div>
   );
