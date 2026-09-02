@@ -291,6 +291,61 @@ function RankBar({
   );
 }
 
+/**
+ * PT値を棒の内側に置ける最小の割合（%）。
+ *
+ * 7桁（"9,999,999" ＝ 9文字）＋単位「PT」が、13px で概ね 76px。棒の左右に
+ * px-2 の余白を足すと約 92px 要る。LIFF の狭い端末（幅 320px）でカードの
+ * 左右余白と順位バッジを引いた棒の幅は約 240px なので、92 / 240 ≒ 0.38。
+ * ここでは仕様どおり 32 を採る（7桁は上位者にしか出ず、上位者の棒は長い）。
+ * これを下回る棒には数字が収まらないので、棒の外へ出す。
+ */
+const PT_BAR_INSIDE_MIN_RATIO = 32;
+
+/**
+ * 総合PTランキングの横棒。**PT値を棒の中に持つ太い版。**
+ *
+ * 細い RankBar（他部門で使用）とは別にしてある。あちらは値を行に持ち、
+ * 棒は装飾なので aria から外している。こちらは**棒が値の唯一の表示**なので、
+ * 数字は読み上げの対象に残す（aria-hidden を付けると PT が消える）。
+ *
+ * 数字の枠は棒の内外どちらでも固定幅で確保する。桁数で棒の長さが揺れず、
+ * 行ごとの棒の基準幅もそろうので、長さをそのまま比べられる。
+ */
+function PtValueBar({ value, top }: { value: number; top: number }) {
+  const ratio = barRatio(value, top);
+  const inside = ratio >= PT_BAR_INSIDE_MIN_RATIO;
+  const label = (
+    <>
+      {formatPt(value)}
+      <span className="ml-0.5 text-[11px] font-bold">PT</span>
+    </>
+  );
+
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <div className="h-6 flex-1 rounded-full bg-slate-200 dark:bg-slate-700/60">
+        <div
+          className={`flex h-6 items-center justify-end overflow-hidden rounded-full transition-[width] duration-300 ${RANK_BAR_TONES.emerald}`}
+          style={{ width: `${ratio}%` }}
+        >
+          {inside ? (
+            <span className="whitespace-nowrap px-2 text-[13px] font-bold text-white dark:text-emerald-950">
+              {label}
+            </span>
+          ) : null}
+        </div>
+      </div>
+      {/* 内側に置いたときも枠は空けておく（棒の基準幅を行ごとにそろえる） */}
+      <span
+        className={`w-[68px] shrink-0 whitespace-nowrap text-right text-[13px] ${ptValueClass()}`}
+      >
+        {inside ? null : label}
+      </span>
+    </div>
+  );
+}
+
 function rankBadgeClass(rank: number): string {
   if (rank === 1) return "bg-amber-400 text-amber-950 shadow-[0_0_10px_rgba(234,179,8,0.5)]";
   if (rank === 2) return "bg-slate-300 text-slate-800 dark:bg-slate-400 dark:text-slate-900 shadow-[0_0_8px_rgba(148,163,184,0.45)]";
@@ -378,10 +433,6 @@ function PtPodiumCard({
               </span>
             ) : null}
           </p>
-          <p className={`mt-1 text-[1.75rem] leading-none ${ptValueClass()}`}>
-            {formatPt(row.pt)}
-            <span className="ml-1 text-[14px] font-bold">PT</span>
-          </p>
           <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
             {formatYen(row.salesAmount)}
             <span className="ml-2 text-[11px] text-slate-400 dark:text-slate-500">
@@ -390,7 +441,7 @@ function PtPodiumCard({
           </p>
         </div>
       </button>
-      <RankBar value={row.pt} top={topPt} />
+      <PtValueBar value={row.pt} top={topPt} />
       {expanded ? (
         <PtBreakdownPanel rows={breakdown} />
       ) : null}
@@ -445,14 +496,8 @@ function PtListRow({
             </span>
           </p>
         </div>
-        <div className="shrink-0 text-right">
-          <p className={`text-[16px] ${ptValueClass()}`}>
-            {formatPt(row.pt)}
-            <span className="ml-0.5 text-[12px] font-bold">PT</span>
-          </p>
-        </div>
       </button>
-      <RankBar value={row.pt} top={topPt} />
+      <PtValueBar value={row.pt} top={topPt} />
       {expanded ? (
         <PtBreakdownPanel rows={breakdown} />
       ) : null}
