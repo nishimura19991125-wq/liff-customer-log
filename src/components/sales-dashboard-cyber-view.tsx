@@ -410,11 +410,8 @@ function PtPodiumCard({
             </p>
             <PtBranchLabel branch={row.branch} />
           </div>
-          <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-            {formatYen(row.salesAmount)}
-            <span className="ml-2 text-[11px] text-slate-400 dark:text-slate-500">
-              {expanded ? "▲ 明細を閉じる" : "▼ PT明細"}
-            </span>
+          <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+            {expanded ? "▲ 明細を閉じる" : "▼ PT明細"}
           </p>
         </div>
       </button>
@@ -479,11 +476,8 @@ function PtListRow({
             </p>
             <PtBranchLabel branch={row.branch} />
           </div>
-          <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">
-            {formatYen(row.salesAmount)}
-            <span className="ml-2 text-[11px] text-slate-400 dark:text-slate-500">
-              {expanded ? "▲ 明細を閉じる" : "▼ PT明細"}
-            </span>
+          <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">
+            {expanded ? "▲ 明細を閉じる" : "▼ PT明細"}
           </p>
         </div>
       </button>
