@@ -207,9 +207,6 @@ const PT_BAR_TONES = {
   red: "bg-[#E60012] dark:bg-[#FF3B45]",
 } as const;
 
-/** 順位の数字（総合PTのみ）。バッジの地色・影は他部門と共通のまま */
-const PT_RANK_NUMBER_CLASS = "text-[#1F4E9C] dark:text-[#4C86D8]";
-
 /** 塗りに重なるラベル。赤・紺とも濃色なので、明暗どちらでも白で通す */
 const PT_BAR_LABEL_ON_FILL = "text-white";
 
@@ -281,33 +278,16 @@ function PtRankingBar({
 }
 
 /**
- * 順位バッジの地色と影。**数字の色は含めない。**
+ * 順位バッジ。地色の上で数字が読める組み合わせをここで固定する。
  *
- * 総合PTだけ数字を紺にするため、地色と文字色を分けてある。
- * 他部門は rankBadgeClass 経由で従来どおり（見た目は変えていない）。
+ * 総合PTだけ数字を紺にしたことがあるが、3位（濃い琥珀）で 1.6:1 まで
+ * 落ちて読めなくなったため取りやめた。数字の色は地色とセットで決める。
  */
-function rankBadgeShellClass(rank: number): string {
-  if (rank === 1) return "bg-amber-400 shadow-[0_0_10px_rgba(234,179,8,0.5)]";
-  if (rank === 2) return "bg-slate-300 dark:bg-slate-400 shadow-[0_0_8px_rgba(148,163,184,0.45)]";
-  if (rank === 3) return "bg-amber-700/90 shadow-[0_0_8px_rgba(180,83,9,0.45)]";
-  return "bg-slate-100 dark:bg-slate-700";
-}
-
-/** 順位バッジの数字の色（売上・アポ・天下賞。総合PT以外） */
-function rankBadgeTextClass(rank: number): string {
-  if (rank === 1) return "text-amber-950";
-  if (rank === 2) return "text-slate-800 dark:text-slate-900";
-  if (rank === 3) return "text-white";
-  return "text-slate-600 dark:text-slate-200";
-}
-
 function rankBadgeClass(rank: number): string {
-  return `${rankBadgeShellClass(rank)} ${rankBadgeTextClass(rank)}`;
-}
-
-/** 総合PTの順位バッジ。地色は共通、数字だけ紺にする */
-function ptRankBadgeClass(rank: number): string {
-  return `${rankBadgeShellClass(rank)} ${PT_RANK_NUMBER_CLASS}`;
+  if (rank === 1) return "bg-amber-400 text-amber-950 shadow-[0_0_10px_rgba(234,179,8,0.5)]";
+  if (rank === 2) return "bg-slate-300 text-slate-800 dark:bg-slate-400 dark:text-slate-900 shadow-[0_0_8px_rgba(148,163,184,0.45)]";
+  if (rank === 3) return "bg-amber-700/90 text-white shadow-[0_0_8px_rgba(180,83,9,0.45)]";
+  return "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200";
 }
 
 function PtBreakdownPanel({ rows }: { rows: PtBreakdownRow[] }) {
@@ -377,7 +357,7 @@ function PtPodiumCard({
         className="flex w-full items-start gap-3 text-left"
       >
         <span
-          className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${ptRankBadgeClass(row.rank)}`}
+          className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${rankBadgeClass(row.rank)}`}
         >
           {row.rank}
         </span>
@@ -438,7 +418,7 @@ function PtListRow({
         className="flex w-full items-center gap-3 text-left"
       >
         <span
-          className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${ptRankBadgeClass(row.rank)}`}
+          className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${rankBadgeClass(row.rank)}`}
         >
           {row.rank}
         </span>
