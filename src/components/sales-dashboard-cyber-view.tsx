@@ -151,7 +151,6 @@ function ptValueClass(): string {
  *
  * 売上金額部門はカードに PT（緑）と売上（黒／白）が並ぶので、棒まで緑だと
  * どちらの棒か分からない。売上だけ色を変える。
- * 順位バッジ（琥珀・銀）とは競合させない。
  *
  * Tailwind は動的なクラス名を生成しないので、完成形の文字列を並べておく。
  */
@@ -221,17 +220,6 @@ function ptBarTone(rate: number): "navy" | "red" {
 }
 
 /**
- * 目標達成の印。表に花丸・裏にバラを持つコインが回り続ける。
- *
- * 2枚を重ねて片方を180度回し、backface-visibility で裏返った面を隠す。
- * 動きの定義は globals.css の .pt-coin（preserve-3d と幅・高さが必須）。
- *
- * ラベルは**この親1箇所だけ**に置く。子の絵文字にも付けると同じ内容が
- * 3回読み上げられる。
- * 回転中に 1.35 倍へ膨らむので、余白は margin ではなく親の gap で確保する
- * （margin だと拡縮のたびに行の幅が動きうる）。
- */
-/**
  * 所属支社。氏名の右に小さく添える。
  *
  * 氏名側が truncate で先に縮み、支社は flex-none で幅を保つ。
@@ -247,6 +235,17 @@ function PtBranchLabel({ branch }: { branch: string }) {
   );
 }
 
+/**
+ * 目標達成の印。表に花丸・裏にバラを持つコインが回り続ける。
+ *
+ * 2枚を重ねて片方を180度回し、backface-visibility で裏返った面を隠す。
+ * 動きの定義は globals.css の .pt-coin（preserve-3d と幅・高さが必須）。
+ *
+ * ラベルは**この親1箇所だけ**に置く。子の絵文字にも付けると同じ内容が
+ * 3回読み上げられる。
+ * 回転中に 1.35 倍へ膨らむので、余白は margin ではなく親の gap で確保する
+ * （margin だと拡縮のたびに行の幅が動きうる）。
+ */
 function PtAchievedCoin() {
   return (
     <span className="pt-coin shrink-0 self-center" role="img" aria-label="目標達成">
@@ -320,17 +319,15 @@ function PtRankingBar({
 }
 
 /**
- * 順位バッジ。地色の上で数字が読める組み合わせをここで固定する。
+ * 順位バッジ。**全順位で同じ色**（1〜3位の琥珀・銀・銅は廃止）。
+ * 全部門（総合PT・売上・アポ・天下賞）で共有している。
  *
- * 総合PTだけ数字を紺にしたことがあるが、3位（濃い琥珀）で 1.6:1 まで
- * 落ちて読めなくなったため取りやめた。数字の色は地色とセットで決める。
+ * 総合PTだけ数字を紺にしたことがあるが、当時の3位（濃い琥珀）の上で
+ * 1.6:1 まで落ちて読めなくなったため取りやめた。地色を変えるときは、
+ * 数字の色とセットでコントラストを確かめること。
  */
-function rankBadgeClass(rank: number): string {
-  if (rank === 1) return "bg-amber-400 text-amber-950 shadow-[0_0_10px_rgba(234,179,8,0.5)]";
-  if (rank === 2) return "bg-slate-300 text-slate-800 dark:bg-slate-400 dark:text-slate-900 shadow-[0_0_8px_rgba(148,163,184,0.45)]";
-  if (rank === 3) return "bg-amber-700/90 text-white shadow-[0_0_8px_rgba(180,83,9,0.45)]";
-  return "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200";
-}
+const RANK_BADGE_CLASS =
+  "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200";
 
 function PtBreakdownPanel({ rows }: { rows: PtBreakdownRow[] }) {
   if (rows.length === 0) {
@@ -399,7 +396,7 @@ function PtPodiumCard({
         className="flex w-full items-start gap-3 text-left"
       >
         <span
-          className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${rankBadgeClass(row.rank)}`}
+          className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${RANK_BADGE_CLASS}`}
         >
           {row.rank}
         </span>
@@ -466,7 +463,7 @@ function PtListRow({
         className="flex w-full items-center gap-3 text-left"
       >
         <span
-          className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${rankBadgeClass(row.rank)}`}
+          className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${RANK_BADGE_CLASS}`}
         >
           {row.rank}
         </span>
@@ -597,7 +594,7 @@ function SalesRankingSection({ rows }: { rows: RankingRow[] }) {
           >
             <div className="flex items-center gap-3">
               <span
-                className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${rankBadgeClass(displayRank)}`}
+                className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${RANK_BADGE_CLASS}`}
               >
                 {displayRank}
               </span>
@@ -642,7 +639,7 @@ function ApoPodiumCard({
     >
       <div className="flex items-center gap-3">
         <span
-          className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${rankBadgeClass(row.rank)}`}
+          className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${RANK_BADGE_CLASS}`}
         >
           {row.rank}
         </span>
@@ -680,7 +677,7 @@ function ApoListRow({
     >
       <div className="flex items-center gap-3">
         <span
-          className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${rankBadgeClass(row.rank)}`}
+          className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${RANK_BADGE_CLASS}`}
         >
           {row.rank}
         </span>
