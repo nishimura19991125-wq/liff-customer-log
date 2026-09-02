@@ -219,7 +219,7 @@ export default function SalesDashboardPage() {
   return (
     <LiffScreen>
       <LiffPageHeader
-        title="営業ダッシュボード"
+        title="営業ランキング"
         titleClassName="text-base font-bold leading-tight tracking-tight whitespace-nowrap text-slate-900 sm:text-lg dark:text-white"
         subtitle="PTを軸にした全社ランキング"
         subtitleClassName="mt-0.5 truncate text-[12px] leading-snug text-slate-500 sm:text-[13px] dark:text-slate-400"

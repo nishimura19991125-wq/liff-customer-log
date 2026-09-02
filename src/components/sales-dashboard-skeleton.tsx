@@ -6,7 +6,7 @@ export function SalesDashboardSkeleton() {
     <div
       className="flex flex-col gap-5"
       aria-busy="true"
-      aria-label="ダッシュボードを読み込み中"
+      aria-label="営業ランキングを読み込み中"
     >
       <LiffSkeletonBar className="h-4 w-48" />
       <LiffSkeletonBlock className="h-36 w-full" />

@@ -185,10 +185,10 @@ export function HomeCompactSummaries({
         ) : null}
 
         {/* 「本日のお知らせ」のバナーがあった位置。導線はホームのここに集約する */}
+        {/* description は省略（LiffMenuCard 側で任意・未指定なら描画しない） */}
         <LiffMenuCard
           href="/sales-dashboard"
           title="営業ランキング"
-          description="当月の売上KPIや営業成績ランキングをリアルタイムで確認します。"
           icon={<SalesDashboardGlyph />}
           iconTone="blue"
           disabled={needsStaffBind}

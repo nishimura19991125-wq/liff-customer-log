@@ -62,7 +62,7 @@ export async function GET(request: Request) {
       return NextResponse.json(
         {
           error:
-            "営業ダッシュボードの集計に失敗しました（SALES_DASHBOARD_PT_APP_ID 等を確認してください）",
+            "営業ランキングの集計に失敗しました（SALES_DASHBOARD_PT_APP_ID 等を確認してください）",
         },
         { status: 502 },
       );
@@ -121,7 +121,7 @@ export async function GET(request: Request) {
     }
     return pocketErrorResponse(e, {
       scope: "api/sales-dashboard",
-      message: "営業ダッシュボードの取得に失敗しました",
+      message: "営業ランキングの取得に失敗しました",
     });
   }
 }
