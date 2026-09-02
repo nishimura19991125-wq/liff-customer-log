@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { LiffCard } from "@/components/liff-chrome";
 import { formatDisplayYmd } from "@/lib/format-display-ymd";
@@ -229,23 +229,85 @@ function PtBranchLabel({ branch }: { branch: string }) {
 /** 顔写真の丸のサイズ。台座カード（上位3位）にだけ出す */
 const PT_AVATAR_SIZE = "size-8";
 
-/**
- * 上位3位の顔アイコン。**まだ写真は使わず頭文字だけ**（段階2）。
- *
- * 写真が無い人・取得に失敗した人はこの丸のままにする。エラーは出さない。
- * 4位以下には出さず、枠も空けない（台座カードとは別レイアウトのため）。
- */
-function PtStaffAvatar({ staffName }: { staffName: string }) {
-  const name = staffName.trim();
-  const letter = name ? name.slice(0, 1) : "—";
+/** 写真が無い・取れないときの丸。取得中もこれを出す（場所を空けない） */
+function PtStaffAvatarFallback({ name }: { name: string }) {
   return (
     <div
       role="img"
       aria-label={name ? `${name} の写真` : "担当者の写真"}
       className={`${PT_AVATAR_SIZE} flex shrink-0 items-center justify-center rounded-full bg-slate-100 text-[14px] font-bold text-slate-600 ring-1 ring-slate-200/80 dark:bg-slate-700 dark:text-slate-200 dark:ring-slate-600`}
     >
-      {letter}
+      {name ? name.slice(0, 1) : "—"}
     </div>
+  );
+}
+
+/**
+ * 上位3位の顔アイコン。名簿の顔写真、無ければ頭文字の丸。
+ *
+ * `<img src>` に認証ヘッダは付けられないので、fetch して blob URL にする
+ * （工事カレンダーの添付画像と同じ方式）。作った blob URL は unmount と
+ * 再取得のたびに revoke する。放っておくとメモリが増え続ける。
+ *
+ * **失敗しても何も言わない。** 写真が未登録の人のほうが多く、404 は異常では
+ * ない。取得中も頭文字を出しておき、届いたら差し替える（行の高さが動かない）。
+ */
+function PtStaffAvatar({
+  staffName,
+  idToken,
+}: {
+  staffName: string;
+  idToken?: string | null;
+}) {
+  const name = staffName.trim();
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!name || !idToken) {
+      setPhotoUrl(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let objectUrl: string | null = null;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/staff/photo?${new URLSearchParams({ staffName: name })}`,
+          {
+            headers: { Authorization: `Bearer ${idToken}` },
+            signal: controller.signal,
+          },
+        );
+        // 404（写真未登録）もここに落ちる。頭文字のままでよい
+        if (!res.ok) return;
+        const blob = await res.blob();
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setPhotoUrl(objectUrl);
+      } catch {
+        /* 中断・通信失敗とも頭文字の丸のままにする */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [name, idToken]);
+
+  if (!photoUrl) return <PtStaffAvatarFallback name={name} />;
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- blob URL は next/image で扱えない
+    <img
+      src={photoUrl}
+      alt={name ? `${name} の写真` : "担当者の写真"}
+      className={`${PT_AVATAR_SIZE} shrink-0 rounded-full object-cover ring-1 ring-slate-200/80 dark:ring-slate-600`}
+    />
   );
 }
 
@@ -387,6 +449,7 @@ function PtPodiumCard({
   row,
   breakdown,
   topPt,
+  idToken,
   expanded,
   onToggle,
 }: {
@@ -394,6 +457,8 @@ function PtPodiumCard({
   breakdown: PtBreakdownRow[];
   /** 1位の PT。棒の基準（0 なら棒は伸びない） */
   topPt: number;
+  /** 顔写真の取得に使う。無ければ頭文字のまま */
+  idToken?: string | null;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -420,7 +485,7 @@ function PtPodiumCard({
           <span className="pt-coin-slot shrink-0" aria-hidden="true" />
         )}
         <div className="self-center">
-          <PtStaffAvatar staffName={row.staffName} />
+          <PtStaffAvatar staffName={row.staffName} idToken={idToken} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-baseline gap-1.5">
@@ -523,9 +588,12 @@ function PtListRow({
 function PtRankingSection({
   rows,
   breakdownByStaff,
+  idToken,
 }: {
   rows: RankingRow[];
   breakdownByStaff: Record<string, PtBreakdownRow[]>;
+  /** 上位3位の顔写真の取得に使う */
+  idToken?: string | null;
 }) {
   const [expandedName, setExpandedName] = useState<string | null>(null);
 
@@ -556,6 +624,7 @@ function PtRankingSection({
               row={row}
               breakdown={breakdownByStaff[row.staffName] ?? []}
               topPt={topPt}
+              idToken={idToken}
               expanded={expandedName === row.staffName}
               onToggle={() => toggle(row.staffName)}
             />
@@ -750,12 +819,15 @@ type Props = {
   data: DashboardPayload;
   department: DashboardDepartment;
   onDepartmentChange: (d: DashboardDepartment) => void;
+  /** 総合PT上位3位の顔写真取得に使う（/api/staff/photo の認証） */
+  idToken?: string | null;
 };
 
 export function SalesDashboardCyberView({
   data,
   department,
   onDepartmentChange,
+  idToken,
 }: Props) {
   const apoConfigured = data.apoEnabled;
   const apoReady = data.apoReady;
@@ -839,6 +911,7 @@ export function SalesDashboardCyberView({
           <PtRankingSection
             rows={data.ranking}
             breakdownByStaff={data.ptBreakdownByStaff ?? {}}
+            idToken={idToken}
           />
         )}
       </section>

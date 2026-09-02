@@ -322,6 +322,7 @@ export default function SalesDashboardPage() {
             data={data}
             department={department}
             onDepartmentChange={setDepartment}
+            idToken={idToken}
           />
         ) : needsStaffBind ? null : (
           <p className="mt-6 text-center text-[13px] text-slate-500 dark:text-slate-400">
