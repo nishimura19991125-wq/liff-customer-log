@@ -315,17 +315,28 @@ function formatAchievementRateCompact(rate: number): string {
   return `${Math.round(Number.isFinite(rate) ? rate : 0)}%`;
 }
 
+/** 内外どちらでも確保するラベル枠。上限「3,764,008 149%」に合わせる */
+const PT_LABEL_SLOT_CLASS = "w-[92px]";
+
 /**
- * 達成率を棒の内側に置ける最小の割合（%）。
+ * PT値＋達成率を棒の内側に置ける最小の割合（%）。
  *
- * 「149%」は 11px で4文字。この画面の数字は1文字がおよそ 0.55em＝6px なので
- * 文字だけで約 24px、左右の px-2 を足して約 40px 要る。LIFF の狭い端末
- * （幅 320px）で、カードの左右余白・順位バッジ・右の固定枠を引いた棒の幅は
- * 約 200px。40 / 200 = 0.20 だが、閾値ちょうどの行で文字が枠に触れるため
- * 少し下げて 18 とする（棒 36px ＝ 文字 40px より短い行は外へ出す）。
- * PT値（7桁）を入れていたときの 32 より大幅に小さい。
+ * 11px で「3,764,008 149%」を、数字1文字 ≒ 0.6em＝6.6px・カンマ ≒ 3.3px・
+ * 「%」≒ 9.9px として見積もると
+ *   PT値 7桁 46.2 ＋ カンマ2つ 6.6 ＝ 約 53px
+ *   達成率 3桁 19.8 ＋ %  9.9     ＝ 約 30px
+ *   2つの間の ml-2                ＝ 8px
+ * で文字だけ約 90px、棒の左右 px-2 を足して約 106px。
+ * LIFF の狭い端末（幅 320px）では、カードの左右余白 32px・順位バッジと
+ * その gap 48px・右のラベル枠 92px と gap 8px を引いて棒は約 140px。
+ * 106 / 140 ≒ 0.76 なので 75 とする。達成率だけだった頃（18）より大きい。
+ *
+ * ⚠ **実測ではなく字幅からの算出**（レンダリングして測る手段が無いため）。
+ *   画面幅が広い端末では棒が伸びるので、内側に入る行はこれより増える。
+ *   目標未設定の行はラベルが PT値だけで短いが、行ごとに閾値を変えると
+ *   同じ長さの棒で内外が入れ替わって見えるため、判定は一本にしている。
  */
-const PT_RATE_INSIDE_MIN_RATIO = 18;
+const PT_LABEL_INSIDE_MIN_RATIO = 75;
 
 /**
  * 総合PTランキングの横棒。**長さは PT 順（1位を100%）。**
@@ -336,8 +347,8 @@ const PT_RATE_INSIDE_MIN_RATIO = 18;
  * （その行だけ棒の中に何も出さない）。
  *
  * 色は達成率で変える（100%以上 amber・未満と未設定 emerald）。
- * 数字の枠は内外どちらでも固定幅で確保する。桁数で棒の長さが揺れず、
- * 行ごとの棒の基準幅もそろうので、長さをそのまま比べられる。
+ * ラベル（PT値と達成率）の枠は内外どちらでも固定幅で確保する。桁数で棒の
+ * 長さが揺れず、行ごとの棒の基準幅もそろうので、長さをそのまま比べられる。
  */
 function PtRankingBar({
   pt,
@@ -354,9 +365,16 @@ function PtRankingBar({
   const ratio = barRatio(pt, topPt);
   const tone = ptRateTone(rate);
   const hasTarget = target > 0;
-  // 目標が無い行は達成率そのものが無いので、内外どちらにも出さない
-  const inside = hasTarget && ratio >= PT_RATE_INSIDE_MIN_RATIO;
-  const label = formatAchievementRateCompact(rate);
+  const inside = ratio >= PT_LABEL_INSIDE_MIN_RATIO;
+  // 目標が無い行は達成率そのものが無いので、PT値だけを出す
+  const label = (
+    <>
+      {formatPt(pt)}
+      {hasTarget ? (
+        <span className="ml-2">{formatAchievementRateCompact(rate)}</span>
+      ) : null}
+    </>
+  );
 
   return (
     <>
@@ -376,14 +394,14 @@ function PtRankingBar({
           </div>
         </div>
         {/* 内側に置いたときも枠は空けておく（棒の基準幅を行ごとにそろえる） */}
-        <span className="w-[44px] shrink-0 whitespace-nowrap text-right text-[11px] tabular-nums text-slate-600 dark:text-slate-300">
-          {hasTarget && !inside ? label : null}
+        <span
+          className={`${PT_LABEL_SLOT_CLASS} shrink-0 whitespace-nowrap text-right text-[11px] tabular-nums text-slate-600 dark:text-slate-300`}
+        >
+          {inside ? null : label}
         </span>
       </div>
       <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-        {hasTarget
-          ? `実績 ${formatPt(pt)} / 目標 ${formatPt(target)}`
-          : `${formatPt(pt)} PT（目標未設定）`}
+        目標 {formatPt(target)}
       </p>
     </>
   );
