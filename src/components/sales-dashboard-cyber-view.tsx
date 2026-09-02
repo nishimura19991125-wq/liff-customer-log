@@ -300,106 +300,92 @@ function RankBar({
 /** 達成とみなす下限（%）。棒と達成率の色をここで切り替える */
 const PT_TARGET_ACHIEVED_RATE = 100;
 
-/** 達成率の文字色。棒の色と対にする（動的なクラス名は組み立てない） */
-const PT_RATE_TEXT_TONES = {
-  emerald: "text-emerald-600 dark:text-emerald-400",
-  amber: "text-amber-600 dark:text-amber-400",
-} as const;
-
 function ptRateTone(rate: number): "emerald" | "amber" {
   return rate >= PT_TARGET_ACHIEVED_RATE ? "amber" : "emerald";
 }
 
-/** 達成率の表示。小数第1位まで（営業進捗の formatSalesProgressRate と同じ桁） */
-function formatAchievementRate(rate: number): string {
-  return `${(Number.isFinite(rate) ? rate : 0).toFixed(1)}%`;
+/** 棒の内側に置く達成率の文字色。塗りの色と対にする */
+const PT_BAR_INSIDE_TEXT_TONES = {
+  emerald: "text-white dark:text-emerald-950",
+  amber: "text-white dark:text-amber-950",
+} as const;
+
+/** 棒の中・外に出す達成率。桁を詰めるため整数（149%） */
+function formatAchievementRateCompact(rate: number): string {
+  return `${Math.round(Number.isFinite(rate) ? rate : 0)}%`;
 }
 
 /**
- * 目標未設定の棒に敷く斜線。
+ * 達成率を棒の内側に置ける最小の割合（%）。
  *
- * 空のトラックだと「目標に対して 0」に見えるが、実際は**測れない**だけ。
- * 色は currentColor に任せ、要素側の text-* で明暗に追随させる
- * （Tailwind の動的クラス名は作らない）。
+ * 「149%」は 11px で4文字。この画面の数字は1文字がおよそ 0.55em＝6px なので
+ * 文字だけで約 24px、左右の px-2 を足して約 40px 要る。LIFF の狭い端末
+ * （幅 320px）で、カードの左右余白・順位バッジ・右の固定枠を引いた棒の幅は
+ * 約 200px。40 / 200 = 0.20 だが、閾値ちょうどの行で文字が枠に触れるため
+ * 少し下げて 18 とする（棒 36px ＝ 文字 40px より短い行は外へ出す）。
+ * PT値（7桁）を入れていたときの 32 より大幅に小さい。
  */
-const PT_NO_TARGET_HATCH =
-  "repeating-linear-gradient(45deg, currentColor 0 4px, transparent 4px 8px)";
-
-/** 目標が無いときの控えめな色。このファイルの補足テキストと同じ濃さ */
-const PT_NO_TARGET_TEXT = "text-slate-400 dark:text-slate-500";
+const PT_RATE_INSIDE_MIN_RATIO = 18;
 
 /**
- * 総合PTランキングの、目標を基準にした横棒。
+ * 総合PTランキングの横棒。**長さは PT 順（1位を100%）。**
  *
- * トラックが目標（100%）で、塗りは達成率。**100%を超えても満タンで止める**。
- * 超過分まで伸ばすと1人の突出で他の行が潰れ、横に並べて比べられなくなる。
- * 超過は数字（1行目の達成率）で読む。barRatio が min(100, …) を担うので、
- * ここでクランプは書かない。
+ * 長さに達成率を使うと、目標が小さい人ほど棒が長くなり、PT の順位と棒の
+ * 並びが食い違う。長さは PT で決め、達成率は棒の中の文字で伝える。
+ * 棒が目標と無関係になったので、目標未設定の行も**通常の塗り**にする
+ * （その行だけ棒の中に何も出さない）。
  *
- * **目標が無い行は塗らず、斜線のトラックにする。** 全体の3割ほどが未設定で、
- * 空の棒のままだと実績があっても成績不振に見えてしまう。
- *
- * 値は棒の下に置く。7桁が2つ並ぶため棒の中には収まらない。
- * 棒自体は数値の言い換えなので aria から外し、数字は読み上げに残す。
+ * 色は達成率で変える（100%以上 amber・未満と未設定 emerald）。
+ * 数字の枠は内外どちらでも固定幅で確保する。桁数で棒の長さが揺れず、
+ * 行ごとの棒の基準幅もそろうので、長さをそのまま比べられる。
  */
-function PtTargetBar({
-  actual,
+function PtRankingBar({
+  pt,
+  topPt,
   target,
   rate,
 }: {
-  actual: number;
+  pt: number;
+  /** 1位の PT。棒の基準（0 なら棒は伸びない） */
+  topPt: number;
   target: number;
   rate: number;
 }) {
+  const ratio = barRatio(pt, topPt);
+  const tone = ptRateTone(rate);
   const hasTarget = target > 0;
+  // 目標が無い行は達成率そのものが無いので、内外どちらにも出さない
+  const inside = hasTarget && ratio >= PT_RATE_INSIDE_MIN_RATIO;
+  const label = formatAchievementRateCompact(rate);
 
   return (
     <>
-      {hasTarget ? (
-        <div
-          className="mt-2 h-6 rounded-full bg-slate-200 dark:bg-slate-700/60"
-          aria-hidden
-        >
+      <div className="mt-2 flex items-center gap-2">
+        <div className="h-6 flex-1 rounded-full bg-slate-200 dark:bg-slate-700/60">
           <div
-            className={`h-6 rounded-full transition-[width] duration-300 ${RANK_BAR_TONES[ptRateTone(rate)]}`}
-            style={{ width: `${barRatio(actual, target)}%` }}
-          />
+            className={`flex h-6 items-center justify-end overflow-hidden rounded-full transition-[width] duration-300 ${RANK_BAR_TONES[tone]}`}
+            style={{ width: `${ratio}%` }}
+          >
+            {inside ? (
+              <span
+                className={`whitespace-nowrap px-2 text-[11px] font-bold tabular-nums ${PT_BAR_INSIDE_TEXT_TONES[tone]}`}
+              >
+                {label}
+              </span>
+            ) : null}
+          </div>
         </div>
-      ) : (
-        <div
-          className="mt-2 h-6 rounded-full border border-dashed border-slate-300 text-slate-200 dark:border-slate-600 dark:text-slate-700"
-          style={{ backgroundImage: PT_NO_TARGET_HATCH }}
-          aria-hidden
-        />
-      )}
+        {/* 内側に置いたときも枠は空けておく（棒の基準幅を行ごとにそろえる） */}
+        <span className="w-[44px] shrink-0 whitespace-nowrap text-right text-[11px] tabular-nums text-slate-600 dark:text-slate-300">
+          {hasTarget && !inside ? label : null}
+        </span>
+      </div>
       <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
         {hasTarget
-          ? `実績 ${formatPt(actual)} PT / 目標 ${formatPt(target)} PT`
-          : `${formatPt(actual)} PT`}
+          ? `実績 ${formatPt(pt)} / 目標 ${formatPt(target)}`
+          : `${formatPt(pt)} PT（目標未設定）`}
       </p>
     </>
-  );
-}
-
-/**
- * 1行目の右端。達成率、または目標が無いことの断り。
- *
- * 未設定は太字にせず控えめな色にして、達成率が出ている行と重みを変える。
- */
-function PtRateLabel({ rate, hasTarget }: { rate: number; hasTarget: boolean }) {
-  if (!hasTarget) {
-    return (
-      <span className={`shrink-0 text-[12px] ${PT_NO_TARGET_TEXT}`}>
-        目標未設定
-      </span>
-    );
-  }
-  return (
-    <span
-      className={`shrink-0 text-[15px] font-bold tabular-nums ${PT_RATE_TEXT_TONES[ptRateTone(rate)]}`}
-    >
-      {formatAchievementRate(rate)}
-    </span>
   );
 }
 
@@ -453,11 +439,14 @@ function PtBreakdownPanel({ rows }: { rows: PtBreakdownRow[] }) {
 function PtPodiumCard({
   row,
   breakdown,
+  topPt,
   expanded,
   onToggle,
 }: {
   row: RankingRow;
   breakdown: PtBreakdownRow[];
+  /** 1位の PT。棒の基準（0 なら棒は伸びない） */
+  topPt: number;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -494,10 +483,10 @@ function PtPodiumCard({
             </span>
           </p>
         </div>
-        <PtRateLabel rate={row.achievementRate} hasTarget={row.targetPt > 0} />
       </button>
-      <PtTargetBar
-        actual={row.pt}
+      <PtRankingBar
+        pt={row.pt}
+        topPt={topPt}
         target={row.targetPt}
         rate={row.achievementRate}
       />
@@ -511,11 +500,14 @@ function PtPodiumCard({
 function PtListRow({
   row,
   breakdown,
+  topPt,
   expanded,
   onToggle,
 }: {
   row: RankingRow;
   breakdown: PtBreakdownRow[];
+  /** 1位の PT。棒の基準（0 なら棒は伸びない） */
+  topPt: number;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -552,10 +544,10 @@ function PtListRow({
             </span>
           </p>
         </div>
-        <PtRateLabel rate={row.achievementRate} hasTarget={row.targetPt > 0} />
       </button>
-      <PtTargetBar
-        actual={row.pt}
+      <PtRankingBar
+        pt={row.pt}
+        topPt={topPt}
         target={row.targetPt}
         rate={row.achievementRate}
       />
@@ -586,6 +578,8 @@ function PtRankingSection({
   }
   const podium = rows.filter((r) => r.rank <= 3);
   const rest = rows.filter((r) => r.rank > 3);
+  /** 棒の基準。rows はサーバ側で PT 降順なので先頭が1位 */
+  const topPt = rows[0]?.pt ?? 0;
   const toggle = (staffName: string) => {
     setExpandedName((cur) => (cur === staffName ? null : staffName));
   };
@@ -599,6 +593,7 @@ function PtRankingSection({
               key={`podium-${row.rank}-${row.staffName}`}
               row={row}
               breakdown={breakdownByStaff[row.staffName] ?? []}
+              topPt={topPt}
               expanded={expandedName === row.staffName}
               onToggle={() => toggle(row.staffName)}
             />
@@ -612,6 +607,7 @@ function PtRankingSection({
               key={`${row.rank}-${row.staffName}`}
               row={row}
               breakdown={breakdownByStaff[row.staffName] ?? []}
+              topPt={topPt}
               expanded={expandedName === row.staffName}
               onToggle={() => toggle(row.staffName)}
             />
