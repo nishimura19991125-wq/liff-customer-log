@@ -25,6 +25,10 @@ export type RankingRow = {
   sharePercent: number;
   isSelf: boolean;
   isPodium: boolean;
+  /** 目標登録(月次)の PT 目標。未設定・取得不可は 0 */
+  targetPt: number;
+  /** 達成率(%)。targetPt <= 0 のときは 0 */
+  achievementRate: number;
 };
 
 export type ApoRankingRow = {
@@ -258,6 +262,8 @@ function ptValueClass(): string {
 const RANK_BAR_TONES = {
   emerald: "bg-emerald-500 dark:bg-emerald-400",
   sky: "bg-sky-500 dark:bg-sky-400",
+  /** 総合PT の達成（100%以上）。順位バッジの琥珀より濃くして区別する */
+  amber: "bg-amber-500 dark:bg-amber-400",
 } as const;
 
 type RankBarTone = keyof typeof RANK_BAR_TONES;
@@ -291,58 +297,71 @@ function RankBar({
   );
 }
 
-/**
- * PT値を棒の内側に置ける最小の割合（%）。
- *
- * 7桁（"9,999,999" ＝ 9文字）＋単位「PT」が、13px で概ね 76px。棒の左右に
- * px-2 の余白を足すと約 92px 要る。LIFF の狭い端末（幅 320px）でカードの
- * 左右余白と順位バッジを引いた棒の幅は約 240px なので、92 / 240 ≒ 0.38。
- * ここでは仕様どおり 32 を採る（7桁は上位者にしか出ず、上位者の棒は長い）。
- * これを下回る棒には数字が収まらないので、棒の外へ出す。
- */
-const PT_BAR_INSIDE_MIN_RATIO = 32;
+/** 達成とみなす下限（%）。棒と達成率の色をここで切り替える */
+const PT_TARGET_ACHIEVED_RATE = 100;
+
+/** 達成率の文字色。棒の色と対にする（動的なクラス名は組み立てない） */
+const PT_RATE_TEXT_TONES = {
+  emerald: "text-emerald-600 dark:text-emerald-400",
+  amber: "text-amber-600 dark:text-amber-400",
+} as const;
+
+function ptRateTone(rate: number): "emerald" | "amber" {
+  return rate >= PT_TARGET_ACHIEVED_RATE ? "amber" : "emerald";
+}
+
+/** 達成率の表示。小数第1位まで（営業進捗の formatSalesProgressRate と同じ桁） */
+function formatAchievementRate(rate: number): string {
+  return `${(Number.isFinite(rate) ? rate : 0).toFixed(1)}%`;
+}
 
 /**
- * 総合PTランキングの横棒。**PT値を棒の中に持つ太い版。**
+ * 総合PTランキングの、目標を基準にした横棒。
  *
- * 細い RankBar（他部門で使用）とは別にしてある。あちらは値を行に持ち、
- * 棒は装飾なので aria から外している。こちらは**棒が値の唯一の表示**なので、
- * 数字は読み上げの対象に残す（aria-hidden を付けると PT が消える）。
+ * トラックが目標（100%）で、塗りは達成率。**100%を超えても満タンで止める**。
+ * 超過分まで伸ばすと1人の突出で他の行が潰れ、横に並べて比べられなくなる。
+ * 超過は数字（1行目の達成率）で読む。barRatio が min(100, …) を担うので、
+ * ここでクランプは書かない。目標が 0 なら barRatio は 0 を返し、棒は空になる。
  *
- * 数字の枠は棒の内外どちらでも固定幅で確保する。桁数で棒の長さが揺れず、
- * 行ごとの棒の基準幅もそろうので、長さをそのまま比べられる。
+ * 値は「実績 / 目標」を棒の下に置く。7桁が2つ並ぶため棒の中には収まらない。
+ * 棒自体は数値の言い換えなので aria から外し、数字は読み上げに残す。
  */
-function PtValueBar({ value, top }: { value: number; top: number }) {
-  const ratio = barRatio(value, top);
-  const inside = ratio >= PT_BAR_INSIDE_MIN_RATIO;
-  const label = (
+function PtTargetBar({
+  actual,
+  target,
+  rate,
+}: {
+  actual: number;
+  target: number;
+  rate: number;
+}) {
+  return (
     <>
-      {formatPt(value)}
-      <span className="ml-0.5 text-[11px] font-bold">PT</span>
+      <div
+        className="mt-2 h-6 rounded-full bg-slate-200 dark:bg-slate-700/60"
+        aria-hidden
+      >
+        <div
+          className={`h-6 rounded-full transition-[width] duration-300 ${RANK_BAR_TONES[ptRateTone(rate)]}`}
+          style={{ width: `${barRatio(actual, target)}%` }}
+        />
+      </div>
+      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+        実績 {formatPt(actual)} PT / 目標{" "}
+        {target > 0 ? `${formatPt(target)} PT` : "—"}
+      </p>
     </>
   );
+}
 
+/** 1行目の右端に出す達成率 */
+function PtRateLabel({ rate }: { rate: number }) {
   return (
-    <div className="mt-2 flex items-center gap-2">
-      <div className="h-6 flex-1 rounded-full bg-slate-200 dark:bg-slate-700/60">
-        <div
-          className={`flex h-6 items-center justify-end overflow-hidden rounded-full transition-[width] duration-300 ${RANK_BAR_TONES.emerald}`}
-          style={{ width: `${ratio}%` }}
-        >
-          {inside ? (
-            <span className="whitespace-nowrap px-2 text-[13px] font-bold text-white dark:text-emerald-950">
-              {label}
-            </span>
-          ) : null}
-        </div>
-      </div>
-      {/* 内側に置いたときも枠は空けておく（棒の基準幅を行ごとにそろえる） */}
-      <span
-        className={`w-[68px] shrink-0 whitespace-nowrap text-right text-[13px] ${ptValueClass()}`}
-      >
-        {inside ? null : label}
-      </span>
-    </div>
+    <span
+      className={`shrink-0 text-[15px] font-bold tabular-nums ${PT_RATE_TEXT_TONES[ptRateTone(rate)]}`}
+    >
+      {formatAchievementRate(rate)}
+    </span>
   );
 }
 
@@ -396,14 +415,11 @@ function PtBreakdownPanel({ rows }: { rows: PtBreakdownRow[] }) {
 function PtPodiumCard({
   row,
   breakdown,
-  topPt,
   expanded,
   onToggle,
 }: {
   row: RankingRow;
   breakdown: PtBreakdownRow[];
-  /** 1位の PT。棒の基準（0 なら棒は伸びない） */
-  topPt: number;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -440,8 +456,13 @@ function PtPodiumCard({
             </span>
           </p>
         </div>
+        <PtRateLabel rate={row.achievementRate} />
       </button>
-      <PtValueBar value={row.pt} top={topPt} />
+      <PtTargetBar
+        actual={row.pt}
+        target={row.targetPt}
+        rate={row.achievementRate}
+      />
       {expanded ? (
         <PtBreakdownPanel rows={breakdown} />
       ) : null}
@@ -452,14 +473,11 @@ function PtPodiumCard({
 function PtListRow({
   row,
   breakdown,
-  topPt,
   expanded,
   onToggle,
 }: {
   row: RankingRow;
   breakdown: PtBreakdownRow[];
-  /** 1位の PT。棒の基準（0 なら棒は伸びない） */
-  topPt: number;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -496,8 +514,13 @@ function PtListRow({
             </span>
           </p>
         </div>
+        <PtRateLabel rate={row.achievementRate} />
       </button>
-      <PtValueBar value={row.pt} top={topPt} />
+      <PtTargetBar
+        actual={row.pt}
+        target={row.targetPt}
+        rate={row.achievementRate}
+      />
       {expanded ? (
         <PtBreakdownPanel rows={breakdown} />
       ) : null}
@@ -525,9 +548,6 @@ function PtRankingSection({
   }
   const podium = rows.filter((r) => r.rank <= 3);
   const rest = rows.filter((r) => r.rank > 3);
-  /** 棒の基準。rows はサーバ側で PT 降順なので先頭が1位 */
-  const topPt = rows[0]?.pt ?? 0;
-
   const toggle = (staffName: string) => {
     setExpandedName((cur) => (cur === staffName ? null : staffName));
   };
@@ -541,7 +561,6 @@ function PtRankingSection({
               key={`podium-${row.rank}-${row.staffName}`}
               row={row}
               breakdown={breakdownByStaff[row.staffName] ?? []}
-              topPt={topPt}
               expanded={expandedName === row.staffName}
               onToggle={() => toggle(row.staffName)}
             />
@@ -555,7 +574,6 @@ function PtRankingSection({
               key={`${row.rank}-${row.staffName}`}
               row={row}
               breakdown={breakdownByStaff[row.staffName] ?? []}
-              topPt={topPt}
               expanded={expandedName === row.staffName}
               onToggle={() => toggle(row.staffName)}
             />

@@ -27,7 +27,9 @@ import {
   type ContractCountFieldMap,
   type PtDashboardFieldMap,
 } from "@/lib/sales-dashboard-fields";
+import { achievementRate } from "@/lib/sales-dashboard-achievement";
 import { fetchSalesDashboardRecordPages, salesDashboardPtListAuths } from "@/lib/sales-dashboard-list-fetch";
+import { fetchSalesDashboardPtTargets } from "@/lib/sales-dashboard-target-lookup";
 import {
   isYmInPeriod,
   resolveSalesDashboardPeriod,
@@ -57,6 +59,10 @@ export type SalesDashboardRankingRow = {
   sharePercent: number;
   isSelf: boolean;
   isPodium: boolean;
+  /** 目標登録(月次)の PT 目標。未設定・取得不可は 0 */
+  targetPt: number;
+  /** 達成率(%)。targetPt <= 0 のときは 0 */
+  achievementRate: number;
 };
 
 /** PT集計表レコード単位の明細（お客様情報の登録番号突合付き） */
@@ -374,18 +380,47 @@ function buildRanking(
   sorted: StaffAgg[],
   companyPt: number,
   bound: string,
+  /** 正規化担当者名 → PT 目標。引けない担当者は 0 になる */
+  targetPtByStaff: Map<string, number>,
 ): SalesDashboardRankingRow[] {
-  return sorted.map((item, i) => ({
-    rank: i + 1,
-    staffName: item.name,
-    pt: item.pt,
-    salesAmount: item.salesAmount,
-    contractCount: item.contractCount,
-    sharePercent:
-      companyPt > 0 ? Math.round((item.pt / companyPt) * 1000) / 10 : 0,
-    isSelf: normApClStaffName(item.name) === bound,
-    isPodium: i < 3,
-  }));
+  return sorted.map((item, i) => {
+    const targetPt = targetPtByStaff.get(item.name) ?? 0;
+    return {
+      rank: i + 1,
+      staffName: item.name,
+      pt: item.pt,
+      salesAmount: item.salesAmount,
+      contractCount: item.contractCount,
+      sharePercent:
+        companyPt > 0 ? Math.round((item.pt / companyPt) * 1000) / 10 : 0,
+      isSelf: normApClStaffName(item.name) === bound,
+      isPodium: i < 3,
+      targetPt,
+      achievementRate: achievementRate(item.pt, targetPt),
+    };
+  });
+}
+
+/**
+ * 目標が引けなかった担当者の数を残す。**氏名は出さない**（件数のみ）。
+ *
+ * 全員分が引けないときは設定・権限を疑う手掛かりになり、数人だけなら
+ * 目標アプリ側の登録漏れか氏名の表記ゆれと分かる。
+ */
+function warnMissingSalesTargets(
+  ranking: SalesDashboardRankingRow[],
+  targetsAvailable: boolean,
+): void {
+  const missing = ranking.filter((r) => r.targetPt <= 0).length;
+  if (missing === 0) return;
+  console.warn(
+    "[sales-dashboard] PT目標を引けなかった担当者がいます",
+    JSON.stringify({
+      missing,
+      total: ranking.length,
+      targetsAvailable,
+    }),
+  );
 }
 
 function resolveCustomerLookupFieldIds(contractFields: AtPocketFieldRow[]): {
@@ -501,7 +536,7 @@ export async function buildSalesDashboardPayload(
   }
   const contractCsv = [...contractFieldIdSet].join(",");
 
-  const [ptRecords, contractRecords] = await Promise.all([
+  const [ptRecords, contractRecords, targets] = await Promise.all([
     fetchSalesDashboardRecordPages(
       ptAppId,
       ptWanted.join(","),
@@ -525,6 +560,8 @@ export async function buildSalesDashboardPayload(
           return [] as Array<{ record?: unknown }>;
         })
       : Promise.resolve([] as Array<{ record?: unknown }>),
+    // 目標は付加情報。重い2つと並べて取る（この関数は例外を投げない）
+    fetchSalesDashboardPtTargets(period),
   ]);
 
   const byStaff = aggregatePtRecords(ptRecords, ptFieldMap, periodKey);
@@ -565,13 +602,16 @@ export async function buildSalesDashboardPayload(
       companyCount > 0 ? Math.round(companySales / companyCount) : 0,
   };
 
+  const ranking = buildRanking(sorted, companyPt, bound, targets.ptByStaff);
+  warnMissingSalesTargets(ranking, targets.available);
+
   return {
     staffName: boundStaffName,
     period: periodKey,
     periodLabel: period.label,
     periodHint: period.hint,
     kpi,
-    ranking: buildRanking(sorted, companyPt, bound),
+    ranking,
     ptBreakdownByStaff,
     apoEnabled: Boolean(salesDashboardApoAppId()),
     apoReady: apoSection.ok,
