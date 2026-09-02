@@ -61,7 +61,14 @@ describe("アポ情報一覧の「新規登録」", () => {
   it("★ 一覧の中身は触っていない", () => {
     const src = read(LIST);
 
-    expect(src).toContain("<ApoListRows rows={visibleRows} idToken={idToken} />");
+    /*
+     * 渡す値は段階C（商談ステータス編集）で増えたので、1行の丸ごと一致では
+     * 見なくなった。ここで守りたいのは「絞り込み後の行と idToken を
+     * そのまま渡していること」だけ
+     */
+    expect(src).toContain("<ApoListRows");
+    expect(src).toContain("rows={visibleRows}");
+    expect(src).toContain("idToken={idToken}");
     expect(src).toContain('id="apo-list-panel"');
     expect(src).toContain('role="tabpanel"');
   });

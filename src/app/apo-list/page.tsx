@@ -51,7 +51,7 @@ export default function ApoListPage() {
     !account.loading &&
     Boolean(account.boundStaffName || !account.bindingEnabled);
 
-  const { data, error: swrError, isLoading } = useLiffSwr<
+  const { data, error: swrError, isLoading, mutate } = useLiffSwr<
     ApoListPayload & { needsStaffBind?: boolean; disabled?: boolean }
   >(canFetch ? "/api/apo-list" : null, idToken, LIFF_SWR_DEFAULT_OPTIONS);
 
@@ -193,7 +193,21 @@ export default function ApoListPage() {
               </p>
             </LiffCard>
           ) : (
-            <ApoListRows rows={visibleRows} idToken={idToken} />
+            /*
+              商談ステータスの編集に必要な値を渡す。
+              statusEditable は @pocket への書き込みが使えるかどうか
+              （未設定なら編集欄も保存ボタンも出ない）。
+              保存後の再取得は SWR の mutate。一覧を取り直すだけで、
+              開いているカードは閉じない（開閉は recordId で持っているため）
+            */
+            <ApoListRows
+              rows={visibleRows}
+              idToken={idToken}
+              statusEditable={data?.statusEditable ?? false}
+              closeTypeOptions={data?.closeTypeOptions ?? []}
+              meetingPlaceOptions={data?.meetingPlaceOptions ?? []}
+              onSaved={mutate}
+            />
           )}
         </div>
       </div>
