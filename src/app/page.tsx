@@ -532,7 +532,7 @@ export default function HomeHubPage() {
                   社内共通
                 </p>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  営業ダッシュボード・勤怠管理・稼働終了報告・社内イベント・コミュニケーションブリッジを表示します。
+                  営業進捗・勤怠管理・稼働終了報告・社内イベント・掲示板・コミュニケーションブリッジを表示します。
                 </p>
               </div>
               <span
