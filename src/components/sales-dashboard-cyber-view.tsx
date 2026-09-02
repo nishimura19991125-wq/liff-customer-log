@@ -226,6 +226,29 @@ function PtBranchLabel({ branch }: { branch: string }) {
   );
 }
 
+/** 顔写真の丸のサイズ。台座カード（上位3位）にだけ出す */
+const PT_AVATAR_SIZE = "size-8";
+
+/**
+ * 上位3位の顔アイコン。**まだ写真は使わず頭文字だけ**（段階2）。
+ *
+ * 写真が無い人・取得に失敗した人はこの丸のままにする。エラーは出さない。
+ * 4位以下には出さず、枠も空けない（台座カードとは別レイアウトのため）。
+ */
+function PtStaffAvatar({ staffName }: { staffName: string }) {
+  const name = staffName.trim();
+  const letter = name ? name.slice(0, 1) : "—";
+  return (
+    <div
+      role="img"
+      aria-label={name ? `${name} の写真` : "担当者の写真"}
+      className={`${PT_AVATAR_SIZE} flex shrink-0 items-center justify-center rounded-full bg-slate-100 text-[14px] font-bold text-slate-600 ring-1 ring-slate-200/80 dark:bg-slate-700 dark:text-slate-200 dark:ring-slate-600`}
+    >
+      {letter}
+    </div>
+  );
+}
+
 /**
  * 目標達成の印。表に花丸・裏にバラを持つコインが回り続ける。
  *
@@ -396,6 +419,9 @@ function PtPodiumCard({
         ) : (
           <span className="pt-coin-slot shrink-0" aria-hidden="true" />
         )}
+        <div className="self-center">
+          <PtStaffAvatar staffName={row.staffName} />
+        </div>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-baseline gap-1.5">
             <p
