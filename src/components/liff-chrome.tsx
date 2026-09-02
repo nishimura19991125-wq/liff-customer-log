@@ -478,6 +478,8 @@ export function LiffMenuCard({
   icon,
   disabled,
   iconTone = "emerald",
+  trailing,
+  children,
 }: {
   href: string;
   title: string;
@@ -486,6 +488,10 @@ export function LiffMenuCard({
   /** true のとき遷移不可（スタッフ未紐付けなど） */
   disabled?: boolean;
   iconTone?: keyof typeof menuCardIconToneClass;
+  /** 見出しの右端に添える要素（順位など）。未指定なら何も出ない */
+  trailing?: ReactNode;
+  /** 見出しの下に積む要素（達成率の棒など）。未指定なら何も出ない */
+  children?: ReactNode;
 }) {
   const iconWrap = menuCardIconToneClass[iconTone];
   const cls =
@@ -505,14 +511,18 @@ export function LiffMenuCard({
           {icon}
         </span>
         <div className="min-w-0 flex-1 py-0.5">
-          <p className="text-[1.05rem] font-bold leading-snug text-slate-800 dark:text-slate-100">
-            {title}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="min-w-0 flex-1 text-[1.05rem] font-bold leading-snug text-slate-800 dark:text-slate-100">
+              {title}
+            </p>
+            {trailing}
+          </div>
           {description ? (
             <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
               {description}
             </p>
           ) : null}
+          {children}
         </div>
         <span
           className="self-center text-xl font-light text-slate-300 dark:text-slate-500"
@@ -532,14 +542,18 @@ export function LiffMenuCard({
         {icon}
       </span>
       <div className="min-w-0 flex-1 py-0.5">
-        <p className="text-[1.05rem] font-bold leading-snug text-slate-800 dark:text-slate-100">
-          {title}
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="min-w-0 flex-1 text-[1.05rem] font-bold leading-snug text-slate-800 dark:text-slate-100">
+            {title}
+          </p>
+          {trailing}
+        </div>
         {description ? (
           <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
             {description}
           </p>
         ) : null}
+        {children}
       </div>
       <span
         className="self-center text-xl font-light text-slate-300 group-active:text-slate-400 dark:text-slate-500 dark:group-active:text-slate-400"

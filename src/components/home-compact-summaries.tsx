@@ -6,7 +6,11 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { LiffCard, LiffMenuCard } from "@/components/liff-chrome";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
 import { type BulletinListResponse } from "@/lib/bulletin-types";
-import { LIFF_SWR_DEFAULT_OPTIONS } from "@/lib/liff-swr";
+import {
+  LIFF_SWR_DASHBOARD_OPTIONS,
+  LIFF_SWR_DEFAULT_OPTIONS,
+} from "@/lib/liff-swr";
+import { barRatio } from "@/lib/sales-dashboard-bar-ratio";
 import { filterOpenMeetingScheduleItems } from "@/lib/meeting-schedule-negotiation-status";
 import type { MeetingSchedulePayload } from "@/lib/meeting-schedule-types";
 
@@ -33,6 +37,55 @@ type CustomersApiBody = {
 };
 
 const PREVIEW_LIMIT = 3;
+
+/** PT の桁区切り（営業ランキング画面の formatPt と同じ見せ方） */
+function formatSalesPt(n: number): string {
+  return new Intl.NumberFormat("ja-JP").format(Math.round(n));
+}
+
+/** /api/sales-dashboard?scope=self の応答（自分の1行だけ） */
+type SalesRankSelfResponse = {
+  rank?: number | null;
+  totalCount?: number;
+  pt?: number;
+  targetPt?: number;
+  achievementRate?: number;
+  periodLabel?: string;
+  needsStaffBind?: boolean;
+};
+
+/**
+ * 順位の枠。**読み込み中も同じ高さを占める**。
+ * ここが伸び縮みすると下のカードが動いて誤タップにつながる。
+ */
+function SalesRankBadge({
+  rank,
+  loading,
+}: {
+  rank: number | null;
+  loading: boolean;
+}) {
+  if (rank == null) {
+    return (
+      <span
+        className={`shrink-0 text-[1.35rem] font-bold leading-none ${
+          loading
+            ? "animate-pulse text-slate-300 dark:text-slate-600"
+            : "text-transparent"
+        }`}
+        aria-hidden
+      >
+        —
+      </span>
+    );
+  }
+  return (
+    <span className="shrink-0 text-[1.35rem] font-bold leading-none text-slate-800 dark:text-slate-100">
+      {rank}
+      <span className="ml-0.5 text-[13px] font-bold">位</span>
+    </span>
+  );
+}
 
 /** 営業ランキングの導線アイコン（ホームのメニューから移設） */
 function SalesDashboardGlyph() {
@@ -67,6 +120,10 @@ export function HomeCompactSummaries({
   const [hydrated, setHydrated] = useState(false);
 
   const bulletinPath = idToken && !disabled ? "/api/bulletin" : null;
+  const selfRankPath =
+    idToken && boundStaffName && !disabled
+      ? "/api/sales-dashboard?scope=self"
+      : null;
   const meetingPath =
     idToken && boundStaffName && !disabled
       ? "/api/meeting-schedule?scope=list"
@@ -85,6 +142,20 @@ export function HomeCompactSummaries({
    */
   const { data: bulletinData, isLoading: bulletinLoading } =
     useLiffSwr<BulletinListResponse>(bulletinPath, idToken, LIFF_SWR_DEFAULT_OPTIONS);
+
+  /**
+   * 営業ランキングの自分の1行だけ（scope=self）。
+   *
+   * 全量にはランキング全行とPT明細が入っていて、順位を出すだけのホームには
+   * 重い。集計は営業ランキング画面と同じ30分キャッシュに相乗りするので、
+   * @pocket への往復はここでは増えない。
+   */
+  const { data: selfSummary, isLoading: selfSummaryLoading } =
+    useLiffSwr<SalesRankSelfResponse>(
+      selfRankPath,
+      idToken,
+      LIFF_SWR_DASHBOARD_OPTIONS,
+    );
 
   const { data: meetingData, isLoading: meetingLoading } = useLiffSwr<
     MeetingSchedulePayload & { needsStaffBind?: boolean; disabled?: boolean }
@@ -130,6 +201,20 @@ export function HomeCompactSummaries({
   );
   const docsPreview = docsItems.slice(0, PREVIEW_LIMIT);
   const docsRest = docsItems.length - docsPreview.length;
+
+  /**
+   * 自分の順位まわり。**取れないときは順位の行を出さないだけ**にする。
+   * ランキングに自分が居ない（rank が null）・目標未設定のいずれも
+   * 異常ではないので、カード自体は必ず出す。
+   */
+  const selfRank =
+    typeof selfSummary?.rank === "number" ? selfSummary.rank : null;
+  const selfRankLoading = Boolean(selfRankPath) && selfSummaryLoading;
+  const selfPt = selfSummary?.pt ?? 0;
+  const selfTargetPt = selfSummary?.targetPt ?? 0;
+  const selfRate = selfSummary?.achievementRate ?? 0;
+  // 目標未設定（3分の1が該当）では達成率も「あと何PT」も出さない
+  const showSelfTarget = selfRank != null && selfTargetPt > 0;
 
   const meetingReady =
     Boolean(meetingData?.configured) && !meetingData?.error && !meetingLoading;
@@ -185,14 +270,43 @@ export function HomeCompactSummaries({
         ) : null}
 
         {/* 「本日のお知らせ」のバナーがあった位置。導線はホームのここに集約する */}
-        {/* description は省略（LiffMenuCard 側で任意・未指定なら描画しない） */}
+        {/*
+          description は省略し、代わりに自分の順位と達成率を添える。
+          **取得できなくてもカードは必ず出す**（ホームの主要な導線なので、
+          ランキングの取得失敗で押せなくなるのは避ける）。
+        */}
         <LiffMenuCard
           href="/sales-dashboard"
           title="営業ランキング"
           icon={<SalesDashboardGlyph />}
           iconTone="blue"
           disabled={needsStaffBind}
-        />
+          trailing={<SalesRankBadge rank={selfRank} loading={selfRankLoading} />}
+        >
+          {selfRank != null ? (
+            <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
+              {selfSummary?.periodLabel?.trim() ? `${selfSummary.periodLabel}・` : ""}
+              全{selfSummary?.totalCount ?? 0}人中
+            </p>
+          ) : null}
+          {showSelfTarget ? (
+            <>
+              <div
+                className="mt-1.5 h-1 rounded-full bg-slate-200 dark:bg-slate-700/60"
+                aria-hidden
+              >
+                <div
+                  className="h-1 rounded-full bg-emerald-500 dark:bg-emerald-400"
+                  style={{ width: `${barRatio(selfPt, selfTargetPt)}%` }}
+                />
+              </div>
+              <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
+                目標まであと {formatSalesPt(Math.max(0, selfTargetPt - selfPt))} PT
+                （{Math.round(selfRate)}%）
+              </p>
+            </>
+          ) : null}
+        </LiffMenuCard>
 
         {/* 下段：書類未回収 | 商談進捗 */}
         {showDocs || showMeeting ? (
