@@ -29,6 +29,18 @@ export type MeetingScheduleNegotiationStatusSpec = {
   requiresMeetingInput: boolean;
   /** 返待ち回答日を必須にするか。「返待ち」のときだけ */
   requiresResponseDate: boolean;
+  /**
+   * 付随項目4つ（初回商談実施日・片クロor両クロ・商談場所・返待ち回答日）を
+   * 画面に出すか。
+   *
+   * false は「アポキャン」だけ。商談自体がキャンセルされた状態なので、
+   * これらを入力する意味がない。
+   *
+   * ⚠ requiresMeetingInput から導けない。必須にしない5件のうち
+   *    商談待ち・資料送付回答待ち・資料送付成約・資料送付否 は
+   *    従来どおり表示するため、独立したフラグとして持つ。
+   */
+  showsInputFields: boolean;
 };
 
 /**
@@ -43,38 +55,89 @@ export const MEETING_SCHEDULE_NEGOTIATION_STATUS_SPECS: Readonly<
     transitions: ["商談待ち", "即決成約", "再商談", "返待ち", "否", "アポキャン"],
     requiresMeetingInput: false,
     requiresResponseDate: false,
+    showsInputFields: true,
   },
   再商談: {
     transitions: ["再商談", "再商談成約", "再商談否", "再商談日調整中", "返待ち"],
     requiresMeetingInput: true,
     requiresResponseDate: false,
+    showsInputFields: true,
   },
   返待ち: {
     transitions: ["返待ち", "返待ち成約", "返待ち否", "再商談"],
     requiresMeetingInput: true,
     requiresResponseDate: true,
+    showsInputFields: true,
   },
   資料送付回答待ち: {
     transitions: ["資料送付回答待ち", "資料送付成約", "資料送付否", "再商談"],
     requiresMeetingInput: false,
     requiresResponseDate: false,
+    showsInputFields: true,
   },
   再商談日調整中: {
     transitions: ["再商談日調整中", "再商談", "再商談成約", "再商談否", "返待ち"],
     requiresMeetingInput: true,
     requiresResponseDate: false,
+    showsInputFields: true,
   },
 
   // ここから下は変更不可（遷移先が空）
-  即決成約: { transitions: [], requiresMeetingInput: true, requiresResponseDate: false },
-  再商談成約: { transitions: [], requiresMeetingInput: true, requiresResponseDate: false },
-  返待ち成約: { transitions: [], requiresMeetingInput: true, requiresResponseDate: false },
-  否: { transitions: [], requiresMeetingInput: true, requiresResponseDate: false },
-  再商談否: { transitions: [], requiresMeetingInput: true, requiresResponseDate: false },
-  返待ち否: { transitions: [], requiresMeetingInput: true, requiresResponseDate: false },
-  アポキャン: { transitions: [], requiresMeetingInput: false, requiresResponseDate: false },
-  資料送付成約: { transitions: [], requiresMeetingInput: false, requiresResponseDate: false },
-  資料送付否: { transitions: [], requiresMeetingInput: false, requiresResponseDate: false },
+  即決成約: {
+    transitions: [],
+    requiresMeetingInput: true,
+    requiresResponseDate: false,
+    showsInputFields: true,
+  },
+  再商談成約: {
+    transitions: [],
+    requiresMeetingInput: true,
+    requiresResponseDate: false,
+    showsInputFields: true,
+  },
+  返待ち成約: {
+    transitions: [],
+    requiresMeetingInput: true,
+    requiresResponseDate: false,
+    showsInputFields: true,
+  },
+  否: {
+    transitions: [],
+    requiresMeetingInput: true,
+    requiresResponseDate: false,
+    showsInputFields: true,
+  },
+  再商談否: {
+    transitions: [],
+    requiresMeetingInput: true,
+    requiresResponseDate: false,
+    showsInputFields: true,
+  },
+  返待ち否: {
+    transitions: [],
+    requiresMeetingInput: true,
+    requiresResponseDate: false,
+    showsInputFields: true,
+  },
+  // 商談がキャンセルされた状態。付随項目4つは出さない（値が入っていても出さない）
+  アポキャン: {
+    transitions: [],
+    requiresMeetingInput: false,
+    requiresResponseDate: false,
+    showsInputFields: false,
+  },
+  資料送付成約: {
+    transitions: [],
+    requiresMeetingInput: false,
+    requiresResponseDate: false,
+    showsInputFields: true,
+  },
+  資料送付否: {
+    transitions: [],
+    requiresMeetingInput: false,
+    requiresResponseDate: false,
+    showsInputFields: true,
+  },
 };
 
 /** @pocket 側の商談ステータス選択肢。表のキーがそのまま全件 */
@@ -225,6 +288,27 @@ export function requiresMeetingScheduleMeetingInput(
   return MEETING_SCHEDULE_NEGOTIATION_STATUS_SPECS[status].requiresMeetingInput;
 }
 
+/**
+ * その商談ステータスで付随項目4つを画面に出すか。
+ *
+ * 「アポキャン」だけ false。商談自体がキャンセルされた状態なので、
+ * 初回商談実施日・片クロor両クロ・商談場所・返待ち回答日を入力する意味がない。
+ * @pocket 側に値が残っていても出さない（表示を止めるだけで値は消さない）。
+ *
+ * 遷移表に無い値・空欄は **true**（出す）。@pocket 側で選択肢が増えたときに
+ * 入力欄が黙って消えるほうが困るため、既定は従来どおりの表示にする。
+ *
+ * 判定に使うのは**選び直した後の**商談ステータス。商談待ち→アポキャンを
+ * 選んだ時点で消えてほしいため、保存済みの値ではなく入力中の値を渡すこと。
+ */
+export function showsMeetingScheduleInputFields(
+  negotiationStatusRaw: string,
+): boolean {
+  const status = normalizeMeetingScheduleNegotiationStatus(negotiationStatusRaw);
+  if (!status) return true;
+  return MEETING_SCHEDULE_NEGOTIATION_STATUS_SPECS[status].showsInputFields;
+}
+
 /** 返待ち回答日を必須にする商談ステータスか */
 export function requiresMeetingScheduleResponseDate(
   negotiationStatusRaw: string,
@@ -266,6 +350,8 @@ export function showsMeetingScheduleHenmachiForm(input: {
   /** 変更後の商談ステータス */
   negotiationStatus: string;
 }): boolean {
+  // アポキャンは付随項目そのものを出さない。見積ステータスが返待ちでも出さない
+  if (!showsMeetingScheduleInputFields(input.negotiationStatus)) return false;
   return (
     input.estimateStatusIsHenmachi ||
     requiresMeetingScheduleResponseDate(input.negotiationStatus)
