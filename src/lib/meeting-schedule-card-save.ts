@@ -4,7 +4,8 @@ import {
 } from "@/lib/meeting-schedule-shared";
 import {
   findMissingMeetingScheduleRequiredInput,
-  requiresMeetingScheduleResponseDate,
+  showsMeetingScheduleHenmachiForm,
+  showsMeetingScheduleInputFields,
   MEETING_SCHEDULE_INPUT_BLOCKED_HINTS,
 } from "@/lib/meeting-schedule-negotiation-status";
 import type { MeetingScheduleScheduledUpdateInput } from "@/lib/meeting-schedule-scheduled-update";
@@ -89,13 +90,31 @@ export function planMeetingScheduleCardSave(
   const statusChanged =
     opts.statusEditable && draft.estimateStatus !== server.estimateStatus;
 
+  /**
+   * 付随項目4つを画面に出しているか。アポキャンだけ false。
+   *
+   * 出していない項目は保存対象にしない。入力途中でアポキャンに変えると
+   * 画面から消えるが、消えた値がそのまま送られると
+   * 「画面に出ていないのに書き込まれた」ことになるため。
+   *
+   * 送らない＝消す、ではない。サーバ側は空の項目を書き込み対象から外す
+   * （meeting-schedule.ts の「if (!incoming) continue;」）ので、
+   * @pocket の既存値はそのまま残る。
+   */
+  const showsInputFields = showsMeetingScheduleInputFields(
+    draft.negotiationStatus,
+  );
+
   // ステータスを変えずに付随項目だけ直す場合も status 側の保存対象にする
   const setCreatedChanged =
     statusDetailsEditable &&
     needsSetCreated &&
-    (draft.meetingDate !== server.meetingDate ||
-      draft.closeType !== server.closeType ||
-      draft.meetingPlace !== server.meetingPlace ||
+    ((showsInputFields &&
+      (draft.meetingDate !== server.meetingDate ||
+        draft.closeType !== server.closeType ||
+        draft.meetingPlace !== server.meetingPlace)) ||
+      // 商談ステータス自体は付随項目を出していなくても保存できる
+      // （商談待ち → アポキャン がこの経路）
       draft.negotiationStatus !== server.negotiationStatus);
 
   /**
@@ -106,8 +125,10 @@ export function planMeetingScheduleCardSave(
    * 「必須なのに送る経路が無い」状態になり保存が永久にできなくなる。
    * 画面の入力枠の表示条件（showsMeetingScheduleHenmachiForm）と対にする
    */
-  const includesResponseDate =
-    needsHenmachi || requiresMeetingScheduleResponseDate(draft.negotiationStatus);
+  const includesResponseDate = showsMeetingScheduleHenmachiForm({
+    estimateStatusIsHenmachi: needsHenmachi,
+    negotiationStatus: draft.negotiationStatus,
+  });
 
   const henmachiChanged =
     statusDetailsEditable &&
@@ -181,9 +202,13 @@ export function planMeetingScheduleCardSave(
         status: draft.estimateStatus,
       };
       if (needsSetCreated) {
-        status.meetingDate = draft.meetingDate;
-        status.closeType = draft.closeType;
-        status.meetingPlace = draft.meetingPlace;
+        // 画面に出していない項目は載せない（アポキャン）。
+        // 載せないだけで、@pocket の既存値は消えない
+        if (showsInputFields) {
+          status.meetingDate = draft.meetingDate;
+          status.closeType = draft.closeType;
+          status.meetingPlace = draft.meetingPlace;
+        }
         // 現在値のまま送られることもある。サーバ側は現在値と同じなら
         // 書き込まないので、遷移表の外の値でも弾かれない
         status.negotiationStatus = draft.negotiationStatus;
