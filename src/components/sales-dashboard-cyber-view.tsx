@@ -156,8 +156,6 @@ function ptValueClass(): string {
 const RANK_BAR_TONES = {
   emerald: "bg-emerald-500 dark:bg-emerald-400",
   sky: "bg-sky-500 dark:bg-sky-400",
-  /** 総合PT の達成（100%以上）。順位バッジの琥珀より濃くして区別する */
-  amber: "bg-amber-500 dark:bg-amber-400",
 } as const;
 
 type RankBarTone = keyof typeof RANK_BAR_TONES;
@@ -191,18 +189,33 @@ function RankBar({
   );
 }
 
-/** 達成とみなす下限（%）。棒と達成率の色をここで切り替える */
+/** 達成とみなす下限（%）。棒の色をここで切り替える */
 const PT_TARGET_ACHIEVED_RATE = 100;
 
-function ptRateTone(rate: number): "emerald" | "amber" {
-  return rate >= PT_TARGET_ACHIEVED_RATE ? "amber" : "emerald";
-}
-
-/** 棒の内側に置く達成率の文字色。塗りの色と対にする */
-const PT_BAR_INSIDE_TEXT_TONES = {
-  emerald: "text-white dark:text-emerald-950",
-  amber: "text-white dark:text-amber-950",
+/**
+ * 総合PTの棒の色。**この2色は総合PT専用**で、他部門（売上・アポ・天下賞）が
+ * 使う RANK_BAR_TONES とは別に持つ。
+ *
+ * 任意値クラスは完成形をそのまま書く（Tailwind は動的なクラス名を作らない）。
+ *
+ * ⚠ 赤 #E60012 に白文字はコントラスト比 約4.8:1。AA の 4.5:1 は満たすが、
+ *   11px では下限に近い。実機で読みにくければ #C8000F（白と約6.1:1）まで
+ *   暗くする余地がある。変えるのはこの1行で足りる。
+ */
+const PT_BAR_TONES = {
+  navy: "bg-[#1F4E9C] dark:bg-[#4C86D8]",
+  red: "bg-[#E60012] dark:bg-[#FF3B45]",
 } as const;
+
+/** 順位の数字（総合PTのみ）。バッジの地色・影は他部門と共通のまま */
+const PT_RANK_NUMBER_CLASS = "text-[#1F4E9C] dark:text-[#4C86D8]";
+
+/** 塗りに重なるラベル。赤・紺とも濃色なので、明暗どちらでも白で通す */
+const PT_BAR_LABEL_ON_FILL = "text-white";
+
+function ptBarTone(rate: number): "navy" | "red" {
+  return rate >= PT_TARGET_ACHIEVED_RATE ? "red" : "navy";
+}
 
 /** 棒の中・外に出す達成率。桁を詰めるため整数（149%） */
 function formatAchievementRateCompact(rate: number): string {
@@ -222,7 +235,7 @@ function formatAchievementRateCompact(rate: number): string {
  * 棒は常に全幅（＝行ごとの基準がそろう）。
  * 上のコピーは同じ文を繰り返すだけなので読み上げからは外す。
  *
- * 色は達成率で変える（100%以上 amber・未満と未設定 emerald）。
+ * 色は達成率で変える（100%以上 赤・未満と未設定 紺）。
  */
 function PtRankingBar({
   pt,
@@ -237,7 +250,7 @@ function PtRankingBar({
   rate: number;
 }) {
   const ratio = barRatio(pt, topPt);
-  const tone = ptRateTone(rate);
+  const tone = ptBarTone(rate);
   // 目標が無い行は達成率そのものが無いので、括弧ごと出さない
   const label =
     target > 0
@@ -250,14 +263,14 @@ function PtRankingBar({
     <div className="relative mt-2 h-6 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700/60">
       {/* 塗り。left 基準で伸ばす（inset-0 と width は同時に効かない） */}
       <div
-        className={`absolute inset-y-0 left-0 rounded-full transition-[width] duration-300 ${RANK_BAR_TONES[tone]}`}
+        className={`absolute inset-y-0 left-0 rounded-full transition-[width] duration-300 ${PT_BAR_TONES[tone]}`}
         style={{ width: `${ratio}%` }}
       />
       <span className={`${labelClass} text-slate-700 dark:text-slate-200`}>
         {label}
       </span>
       <span
-        className={`${labelClass} ${PT_BAR_INSIDE_TEXT_TONES[tone]}`}
+        className={`${labelClass} ${PT_BAR_LABEL_ON_FILL}`}
         style={{ clipPath: `inset(0 ${100 - ratio}% 0 0)` }}
         aria-hidden
       >
@@ -267,11 +280,34 @@ function PtRankingBar({
   );
 }
 
+/**
+ * 順位バッジの地色と影。**数字の色は含めない。**
+ *
+ * 総合PTだけ数字を紺にするため、地色と文字色を分けてある。
+ * 他部門は rankBadgeClass 経由で従来どおり（見た目は変えていない）。
+ */
+function rankBadgeShellClass(rank: number): string {
+  if (rank === 1) return "bg-amber-400 shadow-[0_0_10px_rgba(234,179,8,0.5)]";
+  if (rank === 2) return "bg-slate-300 dark:bg-slate-400 shadow-[0_0_8px_rgba(148,163,184,0.45)]";
+  if (rank === 3) return "bg-amber-700/90 shadow-[0_0_8px_rgba(180,83,9,0.45)]";
+  return "bg-slate-100 dark:bg-slate-700";
+}
+
+/** 順位バッジの数字の色（売上・アポ・天下賞。総合PT以外） */
+function rankBadgeTextClass(rank: number): string {
+  if (rank === 1) return "text-amber-950";
+  if (rank === 2) return "text-slate-800 dark:text-slate-900";
+  if (rank === 3) return "text-white";
+  return "text-slate-600 dark:text-slate-200";
+}
+
 function rankBadgeClass(rank: number): string {
-  if (rank === 1) return "bg-amber-400 text-amber-950 shadow-[0_0_10px_rgba(234,179,8,0.5)]";
-  if (rank === 2) return "bg-slate-300 text-slate-800 dark:bg-slate-400 dark:text-slate-900 shadow-[0_0_8px_rgba(148,163,184,0.45)]";
-  if (rank === 3) return "bg-amber-700/90 text-white shadow-[0_0_8px_rgba(180,83,9,0.45)]";
-  return "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200";
+  return `${rankBadgeShellClass(rank)} ${rankBadgeTextClass(rank)}`;
+}
+
+/** 総合PTの順位バッジ。地色は共通、数字だけ紺にする */
+function ptRankBadgeClass(rank: number): string {
+  return `${rankBadgeShellClass(rank)} ${PT_RANK_NUMBER_CLASS}`;
 }
 
 function PtBreakdownPanel({ rows }: { rows: PtBreakdownRow[] }) {
@@ -341,7 +377,7 @@ function PtPodiumCard({
         className="flex w-full items-start gap-3 text-left"
       >
         <span
-          className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${rankBadgeClass(row.rank)}`}
+          className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${ptRankBadgeClass(row.rank)}`}
         >
           {row.rank}
         </span>
@@ -402,7 +438,7 @@ function PtListRow({
         className="flex w-full items-center gap-3 text-left"
       >
         <span
-          className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${rankBadgeClass(row.rank)}`}
+          className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${ptRankBadgeClass(row.rank)}`}
         >
           {row.rank}
         </span>
