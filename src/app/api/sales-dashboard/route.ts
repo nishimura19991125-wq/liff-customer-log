@@ -13,6 +13,7 @@ import {
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
 import { tryConsumeManualRefresh } from "@/lib/manual-refresh-throttle";
+import type { SalesDashboardPayload } from "@/lib/sales-dashboard-data";
 import { personalizeSalesDashboardPayload } from "@/lib/sales-dashboard-personalize";
 import {
   getAnyStaleSalesDashboardCore,
@@ -23,6 +24,28 @@ import { parseSalesDashboardPeriodParam } from "@/lib/sales-dashboard-period";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * ホームのカード用に、**自分の1行だけ**へ絞った応答。
+ *
+ * 全量には全社員のランキングとPT明細（お客様名を含む）が入っていて、
+ * 順位を出すだけのホームには重い。集計もキャッシュも触らず、
+ * personalize 済みの結果から必要な項目だけを取り出して返す。
+ *
+ * 自分がランキングに居ないときは rank を null にし、値は 0 で返す
+ * （呼び出し側は順位の表示だけを省く）。
+ */
+function selfSummaryResponse(payload: SalesDashboardPayload): NextResponse {
+  const self = payload.ranking.find((r) => r.isSelf);
+  return NextResponse.json({
+    rank: self?.rank ?? null,
+    totalCount: payload.ranking.length,
+    pt: self?.pt ?? 0,
+    targetPt: self?.targetPt ?? 0,
+    achievementRate: self?.achievementRate ?? 0,
+    periodLabel: payload.periodLabel,
+  });
+}
 
 /** 営業ダッシュボード（PT集計・全社員共通） */
 export async function GET(request: Request) {
@@ -39,6 +62,12 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const period = parseSalesDashboardPeriodParam(url.searchParams.get("period"));
+  /**
+   * 応答を自分の1行に絞るか。**許可値は "self" だけ**で、未指定・未知の値は
+   * 従来どおりの全量応答へ落とす（エラーにはしない）。
+   * キャッシュは core を共通のまま使い、絞り込みは応答の直前だけで行う。
+   */
+  const selfOnly = url.searchParams.get("scope") === "self";
   // 画面の「更新」。連打で @pocket を叩き続けないよう同一利用者は60秒に1回
   const wantsRefresh = url.searchParams.get("refresh") === "1";
   const refreshDecision = wantsRefresh
@@ -67,6 +96,8 @@ export async function GET(request: Request) {
         { status: 502 },
       );
     }
+
+    if (selfOnly) return selfSummaryResponse(payload);
 
     return NextResponse.json({
       ...payload,
@@ -103,6 +134,8 @@ export async function GET(request: Request) {
           return NextResponse.json({ needsStaffBind: true });
         }
         const payload = personalizeSalesDashboardPayload(stale, boundStaffName);
+        // 絞った応答では古い旨のフラグも落とす（ホームは順位しか見ない）
+        if (selfOnly) return selfSummaryResponse(payload);
         return NextResponse.json({
           ...payload,
           rateLimited: true,
