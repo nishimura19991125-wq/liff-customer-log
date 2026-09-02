@@ -400,7 +400,11 @@ function PtPodiumCard({
         >
           {row.rank}
         </span>
-        {isPtTargetAchieved(row.achievementRate) ? <PtAchievedCoin /> : null}
+        {isPtTargetAchieved(row.achievementRate) ? (
+          <PtAchievedCoin />
+        ) : (
+          <span className="pt-coin-slot shrink-0" aria-hidden="true" />
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-baseline gap-1.5">
             <p
@@ -467,7 +471,11 @@ function PtListRow({
         >
           {row.rank}
         </span>
-        {isPtTargetAchieved(row.achievementRate) ? <PtAchievedCoin /> : null}
+        {isPtTargetAchieved(row.achievementRate) ? (
+          <PtAchievedCoin />
+        ) : (
+          <span className="pt-coin-slot shrink-0" aria-hidden="true" />
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-baseline gap-1.5">
             <p className="min-w-0 truncate text-[14px] font-semibold text-slate-800 dark:text-white">

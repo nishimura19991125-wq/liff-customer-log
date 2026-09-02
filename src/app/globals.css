@@ -261,3 +261,15 @@ body {
     animation: none;
   }
 }
+
+/**
+ * 花丸コインの空枠（未達成の行）。
+ * 氏名の左端をそろえるためだけの箱なので、寸法と vertical-align は
+ * .pt-coin と必ず同じにする。ずれると達成の有無で1pxのずれが残る。
+ */
+.pt-coin-slot {
+  display: inline-block;
+  width: 17px;
+  height: 17px;
+  vertical-align: -3px;
+}
