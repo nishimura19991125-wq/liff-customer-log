@@ -81,6 +81,7 @@ export function ApoListStatusEditor({
     setters,
     clearFeedback,
     showSetCreatedForm,
+    showMeetingInputs,
     showHenmachiForm,
     canEditNegotiation,
     negotiationOptions,
@@ -117,6 +118,7 @@ export function ApoListStatusEditor({
           server={server}
           saving={saving}
           showSetCreatedForm={showSetCreatedForm}
+          showMeetingInputs={showMeetingInputs}
           showHenmachiForm={showHenmachiForm}
           canEditNegotiation={canEditNegotiation}
           negotiationOptions={negotiationOptions}

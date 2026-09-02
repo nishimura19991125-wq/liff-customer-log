@@ -85,6 +85,11 @@ export type MeetingScheduleNegotiationFieldsProps = {
   server: MeetingScheduleCardValues;
   saving: boolean;
   showSetCreatedForm: boolean;
+  /**
+   * 付随項目3つ（初回商談実施日・片クロor両クロ・商談場所）を出すか。
+   * 商談ステータスの行は showSetCreatedForm のままで、この値では消さない
+   */
+  showMeetingInputs: boolean;
   showHenmachiForm: boolean;
   canEditNegotiation: boolean;
   negotiationOptions: string[];
@@ -125,6 +130,7 @@ export function MeetingScheduleNegotiationFields({
   server,
   saving,
   showSetCreatedForm,
+  showMeetingInputs,
   showHenmachiForm,
   canEditNegotiation,
   negotiationOptions,
@@ -184,84 +190,92 @@ export function MeetingScheduleNegotiationFields({
               </p>
             </div>
           )}
-          {lockedInputs.meetingDate ? (
-            <LockedInputRow
-              label={MEETING_SCHEDULE_INPUT_FIELD_LABELS.meetingDate}
-              value={formatDisplayYmd(server.meetingDate)}
-            />
-          ) : (
-            <label className="block">
-              <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
-                {MEETING_SCHEDULE_INPUT_FIELD_LABELS.meetingDate}
-              </span>
-              <input
-                type="date"
-                className={dateTimeInputClass}
-                value={meetingDate}
-                disabled={saving}
-                onChange={(e) => {
-                  clearFeedback();
-                  setMeetingDate(e.target.value);
-                }}
-              />
-            </label>
-          )}
-          {lockedInputs.closeType ? (
-            <LockedInputRow
-              label={MEETING_SCHEDULE_INPUT_FIELD_LABELS.closeType}
-              value={server.closeType}
-            />
-          ) : (
-            <label className="block">
-              <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
-                {MEETING_SCHEDULE_INPUT_FIELD_LABELS.closeType}
-              </span>
-              <select
-                className={inputClass}
-                value={closeType}
-                disabled={saving}
-                onChange={(e) => {
-                  clearFeedback();
-                  setCloseType(e.target.value);
-                }}
-              >
-                <option value="">選択してください</option>
-                {closeOptions.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          {lockedInputs.meetingPlace ? (
-            <LockedInputRow
-              label={MEETING_SCHEDULE_INPUT_FIELD_LABELS.meetingPlace}
-              value={server.meetingPlace}
-            />
-          ) : (
-            <label className="block">
-              <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
-                {MEETING_SCHEDULE_INPUT_FIELD_LABELS.meetingPlace}
-              </span>
-              <select
-                className={inputClass}
-                value={meetingPlace}
-                disabled={saving}
-                onChange={(e) => {
-                  clearFeedback();
-                  setMeetingPlace(e.target.value);
-                }}
-              >
-                <option value="">選択してください</option>
-                {placeOptions.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          {/*
+            アポキャンでは3項目を出さない（商談自体がキャンセルされた状態）。
+            @pocket 側に値が残っていても出さない。判定はフックから受け取る
+          */}
+          {showMeetingInputs ? (
+            <>
+              {lockedInputs.meetingDate ? (
+                <LockedInputRow
+                  label={MEETING_SCHEDULE_INPUT_FIELD_LABELS.meetingDate}
+                  value={formatDisplayYmd(server.meetingDate)}
+                />
+              ) : (
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                    {MEETING_SCHEDULE_INPUT_FIELD_LABELS.meetingDate}
+                  </span>
+                  <input
+                    type="date"
+                    className={dateTimeInputClass}
+                    value={meetingDate}
+                    disabled={saving}
+                    onChange={(e) => {
+                      clearFeedback();
+                      setMeetingDate(e.target.value);
+                    }}
+                  />
+                </label>
+              )}
+              {lockedInputs.closeType ? (
+                <LockedInputRow
+                  label={MEETING_SCHEDULE_INPUT_FIELD_LABELS.closeType}
+                  value={server.closeType}
+                />
+              ) : (
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                    {MEETING_SCHEDULE_INPUT_FIELD_LABELS.closeType}
+                  </span>
+                  <select
+                    className={inputClass}
+                    value={closeType}
+                    disabled={saving}
+                    onChange={(e) => {
+                      clearFeedback();
+                      setCloseType(e.target.value);
+                    }}
+                  >
+                    <option value="">選択してください</option>
+                    {closeOptions.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {lockedInputs.meetingPlace ? (
+                <LockedInputRow
+                  label={MEETING_SCHEDULE_INPUT_FIELD_LABELS.meetingPlace}
+                  value={server.meetingPlace}
+                />
+              ) : (
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
+                    {MEETING_SCHEDULE_INPUT_FIELD_LABELS.meetingPlace}
+                  </span>
+                  <select
+                    className={inputClass}
+                    value={meetingPlace}
+                    disabled={saving}
+                    onChange={(e) => {
+                      clearFeedback();
+                      setMeetingPlace(e.target.value);
+                    }}
+                  >
+                    <option value="">選択してください</option>
+                    {placeOptions.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </>
+          ) : null}
         </div>
       ) : null}
 

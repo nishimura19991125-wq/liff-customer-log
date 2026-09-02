@@ -15,6 +15,7 @@ import {
   isMeetingScheduleInputNewlyEntered,
   meetingScheduleNegotiationOptionsFor,
   showsMeetingScheduleHenmachiForm,
+  showsMeetingScheduleInputFields,
   MEETING_SCHEDULE_INPUT_FIELD_LABELS,
 } from "@/lib/meeting-schedule-negotiation-status";
 import {
@@ -201,10 +202,20 @@ export function useMeetingScheduleStatusForm(
   const showSetCreatedForm =
     canEditStatusDetails && isMeetingScheduleSetCreatedStatus(draftStatus);
   /**
+   * 付随項目4つ（初回商談実施日・片クロor両クロ・商談場所・返待ち回答日）を
+   * 出すか。アポキャンだけ false。
+   *
+   * 見るのは**入力中の**商談ステータス。商談待ち→アポキャンを選んだ時点で
+   * 消える。商談ステータスの行そのものは残すので、
+   * showSetCreatedForm は落とさずこの値で個別に出し分ける
+   */
+  const showMeetingInputs = showsMeetingScheduleInputFields(negotiationStatus);
+  /**
    * 返待ち回答日の枠は、見積ステータスが返待ちのときに加えて
    * 商談ステータスが返待ちのときも出す。必須の基準を商談ステータスへ
    * 移したため、広げないと「必須なのに入力欄が無い」状態になる
    */
+  // アポキャンでは showsMeetingScheduleHenmachiForm 自体が false を返す
   const showHenmachiForm =
     canEditStatusDetails &&
     showsMeetingScheduleHenmachiForm({
@@ -247,9 +258,13 @@ export function useMeetingScheduleStatusForm(
     canEditSchedule ||
     (showSetCreatedForm &&
       (canEditNegotiation ||
-        !lockedInputs.meetingDate ||
-        !lockedInputs.closeType ||
-        !lockedInputs.meetingPlace)) ||
+        // 出していない項目は「触れる項目」に数えない。
+        // 数えると、何も変えられないのに
+        // 「入力項目を変更すると保存できます」と出てしまう
+        (showMeetingInputs &&
+          (!lockedInputs.meetingDate ||
+            !lockedInputs.closeType ||
+            !lockedInputs.meetingPlace)))) ||
     (showHenmachiForm && !lockedInputs.responseDate);
 
   /** 押せない理由。保存中は出さない（ボタンの文言で分かる） */
@@ -340,6 +355,7 @@ export function useMeetingScheduleStatusForm(
     showScheduleText,
     showSaveBar,
     showSetCreatedForm,
+    showMeetingInputs,
     showHenmachiForm,
     canEditNegotiation,
     negotiationOptions,

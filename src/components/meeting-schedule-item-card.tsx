@@ -120,6 +120,7 @@ export function MeetingScheduleItemCard({
     showScheduleText,
     showSaveBar,
     showSetCreatedForm,
+    showMeetingInputs,
     showHenmachiForm,
     canEditNegotiation,
     negotiationOptions,
@@ -301,6 +302,7 @@ export function MeetingScheduleItemCard({
             server={server}
             saving={saving}
             showSetCreatedForm={showSetCreatedForm}
+            showMeetingInputs={showMeetingInputs}
             showHenmachiForm={showHenmachiForm}
             canEditNegotiation={canEditNegotiation}
             negotiationOptions={negotiationOptions}
