@@ -121,26 +121,17 @@ function formatContractDateLabel(dateYmd: string): string {
   return display ? `契約日：${display}` : "契約日：—";
 }
 
-function podiumCardShell(rank: number): string {
-  const base = "relative rounded-[1.35rem] border px-4 py-4 ";
-  if (rank === 1) {
-    return `${base} border-amber-200 bg-amber-50/70 shadow-sm dark:border-amber-400/40 dark:bg-transparent dark:shadow-[0_0_24px_rgba(234,179,8,0.25)]`;
-  }
-  if (rank === 2) {
-    return `${base} border-slate-200 bg-slate-100/80 shadow-sm dark:border-slate-400/40 dark:bg-transparent dark:shadow-[0_0_20px_rgba(148,163,184,0.3)]`;
-  }
-  if (rank === 3) {
-    return `${base} border-orange-200 bg-orange-50/60 shadow-sm dark:border-amber-600/35 dark:bg-transparent dark:shadow-[0_0_20px_rgba(180,83,9,0.25)]`;
-  }
-  return `${base} border-slate-100 bg-white dark:border-slate-700/60 dark:bg-transparent`;
-}
+/**
+ * 台座カードの枠と背景。**全順位で同じ色**（1〜3位の琥珀・銀・銅は廃止）。
+ * 順位バッジ（RANK_BADGE_CLASS）と同じ方針。全部門で共有している。
+ *
+ * 大きさ（角丸・余白）は従来どおり。色分けだけをやめた。
+ */
+const PODIUM_CARD_SHELL =
+  "relative rounded-[1.35rem] border px-4 py-4 border-slate-100 bg-white dark:border-slate-700/60 dark:bg-transparent";
 
-function podiumNameClass(rank: number): string {
-  if (rank === 1) return "text-amber-700 dark:text-white";
-  if (rank === 2) return "text-slate-800 dark:text-white";
-  if (rank === 3) return "text-orange-900 dark:text-white";
-  return "text-slate-800 dark:text-white";
-}
+/** 台座カードの氏名。順位による色分けは廃止 */
+const PODIUM_NAME_CLASS = "text-slate-800 dark:text-white";
 
 function ptValueClass(): string {
   return "font-bold text-emerald-600 dark:font-black dark:text-emerald-400 dark:drop-shadow-[0_0_16px_rgba(52,211,153,0.45)]";
@@ -385,7 +376,7 @@ function PtPodiumCard({
 }) {
   return (
     <div
-      className={`${podiumCardShell(row.rank)} ${
+      className={`${PODIUM_CARD_SHELL} ${
         row.isSelf ? "ring-2 ring-inset ring-cyan-300/80 dark:ring-cyan-400/35" : ""
       }`}
     >
@@ -408,7 +399,7 @@ function PtPodiumCard({
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-baseline gap-1.5">
             <p
-              className={`min-w-0 truncate text-[15px] font-bold ${podiumNameClass(row.rank)}`}
+              className={`min-w-0 truncate text-[15px] font-bold ${PODIUM_NAME_CLASS}`}
             >
               {row.staffName}
               {row.isSelf ? (
@@ -591,7 +582,7 @@ function SalesRankingSection({ rows }: { rows: RankingRow[] }) {
         const displayRank = i + 1;
         const isPodium = displayRank <= 3;
         const shell = isPodium
-          ? podiumCardShell(displayRank)
+          ? PODIUM_CARD_SHELL
           : "rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm dark:border-emerald-500/15 dark:bg-slate-900/50";
         return (
           <div
@@ -608,9 +599,7 @@ function SalesRankingSection({ rows }: { rows: RankingRow[] }) {
               </span>
               <div className="min-w-0 flex-1">
                 <p
-                  className={`truncate text-[14px] font-semibold ${
-                    isPodium ? podiumNameClass(displayRank) : "text-slate-800 dark:text-white"
-                  }`}
+                  className={`truncate text-[14px] font-semibold ${PODIUM_NAME_CLASS}`}
                 >
                   {row.staffName}
                   {row.isSelf ? (
@@ -641,7 +630,7 @@ function ApoPodiumCard({
 }) {
   return (
     <div
-      className={`${podiumCardShell(row.rank)} ${
+      className={`${PODIUM_CARD_SHELL} ${
         row.isSelf ? "ring-2 ring-inset ring-cyan-300/80 dark:ring-cyan-400/35" : ""
       }`}
     >
@@ -652,7 +641,7 @@ function ApoPodiumCard({
           {row.rank}
         </span>
         <div className="min-w-0 flex-1">
-          <p className={`truncate text-[15px] font-bold ${podiumNameClass(row.rank)}`}>
+          <p className={`truncate text-[15px] font-bold ${PODIUM_NAME_CLASS}`}>
             {row.staffName}
             {row.isSelf ? (
               <span className="ml-2 text-[11px] text-cyan-700 dark:text-cyan-300">あなた</span>
