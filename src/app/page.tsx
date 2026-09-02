@@ -94,20 +94,6 @@ function ApoListGlyph() {
   );
 }
 
-function SalesDashboardGlyph() {
-  return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M4 19V5M4 19h16M8 16v-4M12 16V8M16 16v-6"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 /** 営業進捗（タスクK）。目標に対する達成率のバーを模した形 */
 function SalesProgressGlyph() {
   return (
@@ -434,6 +420,7 @@ export default function HomeHubPage() {
                 boundStaffName={account.boundStaffName}
                 lineUserId={account.lineUserId}
                 disabled={false}
+                needsStaffBind={needsStaffBind}
                 onClose={() => setIsBulletinBoardVisible(false)}
               >
                 <HomeConstructionHandlerCases
@@ -562,14 +549,6 @@ export default function HomeHubPage() {
                 id="internal-common-menu"
                 className="flex flex-col gap-2 pl-2"
               >
-                <LiffMenuCard
-                  href="/sales-dashboard"
-                  title="営業ダッシュボード"
-                  description="当月の売上KPIや営業成績ランキングをリアルタイムで確認します。"
-                  icon={<SalesDashboardGlyph />}
-                  iconTone="blue"
-                  disabled={needsStaffBind}
-                />
                 <LiffMenuCard
                   href="/sales-progress"
                   title="営業進捗"

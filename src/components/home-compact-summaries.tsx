@@ -3,14 +3,9 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { LiffCard } from "@/components/liff-chrome";
-import { useBulletinRead } from "@/hooks/use-bulletin-read";
+import { LiffCard, LiffMenuCard } from "@/components/liff-chrome";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
-import {
-  bulletinTodayLabelJst,
-  isBulletinDateOnOrBefore,
-  type BulletinListResponse,
-} from "@/lib/bulletin-types";
+import { type BulletinListResponse } from "@/lib/bulletin-types";
 import { LIFF_SWR_DEFAULT_OPTIONS } from "@/lib/liff-swr";
 import { filterOpenMeetingScheduleItems } from "@/lib/meeting-schedule-negotiation-status";
 import type { MeetingSchedulePayload } from "@/lib/meeting-schedule-types";
@@ -21,6 +16,8 @@ type Props = {
   /** 掲示板の既読判定用（LINEユーザーID） */
   lineUserId?: string;
   disabled?: boolean;
+  /** 名簿と紐付いていない間は導線カードを押させない（ホームの他カードと同条件） */
+  needsStaffBind?: boolean;
   /** 掲示板セクション全体を閉じる */
   onClose?: () => void;
   /** 掲示板内の最下部に表示する追加コンテンツ */
@@ -37,10 +34,25 @@ type CustomersApiBody = {
 
 const PREVIEW_LIMIT = 3;
 
+/** 営業ランキングの導線アイコン（ホームのメニューから移設） */
+function SalesDashboardGlyph() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M4 19V5M4 19h16M8 16v-4M12 16V8M16 16v-6"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /**
  * ホーム最上部の掲示板囲い
  * - あいさつ
- * - 本日のお知らせ（上部バナー）
+ * - 営業ランキングの導線（旧・本日のお知らせバナーの位置）
  * - 書類未回収 | 商談進捗（横並びカード）
  */
 export function HomeCompactSummaries({
@@ -48,6 +60,7 @@ export function HomeCompactSummaries({
   boundStaffName,
   lineUserId = "",
   disabled = false,
+  needsStaffBind = false,
   onClose,
   children,
 }: Props) {
@@ -63,6 +76,13 @@ export function HomeCompactSummaries({
       ? "/api/customers?filter=missing_docs"
       : null;
 
+  /**
+   * 「本日のお知らせ」のバナーは消したが、**取得は残してある**。
+   *
+   * 戻すときに配線をやり直さずに済むようにするため。今は読み込み完了の
+   * 判定（下の loading）にだけ使っている。バナーを復活させるなら、
+   * ここの posts から当日ぶんと未読数を組み立て直す。
+   */
   const { data: bulletinData, isLoading: bulletinLoading } =
     useLiffSwr<BulletinListResponse>(bulletinPath, idToken, LIFF_SWR_DEFAULT_OPTIONS);
 
@@ -83,25 +103,6 @@ export function HomeCompactSummaries({
   useEffect(() => {
     setHydrated(true);
   }, []);
-
-  const { isRead } = useBulletinRead(lineUserId);
-
-  const today = bulletinTodayLabelJst();
-  const bulletinPosts = bulletinData?.posts ?? [];
-  const bulletinItems = useMemo(
-    () => bulletinPosts.filter((post) => post.date === today),
-    [bulletinPosts, today],
-  );
-  const bulletinUnreadCount = useMemo(
-    () =>
-      bulletinPosts.filter(
-        (post) =>
-          isBulletinDateOnOrBefore(post.date, today) && !isRead(post.id),
-      ).length,
-    [bulletinPosts, today, isRead],
-  );
-  const bulletinPreview = bulletinItems.slice(0, PREVIEW_LIMIT);
-  const bulletinRest = bulletinItems.length - bulletinPreview.length;
 
   /**
    * 商談ステータスで絞る。まだ変更の余地がある案件だけを出し、
@@ -130,8 +131,6 @@ export function HomeCompactSummaries({
   const docsPreview = docsItems.slice(0, PREVIEW_LIMIT);
   const docsRest = docsItems.length - docsPreview.length;
 
-  const bulletinReady =
-    Boolean(bulletinData?.configured) && !bulletinData?.error && !bulletinLoading;
   const meetingReady =
     Boolean(meetingData?.configured) && !meetingData?.error && !meetingLoading;
   const docsReady = !docsLoading && docsItems.length > 0;
@@ -185,65 +184,15 @@ export function HomeCompactSummaries({
           </p>
         ) : null}
 
-        {/* 上部バナー：本日のお知らせ（旧・書類未回収の位置） */}
-        {bulletinReady ? (
-          <section
-            aria-label="本日のお知らせ"
-            className="rounded-xl border border-pink-200/80 bg-pink-50/90 px-3 py-2.5 dark:border-pink-900/50 dark:bg-pink-950/25"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <p className="min-w-0 text-[13px] font-bold text-pink-950 dark:text-pink-100">
-                本日のお知らせ
-                <span className="ml-1.5 font-normal text-pink-800/80 dark:text-pink-200/80">
-                  {bulletinItems.length}件
-                </span>
-                {bulletinUnreadCount > 0 ? (
-                  <span className="ml-1.5 inline-flex items-center rounded-full bg-pink-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white dark:bg-pink-500">
-                    未読{bulletinUnreadCount}件
-                  </span>
-                ) : null}
-              </p>
-              <Link
-                href="/bulletin"
-                className="shrink-0 text-[12px] font-semibold text-pink-700 dark:text-pink-300"
-              >
-                ›
-              </Link>
-            </div>
-            {bulletinItems.length === 0 ? (
-              <p className="mt-1 text-[12px] text-pink-900/70 dark:text-pink-200/70">
-                なし
-              </p>
-            ) : (
-              <ul className="mt-1.5 flex flex-col gap-1">
-                {bulletinPreview.map((item) => (
-                  <li key={item.id} className="min-w-0">
-                    <Link
-                      href="/bulletin"
-                      className="flex items-start gap-1.5 active:opacity-70"
-                    >
-                      <span
-                        className="mt-1.5 size-1 shrink-0 rounded-full bg-pink-500"
-                        aria-hidden
-                      />
-                      <span className="line-clamp-2 text-[12px] font-medium leading-snug text-pink-950 dark:text-pink-50">
-                        {item.title}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {bulletinRest > 0 ? (
-              <Link
-                href="/bulletin"
-                className="mt-1.5 inline-block text-[11px] font-semibold text-pink-700 dark:text-pink-300"
-              >
-                +{bulletinRest}件
-              </Link>
-            ) : null}
-          </section>
-        ) : null}
+        {/* 「本日のお知らせ」のバナーがあった位置。導線はホームのここに集約する */}
+        <LiffMenuCard
+          href="/sales-dashboard"
+          title="営業ランキング"
+          description="当月の売上KPIや営業成績ランキングをリアルタイムで確認します。"
+          icon={<SalesDashboardGlyph />}
+          iconTone="blue"
+          disabled={needsStaffBind}
+        />
 
         {/* 下段：書類未回収 | 商談進捗 */}
         {showDocs || showMeeting ? (
