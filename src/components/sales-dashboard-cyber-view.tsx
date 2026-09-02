@@ -217,25 +217,33 @@ function ptBarTone(rate: number): "navy" | "red" {
  * 支社名そのものが長いときだけ、45% を上限に省略記号で切る。
  * 空文字（名簿から引けない）のときは何も出さない — 「未設定」とは書かない。
  */
+const PT_BRANCH_TEXT_CLASS =
+  "text-[11px] font-normal text-slate-500 dark:text-slate-400";
+
 function PtBranchLabel({ branch }: { branch: string }) {
   if (!branch.trim()) return null;
   return (
-    <span className="max-w-[45%] flex-none truncate text-[11px] font-normal text-slate-500 dark:text-slate-400">
+    <span className={`max-w-[45%] flex-none truncate ${PT_BRANCH_TEXT_CLASS}`}>
       {branch.trim()}
     </span>
   );
 }
 
-/** 顔写真の丸のサイズ。台座カード（上位3位）にだけ出す */
-const PT_AVATAR_SIZE = "size-8";
+/**
+ * 顔写真の枠。台座カード（上位3位）にだけ出す縦長の四角。
+ *
+ * **写真と頭文字の四角で必ず同じ寸法を使う。**寸法が違うと、写真の登録の
+ * 有無で行の高さが変わる。
+ */
+const PT_AVATAR_BOX = "h-[66px] w-[52px] shrink-0 rounded-md";
 
-/** 写真が無い・取れないときの丸。取得中もこれを出す（場所を空けない） */
+/** 写真が無い・取れないときの四角。取得中もこれを出す（場所を空けない） */
 function PtStaffAvatarFallback({ name }: { name: string }) {
   return (
     <div
       role="img"
       aria-label={name ? `${name} の写真` : "担当者の写真"}
-      className={`${PT_AVATAR_SIZE} flex shrink-0 items-center justify-center rounded-full bg-slate-100 text-[14px] font-bold text-slate-600 ring-1 ring-slate-200/80 dark:bg-slate-700 dark:text-slate-200 dark:ring-slate-600`}
+      className={`${PT_AVATAR_BOX} flex items-center justify-center bg-slate-100 text-[20px] font-bold text-slate-500 ring-1 ring-slate-200/80 dark:bg-slate-700 dark:text-slate-300 dark:ring-slate-600`}
     >
       {name ? name.slice(0, 1) : "—"}
     </div>
@@ -306,7 +314,7 @@ function PtStaffAvatar({
     <img
       src={photoUrl}
       alt={name ? `${name} の写真` : "担当者の写真"}
-      className={`${PT_AVATAR_SIZE} shrink-0 rounded-full object-cover ring-1 ring-slate-200/80 dark:ring-slate-600`}
+      className={`${PT_AVATAR_BOX} object-cover ring-1 ring-slate-200/80 dark:ring-slate-600`}
     />
   );
 }
@@ -472,23 +480,17 @@ function PtPodiumCard({
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className="flex w-full items-start gap-3 text-left"
+        className="flex w-full items-center gap-3 text-left"
       >
         <span
           className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${RANK_BADGE_CLASS}`}
         >
           {row.rank}
         </span>
-        {isPtTargetAchieved(row.achievementRate) ? (
-          <PtAchievedCoin />
-        ) : (
-          <span className="pt-coin-slot shrink-0" aria-hidden="true" />
-        )}
-        <div className="self-center">
-          <PtStaffAvatar staffName={row.staffName} idToken={idToken} />
-        </div>
+        <PtStaffAvatar staffName={row.staffName} idToken={idToken} />
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-baseline gap-1.5">
+          {/* 1行目: 氏名 ＋ 花丸（写真が基準点になるので、印は氏名の右） */}
+          <div className="flex min-w-0 items-center gap-1.5">
             <p
               className={`min-w-0 truncate text-[15px] font-bold ${PODIUM_NAME_CLASS}`}
             >
@@ -499,8 +501,14 @@ function PtPodiumCard({
                 </span>
               ) : null}
             </p>
-            <PtBranchLabel branch={row.branch} />
+            {isPtTargetAchieved(row.achievementRate) ? <PtAchievedCoin /> : null}
           </div>
+          {/* 2行目: 支社名。氏名と1行に並べていた頃の窮屈さを解消する */}
+          {row.branch.trim() ? (
+            <p className={`mt-0.5 truncate ${PT_BRANCH_TEXT_CLASS}`}>
+              {row.branch.trim()}
+            </p>
+          ) : null}
           <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
             {expanded ? "▲ 明細を閉じる" : "▼ PT明細"}
           </p>
