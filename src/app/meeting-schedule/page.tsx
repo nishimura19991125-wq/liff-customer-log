@@ -28,6 +28,7 @@ import {
 import type { MeetingScheduleCardPatch } from "@/lib/meeting-schedule-card-save";
 import { groupMeetingScheduleItemsByDate } from "@/lib/meeting-schedule-list-groups";
 import { filterOpenMeetingScheduleItems } from "@/lib/meeting-schedule-negotiation-status";
+import { patchMeetingSchedule } from "@/lib/meeting-schedule-status-client";
 import type { MeetingSchedulePayload } from "@/lib/meeting-schedule-types";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
@@ -44,42 +45,6 @@ function todayYmdJst(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo" }).format(
     new Date(),
   );
-}
-
-/**
- * 更新系 API の呼び出し。本文が空でも落ちないように text で受けてから解釈する。
- * エラー本文はサーバが用意した文言だけを使い、例外の内容は画面に出さない。
- */
-async function patchMeetingSchedule(
-  path: string,
-  idToken: string,
-  body: unknown,
-): Promise<{
-  ok: boolean;
-  error?: string;
-  body?: { estimateStatus?: string };
-}> {
-  try {
-    const res = await fetch(path, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${idToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-    const raw = await res.text();
-    let parsed: { error?: string; estimateStatus?: string } = {};
-    try {
-      parsed = raw.trim() ? (JSON.parse(raw) as typeof parsed) : {};
-    } catch {
-      parsed = {};
-    }
-    if (!res.ok) return { ok: false, error: parsed.error };
-    return { ok: true, body: parsed };
-  } catch {
-    return { ok: false, error: "通信に失敗しました。電波状況をご確認ください" };
-  }
 }
 
 export default function MeetingSchedulePage() {
