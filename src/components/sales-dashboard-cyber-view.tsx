@@ -315,28 +315,28 @@ function formatAchievementRateCompact(rate: number): string {
   return `${Math.round(Number.isFinite(rate) ? rate : 0)}%`;
 }
 
-/** 内外どちらでも確保するラベル枠。上限「3,764,008 149%」に合わせる */
-const PT_LABEL_SLOT_CLASS = "w-[92px]";
+/** 内外どちらでも確保するラベル枠。2行の広いほう＝PT値7桁に合わせる */
+const PT_LABEL_SLOT_CLASS = "w-[72px]";
 
 /**
  * PT値＋達成率を棒の内側に置ける最小の割合（%）。
  *
- * 11px で「3,764,008 149%」を、数字1文字 ≒ 0.6em＝6.6px・カンマ ≒ 3.3px・
- * 「%」≒ 9.9px として見積もると
- *   PT値 7桁 46.2 ＋ カンマ2つ 6.6 ＝ 約 53px
- *   達成率 3桁 19.8 ＋ %  9.9     ＝ 約 30px
- *   2つの間の ml-2                ＝ 8px
- * で文字だけ約 90px、棒の左右 px-2 を足して約 106px。
+ * ラベルは2行なので、要る横幅は**広いほうの1行＝PT値7桁**だけになる。
+ * 11px で「3,764,008」を、数字1文字 ≒ 0.6em＝6.6px・カンマ ≒ 3.3px として
+ *   7桁 46.2 ＋ カンマ2つ 6.6 ＝ 約 53px
+ * 棒の左右 px-2 を足して約 71px。達成率（約 30px）は下の行へ回ったので
+ * 横幅には効かない。
  * LIFF の狭い端末（幅 320px）では、カードの左右余白 32px・順位バッジと
- * その gap 48px・右のラベル枠 92px と gap 8px を引いて棒は約 140px。
- * 106 / 140 ≒ 0.76 なので 75 とする。達成率だけだった頃（18）より大きい。
+ * その gap 48px・右のラベル枠 72px と gap 8px を引いて棒は約 160px。
+ * 71 / 160 ≒ 0.44 なので 45 とする。1行に並べていた頃（75）より下がり、
+ * 内側に入る行が増える。
  *
  * ⚠ **実測ではなく字幅からの算出**（レンダリングして測る手段が無いため）。
  *   画面幅が広い端末では棒が伸びるので、内側に入る行はこれより増える。
- *   目標未設定の行はラベルが PT値だけで短いが、行ごとに閾値を変えると
- *   同じ長さの棒で内外が入れ替わって見えるため、判定は一本にしている。
+ *   目標未設定の行はラベルが1行だけだが、必要な横幅は同じ（PT値）なので
+ *   判定は一本のままでよい。
  */
-const PT_LABEL_INSIDE_MIN_RATIO = 75;
+const PT_LABEL_INSIDE_MIN_RATIO = 45;
 
 /**
  * 総合PTランキングの横棒。**長さは PT 順（1位を100%）。**
@@ -344,11 +344,14 @@ const PT_LABEL_INSIDE_MIN_RATIO = 75;
  * 長さに達成率を使うと、目標が小さい人ほど棒が長くなり、PT の順位と棒の
  * 並びが食い違う。長さは PT で決め、達成率は棒の中の文字で伝える。
  * 棒が目標と無関係になったので、目標未設定の行も**通常の塗り**にする
- * （その行だけ棒の中に何も出さない）。
+ * （その行のラベルは PT値の1行だけになる）。
+ *
+ * ラベルは2行（PT値・達成率）。1行に並べるより必要な横幅が半分になるので、
+ * 棒の高さを2行ぶん（h-10）に取って内側に入る行を増やしている。
  *
  * 色は達成率で変える（100%以上 amber・未満と未設定 emerald）。
- * ラベル（PT値と達成率）の枠は内外どちらでも固定幅で確保する。桁数で棒の
- * 長さが揺れず、行ごとの棒の基準幅もそろうので、長さをそのまま比べられる。
+ * ラベルの枠は内外どちらでも固定幅で確保する。桁数で棒の長さが揺れず、
+ * 行ごとの棒の基準幅もそろうので、長さをそのまま比べられる。
  */
 function PtRankingBar({
   pt,
@@ -366,27 +369,31 @@ function PtRankingBar({
   const tone = ptRateTone(rate);
   const hasTarget = target > 0;
   const inside = ratio >= PT_LABEL_INSIDE_MIN_RATIO;
-  // 目標が無い行は達成率そのものが無いので、PT値だけを出す
+  /**
+   * 2行のラベル。内側でも外側でも同じものを出す
+   * （行数が変わると行の高さがそろわない）。
+   * 目標が無い行は達成率そのものが無いので、PT値の1行だけになる。
+   */
   const label = (
-    <>
-      {formatPt(pt)}
+    <span className="block whitespace-nowrap text-right leading-tight">
+      <span className="block">{formatPt(pt)}</span>
       {hasTarget ? (
-        <span className="ml-2">{formatAchievementRateCompact(rate)}</span>
+        <span className="block">{formatAchievementRateCompact(rate)}</span>
       ) : null}
-    </>
+    </span>
   );
 
   return (
     <>
       <div className="mt-2 flex items-center gap-2">
-        <div className="h-6 flex-1 rounded-full bg-slate-200 dark:bg-slate-700/60">
+        <div className="h-10 flex-1 rounded-full bg-slate-200 dark:bg-slate-700/60">
           <div
-            className={`flex h-6 items-center justify-end overflow-hidden rounded-full transition-[width] duration-300 ${RANK_BAR_TONES[tone]}`}
+            className={`flex h-10 items-center justify-end overflow-hidden rounded-full transition-[width] duration-300 ${RANK_BAR_TONES[tone]}`}
             style={{ width: `${ratio}%` }}
           >
             {inside ? (
               <span
-                className={`whitespace-nowrap px-2 text-[11px] font-bold tabular-nums ${PT_BAR_INSIDE_TEXT_TONES[tone]}`}
+                className={`px-2 text-[11px] font-bold tabular-nums ${PT_BAR_INSIDE_TEXT_TONES[tone]}`}
               >
                 {label}
               </span>
@@ -395,7 +402,7 @@ function PtRankingBar({
         </div>
         {/* 内側に置いたときも枠は空けておく（棒の基準幅を行ごとにそろえる） */}
         <span
-          className={`${PT_LABEL_SLOT_CLASS} shrink-0 whitespace-nowrap text-right text-[11px] tabular-nums text-slate-600 dark:text-slate-300`}
+          className={`${PT_LABEL_SLOT_CLASS} shrink-0 text-[11px] tabular-nums text-slate-600 dark:text-slate-300`}
         >
           {inside ? null : label}
         </span>
