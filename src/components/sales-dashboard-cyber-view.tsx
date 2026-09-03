@@ -7,7 +7,7 @@ import { formatDisplayYmd } from "@/lib/format-display-ymd";
 import { barRatio } from "@/lib/sales-dashboard-bar-ratio";
 
 export type DashboardPeriod = "current" | "previous";
-export type DashboardDepartment = "pt" | "sales" | "apo" | "tenka";
+export type DashboardDepartment = "pt" | "apo";
 
 export type DashboardKpi = {
   pt: number;
@@ -52,6 +52,18 @@ export type PtBreakdownRow = {
   dateYmd: string;
 };
 
+/**
+ * API の応答そのまま。
+ *
+ * ⚠ **画面で使わない項目が残っている。**「売上金額部門」と「AP天下賞」の
+ *   タブを消したため、`tenkaReady` / `tenkaError` / `tenkaKpi` /
+ *   `tenkaRanking` と、行の `salesAmount`・`kpi` は描画していない。
+ *
+ *   サーバ側を削っていないのは負荷が下がらないから。天下賞はアポ件数と
+ *   同じ fields / records から集計しており、売上もPT集計と同じレコードを
+ *   読んでいる。止めても @pocket への問い合わせは減らず、戻すときの手間
+ *   だけが増える。型に残してあるので、タブを戻すなら描画を足すだけでよい。
+ */
 export type DashboardPayload = {
   staffName: string;
   period: DashboardPeriod;
@@ -74,18 +86,8 @@ export type DashboardPayload = {
 
 const DEPARTMENT_TABS: Array<{ id: DashboardDepartment; label: string }> = [
   { id: "pt", label: "総合PTランキング" },
-  { id: "sales", label: "売上金額部門" },
   { id: "apo", label: "アポ件数部門" },
-  { id: "tenka", label: "AP天下賞" },
 ];
-
-function formatYen(n: number): string {
-  return new Intl.NumberFormat("ja-JP", {
-    style: "currency",
-    currency: "JPY",
-    maximumFractionDigits: 0,
-  }).format(n);
-}
 
 function formatPt(n: number): string {
   return new Intl.NumberFormat("ja-JP").format(Math.round(n));
@@ -138,35 +140,20 @@ function ptValueClass(): string {
 }
 
 /**
- * 棒の色。**その行で棒が表している数値の文字色に合わせる。**
+ * 順位比較の横棒（アポ件数部門）。1位を100%とした割合で伸ばす。
  *
- * 売上金額部門はカードに PT（緑）と売上（黒／白）が並ぶので、棒まで緑だと
- * どちらの棒か分からない。売上だけ色を変える。
- *
- * Tailwind は動的なクラス名を生成しないので、完成形の文字列を並べておく。
- */
-const RANK_BAR_TONES = {
-  emerald: "bg-emerald-500 dark:bg-emerald-400",
-  sky: "bg-sky-500 dark:bg-sky-400",
-} as const;
-
-type RankBarTone = keyof typeof RANK_BAR_TONES;
-
-/**
- * 順位比較の横棒。1位を100%とした割合で伸ばす。
- *
+ * 以前は色を差し替えられるようにしていたが、切り替えていたのは売上金額部門
+ * だけで、その部門を消したため色は緑の1色になった。
  * 幅は算出値なので style で渡す。Tailwind は動的なクラス名を生成しない。
  * 数値は同じ行に出ているので、読み上げの対象からは外す。
  */
 function RankBar({
   value,
   top,
-  tone = "emerald",
 }: {
   value: number;
   /** 1位の値。棒の基準（0 なら棒は伸びない） */
   top: number;
-  tone?: RankBarTone;
 }) {
   return (
     <div
@@ -174,7 +161,7 @@ function RankBar({
       aria-hidden
     >
       <div
-        className={`h-1.5 rounded-full transition-[width] duration-300 ${RANK_BAR_TONES[tone]}`}
+        className="h-1.5 rounded-full bg-emerald-500 transition-[width] duration-300 dark:bg-emerald-400"
         style={{ width: `${barRatio(value, top)}%` }}
       />
     </div>
@@ -185,8 +172,8 @@ function RankBar({
 const PT_TARGET_ACHIEVED_RATE = 100;
 
 /**
- * 総合PTの棒の色。**この2色は総合PT専用**で、他部門（売上・アポ・天下賞）が
- * 使う RANK_BAR_TONES とは別に持つ。
+ * 総合PTの棒の色。**この2色は総合PT専用**で、アポ件数部門の RankBar
+ * （緑の1色）とは別に持つ。
  *
  * 任意値クラスは完成形をそのまま書く（Tailwind は動的なクラス名を作らない）。
  *
@@ -657,66 +644,6 @@ function PtRankingSection({
   );
 }
 
-function SalesRankingSection({ rows }: { rows: RankingRow[] }) {
-  if (rows.length === 0) {
-    return (
-      <LiffCard>
-        <p className="px-4 py-6 text-center text-[13px] text-slate-500 dark:text-slate-400">
-          対象期間のデータがありません
-        </p>
-      </LiffCard>
-    );
-  }
-  const sorted = [...rows].sort((a, b) => b.salesAmount - a.salesAmount);
-  /**
-   * 棒の基準。**この部門だけ並べ替えが画面側**なので、rows[0]（PT順の1位）
-   * ではなく並べ替えた後の先頭を見る
-   */
-  const topSales = sorted[0]?.salesAmount ?? 0;
-  return (
-    <div className="flex flex-col gap-2">
-      {sorted.map((row, i) => {
-        const displayRank = i + 1;
-        const isPodium = displayRank <= 3;
-        const shell = isPodium
-          ? PODIUM_CARD_SHELL
-          : "rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm dark:border-emerald-500/15 dark:bg-slate-900/50";
-        return (
-          <div
-            key={`sales-${row.staffName}`}
-            className={`${shell} ${
-              row.isSelf ? "ring-2 ring-inset ring-cyan-300/70 dark:ring-cyan-400/30" : ""
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <span
-                className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${RANK_BADGE_CLASS}`}
-              >
-                {displayRank}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p
-                  className={`truncate text-[14px] font-semibold ${PODIUM_NAME_CLASS}`}
-                >
-                  {row.staffName}
-                  {row.isSelf ? (
-                    <span className="ml-2 text-[11px] text-cyan-700 dark:text-cyan-300">あなた</span>
-                  ) : null}
-                </p>
-                <p className={`text-[12px] ${ptValueClass()}`}>{formatPt(row.pt)} PT</p>
-              </div>
-              <p className="shrink-0 text-right text-[15px] font-bold text-slate-800 dark:text-white">
-                {formatYen(row.salesAmount)}
-              </p>
-            </div>
-            <RankBar value={row.salesAmount} top={topSales} tone="sky" />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function ApoPodiumCard({
   row,
   topCount,
@@ -840,17 +767,8 @@ export function SalesDashboardCyberView({
   const apoConfigured = data.apoEnabled;
   const apoReady = data.apoReady;
 
-  const tenkaConfigured = data.apoEnabled;
-  const tenkaReady = data.tenkaReady;
-
   const rankingTitle =
-    department === "pt"
-      ? "総合PTランキング"
-      : department === "sales"
-        ? "売上金額ランキング"
-        : department === "apo"
-          ? "アポ件数ランキング"
-          : "AP天下賞ランキング";
+    department === "pt" ? "総合PTランキング" : "アポ件数ランキング";
 
   return (
     <div className="flex flex-col gap-5">
@@ -899,22 +817,6 @@ export function SalesDashboardCyberView({
           </LiffCard>
         ) : department === "apo" ? (
           <ApoRankingSection rows={data.apoRanking} />
-        ) : department === "tenka" && !tenkaConfigured ? (
-          <LiffCard>
-            <p className="px-4 py-6 text-center text-[13px] text-slate-500 dark:text-slate-400">
-              AP天下賞ランキングは未設定です（SALES_DASHBOARD_APO_APP_ID を設定してください）
-            </p>
-          </LiffCard>
-        ) : department === "tenka" && !tenkaReady ? (
-          <LiffCard>
-            <p className="px-4 py-6 text-center text-[13px] text-red-800 dark:text-red-300 whitespace-pre-wrap">
-              {data.tenkaError ?? "AP天下賞ランキングの集計に失敗しました"}
-            </p>
-          </LiffCard>
-        ) : department === "tenka" ? (
-          <ApoRankingSection rows={data.tenkaRanking} />
-        ) : department === "sales" ? (
-          <SalesRankingSection rows={data.ranking} />
         ) : (
           <PtRankingSection
             rows={data.ranking}
