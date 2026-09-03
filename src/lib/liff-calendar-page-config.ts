@@ -1,3 +1,13 @@
+/**
+ * カレンダー月ページ（liff-calendar-month-page.tsx）の画面ごとの設定。
+ *
+ * ⚠ コミュニケーションブリッジを削除したため、いまの利用者は工事
+ *    カレンダーだけになった。ブリッジ側でしか使っていなかった項目
+ *    （添付プレビュー・横並び・日付詳細の文言など）は**未使用のまま
+ *    残している**。共用部品の分岐整理は別作業として切り出すため、
+ *    ここでは型も分岐も畳まない（工事カレンダーの表示ロジックを
+ *    書き換えるリスクを避ける）。
+ */
 export type LiffCalendarPageConfig = {
   title: string;
   description: string;
@@ -16,7 +26,7 @@ export type LiffCalendarPageConfig = {
   showEmptySlotNotation?: boolean;
   /** 月マス内のバッジ（新・既・空枠・画像など）を表示する */
   showDayCellBadges?: boolean;
-  /** 日付詳細見出しの末尾（例: のコミュニケーションブリッジ） */
+  /** 日付詳細見出しの末尾（例: の◯◯）。現在は未使用 */
   dayDetailHeadingSuffix?: string;
   /** 日付詳細が空のときのメッセージ */
   dayDetailEmptyMessage?: string;
@@ -33,8 +43,9 @@ export type LiffCalendarPageConfig = {
    * できない設定になっているが、導線があると参照から編集につながる。
    * アプリ側（工事日を変更・工事対応者の変更）で操作してもらう。
    *
-   * ⚠ この画面部品はコミュニケーションブリッジと共用している。あちらは
-   *    別の画面なので既定のまま（開ける）。閉じるなら false を足すだけ。
+   * ⚠ コミュニケーションブリッジを削除したため、いまの利用者は工事
+   *    カレンダーだけ。**分岐は残してある。** 「@pocket を開かせない」は
+   *    業務判断で変わり得るので、true にするだけで戻せる形にしておく。
    */
   showCaseAccessLink?: boolean;
   /**
@@ -45,8 +56,8 @@ export type LiffCalendarPageConfig = {
    * （showCaseAccessLink）を閉じたのは「参照から編集につながる」ため
    * だが、こちらはアプリ側の編集経路なので方針と矛盾しない。
    *
-   * ⚠ この画面部品はコミュニケーションブリッジと共用している。
-   *    あちらは未指定のまま（出さない）。
+   * ⚠ コミュニケーションブリッジを削除したため、いまの利用者は工事
+   *    カレンダーだけ。既定（未指定＝出さない）は残してある。
    */
   showCustomerInfoLink?: boolean;
 };
@@ -66,25 +77,3 @@ export const CONSTRUCTION_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig = {
   // 代わりに、アプリ内のお客様情報（契約情報入力フォーム）へ飛べるようにする
   showCustomerInfoLink: true,
 };
-
-export const COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig =
-  {
-    title: "コミュニケーションブリッジ",
-    description:
-      "日付をタップで下に一覧表示します。添付画像をタップして拡大表示できます。",
-    calendarApiPath: "/api/communication-bridge/calendar",
-    disabledFallbackMessage:
-      "コミュニケーションブリッジは環境変数の設定後に利用できます。",
-    enableNewRecordPanel: false,
-    enableEmptySlotFill: false,
-    showAttachmentPreviews: true,
-    attachmentApiPath: "/api/communication-bridge/attachment",
-    showEmptySlotGridStyle: false,
-    showEmptySlotNotation: false,
-    showDayCellBadges: false,
-    dayDetailHeadingSuffix: "のコミュニケーションブリッジ",
-    dayDetailEmptyMessage: "この日のコミュニケーションブリッジはありません",
-    desktopSideBySideLayout: true,
-    fitAttachmentToViewport: true,
-    emphasizeSelectedDay: true,
-  };

@@ -35,7 +35,6 @@ LINE LIFF 上で動く社内業務ハブ。スタッフが LINE ログインし�
 | `/bulletin` | 社内掲示板 |
 | `/internal-events` | 社内イベント一覧 |
 | `/internal-events/[slug]` | 社内イベント各セクション |
-| `/communication-bridge` | コミュニケーションブリッジ用カレンダー |
 | `/meeting-schedule` | 面談予定一覧・更新 |
 | `/apo-acquisition` | APO 獲得フォーム |
 
@@ -91,7 +90,6 @@ LINE LIFF 上で動く社内業務ハブ。スタッフが LINE ログインし�
 | 勤怠 | 出勤/退勤打刻、月カレンダー |
 | 稼働終了報告 | 日次の稼働終了報告登録 |
 | 社内イベント | 朝礼・連絡先・組織図など静的/API セクション |
-| コミュニケーションブリッジ | 別カレンダー＋添付プレビュー |
 | 面談予定 | 一覧・ステータス/日程更新 |
 | APO 獲得 | フォーム定義取得＋レコード登録 |
 | ホームおみくじ | 役割別のビジネスフォーチュン文言 |
@@ -134,7 +132,6 @@ LINE LIFF 上で動く社内業務ハブ。スタッフが LINE ログインし�
 - `GET|POST /api/work-end-report`
 - `GET /api/meeting-schedule` / `PATCH .../status` / `PATCH .../schedule`
 - `GET /api/apo-acquisition/form` / `POST /api/apo-acquisition/records`
-- `GET /api/communication-bridge` / `.../calendar` / `.../attachment`
 - `GET /api/internal-events/contacts` / `.../vcard`
 
 ---
@@ -169,7 +166,7 @@ LINE LIFF 上で動く社内業務ハブ。スタッフが LINE ログインし�
 - **掲示板:** `BULLETIN_*`, `BULLETIN_VIEWS_*`
 - **勤怠 / 稼働終了:** `ATTENDANCE_*`, `WORK_END_REPORT_*`
 - **面談 / APO:** `MEETING_SCHEDULE_*`, `APO_ACQUISITION_*`
-- **その他:** `COMMUNICATION_BRIDGE_*`, `PRODUCT_CATALOG_*`, `TRADING_PARTNER_*`
+- **その他:** `PRODUCT_CATALOG_*`, `TRADING_PARTNER_*`
 
 ---
 

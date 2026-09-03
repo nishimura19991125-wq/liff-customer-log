@@ -500,6 +500,18 @@ function countDayBadges(
   return { newBuild, existing, emptySlots, attachmentItems };
 }
 
+/**
+ * ここから CalendarEmptySlotReadOnly までの4つ
+ * （buildAttachmentImageUrl / AuthenticatedAttachmentImage /
+ *   AttachmentLightbox / CalendarEmptySlotReadOnly）は、
+ * **コミュニケーションブリッジ削除後、未使用のまま残している。**
+ *
+ * 添付プレビューと読み取り専用の空き枠カードはブリッジ専用で、
+ * 工事カレンダーの設定（showAttachmentPreviews 未指定・
+ * enableEmptySlotFill: true）では描画されない。
+ * 消すと工事カレンダーの表示ロジックに手を入れることになるため、
+ * 共用部品の分岐整理は別作業として切り出す。
+ */
 function buildAttachmentImageUrl(
   attachmentApiPath: string,
   recordId: string | null,
@@ -649,6 +661,7 @@ function AttachmentLightbox({
   );
 }
 
+/** ブリッジ削除後、未使用のまま残している（上の注記を参照） */
 function CalendarEmptySlotReadOnly({
   item,
   idToken,

@@ -10,10 +10,7 @@ import {
   customerInfoRecordIdLookupPath,
   shouldShowCustomerInfoLink,
 } from "@/lib/calendar-customer-info-link";
-import {
-  COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG,
-  CONSTRUCTION_CALENDAR_PAGE_CONFIG,
-} from "@/lib/liff-calendar-page-config";
+import { CONSTRUCTION_CALENDAR_PAGE_CONFIG } from "@/lib/liff-calendar-page-config";
 
 /**
  * 案件カード → お客様情報（契約情報入力フォーム）の導線。
@@ -32,14 +29,14 @@ describe("設定での出し分け", () => {
     ).toBe(true);
   });
 
-  it("★ コミュニケーションブリッジでは出さない（未指定＝既定）", () => {
-    // 画面部品を共用しているので、明示的に true にした画面だけに出す
-    expect(
-      COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG.showCustomerInfoLink,
-    ).toBeUndefined();
-    expect(
-      shouldShowCustomerInfoLink(COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG, T),
-    ).toBe(false);
+  it("★ 未指定の画面では出さない（既定は false）", () => {
+    // 共用部品なので、明示的に true にした画面だけに出す。
+    // 比較対象だったコミュニケーションブリッジは削除したが、
+    // 既定で出ないことは画面が増えたときのために固定しておく
+    expect(shouldShowCustomerInfoLink({}, T)).toBe(false);
+    expect(shouldShowCustomerInfoLink({ showCustomerInfoLink: undefined }, T)).toBe(
+      false,
+    );
   });
 
   it("false を明示した画面でも出さない", () => {

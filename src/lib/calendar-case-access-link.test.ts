@@ -3,10 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG,
-  CONSTRUCTION_CALENDAR_PAGE_CONFIG,
-} from "@/lib/liff-calendar-page-config";
+import { CONSTRUCTION_CALENDAR_PAGE_CONFIG } from "@/lib/liff-calendar-page-config";
 
 /**
  * 工事カレンダーから @pocket への導線を消した件。
@@ -15,8 +12,10 @@ import {
  * 参照から編集につながる。アプリ側（工事日を変更・工事対応者の変更）で
  * 操作してもらう。
  *
- * ⚠ 画面部品はコミュニケーションブリッジと共用している。あちらは別の画面
- *    なので従来どおり開ける。ここではその切り分けを固定する。
+ * ⚠ 画面部品はコミュニケーションブリッジと共用していたが、そちらは削除した。
+ *    比較対象は消えたが、**工事カレンダー側の状態を固定する意味は残る**ので
+ *    このファイルは残してある（ブリッジとの比較でしか意味を持たない
+ *    テストだけを削除した）。
  */
 
 const ROOT = process.cwd();
@@ -47,21 +46,6 @@ describe("工事カレンダーの設定", () => {
   it("★ 空き枠の入力は残す（今回の対象外）", () => {
     expect(CONSTRUCTION_CALENDAR_PAGE_CONFIG.enableEmptySlotFill).toBe(true);
     expect(CONSTRUCTION_CALENDAR_PAGE_CONFIG.enableNewRecordPanel).toBe(true);
-  });
-});
-
-describe("他の画面は変えない", () => {
-  it("★ コミュニケーションブリッジは従来どおり開ける", () => {
-    // 未指定＝既定（開ける）。閉じるなら false を足すだけ
-    expect(
-      COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG.showCaseAccessLink,
-    ).toBeUndefined();
-  });
-
-  it("★ ブリッジの説明文は触っていない", () => {
-    expect(COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG.description).toBe(
-      "日付をタップで下に一覧表示します。添付画像をタップして拡大表示できます。",
-    );
   });
 });
 
@@ -135,11 +119,8 @@ describe("空き枠カードの導線", () => {
     return to > from ? src.slice(from, to) : src.slice(from);
   }
 
-  it("★ 画面ごとに別の部品が出る（共用ではない）", () => {
+  it("★ 工事カレンダーで出るのは EmptySlotCard（読み取り専用の方ではない）", () => {
     expect(CONSTRUCTION_CALENDAR_PAGE_CONFIG.enableEmptySlotFill).toBe(true);
-    expect(COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG.enableEmptySlotFill).toBe(
-      false,
-    );
 
     const src = read(PAGE);
     expect(src).toContain("{config.enableEmptySlotFill ? (");
@@ -161,10 +142,12 @@ describe("空き枠カードの導線", () => {
     expect(card).toContain('{open ? "入力を閉じる" : "情報を入力"}');
   });
 
-  it("★ ブリッジ側（CalendarEmptySlotReadOnly）は触っていない", () => {
+  it("★ CalendarEmptySlotReadOnly は未使用のまま残っている（消していない）", () => {
+    // ブリッジ専用の部品。削除のついでに消すと工事カレンダーの表示
+    // ロジックに手が入るので、分岐整理は別作業として切り出した。
+    // 中身が削られていないことをここで見張る
     const card = bodyOf(read(PAGE), "function CalendarEmptySlotReadOnly({");
 
-    // 添付画像の下のボタンと、カード全体のタップ。どちらも従来どおり
     expect(card).toContain("@pocket で開く →");
     expect(card).toContain("タップして @pocket で開く →");
     expect(card).toContain("onOpenPocket(url)");
@@ -176,6 +159,7 @@ describe("空き枠カードの導線", () => {
     // 残る呼び出しは、どちらも工事カレンダーでは通らない分岐の中にある
     //   renderCaseCard            … showCaseAccessLink: false で通らない
     //   CalendarEmptySlotReadOnly … enableEmptySlotFill: true なので出ない
+    //                               （ブリッジ削除後も未使用のまま残している）
     expect(CONSTRUCTION_CALENDAR_PAGE_CONFIG.showCaseAccessLink).toBe(false);
     expect(CONSTRUCTION_CALENDAR_PAGE_CONFIG.enableEmptySlotFill).toBe(true);
     expect(src.split("openExternal(item.accessEditUrl)").length - 1).toBe(1);
@@ -195,11 +179,9 @@ describe("空き枠カードの導線", () => {
  *    「地図」と同じく**器の外の兄弟**に置く。
  */
 describe("お客様情報への導線", () => {
-  it("★ 工事カレンダーでだけ出す（ブリッジは未指定＝出さない）", () => {
+  it("★ 工事カレンダーでは出す", () => {
+    // 未指定の画面で出ないことは calendar-customer-info-link.test.ts で固定
     expect(CONSTRUCTION_CALENDAR_PAGE_CONFIG.showCustomerInfoLink).toBe(true);
-    expect(
-      COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG.showCustomerInfoLink,
-    ).toBeUndefined();
   });
 
   it("★ @pocket の導線は閉じたまま", () => {

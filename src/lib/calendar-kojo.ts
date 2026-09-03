@@ -1274,7 +1274,11 @@ export type BuildCalendarPayloadOptions = {
   attachmentFieldId?: string | null;
   /** 画像以外の添付もメタデータに含める（ブリッジカレンダー向け） */
   attachmentIncludeAllFiles?: boolean;
-  /** フィールド推定の上書き（コミュニケーションブリッジ等） */
+  /**
+   * フィールド推定の上書き。
+   * ⚠ コミュニケーションブリッジ削除後、**未使用のまま残している**
+   *    （/api/calendar は添付オプションを渡さない）。
+   */
   constructionFieldIdsOverride?: ConstructionFieldIds;
   /** startDate 以外に試す日付列（ブリッジカレンダー等） */
   startDateFieldCandidates?: string[];

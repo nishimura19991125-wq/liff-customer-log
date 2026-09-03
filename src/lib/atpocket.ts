@@ -352,71 +352,6 @@ export function apiKeyForWorkEndReportWrite(): string {
   return requireAppApiKey("WORK_END_REPORT", 2, []);
 }
 
-/** コミュニケーションブリッジカレンダー・読取①（fields） */
-export function apiKeyForCommunicationBridgeCalendarPocket(): string {
-  const key = firstEnvApiKey(
-    "COMMUNICATION_BRIDGE_CALENDAR_1",
-    "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY",
-  );
-  if (key) return key;
-  return requireAppApiKey("COMMUNICATION_BRIDGE_CALENDAR", 0, []);
-}
-
-/** コミュニケーションブリッジカレンダー・読取② */
-export function apiKeyForCommunicationBridgeCalendarPocket1(): string {
-  return (
-    firstEnvApiKey(
-      "COMMUNICATION_BRIDGE_CALENDAR_2",
-      "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY_1",
-    ) ?? apiKeyForCommunicationBridgeCalendarPocket()
-  );
-}
-
-/** コミュニケーションブリッジカレンダー・更新③ */
-export function apiKeyForCommunicationBridgeCalendarWrite(): string {
-  const key = firstEnvApiKey(
-    "COMMUNICATION_BRIDGE_CALENDAR_3",
-    "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY_2",
-  );
-  if (key) return key;
-  return requireAppApiKey("COMMUNICATION_BRIDGE_CALENDAR", 2, []);
-}
-
-/** コミュニケーションブリッジカレンダー・読取フェイルオーバー（_1…_7） */
-export function readAuthsForCommunicationBridgeCalendar(): AtPocketFetchAuth[] {
-  const envNames: string[] = [];
-  for (let i = 7; i >= 1; i--) {
-    envNames.push(`COMMUNICATION_BRIDGE_CALENDAR_${i}`);
-  }
-  envNames.push(
-    "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY_FIELDS",
-    "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY_1",
-    "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY",
-  );
-  const auths = collectDistinctApiKeys(envNames);
-  if (auths.length > 0) return auths;
-  return [{ apiKey: apiKeyForCommunicationBridgeCalendarPocket() }];
-}
-
-/** コミュニケーションブリッジカレンダー・一覧フェイルオーバー（_4…_7 → _3…_1） */
-export function listAuthsForCommunicationBridgeCalendar(): AtPocketFetchAuth[] {
-  const envNames: string[] = [];
-  for (let i = 7; i >= 4; i--) {
-    envNames.push(`COMMUNICATION_BRIDGE_CALENDAR_${i}`);
-  }
-  envNames.push(
-    "COMMUNICATION_BRIDGE_CALENDAR_3",
-    "COMMUNICATION_BRIDGE_CALENDAR_2",
-    "COMMUNICATION_BRIDGE_CALENDAR_1",
-    "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY_2",
-    "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY_1",
-    "COMMUNICATION_BRIDGE_CALENDAR_ATPOCKET_API_KEY",
-  );
-  const auths = collectDistinctApiKeys(envNames);
-  if (auths.length > 0) return auths;
-  return [{ apiKey: apiKeyForCommunicationBridgeCalendarPocket1() }];
-}
-
 /** ログアプリ・更新③ */
 export function apiKeyForLogPocketWrite(): string {
   return requireAppApiKey("LOG", 2, ["LOG_ATPOCKET_API_KEY"]);
@@ -783,10 +718,6 @@ function apiKeyForCreateRecord(appsId: string): string {
   const customerInfoAppId = process.env.CUSTOMER_INFO_APP_ID?.trim();
   if (customerInfoAppId && appsId === customerInfoAppId) {
     return apiKeyForCustomerInfoWrite();
-  }
-  const bridgeCalAppId = process.env.COMMUNICATION_BRIDGE_CALENDAR_APP_ID?.trim();
-  if (bridgeCalAppId && appsId === bridgeCalAppId) {
-    return apiKeyForCommunicationBridgeCalendarWrite();
   }
   const workEndAppId = process.env.WORK_END_REPORT_APP_ID?.trim();
   if (workEndAppId && appsId === workEndAppId) {
