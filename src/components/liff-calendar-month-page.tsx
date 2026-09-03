@@ -2,6 +2,7 @@
 
 import liff from "@line/liff";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -89,6 +90,13 @@ import {
   LIFF_SWR_CALENDAR_OPTIONS,
   liffAuthedJsonFetch,
 } from "@/lib/liff-swr";
+import {
+  CUSTOMER_INFO_LINK_GENERIC_ERROR_MESSAGE,
+  customerInfoLinkOutcome,
+  customerInfoRecordIdLookupPath,
+  shouldShowCustomerInfoLink,
+  type CustomerInfoLinkResponseBody,
+} from "@/lib/calendar-customer-info-link";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 import type { LiffCalendarPageConfig } from "@/lib/liff-calendar-page-config";
@@ -775,6 +783,97 @@ function CalendarEmptySlotReadOnly({
           </p>
         ) : null}
       </button>
+    </div>
+  );
+}
+
+/**
+ * 案件カードから、アプリ内のお客様情報（契約情報入力フォーム）を開く。
+ *
+ * 工事アプリとお客様情報アプリはレコードIDが別なので、案件カードが持つ
+ * T番号を変換 API に通してから遷移する。
+ *
+ * ■ 出すかどうかは shouldShowCustomerInfoLink だけが決める
+ *   設定（工事カレンダーのみ true）と T番号の有無の両方を見る。
+ *   T番号が無いときはボタンごと出さない。グレーアウトで残すと
+ *   「なぜ押せないのか」を毎回聞かれる。
+ *
+ * ■ 通信中の状態はこの部品が持つ
+ *   1日に案件カードが何枚も並ぶので、押したカードだけが待ち状態になる。
+ *   ページ側に持たせると全カードが同時に反応してしまう。
+ */
+function CaseCustomerInfoLink({
+  item,
+  config,
+  idToken,
+  onSessionExpired,
+}: {
+  item: CalendarMonthApiItem;
+  config: LiffCalendarPageConfig;
+  idToken: string | null;
+  onSessionExpired?: () => void;
+}) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const tNumber = item.tNumber?.trim() ?? "";
+
+  const openCustomerInfo = async () => {
+    if (loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      const token = await idTokenForConstructionSubmit(
+        idToken,
+        onSessionExpired,
+      );
+      if (!token) return;
+      const res = await fetch(customerInfoRecordIdLookupPath(tNumber), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      let body: CustomerInfoLinkResponseBody | null = null;
+      try {
+        body = (await res.json()) as CustomerInfoLinkResponseBody;
+      } catch {
+        body = null;
+      }
+      if (res.status === 401 && isLineSessionExpiredPayload(body)) {
+        onSessionExpired?.();
+        return;
+      }
+      const outcome = customerInfoLinkOutcome(res.status, body);
+      if (outcome.kind === "open") {
+        router.push(outcome.href);
+        return;
+      }
+      setError(outcome.text);
+    } catch {
+      setError(CUSTOMER_INFO_LINK_GENERIC_ERROR_MESSAGE);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!shouldShowCustomerInfoLink(config, tNumber)) return null;
+
+  return (
+    <div className="border-t border-slate-100 px-4 pb-4 pt-3">
+      <button
+        type="button"
+        onClick={() => void openCustomerInfo()}
+        disabled={loading}
+        className="inline-flex w-full items-center justify-center rounded-lg bg-emerald-600 p-3 text-[15px] font-bold text-white shadow-md transition active:scale-[0.98] active:bg-emerald-700 disabled:opacity-60"
+      >
+        {loading ? "お客様情報を開いています…" : "お客様情報を開く →"}
+      </button>
+      {error ? (
+        <p
+          role="alert"
+          className="mt-2 text-[13px] font-semibold leading-relaxed text-amber-800"
+        >
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -2946,6 +3045,14 @@ export function LiffCalendarMonthPage({
                                   normalAddress={item.normalAddress}
                                 />
                               </div>
+                              <CaseCustomerInfoLink
+                                item={item}
+                                config={config}
+                                idToken={idToken}
+                                onSessionExpired={() =>
+                                  setPhase("session-expired")
+                                }
+                              />
                             </div>
                           </li>
                         );

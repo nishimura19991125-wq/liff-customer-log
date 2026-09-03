@@ -37,6 +37,18 @@ export type LiffCalendarPageConfig = {
    *    別の画面なので既定のまま（開ける）。閉じるなら false を足すだけ。
    */
   showCaseAccessLink?: boolean;
+  /**
+   * 案件カードから、アプリ内のお客様情報（契約情報入力フォーム）へ
+   * 遷移できるようにするか。**既定は出さない。**
+   *
+   * 工事カレンダーでだけ true にしてある。@pocket の導線
+   * （showCaseAccessLink）を閉じたのは「参照から編集につながる」ため
+   * だが、こちらはアプリ側の編集経路なので方針と矛盾しない。
+   *
+   * ⚠ この画面部品はコミュニケーションブリッジと共用している。
+   *    あちらは未指定のまま（出さない）。
+   */
+  showCustomerInfoLink?: boolean;
 };
 
 export const CONSTRUCTION_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig = {
@@ -51,6 +63,8 @@ export const CONSTRUCTION_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig = {
   showEmptySlotGridStyle: true,
   // 案件カードから @pocket を開かせない（アプリ側で操作してもらう）
   showCaseAccessLink: false,
+  // 代わりに、アプリ内のお客様情報（契約情報入力フォーム）へ飛べるようにする
+  showCustomerInfoLink: true,
 };
 
 export const COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig =

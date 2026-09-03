@@ -182,3 +182,73 @@ describe("空き枠カードの導線", () => {
     expect(src).toContain("onOpenPocket={openExternal}");
   });
 });
+
+/**
+ * 案件カードからアプリ内のお客様情報（契約情報入力フォーム）を開く導線。
+ *
+ * @pocket の導線（showCaseAccessLink: false）とは別物で、こちらは
+ * 方針が推奨する編集経路なので工事カレンダーで開ける。
+ *
+ * ⚠ カード本文の器（caseCardBody を包む分岐）には触らない。上の
+ *    describe がソース文字列で構造を固定しているため、器に足すと
+ *    そちらが落ちる。ボタンは「工事対応者の変更」「工事日を変更」
+ *    「地図」と同じく**器の外の兄弟**に置く。
+ */
+describe("お客様情報への導線", () => {
+  it("★ 工事カレンダーでだけ出す（ブリッジは未指定＝出さない）", () => {
+    expect(CONSTRUCTION_CALENDAR_PAGE_CONFIG.showCustomerInfoLink).toBe(true);
+    expect(
+      COMMUNICATION_BRIDGE_CALENDAR_PAGE_CONFIG.showCustomerInfoLink,
+    ).toBeUndefined();
+  });
+
+  it("★ @pocket の導線は閉じたまま", () => {
+    // アプリ内の導線を足したことで、@pocket が開くようになっていないこと
+    expect(CONSTRUCTION_CALENDAR_PAGE_CONFIG.showCaseAccessLink).toBe(false);
+    expect(read(PAGE).split("openExternal(item.accessEditUrl)").length - 1).toBe(
+      1,
+    );
+  });
+
+  it("★ ボタンは器の外にある（本文の分岐に足していない）", () => {
+    const src = read(PAGE);
+    const branchEnd = src.indexOf("                            )}");
+
+    expect(src.indexOf("<CaseCustomerInfoLink")).toBeGreaterThan(branchEnd);
+    // 器は2つのまま（本文の参照も2つ）
+    expect(src.split("{caseCardBody}").length - 1).toBe(2);
+  });
+
+  it("★ 出す条件は共有の関数だけで決める", () => {
+    const src = read(PAGE);
+
+    expect(src).toContain("if (!shouldShowCustomerInfoLink(config, tNumber)) return null;");
+    // 画面側で設定や T番号を見直していない
+    expect(src).not.toContain("config.showCustomerInfoLink ===");
+  });
+
+  it("★ 遷移するのは変換に成功したときだけ", () => {
+    const src = read(PAGE);
+    const from = src.indexOf("const outcome = customerInfoLinkOutcome(");
+    const block = src.slice(from, from + 300);
+
+    expect(block).toContain('if (outcome.kind === "open") {');
+    expect(block).toContain("router.push(outcome.href);");
+    // 失敗時は文言を出すだけ。router.push より後ろにある
+    expect(block.indexOf("setError(outcome.text);")).toBeGreaterThan(
+      block.indexOf("router.push(outcome.href);"),
+    );
+  });
+
+  it("★ 通信中は押したカードだけが待ち状態になる", () => {
+    const card = read(PAGE).slice(
+      read(PAGE).indexOf("function CaseCustomerInfoLink({"),
+      read(PAGE).indexOf("\nfunction EmptySlotCard({"),
+    );
+
+    // 状態はカード部品が自分で持つ（ページ側の共有 state ではない）
+    expect(card).toContain("const [loading, setLoading] = useState(false);");
+    expect(card).toContain("if (loading) return;");
+    expect(card).toContain("disabled={loading}");
+  });
+});
