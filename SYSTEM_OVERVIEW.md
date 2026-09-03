@@ -24,12 +24,14 @@ LINE LIFF 上で動く社内業務ハブ。スタッフが LINE ログインし�
 
 | パス | 用途 |
 |------|------|
-| `/` | ホーム（メニュー・おみくじ・掲示板サマリ・工事担当案件・入力続きショートカット） |
+| `/` | ホーム（メニュー・おみくじ・営業ランキングの自分の順位・書類未回収・工事担当案件・入力続きショートカット） |
 | `/calendar` | 工事カレンダー（月表示・空き枠入力・未定案件割当） |
 | `/customer-info` | お客様情報の検索・編集フォーム |
 | `/customer-list` | 担当顧客 CRM 一覧（書類不足・工事日未定・補助金などのフィルタ） |
 | `/customer-list/[id]` | 顧客詳細 |
-| `/sales-dashboard` | 営業ダッシュボード（獲得 PT・ランキング・明細） |
+| `/apo-list` | アポ情報一覧（見積・商談ステータス） |
+| `/sales-progress` | 営業進捗 |
+| `/sales-dashboard` | 営業ランキング（獲得 PT・ランキング・明細）。パスは `sales-dashboard` のまま |
 | `/attendance` | 勤怠打刻＋月カレンダー |
 | `/work-end-report` | 稼働終了報告 |
 | `/bulletin` | 社内掲示板 |
@@ -65,6 +67,8 @@ LINE LIFF 上で動く社内業務ハブ。スタッフが LINE ログインし�
 
 その他: 工事対応者更新、施工会社候補、自分の工事担当案件一覧。
 
+案件カードから**アプリ内のお客様情報**（契約情報入力フォーム）へ遷移できる（`showCustomerInfoLink`）。工事アプリとお客様情報アプリはレコードIDが別なので、T番号を `GET /api/customer-info/record-id` で変換してから `/customer-info?recordId=...` を開く。@pocket を開く導線（`showCaseAccessLink`）は工事カレンダーでは閉じてある。
+
 **重要:** 「同日の別空き枠を消す」処理は廃止済み。削除は未定案件割当時の対象枠のみ。
 
 ### 3. お客様情報入力 / CRM
@@ -75,9 +79,10 @@ LINE LIFF 上で動く社内業務ハブ。スタッフが LINE ログインし�
 - `/customer-list`: 担当顧客一覧（書類不足・工事日未定・補助金・キャンセル等）。
 - 製品カタログ・クレジット会社・AP/CL 候補などの補助 API あり。
 
-### 4. 営業ダッシュボード
+### 4. 営業ランキング（`/sales-dashboard`）
 
-- `GET /api/sales-dashboard`: 期間別 KPI、総合 PT ランキング、APO／天下賞など。
+- `GET /api/sales-dashboard`: 期間別 KPI（今月・先月）とランキング。部門タブは**総合PTランキング／アポ件数部門の2つ**（売上金額部門・AP天下賞は廃止）。
+- `GET /api/sales-dashboard?scope=self`: 自分の1行だけ。ホームの順位表示用（集計キャッシュに相乗り）。
 - PT 明細: PT アプリの登録番号 ↔ お客様情報の APPT/CLPT 登録番号で突合。お客様名・AP担当者・CL担当者・契約日を表示。
 - 獲得総 PT は売上 PT のみ（アポ件数は加算しない）。
 - コア集計はサーバキャッシュし、呼び出しユーザ向けに personalize。
@@ -86,10 +91,10 @@ LINE LIFF 上で動く社内業務ハブ。スタッフが LINE ログインし�
 
 | 機能 | 概要 |
 |------|------|
-| 掲示板 | AtPocket 掲示板＋閲覧記録。ホームにサマリ表示 |
+| 掲示板 | AtPocket 掲示板＋閲覧記録。ホームのサマリ表示は廃止済み（`/bulletin` は残存） |
 | 勤怠 | 出勤/退勤打刻、月カレンダー |
 | 稼働終了報告 | 日次の稼働終了報告登録 |
-| 社内イベント | 朝礼・連絡先・組織図など静的/API セクション |
+| 社内イベント | 朝礼・連絡先・LINE自動送信リスト・トラーチの文化など静的/API セクション |
 | 面談予定 | 一覧・ステータス/日程更新 |
 | APO 獲得 | フォーム定義取得＋レコード登録 |
 | ホームおみくじ | 役割別のビジネスフォーチュン文言 |
@@ -113,6 +118,7 @@ LINE LIFF 上で動く社内業務ハブ。スタッフが LINE ログインし�
 ### Customer info / CRM
 - `GET|PUT /api/customer-info/records/[recordId]`
 - `GET /api/customer-info/search`
+- `GET /api/customer-info/record-id`（T番号 → レコードID。工事カレンダーからの遷移用）
 - `GET /api/customer-info/pending-records`
 - `GET /api/customer-info/continue-shortcut`
 - `GET /api/customer-info/ap-cl-staff`
@@ -161,7 +167,7 @@ LINE LIFF 上で動く社内業務ハブ。スタッフが LINE ログインし�
 - **AtPocket 共通:** `ATPOCKET_DOMAIN`, `ATPOCKET_AUTH_HEADER`
 - **工事カレンダー:** `CALENDAR_APP_ID`, `CALENDAR_*_FIELD_ID`, `CALENDAR_*_ATPOCKET_API_KEY*`, `CALENDAR_EMPTY_FILL_*`, `CALENDAR_*_CACHE_*`
 - **お客様情報 / CRM:** `CUSTOMER_INFO_*`, `CUSTOMER_CRM_*`
-- **営業ダッシュボード:** `SALES_DASHBOARD_*`
+- **営業ランキング:** `SALES_DASHBOARD_*`（変数名は据え置き）
 - **スタッフ / PIN:** `STAFF_*`
 - **掲示板:** `BULLETIN_*`, `BULLETIN_VIEWS_*`
 - **勤怠 / 稼働終了:** `ATTENDANCE_*`, `WORK_END_REPORT_*`
