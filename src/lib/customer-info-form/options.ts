@@ -166,6 +166,28 @@ export function installationTypeHidesBatterySection(
   return INSTALLATION_TYPES_HIDE_BATTERY.has((installationType ?? "").trim());
 }
 
+/**
+ * 配線方式（@pocket「配線方式」列）を表示する設置種別。
+ * **@pocket の実物と1文字も変えないこと**（値がズレると、画面のリストが
+ * 未選択に見えるのに値だけ入る事故になる）。
+ */
+export const INSTALLATION_TYPES_WITH_WIRING_METHOD = new Set<string>([
+  "太陽光パネル+蓄電池",
+  "蓄電池のみ",
+]);
+
+/**
+ * 配線方式を表示するか。
+ *
+ * **表示・必須・保存の3つを必ずこの1関数から導くこと。**
+ * 表示条件と保存条件を別々に書くと、アポキャン時と同じ
+ * 「画面に出ていない値が保存時に書き込まれる」事故になる。
+ * 前後の空白は落とす（設置種別の他の判定と同じ扱い）。
+ */
+export function shouldShowWiringMethod(installationType: string): boolean {
+  return INSTALLATION_TYPES_WITH_WIRING_METHOD.has(installationType.trim());
+}
+
 /** 付近見取り図 */
 export const VICINITY_SKETCH_OPTIONS = [
   "未作成",
