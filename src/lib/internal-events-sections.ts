@@ -42,8 +42,7 @@ export type InternalEventsContent =
       steps: InternalEventsScheduleStep[];
     }
   | { type: "day-schedule"; blocks: InternalEventsDayBlock[] }
-  | { type: "image"; src: string; alt: string }
-  | { type: "org-chart" };
+  | { type: "image"; src: string; alt: string };
 
 export type InternalEventsSection = {
   slug: string;
@@ -391,14 +390,6 @@ export const INTERNAL_EVENTS_SECTIONS: InternalEventsSection[] = [
         "卸案件の書類進捗",
         "トラーチの書類進捗",
       ],
-    },
-  },
-  {
-    slug: "org-chart",
-    title: "組織図",
-    description: "会社の組織図を確認します。",
-    content: {
-      type: "org-chart",
     },
   },
   {

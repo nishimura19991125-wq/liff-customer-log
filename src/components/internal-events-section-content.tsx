@@ -1,5 +1,4 @@
 import { InternalEventsContactsContent } from "@/components/internal-events-contacts-content";
-import { InternalEventsOrgChartContent } from "@/components/internal-events-org-chart-content";
 import {
   INTERNAL_EVENTS_OUTSIDE_FRAME,
   type InternalEventsBulletGroup,
@@ -434,10 +433,6 @@ export function InternalEventsSectionContent({
         ))}
       </div>
     );
-  }
-
-  if (content.type === "org-chart") {
-    return <InternalEventsOrgChartContent />;
   }
 
   if (content.type === "image") {
