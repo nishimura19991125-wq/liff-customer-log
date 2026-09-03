@@ -41,8 +41,7 @@ export type InternalEventsContent =
       timeRange: string;
       steps: InternalEventsScheduleStep[];
     }
-  | { type: "day-schedule"; blocks: InternalEventsDayBlock[] }
-  | { type: "image"; src: string; alt: string };
+  | { type: "day-schedule"; blocks: InternalEventsDayBlock[] };
 
 export type InternalEventsSection = {
   slug: string;
