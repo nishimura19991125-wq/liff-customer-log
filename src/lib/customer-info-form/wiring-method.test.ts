@@ -10,8 +10,10 @@ import {
   isCustomerInfoFormFieldVisible,
 } from "@/lib/customer-info-form/rules";
 import {
+  CUSTOMER_INFO_FORM_FIELD_MAP,
   CUSTOMER_INFO_FORM_FIELDS,
   INSTALLATION_TYPE_OPTIONS,
+  WIRING_METHOD_OPTIONS,
 } from "@/lib/customer-info-form/schema";
 import type {
   CustomerInfoFormFieldResolved,
@@ -83,37 +85,50 @@ describe("★ 配線方式を出す設置種別が @pocket の選択肢と一致
 
 /**
  * 表示条件と保存条件がズレていないことを固定する。
- * 段階2 時点ではスキーマ（列定義）へ未追加なので、解決済みフィールドを
- * 手で足して検証する。段階3 でスキーマに入れば、この足し込みは空振りする。
+ * 解決済みフィールドは**スキーマからだけ**組み立てる。手で足すと、
+ * 列定義が消えてもテストが通ってしまう。
  */
-function resolvedWithWiringMethod(): CustomerInfoFormFieldResolved[] {
-  const resolved: CustomerInfoFormFieldResolved[] = CUSTOMER_INFO_FORM_FIELDS.map(
-    (f) => ({
-      ...f,
-      fieldId: f.liffOnly ? "" : f.key,
-      label: f.caption,
-      value: "",
-    }),
-  );
-  if (!resolved.some((f) => f.key === "wiringMethod")) {
-    resolved.push({
-      key: "wiringMethod",
-      caption: "配線方式",
-      type: "select",
-      options: ["全負荷", "特定負荷"],
-      fieldId: "wiringMethod",
-      label: "配線方式",
-      value: "",
-    });
-  }
-  return resolved;
+function resolveAll(): CustomerInfoFormFieldResolved[] {
+  return CUSTOMER_INFO_FORM_FIELDS.map((f) => ({
+    ...f,
+    fieldId: f.liffOnly ? "" : f.key,
+    label: f.caption,
+    value: "",
+  }));
 }
 
-const RESOLVED = resolvedWithWiringMethod();
+const RESOLVED = resolveAll();
 
 function payloadFor(values: CustomerInfoFormValues): Record<string, unknown> {
   return buildCustomerInfoFormPayload(values, RESOLVED);
 }
+
+describe("配線方式: 列定義（スキーマ）", () => {
+  const def = CUSTOMER_INFO_FORM_FIELD_MAP.get("wiringMethod");
+
+  it("設置種別の直後にある", () => {
+    const keys = CUSTOMER_INFO_FORM_FIELDS.map((f) => f.key);
+    expect(keys[keys.indexOf("installationType") + 1]).toBe("wiringMethod");
+  });
+
+  it("見出しは「配線方式」（caption 完全一致で @pocket の列に解決される）", () => {
+    expect(def?.caption).toBe("配線方式");
+  });
+
+  it("選択肢は 全負荷 / 特定負荷 の2つ", () => {
+    expect(def?.options && [...def.options]).toEqual(["全負荷", "特定負荷"]);
+    expect([...WIRING_METHOD_OPTIONS]).toEqual(["全負荷", "特定負荷"]);
+  });
+
+  it("★ 初期値を持たない（既存顧客に勝手な値を書き込まない）", () => {
+    // 値の既定は空。hiddenValue も付けない（非表示時は送らない設計）
+    expect(def).not.toHaveProperty("hiddenValue");
+  });
+
+  it("表示中は必須（required を false にしていない）", () => {
+    expect(def?.required).toBeUndefined();
+  });
+});
 
 describe("配線方式: 表示条件と保存条件がズレない", () => {
   it.each([...INSTALLATION_TYPE_OPTIONS])(

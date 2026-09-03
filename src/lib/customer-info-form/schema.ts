@@ -24,6 +24,13 @@ export const INSTALLATION_TYPE_OPTIONS = [
   "パワコン取替のみ",
 ] as const;
 
+/**
+ * 配線方式（@pocket「配線方式」列）。
+ * **@pocket の実物と1文字も変えないこと。** 表示するかどうかは
+ * shouldShowWiringMethod（options.ts）だけが決める。
+ */
+export const WIRING_METHOD_OPTIONS = ["全負荷", "特定負荷"] as const;
+
 export const ROOF_MATERIAL_OPTIONS = [
   "金属縦平葺",
   "カラーベスト",
@@ -150,6 +157,12 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     caption: "設置種別",
     type: "select",
     options: [...INSTALLATION_TYPE_OPTIONS],
+  },
+  {
+    key: "wiringMethod",
+    caption: "配線方式",
+    type: "select",
+    options: [...WIRING_METHOD_OPTIONS],
   },
   {
     key: "manufacturer",
