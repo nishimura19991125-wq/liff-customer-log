@@ -13,6 +13,7 @@ import {
   introductionRequiresBuilderName,
   introductionRequiresReferralFee,
   preApplicationRequiresDocuments,
+  shouldShowWiringMethod,
   subsidyIncludesCity,
   subsidyIncludesOther,
   subsidyIncludesPrefecture,
@@ -51,6 +52,17 @@ const POCKET_ZERO_WHEN_HIDDEN_KEYS = new Set([
   "referralFee",
   "panelCapacityKw",
 ]);
+
+/**
+ * 非表示のあいだは値を一切書かず、@pocket の既存値をそのまま残すフィールド。
+ *
+ * 既定の動きでは、非表示かつ値が空（または "-"）のときに "-" を書き込む。
+ * 選択式の列にとって "-" は選択肢に無い値なので、画面のリストが未選択に
+ * 見えるのに値だけ入る状態（タスクG と同じ形）になる。
+ * 配線方式は表示条件（shouldShowWiringMethod）が外れているあいだ、
+ * 保存しても @pocket 側を触らない。
+ */
+const POCKET_PRESERVE_WHEN_HIDDEN_KEYS = new Set(["wiringMethod"]);
 
 /** 未入力・非表示時に @pocket へ "-" を送るフィールド */
 const POCKET_DASH_WHEN_EMPTY_KEYS = new Set([
@@ -221,6 +233,9 @@ export function isCustomerInfoFormFieldVisible(
       return ihNew === "有";
     case "v2hModel":
       return v2hNew === "有";
+    case "wiringMethod":
+      // 表示・必須・保存の3つがこの1関数から導かれる（別々に書かないこと）
+      return shouldShowWiringMethod(installationType);
     case "roofMaterial":
       return !INSTALLATION_TYPES_HIDE_ROOF.has(installationType);
     case "roofMaterialModel":
@@ -304,6 +319,7 @@ function shouldPreserveHiddenFieldOnPut(
   hiddenFallback: string,
   hiddenPut: string,
 ): boolean {
+  if (POCKET_PRESERVE_WHEN_HIDDEN_KEYS.has(fieldKey)) return true;
   // 数量・金額・型番。panelCapacityKw の個別扱いはこの分岐に吸収した
   if (
     POCKET_DASH_WHEN_EMPTY_KEYS.has(fieldKey) ||
@@ -416,6 +432,8 @@ export function applyCustomerInfoHiddenDefaultsToValues(
     if (!includeDocumentFields && CUSTOMER_DOCUMENT_KEYS.has(def.key)) {
       continue;
     }
+    // 非表示のあいだ値を残す項目は "-" で潰さない（保存でも送らない）
+    if (POCKET_PRESERVE_WHEN_HIDDEN_KEYS.has(def.key)) continue;
     if (!isCustomerInfoFormFieldVisible(def.key, next)) {
       if (
         POCKET_ZERO_WHEN_HIDDEN_KEYS.has(def.key) &&
