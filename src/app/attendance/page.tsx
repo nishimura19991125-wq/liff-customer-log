@@ -53,21 +53,6 @@ type AttendanceStatus = {
   canClockOut?: boolean;
   rateLimited?: boolean;
   stale?: boolean;
-  todayAttendees?: Array<{
-    staffName: string;
-    clockIn: string;
-    clockOut: string | null;
-    department?: string;
-  }>;
-  todayAttendeesByDepartment?: Array<{
-    department: string;
-    attendees: Array<{
-      staffName: string;
-      clockIn: string;
-      clockOut: string | null;
-      department?: string;
-    }>;
-  }>;
   error?: string;
 };
 
@@ -343,19 +328,6 @@ export default function AttendancePage() {
   const showSetupRequired =
     status?.configured === false && !status?.rateLimited;
   const workDate = status?.workDate ?? "—";
-  const departmentGroups =
-    status?.todayAttendeesByDepartment ??
-    (status?.todayAttendees?.length
-      ? [
-          {
-            department: "部署未設定",
-            attendees: status.todayAttendees,
-          },
-        ]
-      : []);
-  const totalAttendeeCount =
-    status?.todayAttendees?.length ??
-    departmentGroups.reduce((n, g) => n + g.attendees.length, 0);
 
   return (
     <LiffScreen>
@@ -453,71 +425,6 @@ export default function AttendancePage() {
                 </div>
               </dl>
             </LiffCard>
-
-            <div className="mt-4">
-            <LiffCard>
-              <div className="border-b border-slate-100 px-5 py-3 dark:border-slate-700">
-                <h2 className="text-[14px] font-bold text-slate-800 dark:text-slate-100">
-                  本日の出勤者
-                  {totalAttendeeCount > 0 ? `（${totalAttendeeCount}人）` : ""}
-                </h2>
-              </div>
-              <div className="max-h-52 overflow-y-auto px-5 py-3">
-                {loading ? (
-                  <p className="text-[13px] text-slate-500">読み込み中…</p>
-                ) : totalAttendeeCount === 0 ? (
-                  <p className="text-[13px] text-slate-500 dark:text-slate-400">
-                    まだ出勤打刻はありません
-                  </p>
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    {departmentGroups.map((group) => (
-                      <section key={group.department}>
-                        <h3 className="mb-2 text-[12px] font-bold text-slate-600 dark:text-slate-300">
-                          {group.department}
-                          <span className="ml-1 font-medium text-slate-500 dark:text-slate-400">
-                            （{group.attendees.length}人）
-                          </span>
-                        </h3>
-                        <ul className="flex flex-col gap-2">
-                          {group.attendees.map((person) => {
-                            const isSelf =
-                              person.staffName ===
-                              (status?.staffName ?? account.boundStaffName);
-                            return (
-                              <li
-                                key={`${group.department}-${person.staffName}`}
-                                className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2 text-[13px] ${
-                                  isSelf
-                                    ? "bg-emerald-50 font-semibold text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-100"
-                                    : "bg-slate-50 text-slate-800 dark:bg-slate-800/80 dark:text-slate-100"
-                                }`}
-                              >
-                                <span className="min-w-0 truncate">
-                                  {person.staffName}
-                                  {isSelf ? (
-                                    <span className="ml-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
-                                      （あなた）
-                                    </span>
-                                  ) : null}
-                                </span>
-                                <span className="shrink-0 tabular-nums text-slate-600 dark:text-slate-300">
-                                  {formatAttendanceDisplayTime(person.clockIn)}
-                                  {person.clockOut
-                                    ? ` 〜 ${formatAttendanceDisplayTime(person.clockOut)}`
-                                    : ""}
-                                </span>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </section>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </LiffCard>
-            </div>
 
             <div className="mt-4">
               <LiffCard>
