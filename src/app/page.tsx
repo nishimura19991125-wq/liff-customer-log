@@ -402,9 +402,9 @@ export default function HomeHubPage() {
             type="button"
             onClick={() => setIsBulletinBoardVisible(true)}
             className="mt-4 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-[13px] font-semibold text-slate-700 shadow-sm transition-colors active:scale-[0.99] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-            aria-label="掲示板を再表示"
+            aria-label="ダッシュボードを再表示"
           >
-            掲示板（タップで表示）
+            ダッシュボード（タップで表示）
           </button>
         ) : account.boundStaffName ? (
           <p className="mt-4 text-[15px] font-semibold text-slate-800 dark:text-white">

@@ -14,9 +14,9 @@ type Props = {
   disabled?: boolean;
   /** 名簿と紐付いていない間は導線カードを押させない（ホームの他カードと同条件） */
   needsStaffBind?: boolean;
-  /** 掲示板セクション全体を閉じる */
+  /** ダッシュボードの囲い全体を閉じる */
   onClose?: () => void;
-  /** 掲示板内の最下部に表示する追加コンテンツ */
+  /** 囲いの最下部に表示する追加コンテンツ */
   children?: ReactNode;
 };
 
@@ -181,7 +181,7 @@ export function HomeCompactSummaries({
   if (!hydrated) return null;
 
   /**
-   * 読み込み中の表示。掲示板・商談進捗を消したので、残る2本で判定する。
+   * 読み込み中の表示。掲示板と商談進捗の取得を消したので、残る2本で判定する。
    * どちらも「呼ぶ条件が揃っていて、まだ結果が無い」ときだけ true。
    */
   const loading =
@@ -196,19 +196,19 @@ export function HomeCompactSummaries({
 
   return (
     <section
-      aria-label="掲示板"
+      aria-label="ダッシュボード"
       className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:ring-slate-800"
     >
       <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-3.5 py-2.5 dark:border-slate-700">
         <p className="text-[14px] font-bold tracking-tight text-slate-900 dark:text-white">
-          掲示板
+          ダッシュボード
         </p>
         {onClose ? (
           <button
             type="button"
             onClick={onClose}
             className="shrink-0 rounded-lg px-2 py-1 text-[12px] font-semibold text-slate-600 transition hover:bg-slate-100 active:scale-[0.98] dark:text-slate-300 dark:hover:bg-slate-800"
-            aria-label="掲示板を閉じる"
+            aria-label="ダッシュボードを閉じる"
           >
             閉じる
           </button>
