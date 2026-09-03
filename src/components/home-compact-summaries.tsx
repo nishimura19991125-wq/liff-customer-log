@@ -5,20 +5,12 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { LiffCard, LiffMenuCard } from "@/components/liff-chrome";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
-import { type BulletinListResponse } from "@/lib/bulletin-types";
-import {
-  LIFF_SWR_DASHBOARD_OPTIONS,
-  LIFF_SWR_DEFAULT_OPTIONS,
-} from "@/lib/liff-swr";
+import { LIFF_SWR_DASHBOARD_OPTIONS } from "@/lib/liff-swr";
 import { barRatio } from "@/lib/sales-dashboard-bar-ratio";
-import { filterOpenMeetingScheduleItems } from "@/lib/meeting-schedule-negotiation-status";
-import type { MeetingSchedulePayload } from "@/lib/meeting-schedule-types";
 
 type Props = {
   idToken: string | null;
   boundStaffName: string | null;
-  /** 掲示板の既読判定用（LINEユーザーID） */
-  lineUserId?: string;
   disabled?: boolean;
   /** 名簿と紐付いていない間は導線カードを押させない（ホームの他カードと同条件） */
   needsStaffBind?: boolean;
@@ -106,15 +98,14 @@ function SalesDashboardGlyph() {
 }
 
 /**
- * ホーム最上部の掲示板囲い
+ * ホーム最上部の囲い
  * - あいさつ
- * - 営業ランキングの導線（旧・本日のお知らせバナーの位置）
- * - 書類未回収 | 商談進捗（横並びカード）
+ * - 営業ランキングの導線（自分の順位と達成率つき）
+ * - 書類未回収
  */
 export function HomeCompactSummaries({
   idToken,
   boundStaffName,
-  lineUserId = "",
   disabled = false,
   needsStaffBind = false,
   onClose,
@@ -122,29 +113,14 @@ export function HomeCompactSummaries({
 }: Props) {
   const [hydrated, setHydrated] = useState(false);
 
-  const bulletinPath = idToken && !disabled ? "/api/bulletin" : null;
   const selfRankPath =
     idToken && boundStaffName && !disabled
       ? "/api/sales-dashboard?scope=self"
-      : null;
-  const meetingPath =
-    idToken && boundStaffName && !disabled
-      ? "/api/meeting-schedule?scope=list"
       : null;
   const docsPath =
     idToken && boundStaffName && !disabled
       ? "/api/customers?filter=missing_docs"
       : null;
-
-  /**
-   * 「本日のお知らせ」のバナーは消したが、**取得は残してある**。
-   *
-   * 戻すときに配線をやり直さずに済むようにするため。今は読み込み完了の
-   * 判定（下の loading）にだけ使っている。バナーを復活させるなら、
-   * ここの posts から当日ぶんと未読数を組み立て直す。
-   */
-  const { data: bulletinData, isLoading: bulletinLoading } =
-    useLiffSwr<BulletinListResponse>(bulletinPath, idToken, LIFF_SWR_DEFAULT_OPTIONS);
 
   /**
    * 営業ランキングの自分の1行だけ（scope=self）。
@@ -160,10 +136,6 @@ export function HomeCompactSummaries({
       LIFF_SWR_DASHBOARD_OPTIONS,
     );
 
-  const { data: meetingData, isLoading: meetingLoading } = useLiffSwr<
-    MeetingSchedulePayload & { needsStaffBind?: boolean; disabled?: boolean }
-  >(meetingPath, idToken, LIFF_SWR_DEFAULT_OPTIONS);
-
   const { data: docsData, isLoading: docsLoading } = useLiffSwr<CustomersApiBody>(
     docsPath,
     idToken,
@@ -177,22 +149,6 @@ export function HomeCompactSummaries({
   useEffect(() => {
     setHydrated(true);
   }, []);
-
-  /**
-   * 商談ステータスで絞る。まだ変更の余地がある案件だけを出し、
-   * 商談結果が確定済みの案件（即決成約・否・アポキャン等）は載せない。
-   *
-   * API（/api/meeting-schedule?scope=list）は見積ステータスでしか
-   * 絞っていないので、ここで重ねる。同じ API を /meeting-schedule の
-   * 一覧ページも使っているため、サーバ側ではなくこちらで絞る。
-   * 件数表示もこの絞り込み後の件数になる。
-   */
-  const meetingItems = useMemo(
-    () => filterOpenMeetingScheduleItems(meetingData?.items ?? []),
-    [meetingData?.items],
-  );
-  const meetingPreview = meetingItems.slice(0, PREVIEW_LIMIT);
-  const meetingRest = meetingItems.length - meetingPreview.length;
 
   const docsItems = useMemo(
     () =>
@@ -219,19 +175,19 @@ export function HomeCompactSummaries({
   // 目標未設定（3分の1が該当）では達成率も「あと何PT」も出さない
   const showSelfTarget = selfRank != null && selfTargetPt > 0;
 
-  const meetingReady =
-    Boolean(meetingData?.configured) && !meetingData?.error && !meetingLoading;
   const docsReady = !docsLoading && docsItems.length > 0;
 
   if (disabled) return null;
   if (!hydrated) return null;
 
+  /**
+   * 読み込み中の表示。掲示板・商談進捗を消したので、残る2本で判定する。
+   * どちらも「呼ぶ条件が揃っていて、まだ結果が無い」ときだけ true。
+   */
   const loading =
-    (bulletinLoading && !bulletinData) ||
-    (meetingLoading && !meetingData) ||
+    (Boolean(selfRankPath) && selfSummaryLoading && !selfSummary) ||
     (Boolean(docsPath) && docsLoading && !docsData);
 
-  const showMeeting = meetingReady && Boolean(boundStaffName);
   const showDocs = docsReady;
 
   const greeting = boundStaffName?.trim()
@@ -343,120 +299,48 @@ export function HomeCompactSummaries({
           )}
         </LiffMenuCard>
 
-        {/* 下段：書類未回収 | 商談進捗 */}
-        {showDocs || showMeeting ? (
-          <div
-            className={`grid gap-3 items-stretch ${
-              showDocs && showMeeting ? "grid-cols-2" : "grid-cols-1"
-            }`}
-            aria-label="書類未回収と商談進捗"
-          >
-            {showDocs ? (
-              <section className="min-w-0" aria-label="書類未回収">
-                <LiffCard>
-                  <div className="relative flex h-full min-h-[4.5rem] flex-col px-3 py-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="min-w-0 truncate text-[13px] font-bold text-slate-900 dark:text-white">
-                        書類未回収
-                        <span className="ml-1.5 font-normal text-slate-500 dark:text-slate-400">
-                          {docsItems.length}件
-                        </span>
-                      </p>
+        {/* 下段：書類未回収。商談進捗と横並びだったが、1枚になったので全幅 */}
+        {showDocs ? (
+          <section className="min-w-0" aria-label="書類未回収">
+            <LiffCard>
+              <div className="relative flex h-full min-h-[4.5rem] flex-col px-3 py-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="min-w-0 truncate text-[13px] font-bold text-slate-900 dark:text-white">
+                    書類未回収
+                    <span className="ml-1.5 font-normal text-slate-500 dark:text-slate-400">
+                      {docsItems.length}件
+                    </span>
+                  </p>
+                  <Link
+                    href="/customer-list"
+                    className="shrink-0 text-[12px] font-semibold text-red-700 dark:text-red-300"
+                  >
+                    ›
+                  </Link>
+                </div>
+                <ul className="mt-1.5 flex flex-1 flex-col gap-1">
+                  {docsPreview.map((row) => (
+                    <li key={row.recordId} className="min-w-0">
                       <Link
-                        href="/customer-list"
-                        className="shrink-0 text-[12px] font-semibold text-red-700 dark:text-red-300"
+                        href={`/customer-list/${encodeURIComponent(row.recordId)}`}
+                        className="block truncate text-[12px] font-medium leading-snug text-red-900 active:opacity-70 dark:text-red-100"
                       >
-                        ›
+                        🚨 {row.customerName}
                       </Link>
-                    </div>
-                    <ul className="mt-1.5 flex flex-1 flex-col gap-1">
-                      {docsPreview.map((row) => (
-                        <li key={row.recordId} className="min-w-0">
-                          <Link
-                            href={`/customer-list/${encodeURIComponent(row.recordId)}`}
-                            className="block truncate text-[12px] font-medium leading-snug text-red-900 active:opacity-70 dark:text-red-100"
-                          >
-                            🚨 {row.customerName}
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                    {docsRest > 0 ? (
-                      <Link
-                        href="/customer-list"
-                        className="mt-1.5 text-[11px] font-semibold text-red-700 dark:text-red-300"
-                      >
-                        +{docsRest}件
-                      </Link>
-                    ) : null}
-                  </div>
-                </LiffCard>
-              </section>
-            ) : null}
-
-            {showMeeting ? (
-              <section className="min-w-0" aria-label="商談進捗情報">
-                <LiffCard>
-                  <div className="flex h-full min-h-[4.5rem] flex-col px-3 py-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="min-w-0 truncate text-[13px] font-bold text-slate-900 dark:text-white">
-                        商談進捗
-                        <span className="ml-1.5 font-normal text-slate-500 dark:text-slate-400">
-                          {meetingItems.length}件
-                        </span>
-                      </p>
-                      <Link
-                        href="/meeting-schedule"
-                        className="shrink-0 text-[12px] font-semibold text-sky-700 dark:text-sky-300"
-                        aria-label="商談進捗情報一覧へ"
-                      >
-                        ›
-                      </Link>
-                    </div>
-
-                    {meetingItems.length === 0 ? (
-                      <p className="mt-1.5 text-[12px] text-slate-500 dark:text-slate-400">
-                        なし
-                      </p>
-                    ) : (
-                      <ul className="mt-1.5 flex flex-1 flex-col gap-1">
-                        {meetingPreview.map((item, i) => (
-                          <li
-                            key={`${item.recordId}-${item.customerName}-${item.meetingTime}-${i}`}
-                            className="min-w-0"
-                          >
-                            <Link
-                              href="/meeting-schedule"
-                              className="block active:opacity-70"
-                            >
-                              <p className="truncate text-[12px] leading-snug text-slate-800 dark:text-slate-100">
-                                <span className="font-bold tabular-nums text-sky-800 dark:text-sky-200">
-                                  {item.meetingTime}
-                                </span>
-                                <span className="font-medium">
-                                  {" "}
-                                  {item.customerName}
-                                </span>
-                              </p>
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-
-                    {meetingRest > 0 ? (
-                      <Link
-                        href="/meeting-schedule"
-                        className="mt-1.5 text-[11px] font-semibold text-sky-700 dark:text-sky-300"
-                      >
-                        +{meetingRest}件
-                      </Link>
-                    ) : null}
-                  </div>
-                </LiffCard>
-              </section>
-            ) : null}
-          </div>
+                    </li>
+                  ))}
+                </ul>
+                {docsRest > 0 ? (
+                  <Link
+                    href="/customer-list"
+                    className="mt-1.5 text-[11px] font-semibold text-red-700 dark:text-red-300"
+                  >
+                    +{docsRest}件
+                  </Link>
+                ) : null}
+              </div>
+            </LiffCard>
+          </section>
         ) : null}
 
         {children ? (

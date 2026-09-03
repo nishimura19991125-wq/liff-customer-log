@@ -177,20 +177,6 @@ function InternalEventGlyph() {
   );
 }
 
-function CommunicationBridgeGlyph() {
-  return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M8 10h8M8 14h5M7 18l-3 2V6a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2H9l-2 2z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function WorkEndReportGlyph() {
   return (
     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -207,29 +193,6 @@ function WorkEndReportGlyph() {
         strokeWidth="1.6"
         strokeLinecap="round"
       />
-    </svg>
-  );
-}
-
-function BulletinGlyph() {
-  return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <rect
-        x="3"
-        y="4"
-        width="18"
-        height="16"
-        rx="2"
-        stroke="currentColor"
-        strokeWidth="1.6"
-      />
-      <path
-        d="M7 9h10M7 13h7"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-      <circle cx="18" cy="6" r="2.4" fill="currentColor" />
     </svg>
   );
 }
@@ -418,7 +381,6 @@ export default function HomeHubPage() {
               <HomeCompactSummaries
                 idToken={idToken}
                 boundStaffName={account.boundStaffName}
-                lineUserId={account.lineUserId}
                 disabled={false}
                 needsStaffBind={needsStaffBind}
                 onClose={() => setIsBulletinBoardVisible(false)}
@@ -532,7 +494,7 @@ export default function HomeHubPage() {
                   社内共通
                 </p>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  営業進捗・勤怠管理・稼働終了報告・社内イベント・掲示板・コミュニケーションブリッジを表示します。
+                  営業進捗・勤怠管理・稼働終了報告・社内イベントを表示します。
                 </p>
               </div>
               <span
@@ -578,21 +540,6 @@ export default function HomeHubPage() {
                   title="社内イベント"
                   description="朝礼の流れ（水曜日以外）・連絡先・トラーチの文化など社内情報を確認します。"
                   icon={<InternalEventGlyph />}
-                  iconTone="blue"
-                  disabled={needsStaffBind}
-                />
-                <LiffMenuCard
-                  href="/bulletin"
-                  title="掲示板"
-                  description="社内のお知らせをカテゴリ別に確認します。"
-                  icon={<BulletinGlyph />}
-                  iconTone="blue"
-                  disabled={needsStaffBind}
-                />
-                <LiffMenuCard
-                  href="/communication-bridge"
-                  title="コミュニケーションブリッジ"
-                  icon={<CommunicationBridgeGlyph />}
                   iconTone="blue"
                   disabled={needsStaffBind}
                 />
