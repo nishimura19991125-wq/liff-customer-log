@@ -78,10 +78,22 @@ type Body = {
  * 工事アプリの T番号 は転記されてくる値を入れるだけのテキスト列。
  *
  * ■ 新規案件通知（Google Chat）
- *   T番号 が新規発行されるのはこのルートだけなので、通知もここからだけ送る。
- *   施工予定日の有無は問わず、両方の経路で送る。空き枠入力・未定案件の
- *   割り当て・工事日の移動・お客様情報からの保存は既存の T番号 を使い回す
- *   ので送らない（finalizeConstructionCalendarSave の notifyNewCase 参照）。
+ *   送る条件は「T番号 が新規発行されたか」の一本。上のとおり採番するのは
+ *   お客様情報アプリで、採番されるのはお客様情報レコードを**新規作成した
+ *   ときだけ**。既存を引き当てた更新は採番済みの T番号 を読み直すだけなので、
+ *   送ると同じ案件の通知が何度も飛ぶ。
+ *
+ *   このルートは必ず新規発行になるため、施工予定日の有無を問わず送る。
+ *   施工予定日なしは工事レコードを作らないのでここから直接、ありは
+ *   finalizeConstructionCalendarSave に notifyNewCase: true を渡して送る。
+ *
+ *   ⚠ **このルート専用の仕組みではない。** 空き枠カードの新規入力
+ *     （fill-empty-slot）も、入れたお客様名の顧客がお客様情報に無ければ
+ *     連携が新規作成して T番号 が採番されるので、そのときだけ送る。
+ *     未定案件の割り当て（assign-customer-case）・工事日の移動・
+ *     お客様情報からの保存は、入口で既存の T番号 を必須にしており
+ *     新規発行が起きないので送らない。
+ *     条件の全体は finalizeConstructionCalendarSave の notifyNewCase 参照。
  */
 export async function POST(request: Request) {
   const auth = await resolveCallerLineAuth(request);
