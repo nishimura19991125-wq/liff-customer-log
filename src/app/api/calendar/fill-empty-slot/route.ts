@@ -346,6 +346,17 @@ export async function POST(request: Request) {
       viewYear: body.viewYear,
       viewMonth: body.viewMonth,
       savedVerb: "更新",
+      /**
+       * 新規案件通知は**連携がお客様情報を新規作成したときだけ**送る。
+       *
+       * 空き枠の更新なので工事レコードは既にあるが、そこへ入れた
+       * お客様名の顧客がお客様情報に無ければ、連携が新規作成して
+       * T番号 が新規採番される（＝新規案件）。既存が突合キーで
+       * 見つかれば採番済みの T番号 を読むだけなので送らない。
+       * どちらになるかはこの時点では決まらないため、判定は
+       * finalizeConstructionCalendarSave に任せる（判定は1箇所）
+       */
+      notifyNewCase: "when-customer-info-created",
     });
   } catch (e) {
     console.error("[api/calendar/fill-empty-slot]", e);

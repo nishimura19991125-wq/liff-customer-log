@@ -75,6 +75,18 @@ export type CustomerInfoSyncResult =
       kind: "synced";
       customerInfoRecordId?: string;
       /**
+       * この連携がお客様情報レコードを**新規作成したか**。
+       *
+       * T番号 を採番するのはお客様情報アプリで、採番されるのは新規作成の
+       * ときだけ。既存レコードを引き当てた更新では既にある T番号 を読む。
+       * つまりこの値が、**この操作で T番号 が新規発行されたか**そのもの。
+       *
+       * 新規案件通知（Google Chat）の可否がこれを見る。**必須にしてある**
+       * のは、返し口を増やしたときに付け忘れると通知が黙って消えるため。
+       * 監査ログの operation（"create" | "update"）と同じ分岐で決まる。
+       */
+      customerInfoCreated: boolean;
+      /**
        * お客様情報アプリが採番した T番号。
        * 呼び出し側はこれを工事アプリへ書き戻す（採番元が入れ替わったため）。
        * 読めなかったときは undefined
@@ -1163,6 +1175,8 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
     return {
       kind: "synced",
       customerInfoRecordId: existingId,
+      // 既存を引き当てた更新。T番号 は採番済みのものを読んだだけ
+      customerInfoCreated: false,
       pendingAudit,
       ...(customerTNumber ? { tNumber: customerTNumber } : {}),
       ...(dropboxWarning ? { dropboxWarning } : {}),
@@ -1325,6 +1339,8 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
 
   return {
     kind: "synced",
+    // お客様情報を新規作成した＝ここで T番号 が新規採番された
+    customerInfoCreated: true,
     pendingAudit,
     ...(customerInfoRecordId ? { customerInfoRecordId } : {}),
     ...(customerTNumber ? { tNumber: customerTNumber } : {}),

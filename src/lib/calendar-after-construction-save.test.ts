@@ -299,14 +299,18 @@ describe("監査ログの合流（E案）", () => {
 });
 
 /**
- * 新規案件通知を送るのは、T番号 を新規発行する経路だけ。
+ * 新規案件通知を送るのは、T番号 が新規発行される操作だけ。
  *
  * この後処理は新規登録・空き枠入力・未定案件の割り当て・工事日の移動が
  * 共通で通る。ここで既定が「送らない」でなくなると、既存の T番号 を
  * 使い回すだけの操作にまで通知が飛ぶ。
+ *
+ * 空き枠入力（fill-empty-slot）だけは、連携がお客様情報を新規作成したか
+ * どうかで決まる。呼び出し側は事前に知りえない（連携はこの後処理の中で
+ * 走る）ので、判定はここに1箇所だけ置く。
  */
 describe("新規案件通知", () => {
-  it("★ 既定では enabled:false で呼ぶ（空き枠入力・割り当て・工事日の移動）", async () => {
+  it("★ 既定では enabled:false で呼ぶ（割り当て・工事日の移動）", async () => {
     await finalizeConstructionCalendarSave({
       ...BASE,
       constructionUniqueKey: "T00003420",
@@ -360,6 +364,57 @@ describe("新規案件通知", () => {
         tNumber: undefined,
         customerName: "山田 太郎",
         lineUserId: undefined,
+      },
+    ]);
+  });
+
+  it("★ 空き枠入力は連携が新規作成したときだけ enabled:true（T番号 が新規採番される）", async () => {
+    h.syncResult = {
+      kind: "synced",
+      tNumber: "T00003420",
+      customerInfoCreated: true,
+    };
+
+    await finalizeConstructionCalendarSave({
+      ...BASE,
+      constructionUniqueKey: "",
+      lineUserId: "U-line-1",
+      notifyNewCase: "when-customer-info-created",
+    });
+
+    expect(h.newCaseNotifications).toEqual([
+      {
+        source: "finalize",
+        enabled: true,
+        tNumber: "T00003420",
+        customerName: "山田 太郎",
+        lineUserId: "U-line-1",
+      },
+    ]);
+  });
+
+  it("★ 空き枠入力でも既存を更新したなら enabled:false（採番済みの T番号 を読んだだけ）", async () => {
+    h.syncResult = {
+      kind: "synced",
+      tNumber: "T00003420",
+      customerInfoCreated: false,
+    };
+
+    await finalizeConstructionCalendarSave({
+      ...BASE,
+      constructionUniqueKey: "",
+      lineUserId: "U-line-1",
+      notifyNewCase: "when-customer-info-created",
+    });
+
+    // 送らないと決めた理由をログに残させるため、握り潰さず必ず呼ぶ
+    expect(h.newCaseNotifications).toEqual([
+      {
+        source: "finalize",
+        enabled: false,
+        tNumber: "T00003420",
+        customerName: "山田 太郎",
+        lineUserId: "U-line-1",
       },
     ]);
   });

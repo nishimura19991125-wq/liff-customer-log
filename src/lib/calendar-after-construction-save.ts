@@ -56,11 +56,24 @@ export async function finalizeConstructionCalendarSave(opts: {
   /**
    * 新規案件通知（Google Chat）を送る。
    *
-   * **T番号 を新規発行する経路だけが true を渡す**（工事カレンダーの新規登録）。
-   * 空き枠入力・未定案件の割り当て・工事日の移動は既存の T番号 を使い回すので
-   * 既定（未指定）のまま送らない。
+   * **T番号 が新規発行される操作だけが送る。** T番号 を採番するのは
+   * お客様情報アプリで、採番されるのはお客様情報レコードを新規作成した
+   * ときだけ。既存を引き当てた更新は採番済みの T番号 を読み直すだけなので、
+   * 送ると同じ案件の通知が何度も飛ぶ。
+   *
+   * - `true` … 呼び出し側が新規発行だと知っている（工事カレンダーの新規登録）
+   * - `"when-customer-info-created"` … **連携の結果で決める**。
+   *   空き枠カードの「新規入力」（fill-empty-slot）がこれ。空き枠に
+   *   お客様名を入れると、連携が突合キーでお客様情報を探し、
+   *   見つからなければ新規作成する（＝ T番号 が新規採番される）。
+   *   既存が見つかれば更新なので送らない。呼び出し側はどちらになるかを
+   *   事前に知りえない（連携はこの後処理の中で走る）ので、判定は下の
+   *   `enabled` の1箇所に集約してある。
+   * - 未指定 … 送らない。未定案件の割り当て（assign-customer-case）・
+   *   工事日の移動・お客様情報からの保存は、いずれも入口で既存の T番号 を
+   *   必須にしており新規発行が起きない。
    */
-  notifyNewCase?: boolean;
+  notifyNewCase?: boolean | "when-customer-info-created";
   /** 成功レスポンスに追記する任意フィールド（同日空枠削除の結果など） */
   extraResponse?: Record<string, unknown>;
 }): Promise<NextResponse> {
@@ -142,9 +155,20 @@ export async function finalizeConstructionCalendarSave(opts: {
    *   なかったのがこれ。判断と記録は notifyNewCaseCreated に集約する。
    */
   const pendingNewCaseNotification = notifyNewCaseCreated({
-    // 新規登録の施工予定日ありだけが enabled:true でここを通る
+    /**
+     * 送るかどうかの判定は**ここだけ**。呼び出し側へ書き写さないこと。
+     *
+     * 新規登録は呼び出し側が true を渡す。空き枠入力は連携が走るまで
+     * 新規作成か更新かが決まらないので、この後処理が連携の結果
+     * （customerInfoCreated）で決める。同じ判定を呼び出し側にも置くと、
+     * 片方だけ直したときに通知が黙って消える／二重に飛ぶ。
+     */
     source: "finalize",
-    enabled: opts.notifyNewCase === true,
+    enabled:
+      opts.notifyNewCase === true ||
+      (opts.notifyNewCase === "when-customer-info-created" &&
+        customerSync.kind === "synced" &&
+        customerSync.customerInfoCreated),
     tNumber: syncedTNumber,
     customerName: opts.customerName,
     lineUserId: opts.lineUserId,
