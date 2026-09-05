@@ -127,7 +127,7 @@
 |---|---|---|---|---|---|---|
 | indoorSurveyStatus | 室内現地調査実施状況 | select | 未実施 / 実施済み | 必須 | | 通常 |
 | indoorSurveyScheduledDate | 室内現調予定日 | date | | 必須 | 条件L | 通常 |
-| breakerAmps | 分電盤アンペア数 | select | 50A / 60A / 75A / 100A / 新築の為、未定 | 条件付き | | 通常（条件Rで任意化） |
+| breakerAmps | 分電盤アンペア数 | select | 40A / 50A / 60A / 75A / 100A / 新築の為、未定 | 条件付き | | 通常（条件Rで任意化） |
 | roofMaterial | 屋根材 | select | 金属縦平葺 / カラーベスト / アスファルトシングル / 平板瓦 / 洋瓦 / 和瓦 / 金属横葺 / その他 | 必須 | 条件M | 通常 |
 | roofMaterialModel | 屋根材品番 | text | | 必須 | 条件N | 通常 |
 | cosmeticCover | 化粧カバー | checkbox-group | 黒 / 白 / アイボリー / ブラウン / グレー / 新築のため未定 / 無 | 条件付き | | 通常（条件Rで任意化） |
