@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { safePocketErrorText } from "@/lib/api-error-response";
+
 import {
   apiKeyForCalendarPocket1,
   apiKeyForCalendarWrite,
@@ -435,7 +437,19 @@ export async function POST(request: Request) {
       invalidateAllCalendarPayloadCache();
       return NextResponse.json(
         {
-          error: `空き枠の削除記録を残せなかったため、削除を中止しました（${deletionLog.error}）。案件への工事日の反映は完了しています。時間をおいて再度お試しください。`,
+          /**
+           * 何が起きたかは前半でそのまま伝える。
+           *
+           * 括弧に入れていた deletionLog.error は、更新履歴アプリの列定義
+           * 取得が落ちたときに @pocket の生メッセージ（応答本文・appsId・
+           * 使用した環境変数名）になる。利用者に対処のしようが無いので
+           * 相関IDに置き換え、生の内容はサーバログへ回す。
+           */
+          error: safePocketErrorText(deletionLog.error, {
+            scope: "api/calendar/assign-case-to-slot",
+            message:
+              "空き枠の削除記録を残せなかったため、削除を中止しました。案件への工事日の反映は完了しています。時間をおいて再度お試しください。",
+          }),
           constructionSaved: true,
         },
         { status: 502 },

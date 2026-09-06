@@ -1,4 +1,5 @@
 import "server-only";
+import { safePocketErrorText } from "@/lib/api-error-response";
 
 import {
   atPocketRecordIdFromCreateResult,
@@ -128,14 +129,38 @@ function pocketSyncErrorMessage(e: unknown): string {
       "CUSTOMER_INFO_ATPOCKET_API_KEY_2（お客様情報アプリの登録権限のあるキー）を確認してください。"
     );
   }
+  /**
+   * ここから下は @pocket の生メッセージを画面へ出さない。
+   *
+   * 以前は固定文言に `${raw}` を連結していた。生メッセージには応答本文・
+   * appsId・operation・**使用した環境変数名**まで載っており（atpocket.ts
+   * の formatPocketHttpError）、受け取った利用者に対処のしようが無い。
+   *
+   * この文言は finalizeConstructionCalendarSave 経由で 502 の本文になる。
+   * finalize は新規登録・空き枠入力・未定案件の割り当て・工事日の移動が
+   * すべて通る共通処理なので、露出面が広い。
+   *
+   * 上の 403 / 401 / キー項目重複は**設定を直せば解決する案内**なので
+   * そのまま残す。判定の順番も変えない（重複の判定は create/update の
+   * あとに置いてある）。
+   */
   if (raw.includes("list fields failed")) {
-    return `お客様情報アプリのフィールド定義を取得できません。${raw}`;
+    return safePocketErrorText(e, {
+      scope: "sync-construction-to-customer-info",
+      message: "お客様情報アプリのフィールド定義を取得できません",
+    });
   }
   if (raw.includes("create record failed")) {
-    return `お客様情報アプリへのレコード登録に失敗しました。${raw}`;
+    return safePocketErrorText(e, {
+      scope: "sync-construction-to-customer-info",
+      message: "お客様情報アプリへのレコード登録に失敗しました",
+    });
   }
   if (raw.includes("update record failed")) {
-    return `お客様情報アプリへのレコード更新に失敗しました。${raw}`;
+    return safePocketErrorText(e, {
+      scope: "sync-construction-to-customer-info",
+      message: "お客様情報アプリへのレコード更新に失敗しました",
+    });
   }
   if (raw.includes("キー項目が重複")) {
     return (
@@ -143,7 +168,11 @@ function pocketSyncErrorMessage(e: unknown): string {
       "CUSTOMER_INFO_CONSTRUCTION_UNIQUE_KEY_FIELD_ID が T番号列の uniqueId と一致しているか確認してください。"
     );
   }
-  return raw || "お客様情報アプリへの連携に失敗しました。";
+  // 既知のどれでもない。生メッセージは safePocketErrorText がログへ残す
+  return safePocketErrorText(e, {
+    scope: "sync-construction-to-customer-info",
+    message: "お客様情報アプリへの連携に失敗しました",
+  });
 }
 
 function coercePocketPlainString(raw: unknown): string {

@@ -149,6 +149,7 @@ describe("素通しの形を残さない", () => {
     "src/lib/sales-dashboard-apo-tenka-bundle.ts",
     "src/lib/apo-list.ts",
     "src/lib/meeting-schedule.ts",
+    "src/lib/sync-construction-to-customer-info.ts",
   ] as const;
 
   function read(rel: string): string {
@@ -164,6 +165,32 @@ describe("素通しの形を残さない", () => {
     expect(src).toContain("取込キー「アポ通番(仮)」を認識できませんでした");
     expect(src).toContain("商談ステータスの更新に失敗しました");
     expect(src).toContain("商談・資料送付予定日時の更新に失敗しました");
+  });
+
+  it("★ 保存経路の共通処理も素通ししない（案内文は残す）", () => {
+    const src = read("src/lib/sync-construction-to-customer-info.ts");
+
+    // 生メッセージの連結・素通しを書き戻さない（説明のための言及は除く）
+    expect(src).not.toMatch(/return\s+`[^`]*\$\{raw\}/);
+    expect(src).not.toContain('return raw || "');
+    // 設定を直せば解決する3つの案内はそのまま
+    expect(src).toContain("403 Forbidden");
+    expect(src).toContain("お客様情報アプリへの認証に失敗しました（401）");
+    expect(src).toContain("同じキー項目（T番号）のレコードが既にあります");
+    // 固定文言の部分は活かす
+    expect(src).toContain("お客様情報アプリへのレコード登録に失敗しました");
+    expect(src).toContain("お客様情報アプリへのレコード更新に失敗しました");
+    expect(src).toContain("お客様情報アプリのフィールド定義を取得できません");
+  });
+
+  it("★ 空き枠の削除記録の失敗も素通ししない（前半の説明は残す）", () => {
+    const src = read("src/app/api/calendar/assign-case-to-slot/route.ts");
+
+    expect(src).not.toContain("${deletionLog.error}");
+    expect(src).toContain(
+      "空き枠の削除記録を残せなかったため、削除を中止しました",
+    );
+    expect(src).toContain("safePocketErrorText(deletionLog.error");
   });
 
   it("★ 画面へ返す error に生メッセージを入れていない", () => {
