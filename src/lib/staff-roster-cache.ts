@@ -349,11 +349,66 @@ export async function fetchStaffRosterRowsCached(): Promise<
 }
 
 /**
+ * 名簿の行から作った派生キャッシュ（氏名→勤務場所の Map など）の破棄関数。
+ *
+ * ■ なぜ登録制にするか
+ * 派生側（staff-workplace-lookup など）は名簿を読むために
+ * このモジュールを import している。逆にこのモジュールが派生側を
+ * import すると**循環参照**になるので、直接呼び出せない。
+ * そこで派生側が自分の破棄関数をここへ預け、名簿を捨てるときに
+ * まとめて呼ぶ。
+ *
+ * ■ なぜ呼び出し側に「両方呼ぶ」と書かないか
+ * 名簿を捨てる箇所は今 1 つだが、派生キャッシュはこれまでに 4 つ
+ * （勤務場所・所属・部署・AP/CL プルダウン）まで増えた。呼び出し側に
+ * 並べる形にすると、**派生が増えるたびに全呼び出し側を直す**ことになり、
+ * 必ず抜ける。実際、勤務場所・所属・部署の破棄関数は定義されたまま
+ * 一度も呼ばれておらず、名簿を直しても Map が古いままだった。
+ *
+ * ■ 登録はモジュールの読み込み時に行われる
+ * 読み込まれていない派生モジュールは登録もされないが、そのときは
+ * キャッシュ自体が存在しないので捨てる対象も無い。
+ */
+const staffRosterDerivedCacheResets = new Set<() => void>();
+
+/**
+ * 名簿の行から作ったキャッシュの破棄関数を登録する。
+ *
+ * 派生側のモジュール直下で1回だけ呼ぶこと。`invalidateStaffRosterCache()`
+ * が呼ばれたときに、ここへ預けた関数がすべて実行される。
+ */
+export function registerStaffRosterDerivedCache(reset: () => void): void {
+  staffRosterDerivedCacheResets.add(reset);
+}
+
+/** 登録済みの派生キャッシュをすべて捨てる。1つ落ちても残りは続ける */
+function resetStaffRosterDerivedCaches(): void {
+  for (const reset of staffRosterDerivedCacheResets) {
+    try {
+      reset();
+    } catch (e) {
+      // 破棄で失敗しても名簿の無効化は成立させる（次に作り直せばよい）
+      console.warn(
+        "[staff-roster-cache] 派生キャッシュの破棄に失敗しました",
+        e instanceof Error ? e.name : "unknown",
+      );
+    }
+  }
+}
+
+/**
  * 名簿キャッシュを論理無効化（行データは保持し 429 時のフォールバックに使う）。
  * hard=true のときのみ完全削除。
+ *
+ * **名簿から作った派生キャッシュも一緒に捨てる。** 捨てないと、名簿で
+ * 勤務場所や所属会社を直しても、プロセスが生きている間ずっと古い値が
+ * 返り続ける（派生の Map には期限が無い）。
+ * 派生の作り直しは名簿の行から組み直すだけで、@pocket への問い合わせは
+ * 増えない。
  */
 export function invalidateStaffRosterCache(hard = false): void {
   rosterInflight = null;
+  resetStaffRosterDerivedCaches();
   if (hard) {
     rosterCache = null;
     return;

@@ -15,6 +15,7 @@ import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
 import {
   fetchStaffRosterRowsCached,
   getStaffRosterRowsBestEffort,
+  registerStaffRosterDerivedCache,
   staffRosterCacheTtlMs,
 } from "@/lib/staff-roster-cache";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
@@ -427,6 +428,9 @@ export function invalidateApClStaffPickerCache(): void {
   pickerCache.clear();
   pickerInflight.clear();
 }
+
+// 名簿を捨てたらプルダウンの候補も捨てる（紐付け変更時の明示呼び出しは従来どおり）
+registerStaffRosterDerivedCache(invalidateApClStaffPickerCache);
 
 /** 社員名からスタッフ名簿の取込キー（社員ID 等）を引く */
 export async function lookupStaffImportKeyByStaffName(

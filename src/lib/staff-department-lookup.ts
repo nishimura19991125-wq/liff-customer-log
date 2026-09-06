@@ -10,7 +10,10 @@ import {
   resolveConfiguredFieldToSchemaUniqueId,
 } from "@/lib/calendar-kojo";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
-import { fetchStaffRosterRowsCached } from "@/lib/staff-roster-cache";
+import {
+  fetchStaffRosterRowsCached,
+  registerStaffRosterDerivedCache,
+} from "@/lib/staff-roster-cache";
 import { pocketTableCellToPlainString } from "@/lib/staff-construction-availability";
 
 export type StaffDepartmentLookupConfig = {
@@ -174,3 +177,6 @@ export function invalidateStaffDepartmentLookupCache(): void {
   cachedMap = null;
   cachedMapKey = "";
 }
+
+// 名簿を捨てたら部署マップも捨てる（呼び忘れを起こさないよう登録制）
+registerStaffRosterDerivedCache(invalidateStaffDepartmentLookupCache);
