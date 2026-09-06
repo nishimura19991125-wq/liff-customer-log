@@ -89,6 +89,11 @@ const {
   submitWorkEndReportForLineUser,
 } = await import("@/lib/work-end-report-server");
 
+// 一覧の共有キャッシュはモジュール変数。テスト間で持ち越さない
+const { invalidateWorkEndReportRowsCache } = await import(
+  "@/lib/work-end-report-cache"
+);
+
 const FORM = {
   pinponCount: "10",
   meetingCount: "3",
@@ -98,6 +103,7 @@ const FORM = {
 };
 
 beforeEach(() => {
+  invalidateWorkEndReportRowsCache();
   process.env.WORK_END_REPORT_APP_ID = "88";
   delete process.env.WORK_END_REPORT_CLOCK_OUT_TIMEOUT_MS;
   h.punchCalls = [];

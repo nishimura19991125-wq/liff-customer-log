@@ -15,6 +15,11 @@ import { pickRecordValueByFieldAliases, ymdKey } from "@/lib/calendar-kojo";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 import { punchAttendanceForLineUser } from "@/lib/attendance-server";
 import { lookupStaffDepartmentByStaffName } from "@/lib/staff-department-lookup";
+import {
+  getWorkEndReportRowsCached,
+  invalidateWorkEndReportRowsCache,
+  workEndReportRowsCacheKey,
+} from "@/lib/work-end-report-cache";
 import { resolveWorkEndReportAppId } from "@/lib/work-end-report-config";
 import {
   applyWorkEndReportAutoNumberOnCreate,
@@ -194,7 +199,17 @@ async function loadWorkEndReportFieldIds(): Promise<
   return { ok: true, appId, ids, appFields };
 }
 
-async function fetchTodayReportRows(
+/**
+ * 1ページの取得件数。**打ち切り判定と必ず同じ値を使うこと。**
+ *
+ * 以前は limit を指定せず（＝@pocket 既定の 1000 件が返る）、打ち切りだけ
+ * `recs.length < 100` で見ていた。1000 件返ってくるのに 100 件で判定して
+ * いたので、レコードが 100 件を超えた時点から**毎回必ず2ページ目まで**
+ * 取りに行っていた。取得回数が常に倍になっていたのがこれ。
+ */
+const WORK_END_REPORT_PAGE_LIMIT = 1000;
+
+async function fetchTodayReportRowsFromPocket(
   appId: string,
   ids: WorkEndReportFieldIds,
 ): Promise<AtPocketRecordRow[]> {
@@ -206,16 +221,42 @@ async function fetchTodayReportRows(
   for (let page = 1; page <= pageCap; page++) {
     const res = await fetchRecordsList(
       appId,
-      { page: String(page), fields: csv },
+      {
+        limit: String(WORK_END_REPORT_PAGE_LIMIT),
+        page: String(page),
+        fields: csv,
+      },
       readAuth,
       { operation: "work-end:一覧", appEnv: "WORK_END_REPORT_APP_ID" },
     );
     const recs = res.records ?? [];
     all.push(...recs);
-    if (recs.length < 100) break;
+    if (recs.length < WORK_END_REPORT_PAGE_LIMIT) break;
   }
 
   return all;
+}
+
+/**
+ * 当日分の突合に使う一覧。**全員で共有するキャッシュ越しに取る。**
+ *
+ * 絞り込みの無い全件取得で、中身は誰が見ても同じ。打刻画面を開くたびに
+ * 利用者ごとに取り直すと、出勤が集中する時間帯だけで @pocket の上限
+ * （100秒あたり100回・サイト単位）の一角を占める。
+ *
+ * `bypassCache` は二重提出の判定だけが渡す（古い一覧で「未提出」と
+ * 判断してはならないため）。
+ */
+async function fetchTodayReportRows(
+  appId: string,
+  ids: WorkEndReportFieldIds,
+  bypassCache?: boolean,
+): Promise<AtPocketRecordRow[]> {
+  return getWorkEndReportRowsCached(
+    workEndReportRowsCacheKey(appId, workEndReportFieldsCsv(ids)),
+    () => fetchTodayReportRowsFromPocket(appId, ids),
+    bypassCache,
+  );
 }
 
 function matchTodayReport(
@@ -431,7 +472,13 @@ export async function submitWorkEndReportForLineUser(
 
   const { appId, ids, appFields } = loaded;
 
-  const rows = await fetchTodayReportRows(appId, ids);
+  /**
+   * 二重提出の判定。**ここだけ共有キャッシュを外して取り直す。**
+   *
+   * 60 秒前の一覧で「まだ報告していない」と判断すると、同じ日の報告が
+   * 2件できる。読み取り1回の節約より、重複を作らないほうが重い。
+   */
+  const rows = await fetchTodayReportRows(appId, ids, true);
   const existing = matchTodayReport(rows, staffName, ids, today);
   if (existing) {
     return {
@@ -469,6 +516,15 @@ export async function submitWorkEndReportForLineUser(
       error: formatWorkEndReportCreateError(msg),
     };
   }
+
+  /**
+   * 書けたので共有キャッシュを捨てる。**必ずここで捨てること。**
+   *
+   * 捨てないと、下で読み直す状況（`getWorkEndReportStatusForLineUser`）が
+   * 書き込み前の一覧を拾い、提出した本人の画面が最大 TTL の間
+   * 「未提出」のまま＝もう一度提出できるように見える。
+   */
+  invalidateWorkEndReportRowsCache();
 
   // X-3: 報告の保存が成功してから打刻する。
   // 失敗しても報告は成功のままで、warning だけ画面へ返す

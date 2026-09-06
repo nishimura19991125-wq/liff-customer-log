@@ -140,7 +140,8 @@ function authHeaderName(): string {
 /**
  * 環境変数のうち最初に値がある API キー。
  * スタッフ名簿: ATPOCKET_API_KEY / ATPOCKET_API_KEY_1 / ATPOCKET_API_KEY_2（名簿権限のみ）
- * その他アプリ: {PREFIX}_ATPOCKET_API_KEY / _1 / _2（読取①・読取②・更新③・429分散）
+ * その他アプリ: {PREFIX}_ATPOCKET_API_KEY / _1 / _2（読取①・読取②・更新③）
+ * 用途で分けているだけで、上限はサイト単位なのでキーを分けても増えない。
  */
 function firstEnvApiKey(...envNames: string[]): string | undefined {
   for (const name of envNames) {
@@ -229,7 +230,7 @@ export function apiKeyForCalendarReportPocket(): string {
   return apiKeyForCalendarPocket1();
 }
 
-/** 工事報告アプリ・読取②（fields など・429 分散用） */
+/** 工事報告アプリ・読取②（fields など・用途で分けた読取キー） */
 export function apiKeyForCalendarReportPocket1(): string {
   const key = firstEnvApiKey(
     "CALENDAR_REPORT_ATPOCKET_API_KEY_1",
@@ -327,7 +328,7 @@ export function apiKeyForAttendancePocket(): string {
   return requireAppApiKey("ATTENDANCE", 0, []);
 }
 
-/** 勤怠・読取②（fields 等・429 分散） */
+/** 勤怠・読取②（fields 等・用途で分けた読取キー） */
 export function apiKeyForAttendancePocket1(): string {
   return requireAppApiKey("ATTENDANCE", 1, []);
 }
@@ -408,7 +409,7 @@ export function salesDashboardApoWriteConfigured(): boolean {
   return Boolean(process.env.SALES_DASHBOARD_APO_ATPOCKET_API_KEY_2?.trim());
 }
 
-/** 一覧サブキー最大数（LIST_1 … LIST_N。429 分散用に既存3 + 追加10 = 13） */
+/** 一覧サブキー最大数（LIST_1 … LIST_N。429 時の切替先として既存3 + 追加10 = 13） */
 export const POCKET_LIST_SUB_KEY_MAX = 13;
 
 function listEnvNamesForApp(prefix: string): string[] {
@@ -766,7 +767,17 @@ function parseRetryAfterMs(headers: Headers): number | null {
 const POCKET_GET_RETRY_MAX = 5;
 const POCKET_GET_RETRY_BASE_MS = 450;
 
-/** @pocket の 100 秒ウィンドウ（同一 API キーでアプリ横断） */
+/**
+ * @pocket の 100 秒ウィンドウ。
+ *
+ * ⚠ **上限は「100秒あたり100回・サイト単位」**（引継ぎ資料【4-3】）。
+ *   API キー単位ではない。キーを増やしても上限は増えないので、
+ *   **減らせるのは呼び出しの総量だけ**。
+ *
+ * 下の Map をキーごとに持っているのは、上限がキー単位だからではなく、
+ * 「429 を返された事実」をそのとき使っていたキーに結び付けて記録して
+ * いるだけ。上限そのものはサイト全体で共有されている。
+ */
 const POCKET_RATE_LIMIT_WINDOW_MS = 100_000;
 const pocketRateLimitedUntil = new Map<string, number>();
 
