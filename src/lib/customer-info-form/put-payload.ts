@@ -134,12 +134,13 @@ async function applyStaffAssignmentsToPayload(
   loadedStaff?: { apStaff?: string; clStaff?: string } | null,
 ): Promise<void> {
   const roles = [
-    { staffKey: "apStaff", branchKey: "apBranch", companyKey: "apCompany" },
-    { staffKey: "clStaff", branchKey: "clBranch", companyKey: "clCompany" },
+    { role: "AP", staffKey: "apStaff", branchKey: "apBranch", companyKey: "apCompany" },
+    { role: "CL", staffKey: "clStaff", branchKey: "clBranch", companyKey: "clCompany" },
   ] as const;
 
   const targets = roles
     .map((role) => ({
+      role: role.role,
       branchFieldId: resolved.find((f) => f.key === role.branchKey)?.fieldId,
       companyFieldId: resolved.find((f) => f.key === role.companyKey)?.fieldId,
       loaded: loadedStaff?.[role.staffKey],
@@ -171,6 +172,31 @@ async function applyStaffAssignmentsToPayload(
     const company = staffBranchValueToWrite(assignment.company);
     if (t.companyFieldId && company !== null) {
       payload[t.companyFieldId] = company;
+    }
+
+    /**
+     * 引けなかったことを1行残す。
+     *
+     * 「引けなければ黙って書かない」は値を潰さないための正しい動きだが、
+     * **正常系と区別が付かない**。実際、所属会社が取得列に入っていなかった
+     * とき（環境変数の設定漏れ）に、画面にもログにも何も出ず切り分けに
+     * 時間がかかった。
+     *
+     * ⚠ 出すのは**取れなかった事実だけ**。担当者の氏名・引けた値・@pocket の
+     *   内部情報は出さない。
+     * ⚠ **引き直したときだけ**出す。担当者が変わっていない保存でも出すと、
+     *   毎回の保存で流れて意味がなくなる（pending の中なのでここは満たす）。
+     * 書き込む列が無い側（fieldId が解決できていない）は、そもそも引く必要が
+     * 無いので数えない。
+     */
+    const missing: string[] = [];
+    if (t.branchFieldId && branch === null) missing.push("branch");
+    if (t.companyFieldId && company === null) missing.push("company");
+    if (missing.length > 0) {
+      console.warn(
+        "[customer-info put-payload] 担当者の所属を名簿から引けませんでした",
+        JSON.stringify({ role: t.role, missing }),
+      );
     }
   }
 }

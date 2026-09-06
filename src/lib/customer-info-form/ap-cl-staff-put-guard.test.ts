@@ -278,3 +278,87 @@ describe("所属会社（所属支店と同じ仕組み）", () => {
     expect(payload).not.toHaveProperty("apCompany");
   });
 });
+
+/**
+ * 引けなかったことをログに残す。
+ *
+ * 「引けなければ黙って書かない」は値を潰さないための正しい動きだが、
+ * 正常系と区別が付かず、設定漏れの切り分けに時間がかかった。
+ * 残すのは**取れなかった事実だけ**で、氏名や値は出さない。
+ */
+describe("所属を引けなかったときのログ", () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  function warned(): string {
+    return warnSpy.mock.calls
+      .map((c) => c.map((x) => String(x)).join(" "))
+      .join(" | ");
+  }
+
+  it("★ 会社が引けなければ、どのロールの何が取れなかったかを残す", async () => {
+    h.company = null;
+
+    await buildPayload(
+      { ...BASE_VALUES, apStaff: "山田花子" },
+      { apStaff: "冨田菜摘", clStaff: "鈴木一郎" },
+    );
+
+    const logged = warned();
+    expect(logged).toContain("担当者の所属を名簿から引けませんでした");
+    expect(logged).toContain('"role":"AP"');
+    expect(logged).toContain('"company"');
+    expect(logged).not.toContain('"branch"');
+  });
+
+  it("★ 支店が引けなければ支店を残す", async () => {
+    h.workplace = null;
+
+    await buildPayload(
+      { ...BASE_VALUES, clStaff: "山田花子" },
+      { apStaff: "冨田菜摘", clStaff: "鈴木一郎" },
+    );
+
+    const logged = warned();
+    expect(logged).toContain('"role":"CL"');
+    expect(logged).toContain('"branch"');
+  });
+
+  it("★ 氏名・引けた値をログに含めない", async () => {
+    h.company = null;
+
+    await buildPayload(
+      { ...BASE_VALUES, apStaff: "山田花子" },
+      { apStaff: "冨田菜摘", clStaff: "鈴木一郎" },
+    );
+
+    const logged = warned();
+    for (const secret of ["山田花子", "冨田菜摘", "鈴木一郎", "本社"]) {
+      expect(logged, secret).not.toContain(secret);
+    }
+  });
+
+  it("★ 両方引けたときは出さない", async () => {
+    await buildPayload(
+      { ...BASE_VALUES, apStaff: "山田花子" },
+      { apStaff: "冨田菜摘", clStaff: "鈴木一郎" },
+    );
+
+    expect(warned()).not.toContain("担当者の所属を名簿から引けませんでした");
+  });
+
+  it("★ 担当者を変えていないときは出さない（毎回流さない）", async () => {
+    h.workplace = null;
+    h.company = null;
+
+    await buildPayload(BASE_VALUES, {
+      apStaff: "冨田菜摘",
+      clStaff: "鈴木一郎",
+    });
+
+    expect(warned()).not.toContain("担当者の所属を名簿から引けませんでした");
+  });
+});

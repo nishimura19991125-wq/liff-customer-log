@@ -350,3 +350,59 @@ describe("修正4: 工事カレンダー連携を監査ログに記録する", (
     expect(ap?.after).toBe("操作者太郎");
   });
 });
+
+/**
+ * 引けなかったことをログに残す（put-payload 側と同じ理由・同じ形）。
+ * 残すのは取れなかった事実だけで、氏名や引けた値は出さない。
+ */
+describe("所属を引けなかったときのログ（新規作成）", () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  function warned(): string {
+    return warnSpy.mock.calls
+      .map((c) => c.map((x) => String(x)).join(" "))
+      .join(" | ");
+  }
+
+  it("★ 会社が引けなければ、どのロールの何が取れなかったかを残す", async () => {
+    h.company = null;
+
+    await runSync();
+
+    const logged = warned();
+    expect(logged).toContain("担当者の所属を名簿から引けませんでした");
+    expect(logged).toContain('"role":"AP"');
+    expect(logged).toContain('"role":"CL"');
+    expect(logged).toContain('"company"');
+    expect(logged).not.toContain('"branch"');
+  });
+
+  it("★ 支店が引けなければ支店を残す", async () => {
+    h.workplace = null;
+
+    await runSync();
+
+    expect(warned()).toContain('"branch"');
+  });
+
+  it("★ 氏名・引けた値をログに含めない", async () => {
+    h.company = null;
+
+    await runSync();
+
+    const logged = warned();
+    for (const secret of ["操作者太郎", "山田太郎", "本社"]) {
+      expect(logged, secret).not.toContain(secret);
+    }
+  });
+
+  it("★ 両方引けたときは出さない", async () => {
+    await runSync();
+
+    expect(warned()).not.toContain("担当者の所属を名簿から引けませんでした");
+  });
+});

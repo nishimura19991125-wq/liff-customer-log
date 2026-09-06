@@ -301,6 +301,7 @@ async function applyApClStaffFromLineUserToCustomerRecord(
    */
   const assignmentTargets = [
     {
+      role: "AP",
       staffName: apStaff,
       branchFieldId: resolveCustomerInfoFormFieldId(
         "apBranch",
@@ -314,6 +315,7 @@ async function applyApClStaffFromLineUserToCustomerRecord(
       ),
     },
     {
+      role: "CL",
       staffName: clStaff,
       branchFieldId: resolveCustomerInfoFormFieldId(
         "clBranch",
@@ -342,6 +344,21 @@ async function applyApClStaffFromLineUserToCustomerRecord(
     const company = staffBranchValueToWrite(assignment.company);
     if (t.companyFieldId && company !== null) {
       customerRecord[t.companyFieldId] = company;
+    }
+
+    /**
+     * 引けなかったことを1行残す（put-payload 側と同じ理由・同じ形）。
+     * 出すのは取れなかった事実だけで、担当者の氏名・引けた値は出さない。
+     * ここは新規作成のときしか通らないので、毎回流れる心配はない。
+     */
+    const missing: string[] = [];
+    if (t.branchFieldId && workplace === null) missing.push("branch");
+    if (t.companyFieldId && company === null) missing.push("company");
+    if (missing.length > 0) {
+      console.warn(
+        "[sync-construction-to-customer-info] 担当者の所属を名簿から引けませんでした",
+        JSON.stringify({ role: t.role, missing }),
+      );
     }
   }
 }
