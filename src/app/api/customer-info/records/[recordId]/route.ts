@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { pocketErrorResponse } from "@/lib/api-error-response";
+import {
+  pocketErrorResponse,
+  safePocketErrorText,
+} from "@/lib/api-error-response";
+import {
+  customerInfoFieldLabelMap,
+  customerInfoPutFailureMessage,
+} from "@/lib/customer-info-form/pocket-error-fields";
 
 import {
   customerInfoConfigReady,
@@ -594,6 +601,15 @@ export async function PUT(request: Request, ctx: RouteCtx) {
   const readAuth = customerInfoPocketAuth1();
   const writeAuth = customerInfoPocketAuthWrite();
 
+  /**
+   * 列の識別名 → 見出し。**catch から参照するため try の外に置く。**
+   *
+   * @pocket が値の形式を理由に 400 を返したとき、応答本文の field-XX を
+   * 見出しへ引き直して画面に出すのに使う。解決できた時点で詰めるので、
+   * 列定義の取得より前に落ちたときは空のまま（従来の文言になる）。
+   */
+  let putFieldLabels: ReadonlyMap<string, string> = new Map();
+
   try {
     const appFields = await fetchAppFields(cfg.appId, readAuth, {
       operation: "customer-info:レコード保存(列定義)",
@@ -602,6 +618,7 @@ export async function PUT(request: Request, ctx: RouteCtx) {
 
     if (!customerInfoUsesLegacyEditableList()) {
       const { resolved } = resolveCustomerInfoFormFields(appFields);
+      putFieldLabels = customerInfoFieldLabelMap(resolved);
       if (resolved.length === 0) {
         return NextResponse.json(
           { error: "お客様情報フォームの列定義を解決できません" },
@@ -922,6 +939,13 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       );
     }
 
+    putFieldLabels = customerInfoFieldLabelMap(
+      editableResolved.map((f) => ({
+        fieldId: f.schemaId,
+        label: f.caption,
+      })),
+    );
+
     const allowed = new Map(
       editableResolved.map((f) => [f.schemaId, f] as const),
     );
@@ -977,6 +1001,31 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         { status: 502 },
       );
     }
+    /**
+     * 値の形式が原因で @pocket が弾いたとき、**どの項目か**を出す。
+     *
+     * 応答本文の列の識別名を見出しへ引き直せたときだけ。引き直せなければ
+     * 従来どおり「更新に失敗しました」に落とす（推測で項目名を出さない）。
+     *
+     * ここだけ pocketErrorResponse を通さないのは、相関IDを**画面の文言に
+     * 載せる**ため（あちらは応答の別項目に入れるが、画面は読んでいない）。
+     * safePocketErrorText のログは pocketErrorResponse と同じ形なので、
+     * Netlify 側の絞り込みは変わらない。
+     * 429 の本文に列の識別名は入らないので、上限まわりの扱いも変わらない。
+     */
+    const failureMessage = customerInfoPutFailureMessage(raw, putFieldLabels);
+    if (failureMessage) {
+      return NextResponse.json(
+        {
+          error: safePocketErrorText(e, {
+            scope: "api/customer-info/records/[recordId] PUT",
+            message: failureMessage,
+          }),
+        },
+        { status: 502 },
+      );
+    }
+
     return pocketErrorResponse(e, {
       scope: "api/customer-info/records/[recordId] PUT",
       message: "更新に失敗しました",

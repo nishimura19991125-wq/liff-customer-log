@@ -13,6 +13,8 @@ const h = vi.hoisted(() => ({
   pendingInvalidated: 0,
   keyLookupInvalidated: 0,
   updateCalls: [] as Array<Record<string, unknown>>,
+  /** updateRecord に投げさせるエラー。null なら成功 */
+  updateError: null as Error | null,
 }));
 
 const APP_FIELDS = [
@@ -53,6 +55,7 @@ vi.mock("@/lib/atpocket", () => ({
     payload: Record<string, unknown>,
   ) => {
     h.updateCalls.push(payload);
+    if (h.updateError) throw h.updateError;
   },
 }));
 
@@ -115,6 +118,9 @@ beforeEach(() => {
   h.pendingInvalidated = 0;
   h.keyLookupInvalidated = 0;
   h.updateCalls = [];
+  h.updateError = null;
+  // 本番と同じ扱い（未設定だと NODE_ENV=test で生メッセージが添えられる）
+  process.env.API_ERROR_DETAIL = "0";
 });
 
 describe("修正6: フォームスキーマ分岐でもキャッシュを無効化する", () => {
@@ -134,5 +140,87 @@ describe("修正6: フォームスキーマ分岐でもキャッシュを無効�
     expect(h.updateCalls).toHaveLength(0);
     expect(h.pendingInvalidated).toBe(0);
     expect(h.keyLookupInvalidated).toBe(0);
+  });
+});
+
+/**
+ * 保存が 400 で失敗したとき、原因の項目を画面に出す（ルート経由）。
+ *
+ * 値の形式が合わないと @pocket は 400 を返すが、これまでは
+ * 「更新に失敗しました」しか出ず、利用者は何を直せばよいか分からなかった。
+ */
+describe("保存に失敗した項目を画面に出す", () => {
+  /** 実物と同じ形。appsId・環境変数名まで載っていることがある */
+  function pocket400(body: string): Error {
+    return new Error(`@pocket update record failed: 400 ${body}`);
+  }
+
+  async function putAndReadError(error: Error): Promise<string> {
+    h.updateError = error;
+    const res = await PUT(putRequest({ customerName: "山田太郎" }), ctx);
+    expect(res.status).toBe(502);
+    const data = (await res.json()) as { error?: string };
+    return data.error ?? "";
+  }
+
+  it("★ 応答本文の列の識別名を見出しへ引き直して出す", async () => {
+    const message = await putAndReadError(
+      pocket400('{"field":"field-3","message":"数値で入力してください"}'),
+    );
+
+    expect(message).toContain("次の項目の値をご確認ください");
+    expect(message).toContain("AP担当者");
+    expect(message).toMatch(/（ID: [0-9a-f]{8}）$/);
+  });
+
+  it("★ 複数見つかったら並べる", async () => {
+    const message = await putAndReadError(
+      pocket400("field-3 と field-4 が不正です"),
+    );
+
+    expect(message).toContain("AP担当者");
+    expect(message).toContain("CL担当者");
+  });
+
+  it("★ 値・識別名・内部情報を画面へ出さない", async () => {
+    const message = await putAndReadError(
+      pocket400(
+        '{"field":"field-3","value":"10000円"} | appsId=35 | apiKey=CUSTOMER_INFO_ATPOCKET_API_KEY_2',
+      ),
+    );
+
+    for (const leak of [
+      "10000円",
+      "field-3",
+      "appsId",
+      "apiKey",
+      "CUSTOMER_INFO_ATPOCKET_API_KEY_2",
+      "@pocket",
+    ]) {
+      expect(message, leak).not.toContain(leak);
+    }
+  });
+
+  it("★ 引き直せないときは従来の文言のまま", async () => {
+    const message = await putAndReadError(pocket400("Bad Request"));
+
+    expect(message).toContain("更新に失敗しました");
+    expect(message).not.toContain("次の項目の値をご確認ください");
+  });
+
+  it("★ 知らない識別名だけのときも従来の文言のまま（推測で出さない）", async () => {
+    const message = await putAndReadError(pocket400("field-999 が不正です"));
+
+    expect(message).not.toContain("次の項目の値をご確認ください");
+    expect(message).not.toContain("field-999");
+  });
+
+  it("既存の分岐（取込設定）は変えていない", async () => {
+    const message = await putAndReadError(
+      new Error("キー項目「T番号」が取込設定に存在しないため登録できません"),
+    );
+
+    expect(message).toContain("取込キー「T番号」");
+    expect(message).not.toContain("次の項目の値をご確認ください");
   });
 });
