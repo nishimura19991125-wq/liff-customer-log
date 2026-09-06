@@ -66,6 +66,29 @@ export type { AttendancePublicStatus } from "@/lib/attendance-fields";
 const ATTENDANCE_RATE_LIMIT_MESSAGE =
   "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。";
 
+/**
+ * 打刻の書き込みが上限（429）で落ちたか。
+ *
+ * ⚠ isPocketHttpRateLimitError は**メッセージに "429" が含まれるか**を
+ *   見る文字列判定で、読み取り経路のために作られたもの。書き込みで
+ *   そのまま使うと、@pocket の応答本文にたまたま 429 という数字が
+ *   入っていた 400 / 500 まで「上限」と読み違える。読み取りなら取り直す
+ *   だけだが、**書き込みでは打刻をもう一度投げてしまう**（出勤の新規
+ *   作成なら、同じ日の勤怠レコードが2件できうる）。
+ *
+ * updateRecord / createRecord が status を載せるようにしてあるので、
+ * 分かるときは status で判定する。載っていないとき（@pocket 以外の
+ * 例外）だけ従来の判定に戻す。
+ */
+function isPunchWriteRateLimited(error: unknown): boolean {
+  const status =
+    error && typeof error === "object"
+      ? (error as { status?: unknown }).status
+      : undefined;
+  if (typeof status === "number") return status === 429;
+  return isPocketHttpRateLimitError(error);
+}
+
 /** 打刻の書き込みが 429 で落ちたとき */
 const ATTENDANCE_WRITE_RATE_LIMITED_MESSAGE =
   "時間をおいてもう一度お試しください";
@@ -92,7 +115,7 @@ const ATTENDANCE_WRITE_FAILED_MESSAGE =
 function formatAttendanceWriteError(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   const correlationId = randomUUID().slice(0, 8);
-  const rateLimited = isPocketHttpRateLimitError(error);
+  const rateLimited = isPunchWriteRateLimited(error);
 
   console.error(
     `[attendance-punch] correlationId=${correlationId} rateLimited=${rateLimited}: ${raw}`,
@@ -152,7 +175,7 @@ async function writeAttendancePunchWithRetryOn429<T>(
   try {
     return await run();
   } catch (e) {
-    if (!isPocketHttpRateLimitError(e)) throw e;
+    if (!isPunchWriteRateLimited(e)) throw e;
 
     const retryAfter = pocketRetryAfterMsFromError(e);
     const wait = Math.min(

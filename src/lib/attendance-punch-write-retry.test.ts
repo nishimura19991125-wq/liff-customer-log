@@ -294,3 +294,56 @@ describe("待ち時間", () => {
     expect(attendanceWriteRetryWaitMs()).toBe(0);
   });
 });
+
+/**
+ * 上限の判定を status で行う（段階3の押し出し確認）。
+ *
+ * isPocketHttpRateLimitError はメッセージに "429" が含まれるかを見る
+ * 文字列判定で、読み取りのために作られたもの。書き込みでそのまま使うと、
+ * @pocket の応答本文にたまたま 429 という数字が入っていた 400 / 500 まで
+ * 「上限」と読み違え、打刻をもう一度投げてしまう。
+ */
+describe("429 の判定を取り違えない", () => {
+  /** 本文に 429 を含む 400（レコード番号・列名などで起こりうる） */
+  function pocket400WithFalse429(): Error {
+    const e: Error & { status?: number } = new Error(
+      "@pocket update record failed: 400 field-429 は登録できません",
+    );
+    e.status = 400;
+    return e;
+  }
+
+  it("★ 本文に 429 が入っていても、status が 400 なら入れ直さない", async () => {
+    h.todayRows = [clockedInRow()];
+    h.writeErrors = [pocket400WithFalse429()];
+
+    const result = await punchAttendanceForLineUser("U-test", "out");
+
+    // 文字列判定のままだと 2 になり、打刻を二重に投げる
+    expect(h.writeAttempts).toHaveLength(1);
+    expect(result.ok).toBe(false);
+  });
+
+  it("★ そのときの文言も「時間をおいて」ではない", async () => {
+    h.todayRows = [clockedInRow()];
+    h.writeErrors = [pocket400WithFalse429()];
+
+    const result = await punchAttendanceForLineUser("U-test", "out");
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("DX事業部へ連絡してください");
+    expect(result.error).not.toContain("時間をおいて");
+  });
+
+  it("status が無いときは従来どおりメッセージで判定する", async () => {
+    h.todayRows = [clockedInRow()];
+    // @pocket 以外の例外（status を持たない）
+    h.writeErrors = [new Error("429 Too Many Requests"), null];
+
+    const result = await punchAttendanceForLineUser("U-test", "out");
+
+    expect(h.writeAttempts).toHaveLength(2);
+    expect(result.ok).toBe(true);
+  });
+});
