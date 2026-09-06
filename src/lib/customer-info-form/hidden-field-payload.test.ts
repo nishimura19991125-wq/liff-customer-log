@@ -148,3 +148,56 @@ describe("M-1: 書類ステータスの扱いを変えていない（タスクG�
     expect(p[DOC_KEY]).toBe("回収済み");
   });
 });
+
+/**
+ * 追加部材の金額を数値として扱う。
+ *
+ * @pocket の列は数値型なのにアプリ側は text（自由入力）で、「10000円」と
+ * 入力すると「円」ごと送られて 400 になり、画面にはどの項目が原因か
+ * 出なかった。契約金額・現金・ローン金額・紹介手数料と同じ扱いにそろえる。
+ */
+describe("追加部材の金額（数値として扱う）", () => {
+  const withExtraParts: CustomerInfoFormValues = {
+    installationType: WITH_PANEL,
+    extraParts: "有",
+    extraPartsName: "架台",
+    extraPartsAmount: "10,000",
+  };
+
+  it("★ 単位付きで入力してもカンマなしの整数で送る", () => {
+    const payload = payloadFor({
+      ...withExtraParts,
+      extraPartsAmount: "10000円",
+    });
+    expect(payload.extraPartsAmount).toBe("10000");
+  });
+
+  it("★ 3桁カンマ付きで入力してもカンマなしの整数で送る", () => {
+    expect(payloadFor(withExtraParts).extraPartsAmount).toBe("10000");
+  });
+
+  it("表示中に空なら 0 を送る（従来どおり）", () => {
+    const payload = payloadFor({ ...withExtraParts, extraPartsAmount: "" });
+    expect(payload.extraPartsAmount).toBe("0");
+  });
+
+  it("★ 「有」→「無」に変えて保存しても、金額の列に何も書き込まない", () => {
+    const payload = payloadFor({
+      ...withExtraParts,
+      extraParts: "無",
+    });
+
+    // "-" は数値列で 400 になり、"0" は入力済みの金額を潰す
+    expect(payload).not.toHaveProperty("extraPartsAmount");
+  });
+
+  it("「無」にしても、既に入っている金額を 0 で潰さない", () => {
+    const payload = payloadFor({
+      ...withExtraParts,
+      extraPartsAmount: "50,000",
+      extraParts: "無",
+    });
+    expect(Object.values(payload)).not.toContain("50000");
+    expect(payload).not.toHaveProperty("extraPartsAmount");
+  });
+});

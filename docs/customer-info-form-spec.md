@@ -136,7 +136,7 @@
 | extraParts | 追加部材の有無 | select | 無 / 有 | 必須 | | 通常 |
 | extraPartsUrl | 追加部材URL | text | | 必須 | 条件O | 通常 |
 | extraPartsName | 追加部材の商品名 | text | | 必須 | 条件O | 通常 |
-| extraPartsAmount | 追加部材の金額 | text | | 必須 | 条件O | 通常 |
+| extraPartsAmount | 追加部材の金額 | comma-integer | | 必須 | 条件O | 通常 |
 
 ### 1-5. 金額・支払
 
@@ -439,7 +439,7 @@ for 各項目 in フォーム定義:
 | 契約金額 | contractAmount | 自動算出後の整数（カンマなし） | `"-"` | `"-"` |
 | 郵便番号 | postalCode | `000-0000` | `"-"` | `"-"` |
 | 電話番号 | phone | ハイフン区切り | `"-"` | `"-"` |
-| 数量・金額 | panelCount1, panelCount2, cashAmount, loanAmount, referralFee | 整数（カンマなし） | `"0"` | `"0"`（4-5 の保護が優先） |
+| 数量・金額 | panelCount1, panelCount2, cashAmount, loanAmount, referralFee, extraPartsAmount | 整数（カンマなし） | `"0"` | `"0"`（4-5 の保護が優先） |
 | 容量 | panelCapacityKw | 小数（最大3桁） | `"0"` | `"0"`（同上） |
 | 型番・容量 | panelModel1, panelModel2, powerConModel1, powerConModel2, batteryCapacity1, batteryCapacity2, batteryModel1, batteryModel2 | 文字列 | `"-"` | `"-"`（同上） |
 | 書類16項目 | （1-8 参照） | 選んだ値 | 空文字 | `"不要"` |

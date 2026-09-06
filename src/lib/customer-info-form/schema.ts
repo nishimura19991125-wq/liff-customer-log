@@ -330,7 +330,16 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
   },
   { key: "extraPartsUrl", caption: "追加部材URL", type: "text" },
   { key: "extraPartsName", caption: "追加部材の商品名", type: "text" },
-  { key: "extraPartsAmount", caption: "追加部材の金額", type: "text" },
+  /**
+   * @pocket 側は数値列。text のままだと「10000円」がそのまま送られて
+   * 400 で保存できず、画面にはどの項目が原因か出なかった。
+   * 契約金額・現金・ローン金額・紹介手数料と同じ扱いにそろえる。
+   */
+  {
+    key: "extraPartsAmount",
+    caption: "追加部材の金額",
+    type: "comma-integer",
+  },
   {
     key: "paymentMethod",
     caption: "支払方法",

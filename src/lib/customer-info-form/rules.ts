@@ -78,6 +78,13 @@ const POCKET_DASH_WHEN_EMPTY_KEYS = new Set([
 
 const DECIMAL_KW_KEYS = new Set(["panelCapacityKw"]);
 
+/**
+ * 送信時にカンマなしの整数へ直す列。
+ *
+ * schema の `type: "comma-integer"` は画面の整形・入力チェック・読み込みを
+ * 決めるが、**送信時の変換はこの集合が決める**。型だけ変えても
+ * ここに足さないと「10000円」がそのまま送られる（追加部材の金額がそれ）。
+ */
 const COMMA_INTEGER_KEYS = new Set([
   "panelCount1",
   "panelCount2",
@@ -85,6 +92,7 @@ const COMMA_INTEGER_KEYS = new Set([
   "cashAmount",
   "loanAmount",
   "referralFee",
+  "extraPartsAmount",
 ]);
 
 function isEmptyPocketInput(raw: string): boolean {
