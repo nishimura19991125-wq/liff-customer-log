@@ -1,4 +1,7 @@
 import "server-only";
+
+import { randomUUID } from "node:crypto";
+
 import { escapePocketQueryValue } from "@/lib/atpocket-query-escape";
 
 import {
@@ -11,6 +14,7 @@ import {
   isPocketApiRateLimited,
   isPocketHttpRateLimitError,
   markPocketApiRateLimited,
+  pocketRetryAfterMsFromError,
   type AtPocketFieldRow,
   type AtPocketRecordRow,
 } from "@/lib/atpocket";
@@ -62,15 +66,111 @@ export type { AttendancePublicStatus } from "@/lib/attendance-fields";
 const ATTENDANCE_RATE_LIMIT_MESSAGE =
   "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。";
 
-function formatAttendanceWriteError(msg: string): string {
-  if (msg.includes("取込設定") && msg.includes("キー項目")) {
-    return [
-      "勤怠の自動採番（取込キー）が @pocket の取込設定に含まれていないため打刻できません。",
-      "アプリ管理 → 勤怠 → 取込 で「自動採番」をキー項目として追加して保存してください。",
-      "（番号の手入力は不要です）",
-    ].join("");
+/** 打刻の書き込みが 429 で落ちたとき */
+const ATTENDANCE_WRITE_RATE_LIMITED_MESSAGE =
+  "時間をおいてもう一度お試しください";
+/** それ以外で落ちたとき（設定不備・権限・@pocket 側の障害など） */
+const ATTENDANCE_WRITE_FAILED_MESSAGE =
+  "打刻に失敗しました。DX事業部へ連絡してください";
+
+/**
+ * 打刻の書き込みが失敗したときに**画面へ出す文言**。
+ *
+ * 以前は @pocket の生メッセージをそのまま返していた。生メッセージには
+ * `appsId` ・ `operation` ・ **どの環境変数のキーを使ったか** まで入って
+ * いる（atpocket.ts の formatPocketHttpError）。社内ツールとはいえ、
+ * 利用者の画面に内部構造を出す理由が無い。
+ *
+ * 画面には固定文言＋相関ID、生メッセージはサーバログへ。ログの形は
+ * api-error-response.ts にそろえてあるので、Netlify では
+ * `correlationId=` や `rateLimited=true` で同じように絞り込める。
+ *
+ * ⚠ 取込キー未設定のときの案内（「アプリ管理 → 勤怠 → 取込 で…」）も
+ *   画面からは外した。読むのは打刻しに来た社員で、直せるのは DX事業部。
+ *   **文言はログに残っている**ので、相関IDから辿れる。
+ */
+function formatAttendanceWriteError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const correlationId = randomUUID().slice(0, 8);
+  const rateLimited = isPocketHttpRateLimitError(error);
+
+  console.error(
+    `[attendance-punch] correlationId=${correlationId} rateLimited=${rateLimited}: ${raw}`,
+    error,
+  );
+
+  const base = rateLimited
+    ? ATTENDANCE_WRITE_RATE_LIMITED_MESSAGE
+    : ATTENDANCE_WRITE_FAILED_MESSAGE;
+  return `${base}（ID: ${correlationId}）`;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** 同時に落ちた打刻が同じ瞬間に戻ってこないようにする幅 */
+const ATTENDANCE_WRITE_RETRY_JITTER_MS = 220;
+/**
+ * 待ち時間の上限。**Retry-After に従うときも、ここで頭を打つ。**
+ *
+ * @pocket は最大 60 秒を返しうる（parseRetryAfterMs の上限）。素直に
+ * 待つと関数の実行時間を使い切り、利用者には**何も出ないまま失敗**する。
+ * それなら早く諦めて「時間をおいてもう一度」を出したほうがよい。
+ */
+const ATTENDANCE_WRITE_RETRY_MAX_WAIT_MS = 5_000;
+/** Retry-After が無いときの待ち時間（既定1秒） */
+export function attendanceWriteRetryWaitMs(): number {
+  const raw = process.env.ATTENDANCE_WRITE_RETRY_WAIT_MS?.trim();
+  const n = raw ? Number(raw) : 1_000;
+  if (!Number.isFinite(n) || n < 0) return 1_000;
+  return Math.min(ATTENDANCE_WRITE_RETRY_MAX_WAIT_MS, Math.floor(n));
+}
+
+/**
+ * 打刻の書き込みだけ、**429 のときに1回だけ**入れ直す。
+ *
+ * ■ なぜ打刻の経路だけか
+ * atpocket.ts の updateRecord / createRecord に入れると、監査ログ・
+ * スタッフ紐付け・お客様情報の更新・掲示板など30箇所以上の書き込みが
+ * まとめて再試行対象になる。POST が実際には通っていて応答だけ落ちた
+ * ケースで二重登録になりうるし、自前で再試行を持っている経路
+ * （監査ログ）とも二重になる。効かせたいのは打刻だけなのでここに置く。
+ *
+ * ■ なぜ 429 だけか
+ * 400（取込キー不備）・403（権限）・500 は入れ直しても結果が変わらない。
+ * 変わらないのに書き込みを2回投げるのは、危険なだけで得が無い。
+ *
+ * ■ なぜ1回だけか
+ * 上限は 100秒あたり100回・サイト単位。混んでいるときに各自が何度も
+ * 入れ直すと、**上限を食い合って全員の成功率が下がる**。1回で駄目なら
+ * 画面から出し直してもらう。
+ */
+async function writeAttendancePunchWithRetryOn429<T>(
+  run: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (e) {
+    if (!isPocketHttpRateLimitError(e)) throw e;
+
+    const retryAfter = pocketRetryAfterMsFromError(e);
+    const wait = Math.min(
+      retryAfter ?? attendanceWriteRetryWaitMs(),
+      ATTENDANCE_WRITE_RETRY_MAX_WAIT_MS,
+    );
+    console.warn(
+      "[attendance-punch] 書き込みが 429 のため1回だけ入れ直します",
+      JSON.stringify({
+        waitMs: wait,
+        fromRetryAfter: retryAfter != null,
+      }),
+    );
+    await sleep(wait + Math.floor(Math.random() * ATTENDANCE_WRITE_RETRY_JITTER_MS));
+
+    // 2回目も駄目ならそのまま投げる。呼び出し側が固定文言に置き換える
+    return run();
   }
-  return msg;
 }
 
 /** 列定義は滅多に変わらないためメモリに保持（@pocket fields API の連打を防ぐ） */
@@ -1001,18 +1101,20 @@ export async function punchAttendanceForLineUser(
             error: "勤怠レコード ID を取得できませんでした",
           };
         }
-        await writePocketRecordWithImportKey({
-          appId,
-          recordId,
-          payload: basePatch,
-          importKeyFieldId: ids.importKey ?? undefined,
-          existingRecord:
-            existing.record && typeof existing.record === "object"
-              ? (existing.record as Record<string, unknown>)
-              : undefined,
-          readAuth,
-          writeAuth,
-        });
+        await writeAttendancePunchWithRetryOn429(() =>
+          writePocketRecordWithImportKey({
+            appId,
+            recordId,
+            payload: basePatch,
+            importKeyFieldId: ids.importKey ?? undefined,
+            existingRecord:
+              existing.record && typeof existing.record === "object"
+                ? (existing.record as Record<string, unknown>)
+                : undefined,
+            readAuth,
+            writeAuth,
+          }),
+        );
         const punchedRow = syntheticRowAfterPunch(
           existing,
           ids,
@@ -1038,12 +1140,14 @@ export async function punchAttendanceForLineUser(
         },
         appFields,
       );
-      const created = await writePocketRecordWithImportKey({
-        appId,
-        payload: createPayload,
-        importKeyFieldId: ids.importKey ?? undefined,
-        writeAuth,
-      });
+      const created = await writeAttendancePunchWithRetryOn429(() =>
+        writePocketRecordWithImportKey({
+          appId,
+          payload: createPayload,
+          importKeyFieldId: ids.importKey ?? undefined,
+          writeAuth,
+        }),
+      );
       const newId =
         created && "row" in created
           ? (atPocketRecordIdFromRow(created.row) ??
@@ -1064,11 +1168,11 @@ export async function punchAttendanceForLineUser(
       const warning = await notifyClockIn(status);
       return { ok: true, status, ...(warning ? { warning } : {}) };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      // 生メッセージは formatAttendanceWriteError の中でログへ残す
       return {
         ok: false,
         status: 502,
-        error: formatAttendanceWriteError(msg),
+        error: formatAttendanceWriteError(e),
       };
     }
   }
@@ -1102,26 +1206,28 @@ export async function punchAttendanceForLineUser(
   try {
     // 書き込むのは退勤時刻だけ。出勤時刻など他の既存値には触れない
     // （稼働終了報告からのときは、既に入っている退勤時刻を新しい時刻で上書きする）
-    await writePocketRecordWithImportKey({
-      appId,
-      recordId,
-      payload: {
-        [ids.clockOut!]: nowOut,
-      },
-      importKeyFieldId: ids.importKey ?? undefined,
-      existingRecord:
-        existing?.record && typeof existing.record === "object"
-          ? (existing.record as Record<string, unknown>)
-          : undefined,
-      readAuth,
-      writeAuth,
-    });
+    await writeAttendancePunchWithRetryOn429(() =>
+      writePocketRecordWithImportKey({
+        appId,
+        recordId,
+        payload: {
+          [ids.clockOut!]: nowOut,
+        },
+        importKeyFieldId: ids.importKey ?? undefined,
+        existingRecord:
+          existing?.record && typeof existing.record === "object"
+            ? (existing.record as Record<string, unknown>)
+            : undefined,
+        readAuth,
+        writeAuth,
+      }),
+    );
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    // 生メッセージは formatAttendanceWriteError の中でログへ残す
     return {
       ok: false,
       status: 502,
-      error: formatAttendanceWriteError(msg),
+      error: formatAttendanceWriteError(e),
     };
   }
   const punchedRow = syntheticRowAfterPunch(

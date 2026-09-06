@@ -1423,7 +1423,19 @@ export async function updateRecord(
 
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`@pocket update record failed: ${res.status} ${text}`);
+    /**
+     * メッセージは従来どおり。**status と Retry-After を載せるだけ。**
+     *
+     * ここで再試行はしない（この関数は 30 箇所以上の書き込みが通る）。
+     * 429 のときにどれだけ待てばよいかを呼び出し側が判断できるよう、
+     * 応答ヘッダの Retry-After をエラーに持たせておく。
+     * 打刻（attendance-server）がこれを見て1回だけ入れ直す。
+     */
+    throw pocketHttpError(
+      `@pocket update record failed: ${res.status} ${text}`,
+      res.status,
+      res.headers,
+    );
   }
 }
 

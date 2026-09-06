@@ -157,6 +157,22 @@ export async function writePocketRecordWithImportKey(
     return await createRecord(opts.appId, payload, opts.writeAuth);
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
-    throw new Error(formatPocketImportKeyWriteError(detail));
+    /**
+     * 文言は作り替えるが、**status と Retry-After は落とさない。**
+     *
+     * ここで新しい Error に詰め替えると、@pocket が返した 429 の
+     * Retry-After が消える。呼び出し側（打刻の再試行）が待ち時間を
+     * 決められなくなるので、判定に使うプロパティだけ引き継ぐ。
+     */
+    const wrapped: Error & { status?: number; retryAfterMs?: number } =
+      new Error(formatPocketImportKeyWriteError(detail));
+    if (e && typeof e === "object") {
+      const src = e as { status?: unknown; retryAfterMs?: unknown };
+      if (typeof src.status === "number") wrapped.status = src.status;
+      if (typeof src.retryAfterMs === "number") {
+        wrapped.retryAfterMs = src.retryAfterMs;
+      }
+    }
+    throw wrapped;
   }
 }
