@@ -92,6 +92,25 @@ export default function AttendancePage() {
   /** 打刻は成功したが Google Chat 通知に失敗したとき（タスクW） */
   const [punchWarning, setPunchWarning] = useState<string | null>(null);
   const [workEndForm, setWorkEndForm] = useState(emptyWorkEndReportForm);
+  /**
+   * 勤怠カレンダー（今月の記録）を開いているか。
+   *
+   * `/api/attendance/calendar` は**利用者ごとの別クエリ**で、サーバ側で
+   * 共有できない（本日の勤怠一覧や稼働終了報告の一覧と違い、全員で
+   * 使い回せない）。@pocket の上限は 100秒あたり100回・サイト単位なので、
+   * 打刻が集中する時間帯に人数分の取得が乗るのは重い。
+   * **見ていないなら呼ばない**のが唯一の削減手段になる。
+   */
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  /**
+   * 一度でも開いたか。**開いたあとは閉じてもマウントしたままにする。**
+   *
+   * 閉じるたびにアンマウントすると、開き直すたびに SWR のキーが張り直され、
+   * dedupingInterval（90秒）を過ぎていれば取り直しが走る。月の選択も
+   * 現在の月に戻ってしまう。マウントを保てば、開き直しでは取得が
+   * 一切走らない（表示の出し分けだけになる）。
+   */
+  const [calendarMounted, setCalendarMounted] = useState(false);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
   const needsStaffBind =
@@ -429,8 +448,35 @@ export default function AttendancePage() {
             <div className="mt-4">
               <LiffCard>
                 <div className="px-5 py-4">
-                  {idToken ? (
-                    <AttendanceMonthCalendar idToken={idToken} />
+                  {/*
+                    開くまで @pocket を叩かない。マウントしていなければ
+                    中の SWR も動かない（キーが張られない）
+                  */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCalendarMounted(true);
+                      setCalendarOpen((open) => !open);
+                    }}
+                    aria-expanded={calendarOpen}
+                    aria-controls="attendance-month-calendar"
+                    className="flex w-full items-center justify-between gap-3 text-left"
+                  >
+                    <span className="text-[14px] font-bold text-slate-800 dark:text-slate-100">
+                      今月の記録
+                    </span>
+                    <span className="text-[12px] font-semibold text-emerald-700 dark:text-emerald-400">
+                      {calendarOpen ? "閉じる ▲" : "開く ▼"}
+                    </span>
+                  </button>
+
+                  {calendarMounted && idToken ? (
+                    <div
+                      id="attendance-month-calendar"
+                      className={calendarOpen ? "mt-4" : "hidden"}
+                    >
+                      <AttendanceMonthCalendar idToken={idToken} />
+                    </div>
                   ) : null}
                 </div>
               </LiffCard>

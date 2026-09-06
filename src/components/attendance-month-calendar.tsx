@@ -238,6 +238,24 @@ export function AttendanceMonthCalendar({
         </p>
       ) : null}
 
+      {/*
+        「今月の記録」は開いたときに初めて取りに行くので、初回は待ち時間が
+        出る。枠だけ先に出て中身が空のままだと「押しても何も起きない」ように
+        見えるため、取得中であることを必ず文字で出す。
+
+        月の切り替えは keepPreviousData で前月の表示が残る（`loading` は
+        立たない）ので、ここには出ない。従来どおりの見え方のまま。
+      */}
+      {loading ? (
+        <p
+          role="status"
+          aria-live="polite"
+          className="mb-2 text-[12px] font-medium text-slate-500 dark:text-slate-400"
+        >
+          読み込み中…
+        </p>
+      ) : null}
+
       <div className="mb-2 flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
         <span className="inline-flex items-center gap-1.5">
           <span className="size-2.5 rounded-sm bg-emerald-100 ring-1 ring-emerald-300 dark:bg-emerald-950/60 dark:ring-emerald-700" />
