@@ -71,7 +71,15 @@ const STAFF_LIST_FETCH_OPTIONS = { maxRetries: 0 } as const;
 
 /** 名簿 fields CSV の版（列追加時にキャッシュを無効化） */
 /** v5: 監査ログの「実行者」用にメールアドレス列を追加（STAFF_EMAIL_FIELD_ID） */
-const STAFF_ROSTER_FIELDS_CSV_VERSION = "5";
+/**
+ * 取得列を変えたら**必ず上げること。**
+ *
+ * rosterCacheKey に取得列の CSV そのものは入っていない。上げずに列を足すと、
+ * 列を含まない既存キャッシュが最大 30 分（429 時のフォールバックなら最大
+ * 6 時間）返り続け、その間ずっと新しい列が空で引けない。
+ * 5 → 6: STAFF_COMPANY_FIELD_ID（所属会社）を追加
+ */
+const STAFF_ROSTER_FIELDS_CSV_VERSION = "6";
 
 function appendFieldIdsToCsv(
   fields: string,
@@ -172,6 +180,7 @@ function staffRosterListFieldsCsv(): string {
     "STAFF_AP_AVAILABILITY_FIELD_ID",
     "STAFF_CL_AVAILABILITY_FIELD_ID",
     "STAFF_WORKPLACE_FIELD_ID",
+    "STAFF_COMPANY_FIELD_ID",
     "STAFF_DEPARTMENT_FIELD_ID",
     "STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID",
     "STAFF_PIN_HASH_FIELD_ID",
@@ -197,6 +206,7 @@ function staffRosterUseExtendedFieldsCsv(): boolean {
     "STAFF_CL_AVAILABILITY_FIELD_ID",
     "STAFF_CONSTRUCTION_AVAILABILITY_FIELD_ID",
     "STAFF_WORKPLACE_FIELD_ID",
+    "STAFF_COMPANY_FIELD_ID",
     "STAFF_DEPARTMENT_FIELD_ID",
     "STAFF_PHONE_FIELD_ID",
     "STAFF_AVAILABILITY_FIELD_ID",

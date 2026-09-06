@@ -66,8 +66,8 @@ import {
   readCustomerInfoFieldValue,
 } from "@/lib/customer-info-record";
 import {
-  lookupStaffWorkplaceByStaffName,
-  resolveStaffWorkplaceLookupConfig,
+  lookupStaffAssignmentByStaffName,
+  resolveStaffAssignmentLookupConfig,
 } from "@/lib/staff-workplace-lookup";
 
 export type CustomerInfoSyncResult =
@@ -285,33 +285,64 @@ async function applyApClStaffFromLineUserToCustomerRecord(
     customerRecord[clStaffFieldId] = clStaff;
   }
 
-  const staffCfg = await resolveStaffWorkplaceLookupConfig();
+  const staffCfg = await resolveStaffAssignmentLookupConfig();
   if (!staffCfg) return;
 
-  const apBranchFieldId = resolveCustomerInfoFormFieldId(
-    "apBranch",
-    "AP所属支店",
-    customerFields,
-  );
-  const clBranchFieldId = resolveCustomerInfoFormFieldId(
-    "clBranch",
-    "CL所属支店",
-    customerFields,
-  );
-  // 名簿から引けなければ書かない（タスクM-2）。以前は "-" を入れていたため、
-  // 勤務場所が引けない担当者では新規作成の時点で支店が "-" になっていた。
-  // 「引けない」ことと「支店が無い」ことは別。put-payload 側と考え方を揃える
-  if (apStaff && apBranchFieldId) {
-    const workplace = staffBranchValueToWrite(
-      await lookupStaffWorkplaceByStaffName(apStaff, staffCfg),
+  /**
+   * 所属支店・所属会社を名簿から引いて入れる（新規作成時のみ）。
+   *
+   * 支店だけ入れていると、工事カレンダー起点で作られた顧客だけ会社が
+   * 空になる。put-payload 側と同じく**1回の照会で両方**を受け取り、
+   * 引けたほうだけ書く。
+   *
+   * 名簿から引けなければ書かない（タスクM-2）。以前は "-" を入れていたため、
+   * 勤務場所が引けない担当者では新規作成の時点で支店が "-" になっていた。
+   * 「引けない」ことと「所属が無い」ことは別。
+   */
+  const assignmentTargets = [
+    {
+      staffName: apStaff,
+      branchFieldId: resolveCustomerInfoFormFieldId(
+        "apBranch",
+        "AP所属支店",
+        customerFields,
+      ),
+      companyFieldId: resolveCustomerInfoFormFieldId(
+        "apCompany",
+        "AP所属会社",
+        customerFields,
+      ),
+    },
+    {
+      staffName: clStaff,
+      branchFieldId: resolveCustomerInfoFormFieldId(
+        "clBranch",
+        "CL所属支店",
+        customerFields,
+      ),
+      companyFieldId: resolveCustomerInfoFormFieldId(
+        "clCompany",
+        "CL所属会社",
+        customerFields,
+      ),
+    },
+  ];
+
+  for (const t of assignmentTargets) {
+    if (!t.staffName) continue;
+    if (!t.branchFieldId && !t.companyFieldId) continue;
+    const assignment = await lookupStaffAssignmentByStaffName(
+      t.staffName,
+      staffCfg,
     );
-    if (workplace !== null) customerRecord[apBranchFieldId] = workplace;
-  }
-  if (clStaff && clBranchFieldId) {
-    const workplace = staffBranchValueToWrite(
-      await lookupStaffWorkplaceByStaffName(clStaff, staffCfg),
-    );
-    if (workplace !== null) customerRecord[clBranchFieldId] = workplace;
+    const workplace = staffBranchValueToWrite(assignment.workplace);
+    if (t.branchFieldId && workplace !== null) {
+      customerRecord[t.branchFieldId] = workplace;
+    }
+    const company = staffBranchValueToWrite(assignment.company);
+    if (t.companyFieldId && company !== null) {
+      customerRecord[t.companyFieldId] = company;
+    }
   }
 }
 

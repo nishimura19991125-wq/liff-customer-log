@@ -25,6 +25,9 @@ const h = vi.hoisted(() => ({
   auditCalls: [] as Array<Record<string, unknown>>,
   /** fetchRecordById が返すレコード。既定は「1列も返らない」状態 */
   fetchedRecord: {} as Record<string, unknown>,
+  /** 名簿から引ける勤務場所・所属会社。null で「引けない」を作る */
+  workplace: "本社" as string | null,
+  company: "トゥルーアーチ" as string | null,
 }));
 
 const CUSTOMER_FIELDS = [
@@ -36,6 +39,8 @@ const CUSTOMER_FIELDS = [
   { uniqueId: "field-6", caption: "CL所属支店" },
   { uniqueId: "field-7", caption: "案件作成者" },
   { uniqueId: "field-8", caption: "入力ステータス" },
+  { uniqueId: "field-9", caption: "AP所属会社" },
+  { uniqueId: "field-10", caption: "CL所属会社" },
 ];
 
 const CONSTRUCTION_FIELDS = [{ uniqueId: "field-90", caption: "T番号" }];
@@ -84,8 +89,12 @@ vi.mock("@/lib/staff-roster-cache", () => ({
 }));
 
 vi.mock("@/lib/staff-workplace-lookup", () => ({
-  resolveStaffWorkplaceLookupConfig: async () => ({ staffAppId: "1" }),
-  lookupStaffWorkplaceByStaffName: async () => "本社",
+  resolveStaffAssignmentLookupConfig: async () => ({ staffAppId: "1" }),
+  // 名簿は所属支店・所属会社をまとめて返す（片方だけ引けない状況も作る）
+  lookupStaffAssignmentByStaffName: async () => ({
+    workplace: h.workplace,
+    company: h.company,
+  }),
 }));
 
 vi.mock("@/lib/dropbox", () => ({
@@ -116,6 +125,8 @@ const AP_BRANCH = "field-5";
 const CL_BRANCH = "field-6";
 const CREATOR = "field-7";
 const INPUT_STATUS = "field-8";
+const AP_COMPANY = "field-9";
+const CL_COMPANY = "field-10";
 
 function runSync() {
   return syncConstructionRecordToCustomerInfoApp({
@@ -136,6 +147,8 @@ beforeEach(() => {
   h.createCalls = [];
   h.auditCalls = [];
   h.fetchedRecord = {};
+  h.workplace = "本社";
+  h.company = "トゥルーアーチ";
 
   process.env.CUSTOMER_INFO_APP_ID = "35";
   process.env.CUSTOMER_INFO_CONSTRUCTION_UNIQUE_KEY_FIELD_ID = "field-1";
@@ -146,6 +159,8 @@ beforeEach(() => {
   delete process.env.CUSTOMER_INFO_FIELD_CL_STAFF;
   delete process.env.CUSTOMER_INFO_FIELD_AP_BRANCH;
   delete process.env.CUSTOMER_INFO_FIELD_CL_BRANCH;
+  delete process.env.CUSTOMER_INFO_FIELD_AP_COMPANY;
+  delete process.env.CUSTOMER_INFO_FIELD_CL_COMPANY;
   delete process.env.CUSTOMER_INFO_FIELD_INPUT_STATUS;
   delete process.env.CUSTOMER_INFO_CREATOR_FIELD_ID;
 });
@@ -163,6 +178,8 @@ describe("修正1: 既存レコードには担当者・支店・作成者を載�
     expect(payload).not.toHaveProperty(CL_STAFF);
     expect(payload).not.toHaveProperty(AP_BRANCH);
     expect(payload).not.toHaveProperty(CL_BRANCH);
+    expect(payload).not.toHaveProperty(AP_COMPANY);
+    expect(payload).not.toHaveProperty(CL_COMPANY);
     expect(payload).not.toHaveProperty(CREATOR);
   });
 
@@ -215,7 +232,46 @@ describe("修正1: 既存レコードには担当者・支店・作成者を載�
     expect(payload[CL_STAFF]).toBe("操作者太郎");
     expect(payload[AP_BRANCH]).toBe("本社");
     expect(payload[CL_BRANCH]).toBe("本社");
+    expect(payload[AP_COMPANY]).toBe("トゥルーアーチ");
+    expect(payload[CL_COMPANY]).toBe("トゥルーアーチ");
     expect(payload[CREATOR]).toBe("操作者太郎");
+  });
+
+  it("★ 会社が引けなければ会社だけ書かない（支店は書く）", async () => {
+    h.company = null;
+
+    await runSync();
+
+    const payload = h.createCalls[0]!;
+    expect(payload[AP_BRANCH]).toBe("本社");
+    expect(payload[CL_BRANCH]).toBe("本社");
+    expect(payload).not.toHaveProperty(AP_COMPANY);
+    expect(payload).not.toHaveProperty(CL_COMPANY);
+  });
+
+  it("★ 支店が引けなければ支店だけ書かない（会社は書く）", async () => {
+    h.workplace = null;
+
+    await runSync();
+
+    const payload = h.createCalls[0]!;
+    expect(payload[AP_COMPANY]).toBe("トゥルーアーチ");
+    expect(payload[CL_COMPANY]).toBe("トゥルーアーチ");
+    expect(payload).not.toHaveProperty(AP_BRANCH);
+    expect(payload).not.toHaveProperty(CL_BRANCH);
+  });
+
+  it("★ どちらも引けなければ \"-\" で潰さない", async () => {
+    h.workplace = null;
+    h.company = null;
+
+    await runSync();
+
+    const payload = h.createCalls[0]!;
+    for (const fieldId of [AP_BRANCH, CL_BRANCH, AP_COMPANY, CL_COMPANY]) {
+      expect(payload).not.toHaveProperty(fieldId);
+    }
+    expect(Object.values(payload)).not.toContain("-");
   });
 });
 

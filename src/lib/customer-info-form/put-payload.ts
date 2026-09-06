@@ -34,8 +34,8 @@ import type {
   CustomerInfoFormValues,
 } from "@/lib/customer-info-form/types";
 import {
-  lookupStaffWorkplaceByStaffName,
-  resolveStaffWorkplaceLookupConfig,
+  lookupStaffAssignmentByStaffName,
+  resolveStaffAssignmentLookupConfig,
 } from "@/lib/staff-workplace-lookup";
 
 /** 取込キー（T番号）を payload に付与 */
@@ -109,39 +109,45 @@ function applyPtTransferToPayload(
 const BRANCH_FALLBACK = "-";
 
 /**
- * AP所属支店＝AP担当者の名簿レコードの勤務場所、CL所属支店＝CL担当者の勤務場所
- * （フォーム非表示）。
+ * 担当者由来の自動入力（フォーム非表示の4列）。
+ *
+ *   AP所属支店・AP所属会社 ← AP担当者の名簿レコード
+ *   CL所属支店・CL所属会社 ← CL担当者の名簿レコード
  *
  * **担当者が変わったときだけ引き直し、引けたときだけ書く。**
  * 以前は保存のたびに引き直して、引けなければ "-" で潰していた。
  * 判定は staff-branch-write.ts に切り出してある。
+ *
+ * ■ 支店と会社を1つの処理でまとめて扱う
+ * 担当者が変わったかの判定も、名簿の走査も**1回**。分けて書くと、片方だけ
+ * 直したときに気づけない（引き直し条件がずれる・順序がずれる）。
+ * 名簿の照会は lookupStaffAssignmentByStaffName が両方まとめて返す。
+ *
+ * ■ 片方だけ引けたときは、引けたほうだけ書く
+ * 「引けない」ことと「値が無い」ことは別。会社が引けなくても支店は書くし、
+ * 逆も同じ。どちらも "-" では潰さない。
  */
-async function applyStaffBranchesToPayload(
+async function applyStaffAssignmentsToPayload(
   values: CustomerInfoFormValues,
   resolved: CustomerInfoFormFieldResolved[],
   payload: Record<string, unknown>,
   loadedStaff?: { apStaff?: string; clStaff?: string } | null,
 ): Promise<void> {
-  const apBranchField = resolved.find((f) => f.key === "apBranch");
-  const clBranchField = resolved.find((f) => f.key === "clBranch");
-  if (!apBranchField?.fieldId && !clBranchField?.fieldId) return;
+  const roles = [
+    { staffKey: "apStaff", branchKey: "apBranch", companyKey: "apCompany" },
+    { staffKey: "clStaff", branchKey: "clBranch", companyKey: "clCompany" },
+  ] as const;
 
-  const targets: Array<{ fieldId: string; loaded?: string; current?: string }> =
-    [];
-  if (apBranchField?.fieldId) {
-    targets.push({
-      fieldId: apBranchField.fieldId,
-      loaded: loadedStaff?.apStaff,
-      current: values.apStaff,
-    });
-  }
-  if (clBranchField?.fieldId) {
-    targets.push({
-      fieldId: clBranchField.fieldId,
-      loaded: loadedStaff?.clStaff,
-      current: values.clStaff,
-    });
-  }
+  const targets = roles
+    .map((role) => ({
+      branchFieldId: resolved.find((f) => f.key === role.branchKey)?.fieldId,
+      companyFieldId: resolved.find((f) => f.key === role.companyKey)?.fieldId,
+      loaded: loadedStaff?.[role.staffKey],
+      current: values[role.staffKey],
+    }))
+    // 支店・会社のどちらの列も解決できない担当者は対象外
+    .filter((t) => t.branchFieldId || t.companyFieldId);
+  if (targets.length === 0) return;
 
   const pending = targets.filter((t) =>
     staffBranchNeedsRefresh(t.loaded, t.current),
@@ -149,18 +155,23 @@ async function applyStaffBranchesToPayload(
   // 担当者が両方とも変わっていなければ名簿を読む必要がない
   if (pending.length === 0) return;
 
-  const staffCfg = await resolveStaffWorkplaceLookupConfig();
+  const staffCfg = await resolveStaffAssignmentLookupConfig();
   if (!staffCfg) return;
 
   for (const t of pending) {
-    const workplace = await lookupStaffWorkplaceByStaffName(
+    const assignment = await lookupStaffAssignmentByStaffName(
       t.current,
       staffCfg,
     );
-    const value = staffBranchValueToWrite(workplace);
     // 引けなかったら書かない。"-" で潰さない
-    if (value === null) continue;
-    payload[t.fieldId] = value;
+    const branch = staffBranchValueToWrite(assignment.workplace);
+    if (t.branchFieldId && branch !== null) {
+      payload[t.branchFieldId] = branch;
+    }
+    const company = staffBranchValueToWrite(assignment.company);
+    if (t.companyFieldId && company !== null) {
+      payload[t.companyFieldId] = company;
+    }
   }
 }
 
@@ -278,14 +289,15 @@ export async function formPayloadFromValues(
     resolveCustomerInfoPtTransferFields(appFields);
   applyCombinedNameFieldsToPayload(synced, resolved, stringPayload);
   applyPtTransferToPayload(values, transferResolved, stringPayload);
-  await applyStaffBranchesToPayload(
+  await applyStaffAssignmentsToPayload(
     values,
     resolved,
     stringPayload,
     loadedStaff,
   );
-  // 所属支店の判定（担当者が変わったときだけ引き直す）が終わってから外す。
-  // 支店側は values を見て判断しており、payload の増減には影響されない
+  // 所属支店・所属会社の判定（担当者が変わったときだけ引き直す）が終わって
+  // から外す。あちらは values を見て判断しており、payload の増減には
+  // 影響されないが、payload を見る形へ変えた瞬間に壊れる。順序は保つこと
   applyApClStaffGuardToPayload(resolved, stringPayload, loadedStaff);
   await applyBatteryModelNumbersToPayload(values, resolved, stringPayload);
   const { payload: filtered, dropped } = filterCustomerInfoPutPayload(

@@ -114,6 +114,23 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     type: "text",
     hiddenInForm: true,
   },
+  /**
+   * AP/CL所属会社。所属支店とまったく同じ仕組みで、担当者名から
+   * スタッフ名簿の「所属会社」を引いて保存時に入れる（画面に出さない）。
+   * 支店と会社は put-payload の同じ処理でまとめて扱う。
+   */
+  {
+    key: "apCompany",
+    caption: "AP所属会社",
+    type: "text",
+    hiddenInForm: true,
+  },
+  {
+    key: "clCompany",
+    caption: "CL所属会社",
+    type: "text",
+    hiddenInForm: true,
+  },
   {
     key: "introduction",
     caption: "導入経緯",

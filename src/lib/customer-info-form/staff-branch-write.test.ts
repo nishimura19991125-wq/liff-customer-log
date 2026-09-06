@@ -121,3 +121,72 @@ describe("組み合わせ（実際の保存の流れ）", () => {
     });
   });
 });
+
+/**
+ * 所属会社（AP所属会社・CL所属会社）。
+ *
+ * 所属支店とまったく同じ仕組みで、判定関数も書き込み可否の関数も**共用**する。
+ * 分けて書くと、片方だけ直したときに気づけない。
+ * ここで固定するのは「支店と会社が独立して欠けても、引けたほうだけ書く」こと。
+ */
+describe("所属会社（支店と同じ判定を共用する）", () => {
+  /** 名簿の1行ぶん。片方だけ入っている担当者もいる */
+  const ROSTER: Record<string, { workplace: string | null; company: string | null }> = {
+    山田太郎: { workplace: "奈良本社", company: "トゥルーアーチ" },
+    鈴木一郎: { workplace: "京都支社", company: null },
+    佐藤花子: { workplace: null, company: "トゥルーアーチ" },
+  };
+  const lookup = (name: string | undefined) =>
+    ROSTER[(name ?? "").trim()] ?? { workplace: null, company: null };
+
+  /** put-payload の applyStaffAssignmentsToPayload と同じ順序で判定する */
+  function decide(loaded: string | undefined, current: string | undefined) {
+    if (!staffBranchNeedsRefresh(loaded, current)) {
+      return { branch: null, company: null };
+    }
+    const assignment = lookup(current);
+    return {
+      branch: staffBranchValueToWrite(assignment.workplace),
+      company: staffBranchValueToWrite(assignment.company),
+    };
+  }
+
+  it("★ 担当者が変わらなければ支店も会社も書かない", () => {
+    expect(decide("山田太郎", "山田太郎")).toEqual({
+      branch: null,
+      company: null,
+    });
+  });
+
+  it("★ 担当者を変えたら支店と会社の両方が追随する", () => {
+    expect(decide("鈴木一郎", "山田太郎")).toEqual({
+      branch: "奈良本社",
+      company: "トゥルーアーチ",
+    });
+  });
+
+  it("★ 会社が引けなければ会社だけ書かない（支店は書く）", () => {
+    expect(decide("山田太郎", "鈴木一郎")).toEqual({
+      branch: "京都支社",
+      company: null,
+    });
+  });
+
+  it("★ 支店が引けなければ支店だけ書かない（会社は書く）", () => {
+    expect(decide("山田太郎", "佐藤花子")).toEqual({
+      branch: null,
+      company: "トゥルーアーチ",
+    });
+  });
+
+  it("★ どちらも引けなければ両方書かない（'-' で潰さない）", () => {
+    const decided = decide("山田太郎", "退職太郎");
+    expect(decided).toEqual({ branch: null, company: null });
+    expect(Object.values(decided)).not.toContain("-");
+  });
+
+  it("★ 名簿に '-' と登録されていればそれは尊重する", () => {
+    // 「引けない」と「'-' が登録されている」は別（支店側と同じ扱い）
+    expect(staffBranchValueToWrite("-")).toBe("-");
+  });
+});

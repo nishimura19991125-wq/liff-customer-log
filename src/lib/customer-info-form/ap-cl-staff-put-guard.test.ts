@@ -14,10 +14,19 @@ import type {
  * 純粋関数だけでなく payload 組み立ての入口 formPayloadFromValues まで通す。
  */
 
+const h = vi.hoisted(() => ({
+  /** 名簿から引ける勤務場所・所属会社。null で「引けない」を作る */
+  workplace: "本社" as string | null,
+  company: "トゥルーアーチ" as string | null,
+}));
+
 vi.mock("@/lib/staff-workplace-lookup", () => ({
-  resolveStaffWorkplaceLookupConfig: async () => ({ staffAppId: "1" }),
-  lookupStaffWorkplaceByStaffName: async (name: string | undefined) =>
-    (name ?? "").trim() ? "本社" : null,
+  resolveStaffAssignmentLookupConfig: async () => ({ staffAppId: "1" }),
+  // 所属支店と所属会社は1回の照会でまとめて返る
+  lookupStaffAssignmentByStaffName: async (name: string | undefined) =>
+    (name ?? "").trim()
+      ? { workplace: h.workplace, company: h.company }
+      : { workplace: null, company: null },
 }));
 
 vi.mock("@/lib/product-catalog-models", () => ({
@@ -64,6 +73,8 @@ function buildPayload(
 beforeEach(() => {
   delete process.env.CUSTOMER_INFO_FIELD_AP_STAFF;
   delete process.env.CUSTOMER_INFO_FIELD_CL_STAFF;
+  h.workplace = "本社";
+  h.company = "トゥルーアーチ";
 });
 
 describe("decideApClStaffPut（判定の純粋関数）", () => {
@@ -191,5 +202,79 @@ describe("所属支店の保護（8/11 の修正）と矛盾しないこと", ()
     );
     expect(payload).not.toHaveProperty("apStaff");
     expect(payload).not.toHaveProperty("apBranch");
+  });
+});
+
+/**
+ * 所属会社は所属支店とまったく同じ仕組み。担当者が変わったかの判定も
+ * 名簿の照会も**共通の1回**で、引けたほうだけ書く。
+ */
+describe("所属会社（所属支店と同じ仕組み）", () => {
+  it("★ 担当者が変わらなければ支店も会社も送らない", async () => {
+    const payload = await buildPayload(BASE_VALUES, {
+      apStaff: "冨田菜摘",
+      clStaff: "鈴木一郎",
+    });
+    for (const key of ["apBranch", "clBranch", "apCompany", "clCompany"]) {
+      expect(payload, key).not.toHaveProperty(key);
+    }
+  });
+
+  it("★ 担当者を変えたら支店と会社の両方が送られる", async () => {
+    const payload = await buildPayload(
+      { ...BASE_VALUES, apStaff: "山田花子" },
+      { apStaff: "冨田菜摘", clStaff: "鈴木一郎" },
+    );
+    expect(payload.apStaff).toBe("山田花子");
+    expect(payload.apBranch).toBe("本社");
+    expect(payload.apCompany).toBe("トゥルーアーチ");
+    // 変わっていない CL 側は引き直さない
+    expect(payload).not.toHaveProperty("clBranch");
+    expect(payload).not.toHaveProperty("clCompany");
+  });
+
+  it("★ 会社が引けなければ会社だけ書かない（支店は書く）", async () => {
+    h.company = null;
+
+    const payload = await buildPayload(
+      { ...BASE_VALUES, apStaff: "山田花子" },
+      { apStaff: "冨田菜摘", clStaff: "鈴木一郎" },
+    );
+    expect(payload.apBranch).toBe("本社");
+    expect(payload).not.toHaveProperty("apCompany");
+  });
+
+  it("★ 支店が引けなければ支店だけ書かない（会社は書く）", async () => {
+    h.workplace = null;
+
+    const payload = await buildPayload(
+      { ...BASE_VALUES, apStaff: "山田花子" },
+      { apStaff: "冨田菜摘", clStaff: "鈴木一郎" },
+    );
+    expect(payload.apCompany).toBe("トゥルーアーチ");
+    expect(payload).not.toHaveProperty("apBranch");
+  });
+
+  it("★ どちらも引けなければ \"-\" で潰さない", async () => {
+    h.workplace = null;
+    h.company = null;
+
+    const payload = await buildPayload(
+      { ...BASE_VALUES, apStaff: "山田花子" },
+      { apStaff: "冨田菜摘", clStaff: "鈴木一郎" },
+    );
+    for (const key of ["apBranch", "apCompany"]) {
+      expect(payload, key).not.toHaveProperty(key);
+    }
+  });
+
+  it("★ 担当者を空にしたときは会社も送らない", async () => {
+    const payload = await buildPayload(
+      { ...BASE_VALUES, apStaff: "" },
+      { apStaff: "冨田菜摘", clStaff: "鈴木一郎" },
+    );
+    expect(payload).not.toHaveProperty("apStaff");
+    expect(payload).not.toHaveProperty("apBranch");
+    expect(payload).not.toHaveProperty("apCompany");
   });
 });
