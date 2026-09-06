@@ -525,13 +525,33 @@ function buildMeetingItem(
   );
 }
 
-function formatMeetingScheduleStatusUpdateError(msg: string): string {
+/**
+ * 更新が失敗したときに画面へ出す文言。
+ *
+ * ■ 取込キー不備だけは案内をそのまま返す
+ * 「アポ通番(仮)を取込設定のキー項目に入れる」は**受け取った人が対処
+ * できる情報**なので、遮蔽せずそのまま出す。判定は従来どおり
+ * 生メッセージの部分一致で行う。
+ *
+ * ■ それ以外は素通ししない
+ * 以前はここが `return msg` で、@pocket の生メッセージ（応答本文・
+ * appsId・operation・**使用した環境変数名**）がそのまま画面へ出ていた。
+ * 対処のしようが無い内容なので、固定文言＋相関IDに置き換える。
+ * 生メッセージは safePocketErrorText がサーバログへ残す。
+ */
+function formatMeetingScheduleUpdateError(
+  error: unknown,
+  options: { scope: string; message: string },
+): string {
+  const msg = error instanceof Error ? error.message : String(error);
   if (msg.includes("アポ通番") && msg.includes("取込設定")) {
+    // 設定を直せば解決するので、生の内容は出さずに案内だけ返す
+    console.error(`[${options.scope}] 取込キーを認識できません: ${msg}`, error);
     return (
       "@pocket: 取込キー「アポ通番(仮)」を認識できませんでした。アポ取得情報連携の取込設定に「アポ通番(仮)」がキー項目として含まれているか、MEETING_SCHEDULE_IMPORT_KEY_FIELD_ID が管理画面の列識別名と一致しているか確認してください。"
     );
   }
-  return msg;
+  return safePocketErrorText(error, options);
 }
 
 export async function updateMeetingScheduleStatusForStaff(
@@ -876,14 +896,14 @@ export async function updateMeetingScheduleStatusForStaff(
         : normalizedStatus,
     };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error("[meeting-schedule:status]", e);
     return {
       ok: false,
       status: 502,
-      error: formatMeetingScheduleStatusUpdateError(
-        msg || "見積ステータスの更新に失敗しました",
-      ),
+      // 生メッセージは formatMeetingScheduleUpdateError の中でログへ残す
+      error: formatMeetingScheduleUpdateError(e, {
+        scope: "meeting-schedule:status",
+        message: "商談ステータスの更新に失敗しました",
+      }),
     };
   }
 }
@@ -1082,14 +1102,14 @@ export async function updateMeetingScheduleScheduledForStaff(
       ...(nextEstimateStatus ? { estimateStatus: nextEstimateStatus } : {}),
     };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error("[meeting-schedule:schedule]", e);
     return {
       ok: false,
       status: 502,
-      error: formatMeetingScheduleStatusUpdateError(
-        msg || "商談・資料送付予定日時の更新に失敗しました",
-      ),
+      // 生メッセージは formatMeetingScheduleUpdateError の中でログへ残す
+      error: formatMeetingScheduleUpdateError(e, {
+        scope: "meeting-schedule:schedule",
+        message: "商談・資料送付予定日時の更新に失敗しました",
+      }),
     };
   }
 }

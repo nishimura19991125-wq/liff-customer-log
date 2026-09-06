@@ -155,6 +155,17 @@ describe("素通しの形を残さない", () => {
     return readFileSync(path.join(ROOT, rel), "utf8");
   }
 
+  it("★ 更新の失敗も素通ししない（取込キーの案内だけ残す）", () => {
+    const src = read("src/lib/meeting-schedule.ts");
+
+    // 素通し（生メッセージをそのまま返す）を書き戻さない
+    expect(src).not.toContain("  return msg;");
+    // 受け取った人が対処できる案内は残す
+    expect(src).toContain("取込キー「アポ通番(仮)」を認識できませんでした");
+    expect(src).toContain("商談ステータスの更新に失敗しました");
+    expect(src).toContain("商談・資料送付予定日時の更新に失敗しました");
+  });
+
   it("★ 画面へ返す error に生メッセージを入れていない", () => {
     for (const rel of FILES) {
       const src = read(rel);
