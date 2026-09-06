@@ -1,4 +1,5 @@
 import "server-only";
+import { safePocketErrorText } from "@/lib/api-error-response";
 
 import {
   apiKeyForSalesDashboardApoPocket,
@@ -1181,8 +1182,6 @@ export async function buildMeetingScheduleForStaff(
       ...meetingScheduleMetaExtras(),
     };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error("[meeting-schedule]", e);
     return {
       configured: true,
       scope: "day",
@@ -1190,7 +1189,11 @@ export async function buildMeetingScheduleForStaff(
       dateLabel: formatMeetingDateLabel(targetYmd),
       staffName: boundStaffName,
       items: [],
-      error: msg || "商談進捗情報の取得に失敗しました",
+      // 生メッセージは safePocketErrorText の中でログへ残す
+      error: safePocketErrorText(e, {
+        scope: "meeting-schedule",
+        message: "商談進捗情報の取得に失敗しました",
+      }),
     };
   }
 }
@@ -1270,14 +1273,16 @@ export async function buildMeetingScheduleListForStaff(
       ...meetingScheduleMetaExtras(),
     };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error("[meeting-schedule:list]", e);
     return {
       configured: true,
       scope: "list",
       staffName: boundStaffName,
       items: [],
-      error: msg || "商談進捗情報の取得に失敗しました",
+      // 生メッセージは safePocketErrorText の中でログへ残す
+      error: safePocketErrorText(e, {
+        scope: "meeting-schedule:list",
+        message: "商談進捗情報の取得に失敗しました",
+      }),
     };
   }
 }

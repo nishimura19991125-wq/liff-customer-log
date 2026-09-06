@@ -1,4 +1,5 @@
 import "server-only";
+import { safePocketErrorText } from "@/lib/api-error-response";
 
 import { apiKeyForSalesDashboardApoPocket, fetchAppFields } from "@/lib/atpocket";
 import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
@@ -118,13 +119,15 @@ export async function buildApoListForStaff(
       ...meetingScheduleMetaExtras(),
     };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error("[apo-list]", e);
     return {
       configured: true,
       staffName: boundStaffName,
       rows: [],
-      error: msg || "アポ情報一覧の取得に失敗しました",
+      // 生メッセージは safePocketErrorText の中でログへ残す
+      error: safePocketErrorText(e, {
+        scope: "apo-list",
+        message: "アポ情報一覧の取得に失敗しました",
+      }),
     };
   }
 }

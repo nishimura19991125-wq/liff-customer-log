@@ -1,4 +1,5 @@
 import "server-only";
+import { safePocketErrorText } from "@/lib/api-error-response";
 
 import {
   apiKeyForSalesDashboardApoPocket,
@@ -221,11 +222,13 @@ export async function buildTenkaDashboardSection(
       ranking: buildTenkaRanking(sorted, total, bound),
     };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error("[sales-dashboard] tenka section failed", e);
     return {
       ok: false,
-      error: msg || "AP天下賞ランキングの取得に失敗しました",
+      // 生メッセージは safePocketErrorText の中でログへ残す
+      error: safePocketErrorText(e, {
+        scope: "sales-dashboard:tenka",
+        message: "AP天下賞ランキングの取得に失敗しました",
+      }),
     };
   }
 }

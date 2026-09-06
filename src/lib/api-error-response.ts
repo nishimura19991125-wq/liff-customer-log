@@ -30,6 +30,55 @@ export function isPocketRateLimitMessage(message: string): boolean {
 const RATE_LIMITED_MESSAGE =
   "データ取得の利用上限に達しました。1〜2分待ってから再度お試しください。";
 
+export type SafePocketErrorTextOptions = {
+  /** ログの出所（例: "sales-dashboard:apo"） */
+  scope: string;
+  /** 通常時に画面へ出す固定文言 */
+  message: string;
+  /** 429 のときの文言（省略時は共通の上限文言） */
+  rateLimitedMessage?: string;
+};
+
+/**
+ * 例外を**画面へ出してよい1行**に変換する。
+ *
+ * pocketErrorResponse と同じ考え方だが、あちらは応答そのものを作る。
+ * 集計や一覧のように「取得は失敗したが、他の項目は返す」形の payload は
+ * `{ items: [], error: "…" }` のように**本文の一部**として文言を持つので、
+ * 応答ではなく文字列が要る。そこだけが違い、判定・ログ・詳細の出し分けは
+ * pocketErrorResponse と同じものを使う。
+ *
+ * @pocket の生メッセージには応答本文・appsId・operation・**使用した
+ * 環境変数名**まで載っている（atpocket.ts の formatPocketHttpError）。
+ * 社内ツールとはいえ画面に内部構造を出す理由が無いので、画面には
+ * 固定文言＋相関ID、生メッセージはサーバログへ回す。
+ *
+ * ログの形は pocketErrorResponse と同一なので、Netlify では
+ * `correlationId=` や `rateLimited=true` で同じように絞り込める。
+ */
+export function safePocketErrorText(
+  error: unknown,
+  options: SafePocketErrorTextOptions,
+): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const correlationId = randomUUID().slice(0, 8);
+  const rateLimited = isPocketRateLimitMessage(raw);
+
+  console.error(
+    `[${options.scope}] correlationId=${correlationId} rateLimited=${rateLimited}: ${raw}`,
+    error,
+  );
+
+  const base = rateLimited
+    ? (options.rateLimitedMessage ?? RATE_LIMITED_MESSAGE)
+    : options.message;
+
+  // 本番は固定文言のみ。API_ERROR_DETAIL=1 のときだけ生メッセージを添える
+  return includeDetail()
+    ? `${base}（${raw}）（ID: ${correlationId}）`
+    : `${base}（ID: ${correlationId}）`;
+}
+
 export type PocketErrorResponseOptions = {
   /** ログの出所（例: "api/customers"） */
   scope: string;

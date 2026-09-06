@@ -1,4 +1,5 @@
 import "server-only";
+import { safePocketErrorText } from "@/lib/api-error-response";
 
 import { apiKeyForAppFields, fetchAppFields } from "@/lib/atpocket";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
@@ -169,9 +170,17 @@ export async function buildApoAndTenkaSections(
       tenka,
     };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error("[sales-dashboard] apo-tenka bundle failed", e);
-    const fallback = msg || "アポ集計の取得に失敗しました";
+    /**
+     * まとめ取りが丸ごと失敗した経路。**同じ文言を両方へ渡す。**
+     *
+     * ここも apoError / tenkaError にそのまま載るので、各集計の catch と
+     * 同じように遮蔽する。片方だけ直しても、この経路から生メッセージが
+     * 画面へ出てしまう。
+     */
+    const fallback = safePocketErrorText(e, {
+      scope: "sales-dashboard:apo-tenka",
+      message: "アポ件数ランキングの取得に失敗しました",
+    });
     return {
       apo: { ok: false, error: fallback },
       tenka: { ok: false, error: fallback },
