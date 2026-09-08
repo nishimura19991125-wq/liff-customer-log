@@ -9,14 +9,29 @@ import {
   type SalesProgressSectionData,
 } from "@/components/sales-progress-sections";
 import { FISCAL_ANNUAL_MONTH_KEY } from "@/lib/fiscal-year";
+import type { SalesProgressMetricKey } from "@/lib/sales-progress-aggregate";
 import { formatDisplayYmd } from "@/lib/format-display-ymd";
 import { barRatio } from "@/lib/sales-dashboard-bar-ratio";
 
 /**
- * 部門タブ。**進捗の指標（SalesProgressMetricKey）と同じ2値**なので、
- * 全体の進捗・支社別にはそのまま渡している。
+ * 部門タブ。
+ *
+ * ⚠ **進捗の指標（SalesProgressMetricKey）と同じではない。** "branch" は
+ *   PT とアポの両方を並べるタブで、指標が1つに決まらない。そのまま
+ *   metric へ渡さず、departmentMetric() で明示的に出し分けること。
  */
-export type DashboardDepartment = "pt" | "apo";
+export type DashboardDepartment = "pt" | "apo" | "branch";
+
+/**
+ * 部門タブ → 進捗の指標。
+ * 支社別タブは PT とアポを縦に並べるので単一の指標に決まらない。null を
+ * 返し、呼ぶ側が2つぶんを明示的に描く。
+ */
+function departmentMetric(
+  department: DashboardDepartment,
+): SalesProgressMetricKey | null {
+  return department === "branch" ? null : department;
+}
 
 export type DashboardKpi = {
   pt: number;
@@ -106,7 +121,8 @@ export type DashboardPayload = {
 
 const DEPARTMENT_TABS: Array<{ id: DashboardDepartment; label: string }> = [
   { id: "pt", label: "総合PTランキング" },
-  { id: "apo", label: "アポ件数部門" },
+  { id: "apo", label: "アポ件数" },
+  { id: "branch", label: "支社別" },
 ];
 
 function formatPt(n: number): string {
@@ -824,6 +840,11 @@ export function SalesDashboardCyberView({
   const apoConfigured = data.apoEnabled;
   const apoReady = data.apoReady;
 
+  /**
+   * 支社別タブは指標が1つに決まらないので null。ランキングと全体の進捗は
+   * このタブでは描かず、PT とアポの支社別を縦に並べる。
+   */
+  const metric = departmentMetric(department);
   const rankingTitle =
     department === "pt" ? "総合PTランキング" : "アポ件数ランキング";
 
@@ -837,6 +858,9 @@ export function SalesDashboardCyberView({
    */
   const isAnnual = data.selectedMonth === FISCAL_ANNUAL_MONTH_KEY;
   const progress = isAnnual ? data.annualProgress : data.progress;
+  /** 寄せ先の見出し。応答の支社は「その他」が末尾に来る並びで返る */
+  const otherBranchLabel =
+    progress.branches[progress.branches.length - 1]?.label ?? "その他";
 
   return (
     <div className="flex flex-col gap-5">
@@ -867,51 +891,75 @@ export function SalesDashboardCyberView({
           />
         </div>
 
-        <div className="mb-3">
-          <SalesProgressOverall
-            company={progress.company}
-            metric={department}
-            targetsAvailable={progress.targetsAvailable}
-            periodLabel={data.periodLabel}
-          />
-        </div>
+        {metric === null ? (
+          /**
+           * 支社別タブ。PT とアポを**縦に分けて**並べる。支社ごとに両方を
+           * 混ぜると、スマホでは1行が詰まって読めなくなる。
+           * 全体の進捗はここには置かない（支社の合計が既に並ぶため）。
+           */
+          <div className="flex flex-col gap-5">
+            <div>
+              <h2 className="mb-3 text-[15px] font-bold tracking-wide text-slate-800 dark:text-emerald-50">
+                総合PT
+              </h2>
+              <SalesProgressBranches
+                branches={progress.branches}
+                metric="pt"
+                otherLabel={otherBranchLabel}
+              />
+            </div>
 
-        <h2 className="mb-3 text-[15px] font-bold tracking-wide text-slate-800 dark:text-emerald-50">
-          {rankingTitle}
-        </h2>
-
-        {department === "apo" && !apoConfigured ? (
-          <LiffCard>
-            <p className="px-4 py-6 text-center text-[13px] text-slate-500 dark:text-slate-400">
-              アポ件数ランキングは未設定です（SALES_DASHBOARD_APO_APP_ID を設定してください）
-            </p>
-          </LiffCard>
-        ) : department === "apo" && !apoReady ? (
-          <LiffCard>
-            <p className="px-4 py-6 text-center text-[13px] text-red-800 dark:text-red-300 whitespace-pre-wrap">
-              {data.apoError ?? "アポ件数ランキングの集計に失敗しました"}
-            </p>
-          </LiffCard>
-        ) : department === "apo" ? (
-          <ApoRankingSection rows={data.apoRanking} />
+            {/* 2つの区切り。PT明細の仕切りと同じ引き方 */}
+            <div className="border-t border-slate-200/80 pt-5 dark:border-slate-700/60">
+              <h2 className="mb-3 text-[15px] font-bold tracking-wide text-slate-800 dark:text-emerald-50">
+                アポ件数
+              </h2>
+              <SalesProgressBranches
+                branches={progress.branches}
+                metric="apo"
+                otherLabel={otherBranchLabel}
+              />
+            </div>
+          </div>
         ) : (
-          <PtRankingSection
-            rows={data.ranking}
-            breakdownByStaff={data.ptBreakdownByStaff ?? {}}
-            idToken={idToken}
-            breakdownEnabled={!isAnnual}
-          />
-        )}
+          <>
+            <div className="mb-3">
+              <SalesProgressOverall
+                company={progress.company}
+                metric={metric}
+                targetsAvailable={progress.targetsAvailable}
+                periodLabel={data.periodLabel}
+              />
+            </div>
 
-        <div className="mt-5">
-          <SalesProgressBranches
-            branches={progress.branches}
-            metric={department}
-            otherLabel={
-              progress.branches[progress.branches.length - 1]?.label ?? "その他"
-            }
-          />
-        </div>
+            <h2 className="mb-3 text-[15px] font-bold tracking-wide text-slate-800 dark:text-emerald-50">
+              {rankingTitle}
+            </h2>
+
+            {department === "apo" && !apoConfigured ? (
+              <LiffCard>
+                <p className="px-4 py-6 text-center text-[13px] text-slate-500 dark:text-slate-400">
+                  アポ件数ランキングは未設定です（SALES_DASHBOARD_APO_APP_ID を設定してください）
+                </p>
+              </LiffCard>
+            ) : department === "apo" && !apoReady ? (
+              <LiffCard>
+                <p className="px-4 py-6 text-center text-[13px] text-red-800 dark:text-red-300 whitespace-pre-wrap">
+                  {data.apoError ?? "アポ件数ランキングの集計に失敗しました"}
+                </p>
+              </LiffCard>
+            ) : department === "apo" ? (
+              <ApoRankingSection rows={data.apoRanking} />
+            ) : (
+              <PtRankingSection
+                rows={data.ranking}
+                breakdownByStaff={data.ptBreakdownByStaff ?? {}}
+                idToken={idToken}
+                breakdownEnabled={!isAnnual}
+              />
+            )}
+          </>
+        )}
       </section>
     </div>
   );
