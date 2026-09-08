@@ -43,6 +43,7 @@ import {
   salesDashboardContractAppId,
 } from "@/lib/sales-dashboard-fields";
 import { achievementRate } from "@/lib/sales-dashboard-achievement";
+import { sortByPtThenTarget } from "@/lib/sales-dashboard-ranking-sort";
 import { fetchSalesDashboardRecordPages } from "@/lib/sales-dashboard-list-fetch";
 import {
   fetchSalesDashboardPtTargets,
@@ -223,16 +224,18 @@ function mergeContractCounts(
   });
 }
 
-function sortStaffAgg(items: StaffAgg[]): StaffAgg[] {
+/**
+ * ランキング対象外の担当者を落としてから、PT → 目標 → 氏名 の順に並べる。
+ * 並びの規則そのものは sales-dashboard-ranking-sort.ts に置いてある。
+ */
+function sortStaffAgg(
+  items: StaffAgg[],
+  targetPtByStaff: Map<string, number>,
+): StaffAgg[] {
   const visible = items.filter(
     (it) => !isExcludedSalesDashboardRankingName(it.name),
   );
-  return [...visible].sort(
-    (a, b) =>
-      b.pt - a.pt ||
-      b.contractCount - a.contractCount ||
-      a.name.localeCompare(b.name, "ja"),
-  );
+  return sortByPtThenTarget(visible, targetPtByStaff);
 }
 
 /**
@@ -547,7 +550,12 @@ export function buildSalesDashboardPayload(
     byStaff.set(name, { name, pt, contractCount: 0 });
   });
   mergeContractCounts(byStaff, core.contractCountByStaffMonth, ymKeys);
-  const sorted = sortStaffAgg([...byStaff.values()]);
+
+  // 目標は並び替えの第2キーなので、並べる前に引いておく
+  const targetPtByStaff = single
+    ? pickTargetPtByStaff(core.targets, single)
+    : sumTargetPtByStaff(core.targets, ymKeys);
+  const sorted = sortStaffAgg([...byStaff.values()], targetPtByStaff);
 
   const companyPt = sorted.reduce((s, x) => s + x.pt, 0);
   const companyCount = sorted.reduce((s, x) => s + x.contractCount, 0);
@@ -555,10 +563,6 @@ export function buildSalesDashboardPayload(
     pt: companyPt,
     contractCount: companyCount,
   };
-
-  const targetPtByStaff = single
-    ? pickTargetPtByStaff(core.targets, single)
-    : sumTargetPtByStaff(core.targets, ymKeys);
 
   const ranking = buildRanking(
     sorted,
