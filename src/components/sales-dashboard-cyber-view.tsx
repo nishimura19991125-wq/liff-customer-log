@@ -131,10 +131,6 @@ function formatPt(n: number): string {
   return new Intl.NumberFormat("ja-JP").format(Math.round(n));
 }
 
-function formatCount(n: number): string {
-  return new Intl.NumberFormat("ja-JP").format(Math.round(n));
-}
-
 function tabClass(active: boolean): string {
   return `shrink-0 rounded-2xl px-4 py-2.5 text-[14px] transition-all duration-300 active:scale-[0.98] ${
     active
@@ -733,10 +729,6 @@ function ApoPodiumCard({
             ) : null}
           </div>
         </div>
-        <p className={`shrink-0 text-[1.5rem] ${ptValueClass()}`}>
-          {formatCount(row.apoCount)}
-          <span className="ml-0.5 text-[13px] font-bold">件</span>
-        </p>
       </div>
       <RankingProgressBar
         value={row.apoCount}
@@ -781,7 +773,6 @@ function ApoListRow({
             ) : null}
           </p>
         </div>
-        <p className={`shrink-0 text-[15px] ${ptValueClass()}`}>{formatCount(row.apoCount)}件</p>
       </div>
       <RankingProgressBar
         value={row.apoCount}
