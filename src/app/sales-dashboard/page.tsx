@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import {
   SalesDashboardCyberView,
@@ -51,6 +51,14 @@ export default function SalesDashboardPage() {
   const [month, setMonth] = useState("");
   const [department, setDepartment] = useState<DashboardDepartment>("pt");
   const fySelectId = useId();
+
+  /** 月タブの横スクロール。選択中のタブを見える位置へ寄せるのに使う */
+  const monthNavRef = useRef<HTMLElement | null>(null);
+  const activeMonthTabRef = useRef<HTMLButtonElement | null>(null);
+  /** 利用者が自分でタブを押したときは寄せない（押した要素は既に見えている） */
+  const skipMonthScrollRef = useRef(false);
+  /** 2回目以降だけ動きを付ける。開いた瞬間に横へ流れると落ち着かない */
+  const monthScrolledOnceRef = useRef(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
@@ -201,6 +209,46 @@ export default function SalesDashboardPage() {
   const selectedFy = fy || data?.fiscalYear.key || "";
   const selectedMonth = month || data?.selectedMonth || "";
 
+  /**
+   * 選択中の月タブを見える位置へ寄せる。
+   *
+   * 月は13個あり、当月は右端寄りになる。初期表示ではタブが左端（3月）に
+   * あるので、何もしないと開くたびに横スクロールで探すことになる。
+   *
+   * ■ block: "nearest" は必須
+   * 横スクロールの中の要素に scrollIntoView を使うと、既定の block: "start"
+   * ではページ全体が縦に飛ぶ。縦は動かさず、横だけ中央へ寄せる。
+   *
+   * ■ 走らせるのは初期表示と、年度を切り替えて月が選び直されたときだけ
+   * 利用者が自分でタブを押したときは押した要素が既に見えているので寄せない
+   * （skipMonthScrollRef）。
+   *
+   * ■ 初回は動きを付けない
+   * 開いた瞬間に横へ流れると落ち着かないので behavior を指定しない（瞬時）。
+   * 2回目以降（年度の切り替え）は何が動いたか分かるよう smooth にする。
+   */
+  useEffect(() => {
+    if (!selectedMonth) return;
+    if (skipMonthScrollRef.current) {
+      skipMonthScrollRef.current = false;
+      return;
+    }
+    const nav = monthNavRef.current;
+    const tab = activeMonthTabRef.current;
+    if (!nav || !tab) return;
+    // 横に溢れていなければ何もしない（タブが少ないとき・広い画面）
+    if (nav.scrollWidth <= nav.clientWidth) return;
+
+    tab.scrollIntoView({
+      block: "nearest",
+      inline: "center",
+      ...(monthScrolledOnceRef.current
+        ? { behavior: "smooth" as const }
+        : {}),
+    });
+    monthScrolledOnceRef.current = true;
+  }, [selectedMonth]);
+
   if (phase === "init") {
     return (
       <LiffScreen>
@@ -318,6 +366,9 @@ export default function SalesDashboardPage() {
               // 年度を変えたら月は選び直し。前の年度の月をそのまま送らない
               setFy(e.target.value);
               setMonth("");
+              // 選び直された月へは寄せる。押した月と同じものを押した直後でも
+              // 取りこぼさないよう、ここで明示的に戻す
+              skipMonthScrollRef.current = false;
             }}
           >
             {fiscalYearOptions.length === 0 ? (
@@ -332,6 +383,7 @@ export default function SalesDashboardPage() {
 
           <div className="relative">
             <nav
+              ref={monthNavRef}
               className="flex gap-2 overflow-x-auto pb-2 pr-4 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               aria-label="対象期間"
             >
@@ -340,8 +392,13 @@ export default function SalesDashboardPage() {
                 return (
                   <button
                     key={o.key}
+                    ref={active ? activeMonthTabRef : null}
                     type="button"
-                    onClick={() => setMonth(o.key)}
+                    onClick={() => {
+                      // 押した要素は既に見えている。寄せ直さない
+                      skipMonthScrollRef.current = true;
+                      setMonth(o.key);
+                    }}
                     disabled={showDashboardSkeleton && active}
                     className={`shrink-0 rounded-2xl px-5 py-2.5 text-[15px] transition-all duration-300 active:scale-[0.98] disabled:opacity-60 ${
                       active
