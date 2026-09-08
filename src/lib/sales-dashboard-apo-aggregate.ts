@@ -79,6 +79,52 @@ function isApoCancelStatus(statusVal: string): boolean {
   return normalizeStatus(statusVal).includes("アポキャン");
 }
 
+/** 読めなかった日付の生値を残す件数。原因の切り分けに要る分だけ */
+const DATE_SAMPLE_LIMIT = 2;
+/** 生値が長くても記録は頭だけにする */
+const DATE_SAMPLE_MAX_LENGTH = 40;
+
+/**
+ * どの条件で何件落ちたかを残す。**氏名・顧客名は出さない**（件数のみ）。
+ *
+ * 全件が落ちて「対象期間のデータがありません」になったとき、絞り込みの
+ * どの段で落ちたのかが分からないと切り分けられない。PT目標の
+ * warnMissingSalesTargets と同じで、件数だけを JSON で1行に残す。
+ *
+ * total は取得件数そのもの。内訳の合計が total に足りないときは
+ * record が object でない行が混ざっている（@pocket 側の異常）。
+ *
+ * dateSamples は読めなかった日付の生値。日付列に個人情報は入らないので
+ * 出せる。形式の食い違い（「2026年9月8日」等）はこれで一目で分かる。
+ */
+type ApoAggregateCounts = {
+  total: number;
+  noName: number;
+  excludedName: number;
+  typeEmpty: number;
+  typeMismatch: number;
+  excludedLabel: number;
+  dateUnparsed: number;
+  outOfPeriod: number;
+  cancelled: number;
+  counted: number;
+};
+
+function logApoAggregateCounts(
+  counts: ApoAggregateCounts,
+  period: { year: number; month1: number },
+  dateSamples: string[],
+): void {
+  console.info(
+    "[sales-dashboard] アポ件数の集計内訳",
+    JSON.stringify({
+      period: `${period.year}-${String(period.month1).padStart(2, "0")}`,
+      ...counts,
+      ...(dateSamples.length ? { dateSamples } : {}),
+    }),
+  );
+}
+
 /** ranking_pt_dashboard.js aggregateApo() 相当（アポ件数＝キャンセル以外） */
 export function aggregateApoRecords(
   records: Array<{ record?: unknown }>,
@@ -89,6 +135,21 @@ export function aggregateApoRecords(
   const period = resolveSalesDashboardPeriod(periodKey);
   const m = new Map<string, ApoAggItem>();
 
+  /** 絞り込みの条件・順序は変えていない。落ちた段を数えているだけ */
+  const counts: ApoAggregateCounts = {
+    total: records.length,
+    noName: 0,
+    excludedName: 0,
+    typeEmpty: 0,
+    typeMismatch: 0,
+    excludedLabel: 0,
+    dateUnparsed: 0,
+    outOfPeriod: 0,
+    cancelled: 0,
+    counted: 0,
+  };
+  const dateSamples: string[] = [];
+
   for (const row of records) {
     const rec = row.record;
     if (!rec || typeof rec !== "object") continue;
@@ -97,27 +158,61 @@ export function aggregateApoRecords(
     const name = normApClStaffName(
       readCustomerInfoFieldValue(recObj, fieldMap.salesperson),
     );
-    if (!name || isExcludedSalesDashboardRankingName(name)) continue;
+    if (!name) {
+      counts.noName += 1;
+      continue;
+    }
+    if (isExcludedSalesDashboardRankingName(name)) {
+      counts.excludedName += 1;
+      continue;
+    }
 
     const typeVal = readCustomerInfoFieldValue(recObj, fieldMap.apoType);
-    if (!typeVal || !isApoTypeMatched(typeVal, filterValues)) continue;
-    if (isExcludedSalesDashboardCaseLabel(typeVal)) continue;
+    if (!typeVal) {
+      counts.typeEmpty += 1;
+      continue;
+    }
+    if (!isApoTypeMatched(typeVal, filterValues)) {
+      counts.typeMismatch += 1;
+      continue;
+    }
+    if (isExcludedSalesDashboardCaseLabel(typeVal)) {
+      counts.excludedLabel += 1;
+      continue;
+    }
 
     const ym = parseRecordYmFromField(recObj, fieldMap.date);
-    if (!ym || !isYmInPeriod(ym.year, ym.month1, period)) continue;
+    if (!ym) {
+      counts.dateUnparsed += 1;
+      if (dateSamples.length < DATE_SAMPLE_LIMIT) {
+        const raw = readCustomerInfoFieldValue(recObj, fieldMap.date);
+        if (raw) dateSamples.push(raw.slice(0, DATE_SAMPLE_MAX_LENGTH));
+      }
+      continue;
+    }
+    if (!isYmInPeriod(ym.year, ym.month1, period)) {
+      counts.outOfPeriod += 1;
+      continue;
+    }
 
     if (fieldMap.estimateStatus) {
       const statusVal = readCustomerInfoFieldValue(
         recObj,
         fieldMap.estimateStatus,
       );
-      if (isApoCancelStatus(statusVal)) continue;
+      if (isApoCancelStatus(statusVal)) {
+        counts.cancelled += 1;
+        continue;
+      }
     }
 
+    counts.counted += 1;
     const cur = m.get(name) ?? { name, apoCount: 0 };
     cur.apoCount += 1;
     m.set(name, cur);
   }
+
+  logApoAggregateCounts(counts, period, dateSamples);
 
   return m;
 }
