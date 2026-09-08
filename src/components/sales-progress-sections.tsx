@@ -118,18 +118,27 @@ export function SalesProgressBranches({
   branches,
   metric,
   otherLabel,
+  heading,
 }: {
   branches: SalesProgressBranchRow[];
   metric: SalesProgressMetricKey;
   /** 寄せ先の見出し（既定「その他」）。案内文で使う */
   otherLabel: string;
+  /**
+   * セクションの見出し。**省略時は「支社別（PT）」「支社別（アポ）」。**
+   *
+   * 支社別タブのように「支社別を見ている」ことが文脈から明らかな場所では、
+   * 「総合PT」「アポ件数」だけを渡して重ねない。営業進捗の画面は省略して
+   * 呼ぶので、そちらの見出しは変わらない。
+   */
+  heading?: string;
 }) {
   const unit = salesProgressMetricUnit(metric);
 
   return (
     <section className="flex flex-col gap-2">
       <h2 className={SECTION_HEADING_CLASS}>
-        支社別（{salesProgressMetricLabel(metric)}）
+        {heading ?? `支社別（${salesProgressMetricLabel(metric)}）`}
       </h2>
 
       {branches.map((branch) => {

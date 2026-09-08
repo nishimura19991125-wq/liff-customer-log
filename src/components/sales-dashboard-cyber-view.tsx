@@ -898,25 +898,23 @@ export function SalesDashboardCyberView({
            * 全体の進捗はここには置かない（支社の合計が既に並ぶため）。
            */
           <div className="flex flex-col gap-5">
-            <div>
-              <h2 className="mb-3 text-[15px] font-bold tracking-wide text-slate-800 dark:text-emerald-50">
-                総合PT
-              </h2>
-              <SalesProgressBranches
-                branches={progress.branches}
-                metric="pt"
-                otherLabel={otherBranchLabel}
-              />
-            </div>
+            {/*
+              見出しはコンポーネントに渡す。支社別タブにいることは文脈で
+              明らかなので、「支社別（PT）」と重ねずに指標だけを出す
+            */}
+            <SalesProgressBranches
+              branches={progress.branches}
+              metric="pt"
+              heading="総合PT"
+              otherLabel={otherBranchLabel}
+            />
 
             {/* 2つの区切り。PT明細の仕切りと同じ引き方 */}
             <div className="border-t border-slate-200/80 pt-5 dark:border-slate-700/60">
-              <h2 className="mb-3 text-[15px] font-bold tracking-wide text-slate-800 dark:text-emerald-50">
-                アポ件数
-              </h2>
               <SalesProgressBranches
                 branches={progress.branches}
                 metric="apo"
+                heading="アポ件数"
                 otherLabel={otherBranchLabel}
               />
             </div>
