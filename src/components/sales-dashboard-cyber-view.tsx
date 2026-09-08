@@ -35,16 +35,13 @@ function departmentMetric(
 
 export type DashboardKpi = {
   pt: number;
-  salesAmount: number;
   contractCount: number;
-  avgAmount: number;
 };
 
 export type RankingRow = {
   rank: number;
   staffName: string;
   pt: number;
-  salesAmount: number;
   contractCount: number;
   sharePercent: number;
   isSelf: boolean;
@@ -72,21 +69,22 @@ export type PtBreakdownRow = {
   clPerson: string;
   salesperson: string;
   pt: number;
-  sales: number;
   dateYmd: string;
 };
 
 /**
  * API の応答そのまま。
  *
- * ⚠ **画面で使わない項目が残っている。**「売上金額部門」と「AP天下賞」の
- *   タブを消したため、`tenkaReady` / `tenkaError` / `tenkaKpi` /
- *   `tenkaRanking` と、行の `salesAmount`・`kpi` は描画していない。
+ * ⚠ **画面で使わない項目が残っている。** AP天下賞のタブを消したため、
+ *   `tenkaReady` / `tenkaError` / `tenkaKpi` / `tenkaRanking` と `kpi` は
+ *   描画していない。
  *
  *   サーバ側を削っていないのは負荷が下がらないから。天下賞はアポ件数と
- *   同じ fields / records から集計しており、売上もPT集計と同じレコードを
- *   読んでいる。止めても @pocket への問い合わせは減らず、戻すときの手間
- *   だけが増える。型に残してあるので、タブを戻すなら描画を足すだけでよい。
+ *   同じ fields / records から集計しており、止めても @pocket への
+ *   問い合わせは減らない。型に残してあるので、タブを戻すなら描画を足すだけ。
+ *
+ *   売上金額は集計元をお客様情報へ移した際に落とした（お客様情報に相当する
+ *   列が無く、どこにも描画していなかったため）。
  */
 export type DashboardPayload = {
   staffName: string;

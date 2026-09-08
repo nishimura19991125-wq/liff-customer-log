@@ -1,22 +1,25 @@
 import "server-only";
 
-import type { AtPocketFieldRow } from "@/lib/atpocket";
 import { apiKeyForAppFields, fetchAppFields } from "@/lib/atpocket";
-import { resolveConfiguredFieldToSchemaUniqueId } from "@/lib/calendar-kojo";
-import { resolveCustomerInfoRegistrationNumberFieldIds } from "@/lib/construction-customer-info-sync-fields";
 import {
   customerInfoDashboardFieldAuth,
   customerInfoDashboardListAuths,
-  customerInfoNameFieldId,
 } from "@/lib/customer-info-config";
-import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { readCustomerInfoFieldValue } from "@/lib/customer-info-record";
 import type {
   ApoDashboardKpi,
   ApoDashboardRankingRow,
 } from "@/lib/sales-dashboard-apo-aggregate";
-import { CUSTOMER_STATUS_CANCELLED } from "@/lib/customer-status-label";
+import { isCustomerStatusCancelledExact } from "@/lib/customer-status-label";
+import {
+  aggregateCustomerInfoPt,
+  resolveCustomerInfoPtFieldMap,
+  sumCustomerPtMonths,
+  type CustomerInfoPtFieldMap,
+  type CustomerPtMonthlyAgg,
+  type PtBreakdownRow,
+} from "@/lib/sales-dashboard-customer-pt";
 import {
   buildApoAndTenkaMonthly,
   buildTenkaRanking,
@@ -40,7 +43,6 @@ import {
   salesDashboardApoAppId,
   salesDashboardContractAppId,
   salesDashboardPtAppId,
-  type ContractCountFieldMap,
   type PtDashboardFieldMap,
 } from "@/lib/sales-dashboard-fields";
 import { achievementRate } from "@/lib/sales-dashboard-achievement";
@@ -70,25 +72,19 @@ import {
   resolveStaffWorkplaceLookupConfig,
 } from "@/lib/staff-workplace-lookup";
 import { isExcludedSalesDashboardRankingName } from "@/lib/sales-dashboard-ranking-exclude";
-import {
-  parseSalesDashboardRecordYmFromField,
-  parseSalesDashboardRecordYmdFromField,
-} from "@/lib/sales-dashboard-record-date";
+import { parseSalesDashboardRecordYmFromField } from "@/lib/sales-dashboard-record-date";
 
 export type { ApoDashboardKpi, ApoDashboardRankingRow };
 
 export type SalesDashboardKpi = {
   pt: number;
-  salesAmount: number;
   contractCount: number;
-  avgAmount: number;
 };
 
 export type SalesDashboardRankingRow = {
   rank: number;
   staffName: string;
   pt: number;
-  salesAmount: number;
   contractCount: number;
   sharePercent: number;
   isSelf: boolean;
@@ -101,17 +97,7 @@ export type SalesDashboardRankingRow = {
   branch: string;
 };
 
-/** PT集計表レコード単位の明細（お客様情報の登録番号突合付き） */
-export type PtBreakdownRow = {
-  customerName: string;
-  apPerson: string;
-  clPerson: string;
-  salesperson: string;
-  pt: number;
-  sales: number;
-  /** 内部キー YYYY-MM-DD（表示は UI で formatDisplayYmd） */
-  dateYmd: string;
-};
+export type { PtBreakdownRow };
 
 /** 支社別の内訳1人分。isSelf はキャッシュに入れず personalize で付ける */
 export type SalesDashboardProgressMember = {
@@ -172,14 +158,7 @@ export type SalesDashboardPayload = {
 type StaffAgg = {
   name: string;
   pt: number;
-  salesAmount: number;
   contractCount: number;
-};
-
-type CustomerLookupByRegistration = {
-  customerName: string;
-  apPerson: string;
-  clPerson: string;
 };
 
 function parseNumber(raw: string): number {
@@ -188,85 +167,24 @@ function parseNumber(raw: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** 登録番号の突合用正規化（先頭ゼロを落とさないよう数値化しない） */
-function normalizeRegistrationNumber(raw: string): string {
-  return raw.normalize("NFKC").replace(/\s+/g, "").trim();
-}
-
 function monthKeyFromYm(year: number, month1: number): string {
   return `${year}-${String(month1).padStart(2, "0")}`;
 }
 
-function buildCustomerLookupByRegistrationNumber(
-  records: Array<{ record?: unknown }>,
-  opts: {
-    nameFieldId: string | null;
-    apStaffFieldId: string | null;
-    clStaffFieldId: string | null;
-    apptRegistrationNumberFieldId: string | null;
-    clptRegistrationNumberFieldId: string | null;
-  },
-): Map<string, CustomerLookupByRegistration> {
-  const map = new Map<string, CustomerLookupByRegistration>();
-  const {
-    nameFieldId,
-    apStaffFieldId,
-    clStaffFieldId,
-    apptRegistrationNumberFieldId,
-    clptRegistrationNumberFieldId,
-  } = opts;
-  if (!apptRegistrationNumberFieldId && !clptRegistrationNumberFieldId) {
-    return map;
-  }
-
-  for (const row of records) {
-    const rec = row.record;
-    if (!rec || typeof rec !== "object") continue;
-    const recObj = rec as Record<string, unknown>;
-
-    const info: CustomerLookupByRegistration = {
-      customerName: nameFieldId
-        ? readCustomerInfoFieldValue(recObj, nameFieldId)
-        : "",
-      apPerson: apStaffFieldId
-        ? normApClStaffName(readCustomerInfoFieldValue(recObj, apStaffFieldId))
-        : "",
-      clPerson: clStaffFieldId
-        ? normApClStaffName(readCustomerInfoFieldValue(recObj, clStaffFieldId))
-        : "",
-    };
-
-    for (const fieldId of [
-      apptRegistrationNumberFieldId,
-      clptRegistrationNumberFieldId,
-    ]) {
-      if (!fieldId) continue;
-      const key = normalizeRegistrationNumber(
-        readCustomerInfoFieldValue(recObj, fieldId),
-      );
-      if (!key || map.has(key)) continue;
-      map.set(key, info);
-    }
-  }
-
-  return map;
-}
-
 /** 担当者名 → 年月（YYYY-MM）→ その月の PT 実績 */
-type PtMonthlyAgg = Map<string, Map<string, StaffAgg>>;
-
 /**
- * PT集計表: ranking_pt_dashboard.js aggregate() 相当。
+ * 【切り替え中の確認用・次のコミットで削除する】
  *
- * **対象月では絞らない。** 取得は元から日付で絞っていないので、全月を
- * 担当者ごと・年月ごとに積んでも @pocket への問い合わせは増えない。
- * 月を選ぶのは pickPtMonth / sumPtMonths を呼ぶ側の仕事。
+ * PT集計表からの月別 PT。集計には**使わない**。お客様情報から出した数字と
+ * 突き合わせてログに残すためだけに置いている。前提（PT集計表の元データは
+ * お客様情報で、合計は一致する）が本番でも成り立つかを、切り替え後の
+ * 1回目のログで確かめられるようにする。
  */
-function aggregatePtRecords(
+function aggregatePtAppMonthly(
   records: Array<{ record?: unknown }>,
   fieldMap: PtDashboardFieldMap,
-): PtMonthlyAgg {
-  const m: PtMonthlyAgg = new Map();
+): Map<string, Map<string, number>> {
+  const m = new Map<string, Map<string, number>>();
 
   for (const row of records) {
     const rec = row.record;
@@ -284,10 +202,6 @@ function aggregatePtRecords(
     const pt = fieldMap.pt
       ? parseNumber(readCustomerInfoFieldValue(recObj, fieldMap.pt))
       : 0;
-    const salesRaw = fieldMap.sales
-      ? readCustomerInfoFieldValue(recObj, fieldMap.sales)
-      : "";
-    const sales = fieldMap.sales && pt !== 0 ? parseNumber(salesRaw) : 0;
 
     const ymKey = formatYmKey(ym.year, ym.month1);
     let byMonth = m.get(name);
@@ -295,135 +209,68 @@ function aggregatePtRecords(
       byMonth = new Map();
       m.set(name, byMonth);
     }
-    const cur = byMonth.get(ymKey) ?? {
-      name,
-      pt: 0,
-      salesAmount: 0,
-      contractCount: 0,
-    };
-    cur.pt += pt;
-    if (pt !== 0) cur.salesAmount += sales;
-    byMonth.set(ymKey, cur);
+    byMonth.set(ymKey, (byMonth.get(ymKey) ?? 0) + pt);
   }
 
   return m;
 }
 
 /**
- * 指定の月ぶんを取り出して足す（1件なら単月・12件なら年度累計）。
- * 契約件数はここでは 0 のまま。あとで mergeContractCounts が入れる。
+ * 【切り替え中の確認用・次のコミットで削除する】
+ *
+ * 直近の月について、PT集計表とお客様情報の合計を突き合わせて残す。
+ * **氏名は出さない**（件数と合計だけ）。差が 0 でなければ見落としがある。
  */
-function sumPtMonths(
-  byStaffMonth: PtMonthlyAgg,
-  ymKeys: readonly string[],
-): Map<string, StaffAgg> {
-  const out = new Map<string, StaffAgg>();
-  byStaffMonth.forEach((byMonth, name) => {
-    let pt = 0;
-    let salesAmount = 0;
-    let found = false;
-    for (const ymKey of ymKeys) {
-      const hit = byMonth.get(ymKey);
-      if (!hit) continue;
-      found = true;
-      pt += hit.pt;
-      salesAmount += hit.salesAmount;
-    }
-    if (!found) return;
-    out.set(name, { name, pt, salesAmount, contractCount: 0 });
+function warnPtSourceDifference(
+  ptApp: Map<string, Map<string, number>>,
+  customerInfo: CustomerPtMonthlyAgg,
+  ymKey: string,
+): void {
+  const sumOf = (m: Map<string, number> | undefined) => m?.get(ymKey) ?? 0;
+  let fromPtApp = 0;
+  const ptAppNames = new Set<string>();
+  ptApp.forEach((byMonth, name) => {
+    const v = sumOf(byMonth);
+    fromPtApp += v;
+    if (v !== 0) ptAppNames.add(name);
   });
-  return out;
+
+  let fromCustomerInfo = 0;
+  const ciNames = new Set<string>();
+  customerInfo.forEach((byMonth, name) => {
+    const v = byMonth.get(ymKey)?.pt ?? 0;
+    fromCustomerInfo += v;
+    if (v !== 0) ciNames.add(name);
+  });
+
+  let onlyInPtApp = 0;
+  for (const n of ptAppNames) if (!ciNames.has(n)) onlyInPtApp += 1;
+  let onlyInCustomerInfo = 0;
+  for (const n of ciNames) if (!ptAppNames.has(n)) onlyInCustomerInfo += 1;
+
+  console.info(
+    "[sales-dashboard] PT集計元の突合",
+    JSON.stringify({
+      ym: ymKey,
+      fromPtApp,
+      fromCustomerInfo,
+      diff: fromCustomerInfo - fromPtApp,
+      onlyInPtApp,
+      onlyInCustomerInfo,
+    }),
+  );
 }
 
 /**
- * PT>0 の PT 明細を **年月ごと・担当者ごと** に組み立てる。
- * 明細 PT 合計は aggregatePtRecords の pt と一致する（同じフィルタ・同じ parseNumber）。
- * ※ aggregate は pt=0 も加算対象だが加算値は 0。明細は PT>0 のみ表示する。
+ * 契約情報: 担当者ごと・年月ごとの契約件数。
  *
- * 応答へ載せるのは**選択月の1ヶ月ぶんだけ**。全月を返すとレスポンスが跳ねる。
- * ここで全月ぶんを持つのはサーバ内キャッシュの中だけで、月を切り替えても
- * @pocket を叩かずに済ませるため。
+ * CL担当者は総合PTと同じ列（CUSTOMER_INFO_FIELD_CL_STAFF）から取る。
+ * キャンセルの判定も総合PTと同じ isCustomerStatusCancelledExact に寄せた。
+ * 以前は生の完全一致で、全角空白などの表記ゆれを取りこぼしていた。
  */
-function buildPtBreakdownByStaffMonth(
-  records: Array<{ record?: unknown }>,
-  fieldMap: PtDashboardFieldMap,
-  customerByReg: Map<string, CustomerLookupByRegistration>,
-): Map<string, Record<string, PtBreakdownRow[]>> {
-  const byMonthStaff = new Map<string, Map<string, PtBreakdownRow[]>>();
-
-  for (const row of records) {
-    const rec = row.record;
-    if (!rec || typeof rec !== "object") continue;
-    const recObj = rec as Record<string, unknown>;
-
-    const salesperson = normApClStaffName(
-      readCustomerInfoFieldValue(recObj, fieldMap.salesperson),
-    );
-    if (!salesperson || isExcludedSalesDashboardRankingName(salesperson)) {
-      continue;
-    }
-
-    const ym = parseSalesDashboardRecordYmFromField(recObj, fieldMap.date);
-    if (!ym) continue;
-
-    const pt = fieldMap.pt
-      ? parseNumber(readCustomerInfoFieldValue(recObj, fieldMap.pt))
-      : 0;
-    if (pt <= 0) continue;
-
-    const salesRaw = fieldMap.sales
-      ? readCustomerInfoFieldValue(recObj, fieldMap.sales)
-      : "";
-    const sales = fieldMap.sales ? parseNumber(salesRaw) : 0;
-
-    const regKey = fieldMap.registrationNumber
-      ? normalizeRegistrationNumber(
-          readCustomerInfoFieldValue(recObj, fieldMap.registrationNumber),
-        )
-      : "";
-    const matched = regKey ? customerByReg.get(regKey) : undefined;
-
-    const item: PtBreakdownRow = {
-      customerName: matched?.customerName ?? "",
-      apPerson: matched?.apPerson ?? "",
-      clPerson: matched?.clPerson ?? "",
-      salesperson,
-      pt,
-      sales,
-      dateYmd: parseSalesDashboardRecordYmdFromField(recObj, fieldMap.date),
-    };
-
-    const ymKey = formatYmKey(ym.year, ym.month1);
-    let byStaff = byMonthStaff.get(ymKey);
-    if (!byStaff) {
-      byStaff = new Map();
-      byMonthStaff.set(ymKey, byStaff);
-    }
-    const list = byStaff.get(salesperson) ?? [];
-    list.push(item);
-    byStaff.set(salesperson, list);
-  }
-
-  const out = new Map<string, Record<string, PtBreakdownRow[]>>();
-  byMonthStaff.forEach((byStaff, ymKey) => {
-    const perMonth: Record<string, PtBreakdownRow[]> = {};
-    byStaff.forEach((rows, name) => {
-      rows.sort((a, b) => {
-        const byDate = (b.dateYmd || "").localeCompare(a.dateYmd || "");
-        if (byDate !== 0) return byDate;
-        return b.pt - a.pt;
-      });
-      perMonth[name] = rows;
-    });
-    out.set(ymKey, perMonth);
-  });
-  return out;
-}
-
-/** 契約情報: buildContractCountMap + 対象月 */
 function buildContractCountByMonth(
   records: Array<{ record?: unknown }>,
-  fieldMap: ContractCountFieldMap,
+  fieldMap: CustomerInfoPtFieldMap,
 ): Map<string, Map<string, number>> {
   const map = new Map<string, Map<string, number>>();
 
@@ -437,12 +284,11 @@ function buildContractCountByMonth(
         recObj,
         fieldMap.customerStatus,
       );
-      // 値の直書きをやめ、顧客ステータスの定義と1か所で揃える
-      if (status === CUSTOMER_STATUS_CANCELLED) continue;
+      if (isCustomerStatusCancelledExact(status)) continue;
     }
 
     const name = normApClStaffName(
-      readCustomerInfoFieldValue(recObj, fieldMap.clPerson),
+      readCustomerInfoFieldValue(recObj, fieldMap.clStaff),
     );
     if (!name || isExcludedSalesDashboardRankingName(name)) continue;
 
@@ -470,12 +316,7 @@ function mergeContractCounts(
     let count = 0;
     for (const ymKey of ymKeys) count += perMonth.get(ymKey) ?? 0;
     if (count <= 0) return;
-    const cur = byStaff.get(name) ?? {
-      name,
-      pt: 0,
-      salesAmount: 0,
-      contractCount: 0,
-    };
+    const cur = byStaff.get(name) ?? { name, pt: 0, contractCount: 0 };
     cur.contractCount = count;
     byStaff.set(name, cur);
   });
@@ -488,7 +329,6 @@ function sortStaffAgg(items: StaffAgg[]): StaffAgg[] {
   return [...visible].sort(
     (a, b) =>
       b.pt - a.pt ||
-      b.salesAmount - a.salesAmount ||
       b.contractCount - a.contractCount ||
       a.name.localeCompare(b.name, "ja"),
   );
@@ -541,7 +381,6 @@ function buildRanking(
       rank: i + 1,
       staffName: item.name,
       pt: item.pt,
-      salesAmount: item.salesAmount,
       contractCount: item.contractCount,
       sharePercent:
         companyPt > 0 ? Math.round((item.pt / companyPt) * 1000) / 10 : 0,
@@ -593,43 +432,6 @@ function warnMissingSalesBranches(
   );
 }
 
-function resolveCustomerLookupFieldIds(contractFields: AtPocketFieldRow[]): {
-  nameFieldId: string | null;
-  apStaffFieldId: string | null;
-  clStaffFieldId: string | null;
-  apptRegistrationNumberFieldId: string | null;
-  clptRegistrationNumberFieldId: string | null;
-} {
-  const nameEnv = customerInfoNameFieldId();
-  const nameFieldId = nameEnv
-    ? resolveConfiguredFieldToSchemaUniqueId(nameEnv, contractFields)
-    : resolveCustomerInfoFormFieldId(
-        "customerName",
-        "お客様名",
-        contractFields,
-      );
-
-  const apStaffFieldId = resolveCustomerInfoFormFieldId(
-    "apStaff",
-    "AP担当者",
-    contractFields,
-  );
-  const clStaffFieldId = resolveCustomerInfoFormFieldId(
-    "clStaff",
-    "CL担当者",
-    contractFields,
-  );
-  const regIds = resolveCustomerInfoRegistrationNumberFieldIds(contractFields);
-
-  return {
-    nameFieldId,
-    apStaffFieldId,
-    clStaffFieldId,
-    apptRegistrationNumberFieldId: regIds.apptRegistrationNumber,
-    clptRegistrationNumberFieldId: regIds.clptRegistrationNumber,
-  };
-}
-
 /**
  * 全月ぶんの集計（サーバ内キャッシュに入れる素材）。
  *
@@ -644,7 +446,7 @@ function resolveCustomerLookupFieldIds(contractFields: AtPocketFieldRow[]): {
 export type SalesDashboardCore = {
   /** 組み立てた時点の JST の年月。月替わりでキャッシュを捨てるために持つ */
   computedYm: string;
-  ptByStaffMonth: PtMonthlyAgg;
+  ptByStaffMonth: CustomerPtMonthlyAgg;
   /** 担当者名 → 年月 → 契約件数 */
   contractCountByStaffMonth: Map<string, Map<string, number>>;
   /** 年月 → 担当者名 → PT明細。応答へは選択月ぶんだけ載せる */
@@ -705,30 +507,29 @@ export async function buildSalesDashboardCore(): Promise<SalesDashboardCore | nu
     ptFieldMap.registrationNumber,
   ].filter(Boolean) as string[];
 
-  const contractFieldMap = contractFields
+  /**
+   * 総合PTと契約件数はどちらもお客様情報の同じレコードから作る。列は
+   * 1つの Set にまとめ、**1本の取得**に載せる（fields の CSV が伸びるだけで
+   * @pocket への問い合わせは増えない）。
+   */
+  const contractBase = contractFields
     ? resolveContractCountFieldMap(contractFields)
     : null;
-  const customerLookupFields = contractFields
-    ? resolveCustomerLookupFieldIds(contractFields)
-    : null;
+  const ptFieldMapCi =
+    contractFields && contractBase
+      ? resolveCustomerInfoPtFieldMap(contractFields, contractBase)
+      : null;
 
   const contractFieldIdSet = new Set<string>();
-  if (contractFieldMap) {
+  if (ptFieldMapCi) {
     for (const id of [
-      contractFieldMap.date,
-      contractFieldMap.clPerson,
-      contractFieldMap.customerStatus,
-    ]) {
-      if (id) contractFieldIdSet.add(id);
-    }
-  }
-  if (customerLookupFields) {
-    for (const id of [
-      customerLookupFields.nameFieldId,
-      customerLookupFields.apStaffFieldId,
-      customerLookupFields.clStaffFieldId,
-      customerLookupFields.apptRegistrationNumberFieldId,
-      customerLookupFields.clptRegistrationNumberFieldId,
+      ptFieldMapCi.date,
+      ptFieldMapCi.customerStatus,
+      ptFieldMapCi.apStaff,
+      ptFieldMapCi.clStaff,
+      ptFieldMapCi.appt,
+      ptFieldMapCi.clpt,
+      ptFieldMapCi.customerName,
     ]) {
       if (id) contractFieldIdSet.add(id);
     }
@@ -758,24 +559,29 @@ export async function buildSalesDashboardCore(): Promise<SalesDashboardCore | nu
     fetchSalesDashboardPtTargets(),
   ]);
 
-  const ptByStaffMonth = aggregatePtRecords(ptRecords, ptFieldMap);
+  // 総合PTはお客様情報から。APPT は AP担当者へ、CLPT は CL担当者へ
+  const customerPt = ptFieldMapCi
+    ? aggregateCustomerInfoPt(contractRecords, ptFieldMapCi)
+    : {
+        byStaffMonth: new Map() as CustomerPtMonthlyAgg,
+        breakdownByStaffMonth: new Map<
+          string,
+          Record<string, PtBreakdownRow[]>
+        >(),
+      };
+  const ptByStaffMonth = customerPt.byStaffMonth;
+  const ptBreakdownByStaffMonth = customerPt.breakdownByStaffMonth;
 
   const contractCountByStaffMonth =
-    contractFieldMap && contractRecords.length > 0
-      ? buildContractCountByMonth(contractRecords, contractFieldMap)
+    ptFieldMapCi && contractRecords.length > 0
+      ? buildContractCountByMonth(contractRecords, ptFieldMapCi)
       : new Map<string, Map<string, number>>();
 
-  const customerByReg = customerLookupFields
-    ? buildCustomerLookupByRegistrationNumber(
-        contractRecords,
-        customerLookupFields,
-      )
-    : new Map<string, CustomerLookupByRegistration>();
-
-  const ptBreakdownByStaffMonth = buildPtBreakdownByStaffMonth(
-    ptRecords,
-    ptFieldMap,
-    customerByReg,
+  // 【切り替え中の確認用・次のコミットで削除】前提どおり一致するかを残す
+  warnPtSourceDifference(
+    aggregatePtAppMonthly(ptRecords, ptFieldMap),
+    ptByStaffMonth,
+    currentYmInJst(),
   );
 
   // 支社は名簿から1回だけ引く。名前は全月ぶんを集めて渡す
@@ -867,18 +673,18 @@ export function buildSalesDashboardPayload(
   const labels = selectionLabels(selection);
 
   // ── 総合PT ────────────────────────────────────────
-  const byStaff = sumPtMonths(core.ptByStaffMonth, ymKeys);
+  const byStaff = new Map<string, StaffAgg>();
+  sumCustomerPtMonths(core.ptByStaffMonth, ymKeys).forEach((pt, name) => {
+    byStaff.set(name, { name, pt, contractCount: 0 });
+  });
   mergeContractCounts(byStaff, core.contractCountByStaffMonth, ymKeys);
   const sorted = sortStaffAgg([...byStaff.values()]);
 
   const companyPt = sorted.reduce((s, x) => s + x.pt, 0);
-  const companySales = sorted.reduce((s, x) => s + x.salesAmount, 0);
   const companyCount = sorted.reduce((s, x) => s + x.contractCount, 0);
   const kpi: SalesDashboardKpi = {
     pt: companyPt,
-    salesAmount: companySales,
     contractCount: companyCount,
-    avgAmount: companyCount > 0 ? Math.round(companySales / companyCount) : 0,
   };
 
   const targetPtByStaff = single
@@ -935,10 +741,9 @@ export function buildSalesDashboardPayload(
       : buildSalesDashboardProgress({
           ymKeys: annualYmKeys,
           targets: core.targets,
-          ptActualByStaff: new Map(
-            [...sumPtMonths(core.ptByStaffMonth, annualYmKeys).values()].map(
-              (it) => [it.name, it.pt] as const,
-            ),
+          ptActualByStaff: sumCustomerPtMonths(
+            core.ptByStaffMonth,
+            annualYmKeys,
           ),
           apoActualByStaff: new Map(
             (core.apo.ok

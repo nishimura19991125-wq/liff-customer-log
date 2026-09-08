@@ -88,9 +88,16 @@ export function resolvePtDashboardFieldMap(
   return { salesperson, pt, sales, date, registrationNumber };
 }
 
+/**
+ * 契約件数・総合PT が共通で使う列（お客様情報アプリ）。
+ *
+ * AP/CL担当者はここでは解決しない。CUSTOMER_INFO_FIELD_AP_STAFF /
+ * _CL_STAFF に一本化し、resolveCustomerInfoPtFieldMap がまとめて引く。
+ * 以前は CL担当者だけ SALES_DASHBOARD_CONTRACT_CL_FIELD_ID でも解決して
+ * おり、AP と別の命名体系で二重に持っていた。
+ */
 export type ContractCountFieldMap = {
   date: string;
-  clPerson: string;
   customerStatus: string | null;
 };
 
@@ -103,13 +110,7 @@ export function resolveContractCountFieldMap(
     ["初回契約日", "日付", "計上日", "実績日", "登録日"],
     ["初回契約日"],
   );
-  const clPerson = pickByEnvOrKeywords(
-    "SALES_DASHBOARD_CONTRACT_CL_FIELD_ID",
-    fields,
-    ["CL担当者", "CL 担当者"],
-    ["CL担当者"],
-  );
-  if (!date || !clPerson) return null;
+  if (!date) return null;
 
   const customerStatus = pickByEnvOrKeywords(
     "SALES_DASHBOARD_CONTRACT_STATUS_FIELD_ID",
@@ -118,7 +119,7 @@ export function resolveContractCountFieldMap(
     ["顧客ステータス"],
   );
 
-  return { date, clPerson, customerStatus };
+  return { date, customerStatus };
 }
 
 export function salesDashboardPtAppId(): string | null {
