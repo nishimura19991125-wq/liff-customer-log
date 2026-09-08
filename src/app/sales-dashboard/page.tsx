@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 
 import {
   SalesDashboardCyberView,
   type DashboardDepartment,
   type DashboardPayload,
-  type DashboardPeriod,
 } from "@/components/sales-dashboard-cyber-view";
 import { SalesDashboardSkeleton } from "@/components/sales-dashboard-skeleton";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -31,10 +30,6 @@ import { initLiffAndGetToken } from "@/lib/liff-session";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
-const PERIOD_TABS: Array<{ id: DashboardPeriod; label: string }> = [
-  { id: "current", label: "今月" },
-  { id: "previous", label: "先月" },
-];
 
 export default function SalesDashboardPage() {
   const [phase, setPhase] = useState<
@@ -48,8 +43,14 @@ export default function SalesDashboardPage() {
     LIFF_ID ? null : "NEXT_PUBLIC_LIFF_ID が設定されていません",
   );
   const [idToken, setIdToken] = useState<string | null>(null);
-  const [period, setPeriod] = useState<DashboardPeriod>("current");
+  /**
+   * 期間の選択。空文字は「サーバの既定に任せる」で、今年度・当月になる。
+   * 応答が返ったら data 側の値で表示する（選び直すまで空のまま）。
+   */
+  const [fy, setFy] = useState("");
+  const [month, setMonth] = useState("");
   const [department, setDepartment] = useState<DashboardDepartment>("pt");
+  const fySelectId = useId();
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
@@ -102,8 +103,18 @@ export default function SalesDashboardPage() {
     refreshRetryAfterSec?: number;
   };
 
+  /**
+   * 年度と月をクエリに載せる。**未選択なら付けない**（サーバの既定に乗る）。
+   * 値はサーバ側の allowlist で検証されるので、ここでは組み立てるだけ。
+   */
   const dashboardPath = canFetchDashboard
-    ? `/api/sales-dashboard?period=${encodeURIComponent(period)}`
+    ? (() => {
+        const params = new URLSearchParams();
+        if (fy) params.set("fy", fy);
+        if (month) params.set("month", month);
+        const qs = params.toString();
+        return qs ? `/api/sales-dashboard?${qs}` : "/api/sales-dashboard";
+      })()
     : null;
 
   const {
@@ -179,6 +190,16 @@ export default function SalesDashboardPage() {
 
   const showDashboardSkeleton =
     canFetchDashboard && !data && (dashboardLoading || isValidating);
+
+  /**
+   * 選択肢と選択中の値は応答から取る。サーバが allowlist で決めた結果を
+   * そのまま映すので、画面とサーバで食い違わない。
+   * 押した直後は応答が来る前でも手元の選択を優先し、反応を待たせない。
+   */
+  const fiscalYearOptions = data?.fiscalYearOptions ?? [];
+  const monthOptions = data?.monthOptions ?? [];
+  const selectedFy = fy || data?.fiscalYear.key || "";
+  const selectedMonth = month || data?.selectedMonth || "";
 
   if (phase === "init") {
     return (
@@ -283,30 +304,57 @@ export default function SalesDashboardPage() {
             : undefined
         }
       >
-        <div className="relative mb-4">
-          <nav
-            className="flex gap-2 overflow-x-auto pb-2 pr-4 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            aria-label="対象期間"
+        {/* 年度（ドロップダウン）と月（3月始まり＋年間）。どちらも全体に効く */}
+        <div className="mb-4">
+          <label htmlFor={fySelectId} className="sr-only">
+            対象年度
+          </label>
+          <select
+            id={fySelectId}
+            className="mb-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[14px] font-bold text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+            value={selectedFy}
+            disabled={fiscalYearOptions.length === 0}
+            onChange={(e) => {
+              // 年度を変えたら月は選び直し。前の年度の月をそのまま送らない
+              setFy(e.target.value);
+              setMonth("");
+            }}
           >
-            {PERIOD_TABS.map((tab) => {
-              const active = period === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setPeriod(tab.id)}
-                  disabled={showDashboardSkeleton && active}
-                  className={`shrink-0 rounded-2xl px-5 py-2.5 text-[15px] transition-all duration-300 active:scale-[0.98] disabled:opacity-60 ${
-                    active
-                      ? "cyber-tab-active"
-                      : "bg-slate-100 font-semibold text-slate-600 dark:bg-slate-800/80 dark:text-slate-400"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </nav>
+            {fiscalYearOptions.length === 0 ? (
+              <option value="">読み込み中…</option>
+            ) : null}
+            {fiscalYearOptions.map((o) => (
+              <option key={o.key} value={o.key}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+
+          <div className="relative">
+            <nav
+              className="flex gap-2 overflow-x-auto pb-2 pr-4 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              aria-label="対象期間"
+            >
+              {monthOptions.map((o) => {
+                const active = selectedMonth === o.key;
+                return (
+                  <button
+                    key={o.key}
+                    type="button"
+                    onClick={() => setMonth(o.key)}
+                    disabled={showDashboardSkeleton && active}
+                    className={`shrink-0 rounded-2xl px-5 py-2.5 text-[15px] transition-all duration-300 active:scale-[0.98] disabled:opacity-60 ${
+                      active
+                        ? "cyber-tab-active"
+                        : "bg-slate-100 font-semibold text-slate-600 dark:bg-slate-800/80 dark:text-slate-400"
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
         </div>
 
         {feedback ? (
