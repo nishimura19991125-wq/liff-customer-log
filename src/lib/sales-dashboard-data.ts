@@ -44,6 +44,7 @@ import {
 } from "@/lib/sales-dashboard-fields";
 import { achievementRate } from "@/lib/sales-dashboard-achievement";
 import { sortByPtThenTarget } from "@/lib/sales-dashboard-ranking-sort";
+import { isLookupConfigFailure } from "@/lib/sales-dashboard-lookup-warning";
 import { fetchSalesDashboardRecordPages } from "@/lib/sales-dashboard-list-fetch";
 import {
   fetchSalesDashboardPtTargets,
@@ -298,12 +299,19 @@ function buildRanking(
 }
 
 /**
- * 目標が引けなかった担当者の数を残す。**氏名は出さない**（件数のみ）。
+ * PT目標の突合。**氏名は出さない**（件数のみ）。
  *
- * 全員分が引けないときは設定・権限を疑う手掛かりになり、数人だけなら
- * 目標アプリ側の登録漏れか氏名の表記ゆれと分かる。
+ * ■ 常に情報として1行残す
+ * 目標を持たない担当者が居るのは正常。集計元をお客様情報へ移してから、顧客の
+ * AP/CL 担当者は全員ランキングに載るようになり、役員・経理など目標を持たない
+ * 方も含まれる。件数は後から追えるよう毎回 info で残す。
+ *
+ * ■ 警告にするのは設定・権限の問題だけ
+ * 目標アプリを読めていない、または1人も引けていないときだけ warn を足す
+ * （isLookupConfigFailure）。一部が未登録なだけで警告が出続けると、本当の
+ * 異常に気づけない。
  */
-function warnMissingSalesTargets(
+function logSalesTargetMatching(
   names: readonly string[],
   /** 実績（PT・契約件数・アポ）に現れた担当者。突合の突き合わせ先 */
   actualNames: ReadonlySet<string>,
@@ -323,33 +331,54 @@ function warnMissingSalesTargets(
     if (!actualNames.has(name)) targetsWithoutRanking += 1;
   });
 
-  if (missing === 0 && targetsWithoutRanking === 0) return;
-  console.warn(
-    "[sales-dashboard] PT目標を引けなかった担当者がいます",
-    JSON.stringify({
+  const detail = JSON.stringify({
+    missing,
+    total: names.length,
+    targetsAvailable: targets.available,
+    targetsWithoutRanking,
+    targetStaff: targets.byStaffMonth.size,
+    rankingStaff: actualNames.size,
+  });
+
+  console.info("[sales-dashboard] PT目標の突合", detail);
+
+  if (
+    isLookupConfigFailure({
       missing,
       total: names.length,
-      targetsAvailable: targets.available,
-      targetsWithoutRanking,
-      targetStaff: targets.byStaffMonth.size,
-      rankingStaff: actualNames.size,
-    }),
-  );
+      available: targets.available,
+    })
+  ) {
+    console.warn(
+      "[sales-dashboard] PT目標を1人も引けていません（設定・権限を確認してください）",
+      detail,
+    );
+  }
 }
 
-/** 支社を引けなかった人数を残す。**氏名は出さない**（件数のみ） */
-function warnMissingSalesBranches(
+/**
+ * 所属支社の引き当て。**氏名は出さない**（件数のみ）。
+ *
+ * 名簿の勤務場所が未入力の人が数人いるのは正常なので、PT目標と同じ扱いに
+ * そろえる。全員分引けないときだけ警告する（名簿の設定・権限を疑う）。
+ */
+function logSalesBranchLookup(
   names: readonly string[],
   rosterBranchByStaff: Map<string, string>,
 ): void {
   const missing = names.filter(
     (name) => !rosterBranchByStaff.get(name)?.trim(),
   ).length;
-  if (missing === 0) return;
-  console.warn(
-    "[sales-dashboard] 所属支社を引けなかった担当者がいます",
-    JSON.stringify({ missing, total: names.length }),
-  );
+  const detail = JSON.stringify({ missing, total: names.length });
+
+  console.info("[sales-dashboard] 所属支社の引き当て", detail);
+
+  if (isLookupConfigFailure({ missing, total: names.length })) {
+    console.warn(
+      "[sales-dashboard] 所属支社を1人も引けていません（スタッフ名簿の設定を確認してください）",
+      detail,
+    );
+  }
 }
 
 /**
@@ -488,12 +517,14 @@ export async function buildSalesDashboardCore(): Promise<SalesDashboardCore | nu
   const rosterBranchByStaff = await resolveBranchByStaff([...allNames]);
 
   /**
-   * 設定の取りこぼしを残す。**core を組み立てたときだけ**＝実際に @pocket を
-   * 叩いた回にしか出ない。応答の組み立て（buildSalesDashboardPayload）は
-   * キャッシュから取り出すだけなので、月や年度を切り替えても増えない。
+   * 突合の結果を残す。**core を組み立てたときだけ**＝実際に @pocket を叩いた
+   * 回にしか出ない。応答の組み立て（buildSalesDashboardPayload）はキャッシュ
+   * から取り出すだけなので、月や年度を切り替えても増えない。
+   *
+   * 件数は毎回 info で残し、warn は設定・権限を疑うときだけ足す。
    */
-  warnMissingSalesTargets([...allNames], actualNames, targets);
-  warnMissingSalesBranches([...allNames], rosterBranchByStaff);
+  logSalesTargetMatching([...allNames], actualNames, targets);
+  logSalesBranchLookup([...allNames], rosterBranchByStaff);
 
   return {
     computedYm: currentYmInJst(),
