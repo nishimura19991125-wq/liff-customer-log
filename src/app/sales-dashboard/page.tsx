@@ -35,9 +35,22 @@ import {
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 
-/** 前後ボタン。押せないときは薄くして、端に来たことが見て分かるようにする */
-const MONTH_ARROW_CLASS =
-  "shrink-0 rounded-xl px-3 py-1 text-[15px] leading-none transition-opacity active:scale-[0.98] disabled:opacity-30";
+/**
+ * 前後ボタン。押せないときは薄くして、端に来たことが見て分かるようにする。
+ *
+ * ■ 当たり判定だけを 44px 四方へ広げる
+ * padding を増やすと記号の位置が動き、中央の月表示との間隔が変わってしまう。
+ * そこで**擬似要素を重ねて当たり判定だけ**を広げる。before は絶対配置で
+ * ボタンの中央に置くので、記号の見た目・位置・レイアウトはどれも動かない。
+ * 擬似要素はボタンの一部なので、押せば onClick が走る。disabled のときは
+ * ボタン自体が click を出さないため、広げた範囲も押せないままになる。
+ */
+const MONTH_ARROW_CLASS = [
+  "relative shrink-0 rounded-xl px-3 py-1 text-[15px] leading-none",
+  "transition-opacity active:scale-[0.98] disabled:opacity-30",
+  "before:absolute before:left-1/2 before:top-1/2 before:size-[44px]",
+  "before:-translate-x-1/2 before:-translate-y-1/2 before:content-['']",
+].join(" ");
 
 
 export default function SalesDashboardPage() {
@@ -437,7 +450,11 @@ export default function SalesDashboardPage() {
               aria-pressed={isAnnual}
               onClick={() => setMonth(FISCAL_ANNUAL_MONTH_KEY)}
               disabled={showDashboardSkeleton && isAnnual}
-              className={`shrink-0 rounded-2xl px-5 py-2.5 text-[15px] transition-all duration-300 active:scale-[0.98] disabled:opacity-60 ${
+              /*
+                余白と文字は今のまま（部門タブの px-4 / text-[14px] より既に
+                大きい）。高さだけ 44px を下限にして押しやすくする
+              */
+              className={`inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-2xl px-5 py-2.5 text-[15px] transition-all duration-300 active:scale-[0.98] disabled:opacity-60 ${
                 isAnnual
                   ? "cyber-tab-active"
                   : "bg-slate-100 font-semibold text-slate-600 dark:bg-slate-800/80 dark:text-slate-400"
