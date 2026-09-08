@@ -3,6 +3,7 @@ import "server-only";
 import { apiKeyForAppFields, fetchAllRecordsPages, fetchAppFields } from "@/lib/atpocket";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { readCustomerInfoFieldValue } from "@/lib/customer-info-record";
+import { formatYmKey } from "@/lib/fiscal-year";
 import { isExcludedSalesDashboardRankingName } from "@/lib/sales-dashboard-ranking-exclude";
 import { parseSalesDashboardRecordYmFromField } from "@/lib/sales-dashboard-record-date";
 import {
@@ -11,7 +12,7 @@ import {
 } from "@/lib/sales-target-fields";
 
 /**
- * 目標登録(月次)アプリから **PT の目標値だけ** を引く（ランキング用）。
+ * 目標登録(月次)アプリから月別の目標（PT・アポ件数・支社）を引く。
  *
  * ■ なぜ営業進捗の処理を呼ばないか
  * あちらの入口は buildSalesProgressCore（sales-progress-data.ts）だけで、
@@ -23,7 +24,13 @@ import {
  * ■ @pocket の往復
  * 列定義1回（30分キャッシュ・atpocket.ts の APP_FIELDS_DEFAULT_TTL_SECONDS）＋
  * レコード最大10ページ。呼び出し元の集計自体が30分キャッシュされるので、
- * 増えるのは実質「30分に1回・期間ごと」。
+ * 増えるのは実質「30分に1回」。
+ *
+ * ■ 列を増やしても往復は増えない
+ * アポ件数・支社を足したが、**同じ1本の fetchAllRecordsPages に載る
+ * fields の CSV が伸びるだけ**で、HTTP リクエストの本数は変わらない。
+ * 対象月での絞り込みもやめて全月を積むが、取得は元から日付で絞って
+ * いないので、ここでも往復は増えない。
  *
  * ■ 失敗しても投げない
  * 目標はランキングの付加情報で、これが取れないことを理由に画面を落とさない。
@@ -40,22 +47,72 @@ function parseNumber(raw: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** 担当者1人・1ヶ月ぶんの目標 */
+export type SalesDashboardTargetItem = {
+  pt: number;
+  apoCount: number;
+  /** 目標アプリの「支社」列の生値。空なら名簿へフォールバックする */
+  branchRaw: string;
+};
+
 export type SalesDashboardTargetLookup = {
-  /** 正規化担当者名 → 対象月の PT 目標。取れなければ空 */
-  ptByStaff: Map<string, number>;
+  /** 正規化担当者名 → 年月（YYYY-MM）→ その月の目標。取れなければ空 */
+  byStaffMonth: Map<string, Map<string, SalesDashboardTargetItem>>;
   /** 目標アプリを読めたか（未設定・取得失敗は false） */
   available: boolean;
 };
 
 const EMPTY: SalesDashboardTargetLookup = {
-  ptByStaff: new Map(),
+  byStaffMonth: new Map(),
   available: false,
 };
 
-export async function fetchSalesDashboardPtTargets(month: {
-  year: number;
-  month1: number;
-}): Promise<SalesDashboardTargetLookup> {
+/** 1ヶ月ぶんの PT 目標だけを取り出す（ランキング行の targetPt 用） */
+export function pickTargetPtByStaff(
+  lookup: SalesDashboardTargetLookup,
+  ymKey: string,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  lookup.byStaffMonth.forEach((byMonth, name) => {
+    const pt = byMonth.get(ymKey)?.pt ?? 0;
+    if (pt !== 0) out.set(name, pt);
+  });
+  return out;
+}
+
+/** 複数月ぶんの PT 目標を足して取り出す（年度累計用） */
+export function sumTargetPtByStaff(
+  lookup: SalesDashboardTargetLookup,
+  ymKeys: readonly string[],
+): Map<string, number> {
+  const out = new Map<string, number>();
+  lookup.byStaffMonth.forEach((byMonth, name) => {
+    let pt = 0;
+    for (const ymKey of ymKeys) pt += byMonth.get(ymKey)?.pt ?? 0;
+    if (pt !== 0) out.set(name, pt);
+  });
+  return out;
+}
+
+/** 全月を通して最後に見つかった支社の生値（担当者ごと） */
+export function latestTargetBranchByStaff(
+  lookup: SalesDashboardTargetLookup,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  lookup.byStaffMonth.forEach((byMonth, name) => {
+    const yms = [...byMonth.keys()].sort();
+    for (let i = yms.length - 1; i >= 0; i -= 1) {
+      const raw = byMonth.get(yms[i]!)?.branchRaw?.trim();
+      if (raw) {
+        out.set(name, raw);
+        return;
+      }
+    }
+  });
+  return out;
+}
+
+export async function fetchSalesDashboardPtTargets(): Promise<SalesDashboardTargetLookup> {
   const appId = salesTargetAppId();
   if (!appId) return EMPTY;
 
@@ -74,8 +131,14 @@ export async function fetchSalesDashboardPtTargets(month: {
       return EMPTY;
     }
 
-    // 使うのは3列だけ。支社・アポ件数は運ばない
-    const csv = [fieldMap.month, fieldMap.staffName, fieldMap.pt].join(",");
+    // 同じ1本の取得に載せる。列を足しても HTTP の本数は変わらない
+    const csv = [
+      fieldMap.month,
+      fieldMap.staffName,
+      fieldMap.pt,
+      fieldMap.apoCount,
+      fieldMap.branch,
+    ].join(",");
     const records = await fetchAllRecordsPages(
       appId,
       csv,
@@ -88,14 +151,18 @@ export async function fetchSalesDashboardPtTargets(month: {
       { maxPages: TARGET_MAX_PAGES, maxRetries: 1 },
     );
 
-    const ptByStaff = new Map<string, number>();
+    const byStaffMonth = new Map<
+      string,
+      Map<string, SalesDashboardTargetItem>
+    >();
     for (const row of records) {
       const rec = row.record;
       if (!rec || typeof rec !== "object") continue;
       const recObj = rec as Record<string, unknown>;
 
+      // 対象月では絞らない。全月を積んで、選ぶのは呼び出し側
       const ym = parseSalesDashboardRecordYmFromField(recObj, fieldMap.month);
-      if (!ym || ym.year !== month.year || ym.month1 !== month.month1) continue;
+      if (!ym) continue;
 
       const name = normApClStaffName(
         readCustomerInfoFieldValue(recObj, fieldMap.staffName),
@@ -103,12 +170,29 @@ export async function fetchSalesDashboardPtTargets(month: {
       // 実績側と同じ除外を掛ける。片側だけ除外すると達成率が歪む
       if (!name || isExcludedSalesDashboardRankingName(name)) continue;
 
-      const pt = parseNumber(readCustomerInfoFieldValue(recObj, fieldMap.pt));
+      const ymKey = formatYmKey(ym.year, ym.month1);
+      let byMonth = byStaffMonth.get(name);
+      if (!byMonth) {
+        byMonth = new Map();
+        byStaffMonth.set(name, byMonth);
+      }
+
+      const cur = byMonth.get(ymKey) ?? { pt: 0, apoCount: 0, branchRaw: "" };
       // 同じ人に複数行あるときは合算する（営業進捗の集計と同じ扱い）
-      ptByStaff.set(name, (ptByStaff.get(name) ?? 0) + pt);
+      cur.pt += parseNumber(readCustomerInfoFieldValue(recObj, fieldMap.pt));
+      cur.apoCount += parseNumber(
+        readCustomerInfoFieldValue(recObj, fieldMap.apoCount),
+      );
+      // 支社は合算できない。最後に入っていた値を残す
+      const branchRaw = readCustomerInfoFieldValue(
+        recObj,
+        fieldMap.branch,
+      ).trim();
+      if (branchRaw) cur.branchRaw = branchRaw;
+      byMonth.set(ymKey, cur);
     }
 
-    return { ptByStaff, available: true };
+    return { byStaffMonth, available: true };
   } catch (e) {
     console.warn(
       "[sales-dashboard-target-lookup] 目標の取得に失敗しました（目標は表示しません）",

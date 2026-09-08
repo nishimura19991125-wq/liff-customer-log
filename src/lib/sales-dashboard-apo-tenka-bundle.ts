@@ -6,15 +6,13 @@ import { fieldCaptionByUniqueId } from "@/lib/customer-info-record";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import {
   aggregateApoRecords,
-  buildApoRanking,
-  sortApoAgg,
   type ApoDashboardRankingRow,
-  type ApoDashboardSectionResult,
+  type ApoMonthlyAgg,
 } from "@/lib/sales-dashboard-apo-aggregate";
 import {
   aggregateTenkaRecords,
-  type TenkaDashboardKpi,
-  type TenkaDashboardSectionResult,
+  type TenkaAggItem,
+  type TenkaMonthlyAgg,
 } from "@/lib/sales-dashboard-tenka-aggregate";
 import {
   resolveApoDashboardFieldMap,
@@ -28,12 +26,10 @@ import {
   fetchSalesDashboardRecordPages,
   salesDashboardApoListAuths,
 } from "@/lib/sales-dashboard-list-fetch";
-import type { SalesDashboardPeriodKey } from "@/lib/sales-dashboard-period";
 import { isExcludedSalesDashboardRankingName } from "@/lib/sales-dashboard-ranking-exclude";
 
-function sortTenkaAgg(
-  items: Array<{ name: string; targetCount: number }>,
-): Array<{ name: string; targetCount: number }> {
+/** AP天下賞の並び。呼び出し側が月ごとに掛け直す */
+export function sortTenkaAgg(items: TenkaAggItem[]): TenkaAggItem[] {
   const visible = items.filter(
     (it) => !isExcludedSalesDashboardRankingName(it.name),
   );
@@ -44,8 +40,9 @@ function sortTenkaAgg(
   );
 }
 
-function buildTenkaRanking(
-  sorted: Array<{ name: string; targetCount: number }>,
+/** AP天下賞のランキング行。呼び出し側が月ごとに掛け直す */
+export function buildTenkaRanking(
+  sorted: TenkaAggItem[],
   total: number,
   bound: string,
 ): ApoDashboardRankingRow[] {
@@ -89,18 +86,26 @@ function logResolvedApoFields(
   );
 }
 
-export type ApoTenkaBundleResult = {
-  apo: ApoDashboardSectionResult;
-  tenka: TenkaDashboardSectionResult;
+/**
+ * 月別に積んだアポ・AP天下賞。**月の選択はここではしない。**
+ * 呼び出し側（sales-dashboard-data.ts）が選択月・年度累計で取り出す。
+ */
+export type ApoTenkaMonthlyBundle = {
+  apo:
+    | { ok: true; byStaffMonth: ApoMonthlyAgg }
+    | { ok: false; error: string };
+  tenka:
+    | { ok: true; byStaffMonth: TenkaMonthlyAgg }
+    | { ok: false; error: string };
 };
 
 /**
  * アポ件数・AP天下賞を同一の fields / records 取得で集計（@pocket 呼び出しを約半減）。
+ *
+ * 取得は元から日付で絞っていないので、月別に積んでも**問い合わせは増えない**。
+ * 1回の取得結果から過去月も年度累計も作れる。
  */
-export async function buildApoAndTenkaSections(
-  boundStaffName: string,
-  periodKey: SalesDashboardPeriodKey,
-): Promise<ApoTenkaBundleResult> {
+export async function buildApoAndTenkaMonthly(): Promise<ApoTenkaMonthlyBundle> {
   const apoAppId = salesDashboardApoAppId();
   if (!apoAppId) {
     const err = "SALES_DASHBOARD_APO_APP_ID が未設定です";
@@ -110,7 +115,6 @@ export async function buildApoAndTenkaSections(
     };
   }
 
-  const bound = normApClStaffName(boundStaffName);
   const apoFilterValues = salesDashboardApoTypeFilterValues();
   const tenkaFilterValues = salesDashboardApoTenkaTypeFilterValues();
 
@@ -166,41 +170,25 @@ export async function buildApoAndTenkaSections(
       },
     );
 
-    const apoByStaff = aggregateApoRecords(
-      records,
-      apoFieldMap,
-      periodKey,
-      apoFilterValues,
-    );
-    const apoSorted = sortApoAgg([...apoByStaff.values()]);
-    const totalApo = apoSorted.reduce((s, x) => s + x.apoCount, 0);
-
-    let tenka: TenkaDashboardSectionResult;
-    if (!tenkaFieldMap) {
-      tenka = { ok: false, error: tenkaFieldError };
-    } else {
-      const tenkaByStaff = aggregateTenkaRecords(
-        records,
-        tenkaFieldMap,
-        periodKey,
-        tenkaFilterValues,
-      );
-      const tenkaSorted = sortTenkaAgg([...tenkaByStaff.values()]);
-      const totalTenka = tenkaSorted.reduce((s, x) => s + x.targetCount, 0);
-      tenka = {
-        ok: true,
-        kpi: { totalTargetCount: totalTenka },
-        ranking: buildTenkaRanking(tenkaSorted, totalTenka, bound),
-      };
-    }
-
     return {
       apo: {
         ok: true,
-        kpi: { totalApoCount: totalApo },
-        ranking: buildApoRanking(apoSorted, totalApo, bound),
+        byStaffMonth: aggregateApoRecords(
+          records,
+          apoFieldMap,
+          apoFilterValues,
+        ),
       },
-      tenka,
+      tenka: tenkaFieldMap
+        ? {
+            ok: true,
+            byStaffMonth: aggregateTenkaRecords(
+              records,
+              tenkaFieldMap,
+              tenkaFilterValues,
+            ),
+          }
+        : { ok: false, error: tenkaFieldError },
     };
   } catch (e) {
     /**

@@ -13,11 +13,7 @@ import {
   parseSalesDashboardRecordYmFromField,
 } from "@/lib/sales-dashboard-record-date";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
-import {
-  isYmInPeriod,
-  resolveSalesDashboardPeriod,
-  type SalesDashboardPeriodKey,
-} from "@/lib/sales-dashboard-period";
+import { formatYmKey } from "@/lib/fiscal-year";
 import {
   resolveApoDashboardFieldMap,
   salesDashboardApoAppId,
@@ -40,6 +36,9 @@ export type ApoAggItem = {
 export type ApoDashboardKpi = {
   totalApoCount: number;
 };
+
+/** 担当者名 → 年月（YYYY-MM）→ その月の件数 */
+export type ApoMonthlyAgg = Map<string, Map<string, ApoAggItem>>;
 
 export type ApoDashboardRankingRow = {
   rank: number;
@@ -83,6 +82,8 @@ function isApoCancelStatus(statusVal: string): boolean {
 const DATE_SAMPLE_LIMIT = 2;
 /** 生値が長くても記録は頭だけにする */
 const DATE_SAMPLE_MAX_LENGTH = 40;
+/** 月別の内訳を残す範囲。古い月まで全部出すとログが読めなくなる */
+const COUNTED_BY_YM_LIMIT = 24;
 
 /**
  * どの条件で何件落ちたかを残す。**氏名・顧客名は出さない**（件数のみ）。
@@ -96,6 +97,11 @@ const DATE_SAMPLE_MAX_LENGTH = 40;
  *
  * dateSamples は読めなかった日付の生値。日付列に個人情報は入らないので
  * 出せる。形式の食い違い（「2026年9月8日」等）はこれで一目で分かる。
+ *
+ * ■ 月別集計に変えたことによる変更
+ * 対象月の外を捨てなくなったので outOfPeriod は無くなった。代わりに
+ * counted が何月に散ったかを countedByYm（新しい順に最大24ヶ月）で残す。
+ * 特定の月だけ 0 なら、その月の入力漏れか日付の形式違いだと分かる。
  */
 type ApoAggregateCounts = {
   total: number;
@@ -105,35 +111,44 @@ type ApoAggregateCounts = {
   typeMismatch: number;
   excludedLabel: number;
   dateUnparsed: number;
-  outOfPeriod: number;
   cancelled: number;
   counted: number;
 };
 
 function logApoAggregateCounts(
   counts: ApoAggregateCounts,
-  period: { year: number; month1: number },
+  countedByYm: Map<string, number>,
   dateSamples: string[],
 ): void {
+  const recent = [...countedByYm.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .slice(0, COUNTED_BY_YM_LIMIT);
+
   console.info(
     "[sales-dashboard] アポ件数の集計内訳",
     JSON.stringify({
-      period: `${period.year}-${String(period.month1).padStart(2, "0")}`,
       ...counts,
+      months: countedByYm.size,
+      countedByYm: Object.fromEntries(recent),
       ...(dateSamples.length ? { dateSamples } : {}),
     }),
   );
 }
 
-/** ranking_pt_dashboard.js aggregateApo() 相当（アポ件数＝キャンセル以外） */
+/**
+ * ranking_pt_dashboard.js aggregateApo() 相当（アポ件数＝キャンセル以外）。
+ *
+ * **対象月では絞らない。** 全レコードを担当者ごと・年月ごとに積む。
+ * 取得は元から日付で絞っていないので、こうしても @pocket への
+ * 問い合わせは増えず、過去月も年間累計も同じ1回の取得から作れる。
+ * 月を選ぶのは pickApoMonth / sumApoMonths を呼ぶ側の仕事。
+ */
 export function aggregateApoRecords(
   records: Array<{ record?: unknown }>,
   fieldMap: ApoDashboardFieldMap,
-  periodKey: SalesDashboardPeriodKey,
   filterValues: string[],
-): Map<string, ApoAggItem> {
-  const period = resolveSalesDashboardPeriod(periodKey);
-  const m = new Map<string, ApoAggItem>();
+): ApoMonthlyAgg {
+  const m: ApoMonthlyAgg = new Map();
 
   /** 絞り込みの条件・順序は変えていない。落ちた段を数えているだけ */
   const counts: ApoAggregateCounts = {
@@ -144,11 +159,11 @@ export function aggregateApoRecords(
     typeMismatch: 0,
     excludedLabel: 0,
     dateUnparsed: 0,
-    outOfPeriod: 0,
     cancelled: 0,
     counted: 0,
   };
   const dateSamples: string[] = [];
+  const countedByYm = new Map<string, number>();
 
   for (const row of records) {
     const rec = row.record;
@@ -190,10 +205,6 @@ export function aggregateApoRecords(
       }
       continue;
     }
-    if (!isYmInPeriod(ym.year, ym.month1, period)) {
-      counts.outOfPeriod += 1;
-      continue;
-    }
 
     if (fieldMap.estimateStatus) {
       const statusVal = readCustomerInfoFieldValue(
@@ -206,15 +217,52 @@ export function aggregateApoRecords(
       }
     }
 
+    const ymKey = formatYmKey(ym.year, ym.month1);
     counts.counted += 1;
-    const cur = m.get(name) ?? { name, apoCount: 0 };
+    countedByYm.set(ymKey, (countedByYm.get(ymKey) ?? 0) + 1);
+
+    let byMonth = m.get(name);
+    if (!byMonth) {
+      byMonth = new Map();
+      m.set(name, byMonth);
+    }
+    const cur = byMonth.get(ymKey) ?? { name, apoCount: 0 };
     cur.apoCount += 1;
-    m.set(name, cur);
+    byMonth.set(ymKey, cur);
   }
 
-  logApoAggregateCounts(counts, period, dateSamples);
+  logApoAggregateCounts(counts, countedByYm, dateSamples);
 
   return m;
+}
+
+/** 1ヶ月ぶんを取り出す。件数0の担当者は含めない */
+export function pickApoMonth(
+  byStaffMonth: ApoMonthlyAgg,
+  ymKey: string,
+): ApoAggItem[] {
+  const out: ApoAggItem[] = [];
+  byStaffMonth.forEach((byMonth, name) => {
+    const hit = byMonth.get(ymKey);
+    if (hit && hit.apoCount > 0) out.push({ name, apoCount: hit.apoCount });
+  });
+  return out;
+}
+
+/** 複数月を足す（年度の累計に使う）。件数0の担当者は含めない */
+export function sumApoMonths(
+  byStaffMonth: ApoMonthlyAgg,
+  ymKeys: readonly string[],
+): ApoAggItem[] {
+  const out: ApoAggItem[] = [];
+  byStaffMonth.forEach((byMonth, name) => {
+    let apoCount = 0;
+    for (const ymKey of ymKeys) {
+      apoCount += byMonth.get(ymKey)?.apoCount ?? 0;
+    }
+    if (apoCount > 0) out.push({ name, apoCount });
+  });
+  return out;
 }
 
 export function sortApoAgg(items: ApoAggItem[]): ApoAggItem[] {
@@ -276,9 +324,13 @@ export type ApoDashboardSectionResult =
     }
   | { ok: false; error: string };
 
+/**
+ * 単体でアポ件数だけを組み立てる経路（画面からは使っていない）。
+ * 月別集計に合わせ、対象は年月キー（YYYY-MM）で受ける。
+ */
 export async function buildApoDashboardSection(
   boundStaffName: string,
-  periodKey: SalesDashboardPeriodKey,
+  ymKey: string,
 ): Promise<ApoDashboardSectionResult> {
   const apoAppId = salesDashboardApoAppId();
   if (!apoAppId) {
@@ -317,13 +369,8 @@ export async function buildApoDashboardSection(
       .join(",");
 
     const records = await fetchAllPages(apoAppId, wanted, listAuth);
-    const byStaff = aggregateApoRecords(
-      records,
-      fieldMap,
-      periodKey,
-      filterValues,
-    );
-    const sorted = sortApoAgg([...byStaff.values()]);
+    const byStaffMonth = aggregateApoRecords(records, fieldMap, filterValues);
+    const sorted = sortApoAgg(pickApoMonth(byStaffMonth, ymKey));
     const totalApo = sorted.reduce((s, x) => s + x.apoCount, 0);
 
     return {

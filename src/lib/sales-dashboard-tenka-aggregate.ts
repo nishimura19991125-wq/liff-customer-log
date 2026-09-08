@@ -14,11 +14,7 @@ import {
   parseRecordYmFromField,
   type ApoDashboardRankingRow,
 } from "@/lib/sales-dashboard-apo-aggregate";
-import {
-  isYmInPeriod,
-  resolveSalesDashboardPeriod,
-  type SalesDashboardPeriodKey,
-} from "@/lib/sales-dashboard-period";
+import { formatYmKey } from "@/lib/fiscal-year";
 import {
   resolveApoTenkaFieldMap,
   salesDashboardApoAppId,
@@ -64,15 +60,22 @@ function isApoTypeMatched(typeVal: string, filterValues: string[]): boolean {
   return filterValues.some((fv) => tv.includes(fv));
 }
 
-/** ranking_pt_dashboard.js AP天下賞のレコード判定 */
+export type TenkaAggItem = { name: string; targetCount: number };
+/** 担当者名 → 年月（YYYY-MM）→ その月の対象件数 */
+export type TenkaMonthlyAgg = Map<string, Map<string, TenkaAggItem>>;
+
+/**
+ * ranking_pt_dashboard.js AP天下賞のレコード判定。
+ *
+ * アポ件数と同じく**対象月では絞らず**、担当者ごと・年月ごとに積む。
+ * 判定の条件（両クロ・宅内テーブル商談・リードタイム14日以内）は変えていない。
+ */
 export function aggregateTenkaRecords(
   records: Array<{ record?: unknown }>,
   fieldMap: ApoTenkaFieldMap,
-  periodKey: SalesDashboardPeriodKey,
   filterValues: string[],
-): Map<string, { name: string; targetCount: number }> {
-  const period = resolveSalesDashboardPeriod(periodKey);
-  const m = new Map<string, { name: string; targetCount: number }>();
+): TenkaMonthlyAgg {
+  const m: TenkaMonthlyAgg = new Map();
 
   for (const row of records) {
     const rec = row.record;
@@ -101,14 +104,51 @@ export function aggregateTenkaRecords(
     if (leadDays === null || leadDays > TENKA_MAX_LEAD_TIME_DAYS) continue;
 
     const ym = parseRecordYmFromField(recObj, fieldMap.date);
-    if (!ym || !isYmInPeriod(ym.year, ym.month1, period)) continue;
+    if (!ym) continue;
 
-    const cur = m.get(name) ?? { name, targetCount: 0 };
+    const ymKey = formatYmKey(ym.year, ym.month1);
+    let byMonth = m.get(name);
+    if (!byMonth) {
+      byMonth = new Map();
+      m.set(name, byMonth);
+    }
+    const cur = byMonth.get(ymKey) ?? { name, targetCount: 0 };
     cur.targetCount += 1;
-    m.set(name, cur);
+    byMonth.set(ymKey, cur);
   }
 
   return m;
+}
+
+/** 1ヶ月ぶんを取り出す */
+export function pickTenkaMonth(
+  byStaffMonth: TenkaMonthlyAgg,
+  ymKey: string,
+): TenkaAggItem[] {
+  const out: TenkaAggItem[] = [];
+  byStaffMonth.forEach((byMonth, name) => {
+    const hit = byMonth.get(ymKey);
+    if (hit && hit.targetCount > 0) {
+      out.push({ name, targetCount: hit.targetCount });
+    }
+  });
+  return out;
+}
+
+/** 複数月を足す（年度の累計に使う） */
+export function sumTenkaMonths(
+  byStaffMonth: TenkaMonthlyAgg,
+  ymKeys: readonly string[],
+): TenkaAggItem[] {
+  const out: TenkaAggItem[] = [];
+  byStaffMonth.forEach((byMonth, name) => {
+    let targetCount = 0;
+    for (const ymKey of ymKeys) {
+      targetCount += byMonth.get(ymKey)?.targetCount ?? 0;
+    }
+    if (targetCount > 0) out.push({ name, targetCount });
+  });
+  return out;
 }
 
 function buildTenkaRanking(
@@ -160,9 +200,13 @@ export type TenkaDashboardSectionResult =
     }
   | { ok: false; error: string };
 
+/**
+ * 単体で AP天下賞だけを組み立てる経路（画面からは使っていない）。
+ * 月別集計に合わせ、対象は年月キー（YYYY-MM）で受ける。
+ */
 export async function buildTenkaDashboardSection(
   boundStaffName: string,
-  periodKey: SalesDashboardPeriodKey,
+  ymKey: string,
 ): Promise<TenkaDashboardSectionResult> {
   const apoAppId = salesDashboardApoAppId();
   if (!apoAppId) {
@@ -204,13 +248,8 @@ export async function buildTenkaDashboardSection(
       .join(",");
 
     const records = await fetchAllPages(apoAppId, wanted, listAuth);
-    const byStaff = aggregateTenkaRecords(
-      records,
-      fieldMap,
-      periodKey,
-      filterValues,
-    );
-    const sorted = [...byStaff.values()].sort(
+    const byStaffMonth = aggregateTenkaRecords(records, fieldMap, filterValues);
+    const sorted = pickTenkaMonth(byStaffMonth, ymKey).sort(
       (a, b) =>
         b.targetCount - a.targetCount || a.name.localeCompare(b.name, "ja"),
     );
