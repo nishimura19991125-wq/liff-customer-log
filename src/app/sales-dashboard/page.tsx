@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import {
   SalesDashboardCyberView,
@@ -27,8 +27,17 @@ import {
   liffAuthedJsonFetch,
 } from "@/lib/liff-swr";
 import { initLiffAndGetToken } from "@/lib/liff-session";
+import {
+  FISCAL_ANNUAL_MONTH_KEY,
+  currentYmInJst,
+  selectableFiscalMonths,
+} from "@/lib/fiscal-year";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
+
+/** 前後ボタン。押せないときは薄くして、端に来たことが見て分かるようにする */
+const MONTH_ARROW_CLASS =
+  "shrink-0 rounded-xl px-3 py-1 text-[15px] leading-none transition-opacity active:scale-[0.98] disabled:opacity-30";
 
 
 export default function SalesDashboardPage() {
@@ -51,14 +60,11 @@ export default function SalesDashboardPage() {
   const [month, setMonth] = useState("");
   const [department, setDepartment] = useState<DashboardDepartment>("pt");
   const fySelectId = useId();
-
-  /** 月タブの横スクロール。選択中のタブを見える位置へ寄せるのに使う */
-  const monthNavRef = useRef<HTMLElement | null>(null);
-  const activeMonthTabRef = useRef<HTMLButtonElement | null>(null);
-  /** 利用者が自分でタブを押したときは寄せない（押した要素は既に見えている） */
-  const skipMonthScrollRef = useRef(false);
-  /** 2回目以降だけ動きを付ける。開いた瞬間に横へ流れると落ち着かない */
-  const monthScrolledOnceRef = useRef(false);
+  /**
+   * 年間から月へ戻るときの行き先。直前に見ていた月を覚えておく。
+   * 覚えが無ければ当月へ落とす。
+   */
+  const [lastYm, setLastYm] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
@@ -204,50 +210,61 @@ export default function SalesDashboardPage() {
    * そのまま映すので、画面とサーバで食い違わない。
    * 押した直後は応答が来る前でも手元の選択を優先し、反応を待たせない。
    */
-  const fiscalYearOptions = data?.fiscalYearOptions ?? [];
-  const monthOptions = data?.monthOptions ?? [];
+  const fiscalYearOptions = useMemo(
+    () => data?.fiscalYearOptions ?? [],
+    [data?.fiscalYearOptions],
+  );
   const selectedFy = fy || data?.fiscalYear.key || "";
   const selectedMonth = month || data?.selectedMonth || "";
+  const isAnnual = selectedMonth === FISCAL_ANNUAL_MONTH_KEY;
 
   /**
-   * 選択中の月タブを見える位置へ寄せる。
+   * 選べる月を古い順に1本へ並べたもの（前年度3月 → 今年度2月）。
    *
-   * 月は13個あり、当月は右端寄りになる。初期表示ではタブが左端（3月）に
-   * あるので、何もしないと開くたびに横スクロールで探すことになる。
-   *
-   * ■ block: "nearest" は必須
-   * 横スクロールの中の要素に scrollIntoView を使うと、既定の block: "start"
-   * ではページ全体が縦に飛ぶ。縦は動かさず、横だけ中央へ寄せる。
-   *
-   * ■ 走らせるのは初期表示と、年度を切り替えて月が選び直されたときだけ
-   * 利用者が自分でタブを押したときは押した要素が既に見えているので寄せない
-   * （skipMonthScrollRef）。
-   *
-   * ■ 初回は動きを付けない
-   * 開いた瞬間に横へ流れると落ち着かないので behavior を指定しない（瞬時）。
-   * 2回目以降（年度の切り替え）は何が動いたか分かるよう smooth にする。
+   * 年度は応答の fiscalYearOptions から取るので、**サーバの allowlist と
+   * 必ず一致する**。前後の移動は添字を1つ動かすだけで、年度をまたぐ移動も
+   * この並びに含まれている。
    */
-  useEffect(() => {
-    if (!selectedMonth) return;
-    if (skipMonthScrollRef.current) {
-      skipMonthScrollRef.current = false;
-      return;
-    }
-    const nav = monthNavRef.current;
-    const tab = activeMonthTabRef.current;
-    if (!nav || !tab) return;
-    // 横に溢れていなければ何もしない（タブが少ないとき・広い画面）
-    if (nav.scrollWidth <= nav.clientWidth) return;
+  const selectableMonths = useMemo(
+    () => selectableFiscalMonths(fiscalYearOptions.map((o) => o.key)),
+    [fiscalYearOptions],
+  );
 
-    tab.scrollIntoView({
-      block: "nearest",
-      inline: "center",
-      ...(monthScrolledOnceRef.current
-        ? { behavior: "smooth" as const }
-        : {}),
-    });
-    monthScrolledOnceRef.current = true;
-  }, [selectedMonth]);
+  const currentIndex = selectableMonths.findIndex(
+    (m) => m.ym === selectedMonth,
+  );
+  /**
+   * 年間を選んでいるときの行き先。直前に見ていた月、無ければ当月、
+   * それも選べる範囲に無ければ先頭の月。
+   */
+  const fallbackIndex = (() => {
+    for (const ym of [lastYm, currentYmInJst()]) {
+      const i = selectableMonths.findIndex((m) => m.ym === ym);
+      if (i >= 0) return i;
+    }
+    return selectableMonths.length > 0 ? 0 : -1;
+  })();
+
+  /**
+   * 年間のときは前後ボタンを「直前に見ていた月へ戻る」ボタンとして使う。
+   * 押せなくすると月へ戻る手段が無くなるため、無効にはしない。
+   */
+  const prevMonth = isAnnual
+    ? selectableMonths[fallbackIndex]
+    : selectableMonths[currentIndex - 1];
+  const nextMonth = isAnnual
+    ? selectableMonths[fallbackIndex]
+    : selectableMonths[currentIndex + 1];
+  const currentMonthLabel =
+    selectableMonths[isAnnual ? fallbackIndex : currentIndex]?.label ?? "";
+
+  /** 月を選ぶ。年度をまたぐときは年度ドロップダウンも一緒に動かす */
+  const goToMonth = (target: (typeof selectableMonths)[number] | undefined) => {
+    if (!target) return;
+    setFy(target.fiscalYearKey);
+    setMonth(target.ym);
+    setLastYm(target.ym);
+  };
 
   if (phase === "init") {
     return (
@@ -352,7 +369,7 @@ export default function SalesDashboardPage() {
             : undefined
         }
       >
-        {/* 年度（ドロップダウン）と月（3月始まり＋年間）。どちらも全体に効く */}
+        {/* 年度（ドロップダウン）と月（前後ボタン＋年間）。どちらも全体に効く */}
         <div className="mb-4">
           <label htmlFor={fySelectId} className="sr-only">
             対象年度
@@ -366,9 +383,6 @@ export default function SalesDashboardPage() {
               // 年度を変えたら月は選び直し。前の年度の月をそのまま送らない
               setFy(e.target.value);
               setMonth("");
-              // 選び直された月へは寄せる。押した月と同じものを押した直後でも
-              // 取りこぼさないよう、ここで明示的に戻す
-              skipMonthScrollRef.current = false;
             }}
           >
             {fiscalYearOptions.length === 0 ? (
@@ -381,36 +395,56 @@ export default function SalesDashboardPage() {
             ))}
           </select>
 
-          <div className="relative">
-            <nav
-              ref={monthNavRef}
-              className="flex gap-2 overflow-x-auto pb-2 pr-4 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-              aria-label="対象期間"
+          <div className="flex items-center gap-2">
+            {/* 前後ボタン。年度をまたぐ移動も年度ドロップダウンごと切り替わる */}
+            <div
+              className={`flex flex-1 items-center justify-between gap-1 rounded-2xl px-2 py-1.5 transition-all duration-300 ${
+                isAnnual
+                  ? "bg-slate-100 dark:bg-slate-800/80"
+                  : "cyber-tab-active"
+              }`}
             >
-              {monthOptions.map((o) => {
-                const active = selectedMonth === o.key;
-                return (
-                  <button
-                    key={o.key}
-                    ref={active ? activeMonthTabRef : null}
-                    type="button"
-                    onClick={() => {
-                      // 押した要素は既に見えている。寄せ直さない
-                      skipMonthScrollRef.current = true;
-                      setMonth(o.key);
-                    }}
-                    disabled={showDashboardSkeleton && active}
-                    className={`shrink-0 rounded-2xl px-5 py-2.5 text-[15px] transition-all duration-300 active:scale-[0.98] disabled:opacity-60 ${
-                      active
-                        ? "cyber-tab-active"
-                        : "bg-slate-100 font-semibold text-slate-600 dark:bg-slate-800/80 dark:text-slate-400"
-                    }`}
-                  >
-                    {o.label}
-                  </button>
-                );
-              })}
-            </nav>
+              <button
+                type="button"
+                aria-label="前の月"
+                onClick={() => goToMonth(prevMonth)}
+                disabled={!prevMonth}
+                className={MONTH_ARROW_CLASS}
+              >
+                ◀
+              </button>
+              <span
+                aria-live="polite"
+                className={`min-w-0 flex-1 text-center text-[15px] font-bold ${
+                  isAnnual ? "text-slate-600 dark:text-slate-400" : ""
+                }`}
+              >
+                {currentMonthLabel}
+              </span>
+              <button
+                type="button"
+                aria-label="次の月"
+                onClick={() => goToMonth(nextMonth)}
+                disabled={!nextMonth}
+                className={MONTH_ARROW_CLASS}
+              >
+                ▶
+              </button>
+            </div>
+
+            <button
+              type="button"
+              aria-pressed={isAnnual}
+              onClick={() => setMonth(FISCAL_ANNUAL_MONTH_KEY)}
+              disabled={showDashboardSkeleton && isAnnual}
+              className={`shrink-0 rounded-2xl px-5 py-2.5 text-[15px] transition-all duration-300 active:scale-[0.98] disabled:opacity-60 ${
+                isAnnual
+                  ? "cyber-tab-active"
+                  : "bg-slate-100 font-semibold text-slate-600 dark:bg-slate-800/80 dark:text-slate-400"
+              }`}
+            >
+              年間
+            </button>
           </div>
         </div>
 

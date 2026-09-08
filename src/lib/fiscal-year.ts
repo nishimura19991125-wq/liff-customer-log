@@ -126,6 +126,37 @@ export function parseFiscalYearParam(
   return options.find((o) => o.key === t) ?? options[0]!;
 }
 
+export type SelectableFiscalMonth = FiscalMonth & {
+  /** その月が属する年度のキー */
+  fiscalYearKey: string;
+};
+
+/**
+ * 選べる年度ぶんの月を、古い順に1本へ並べる（前年度3月 → 今年度2月の24ヶ月）。
+ *
+ * 前後ボタンで月を移動するときに使う。年度をまたぐ移動（今年度3月の1つ前は
+ * 前年度2月）をここに閉じ込め、呼ぶ側は添字を1つ進めるだけで済ませる。
+ * 端は配列の外なので、それ以上進めないことも添字で判る。
+ *
+ * 年度は呼ぶ側が渡す（応答の fiscalYearOptions をそのまま渡せば、サーバの
+ * allowlist と必ず一致する）。
+ */
+export function selectableFiscalMonths(
+  fiscalYearKeys: readonly string[],
+): SelectableFiscalMonth[] {
+  const startYears = fiscalYearKeys
+    .map((key) => Number(key))
+    .filter((n) => Number.isFinite(n))
+    .sort((a, b) => a - b);
+
+  return startYears.flatMap((startYear) =>
+    fiscalYearMonths(startYear).map((m) => ({
+      ...m,
+      fiscalYearKey: String(startYear),
+    })),
+  );
+}
+
 /** 選択できる月。3月〜翌2月の12ヶ月＋「年間」 */
 export function buildFiscalMonthOptions(
   startYear: number,
