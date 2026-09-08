@@ -35,6 +35,8 @@ function core(input: {
   contracts?: Record<string, number>;
   /** 担当者名 → その月の目標 PT */
   targets?: Record<string, number>;
+  /** 担当者名 → その月のアポ目標 */
+  apoTargets?: Record<string, number>;
   /** 別の月にだけ目標がある人 */
   targetsOtherMonth?: Record<string, number>;
   /** 担当者名 → その月のアポ件数 */
@@ -62,6 +64,12 @@ function core(input: {
       name,
       new Map([[YM, { pt, apoCount: 0, branchRaw: "奈良本社" }]]),
     );
+  }
+  for (const [name, apoCount] of Object.entries(input.apoTargets ?? {})) {
+    const byMonth = targetsByStaffMonth.get(name) ?? new Map();
+    const cur = byMonth.get(YM) ?? { pt: 0, apoCount: 0, branchRaw: "奈良本社" };
+    byMonth.set(YM, { ...cur, apoCount });
+    targetsByStaffMonth.set(name, byMonth);
   }
   for (const [name, pt] of Object.entries(input.targetsOtherMonth ?? {})) {
     targetsByStaffMonth.set(
@@ -95,6 +103,14 @@ function rankingNames(c: SalesDashboardCore): string[] {
   return buildSalesDashboardPayload(c, "", SELECTION).ranking.map(
     (r) => r.staffName,
   );
+}
+
+function apoRanking(c: SalesDashboardCore) {
+  return buildSalesDashboardPayload(c, "", SELECTION).apoRanking;
+}
+
+function apoNames(c: SalesDashboardCore): string[] {
+  return apoRanking(c).map((r) => r.staffName);
 }
 
 /** 支社別に並ぶ担当者（全支社ぶん） */
@@ -209,5 +225,76 @@ describe("★ 支社別と顔ぶれがそろう", () => {
     const c = core({ pt: { 安藤: 100 }, apo: { 江藤: 3 } });
     expect(rankingNames(c)).toEqual(["安藤"]);
     expect(branchMemberNames(c)).toEqual(["安藤", "江藤"]);
+  });
+});
+
+describe("★ アポ件数部門も総合PTと同じ形", () => {
+  it("アポ実績が無く目標だけある人が載る", () => {
+    expect(apoNames(core({ apo: { 安藤: 3 }, apoTargets: { 近藤: 10 } }))).toEqual([
+      "安藤",
+      "近藤",
+    ]);
+  });
+
+  it("実績も目標も無い人は載らない", () => {
+    // PT の実績しか無い人はアポ件数部門には載らない
+    expect(apoNames(core({ apo: { 安藤: 3 }, pt: { 伊藤: 100 } }))).toEqual([
+      "安藤",
+    ]);
+  });
+
+  it("除外担当者は載らない", () => {
+    const names = apoNames(
+      core({
+        apo: { 安藤: 3, トラーチ倶楽部: 9 },
+        apoTargets: { 大和ハウス: 10 },
+      }),
+    );
+    expect(names).toEqual(["安藤"]);
+  });
+
+  it("アポ0件の人が目標の高い順に並ぶ", () => {
+    const names = apoNames(
+      core({ apoTargets: { 安藤: 10, 近藤: 30, 伊藤: 20 } }),
+    );
+    expect(names).toEqual(["近藤", "伊藤", "安藤"]);
+  });
+
+  it("実績がある人はアポ0件の人より上に来る", () => {
+    const names = apoNames(
+      core({ apo: { 安藤: 1 }, apoTargets: { 近藤: 999 } }),
+    );
+    expect(names).toEqual(["安藤", "近藤"]);
+  });
+
+  it("達成率が出る", () => {
+    const row = apoRanking(
+      core({ apo: { 安藤: 12 }, apoTargets: { 安藤: 15 } }),
+    )[0];
+    expect(row).toMatchObject({
+      apoCount: 12,
+      targetApoCount: 15,
+      achievementRate: 80,
+    });
+  });
+
+  it("目標が0なら達成率は0（総合PTと同じ扱い）", () => {
+    const row = apoRanking(core({ apo: { 安藤: 12 } }))[0];
+    expect(row).toMatchObject({
+      targetApoCount: 0,
+      achievementRate: 0,
+    });
+  });
+
+  it("100%超はそのまま出す", () => {
+    const row = apoRanking(
+      core({ apo: { 安藤: 20 }, apoTargets: { 安藤: 15 } }),
+    )[0];
+    expect(row?.achievementRate).toBe(133.3);
+  });
+
+  it("順位は連番のまま付く", () => {
+    const rows = apoRanking(core({ apoTargets: { 安藤: 10, 近藤: 30 } }));
+    expect(rows.map((r) => r.rank)).toEqual([1, 2]);
   });
 });

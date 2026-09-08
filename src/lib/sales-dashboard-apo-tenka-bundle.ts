@@ -54,6 +54,9 @@ export function buildTenkaRanking(
       total > 0 ? Math.round((item.targetCount / total) * 1000) / 10 : 0,
     isSelf: normApClStaffName(item.name) === bound,
     isPodium: i < 3,
+    // AP天下賞に目標は無い。行の型を総合PT・アポ件数と共有しているので 0 で埋める
+    targetApoCount: 0,
+    achievementRate: 0,
   }));
 }
 

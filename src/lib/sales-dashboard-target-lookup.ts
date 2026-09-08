@@ -192,18 +192,41 @@ export function targetStaffNamesForMonths(
   return out;
 }
 
+/** 指定の月ぶんを足して取り出す。0 になる担当者は含めない */
+function sumTargetByStaff(
+  lookup: SalesDashboardTargetLookup,
+  ymKeys: readonly string[],
+  select: (item: SalesDashboardTargetItem) => number,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  lookup.byStaffMonth.forEach((byMonth, name) => {
+    let sum = 0;
+    for (const ymKey of ymKeys) {
+      const hit = byMonth.get(ymKey);
+      if (hit) sum += select(hit);
+    }
+    if (sum !== 0) out.set(name, sum);
+  });
+  return out;
+}
+
 /** 複数月ぶんの PT 目標を足して取り出す（年度累計用） */
 export function sumTargetPtByStaff(
   lookup: SalesDashboardTargetLookup,
   ymKeys: readonly string[],
 ): Map<string, number> {
-  const out = new Map<string, number>();
-  lookup.byStaffMonth.forEach((byMonth, name) => {
-    let pt = 0;
-    for (const ymKey of ymKeys) pt += byMonth.get(ymKey)?.pt ?? 0;
-    if (pt !== 0) out.set(name, pt);
-  });
-  return out;
+  return sumTargetByStaff(lookup, ymKeys, (item) => item.pt);
+}
+
+/**
+ * 複数月ぶんのアポ獲得件数の目標を足して取り出す。
+ * 目標は PT と同じレコードから既に読んでいるので、**取得は増えない**。
+ */
+export function sumTargetApoByStaff(
+  lookup: SalesDashboardTargetLookup,
+  ymKeys: readonly string[],
+): Map<string, number> {
+  return sumTargetByStaff(lookup, ymKeys, (item) => item.apoCount);
 }
 
 /** 全月を通して最後に見つかった支社の生値（担当者ごと） */

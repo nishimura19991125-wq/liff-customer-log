@@ -43,12 +43,13 @@ import {
   salesDashboardContractAppId,
 } from "@/lib/sales-dashboard-fields";
 import { achievementRate } from "@/lib/sales-dashboard-achievement";
-import { sortByPtThenTarget } from "@/lib/sales-dashboard-ranking-sort";
+import { sortByValueThenTarget } from "@/lib/sales-dashboard-ranking-sort";
 import { isLookupConfigFailure } from "@/lib/sales-dashboard-lookup-warning";
 import { fetchSalesDashboardRecordPages } from "@/lib/sales-dashboard-list-fetch";
 import {
   fetchSalesDashboardPtTargets,
   pickTargetPtByStaff,
+  sumTargetApoByStaff,
   sumTargetPtByStaff,
   targetStaffNamesForMonths,
   type SalesDashboardTargetLookup,
@@ -237,7 +238,7 @@ function sortStaffAgg(
   const visible = items.filter(
     (it) => !isExcludedSalesDashboardRankingName(it.name),
   );
-  return sortByPtThenTarget(visible, targetPtByStaff);
+  return sortByValueThenTarget(visible, (it) => it.pt, targetPtByStaff);
 }
 
 /**
@@ -689,12 +690,25 @@ export function buildSalesDashboardPayload(
     core.rosterBranchByStaff,
   );
   // ── アポ件数 ──────────────────────────────────────
-  const apoItems = core.apo.ok
+  const targetApoByStaff = sumTargetApoByStaff(core.targets, ymKeys);
+  const apoActualItems = core.apo.ok
     ? single
       ? pickApoMonth(core.apo.byStaffMonth, single)
       : sumApoMonths(core.apo.byStaffMonth, ymKeys)
     : [];
-  const apoSorted = sortApoAgg(apoItems);
+  /**
+   * 実績が無くても、その月に目標がある人は載せる。総合PTランキングと
+   * 同じ考え方で、対象の判定にも同じ targetStaffNamesForMonths を使う
+   * （目標の値が 0 の行も「目標あり」として扱う）。
+   */
+  const apoItems = [...apoActualItems];
+  if (core.apo.ok) {
+    const seen = new Set(apoActualItems.map((it) => it.name));
+    targetStaffNamesForMonths(core.targets, ymKeys).forEach((name) => {
+      if (!seen.has(name)) apoItems.push({ name, apoCount: 0 });
+    });
+  }
+  const apoSorted = sortApoAgg(apoItems, targetApoByStaff);
   const totalApo = apoSorted.reduce((s, x) => s + x.apoCount, 0);
 
   // ── AP天下賞（画面には出していないが型は保つ） ──
@@ -769,7 +783,9 @@ export function buildSalesDashboardPayload(
     apoReady: core.apo.ok,
     apoError: core.apo.ok ? null : core.apo.error,
     apoKpi: core.apo.ok ? { totalApoCount: totalApo } : null,
-    apoRanking: core.apo.ok ? buildApoRanking(apoSorted, totalApo, bound) : [],
+    apoRanking: core.apo.ok
+      ? buildApoRanking(apoSorted, totalApo, bound, targetApoByStaff)
+      : [],
     tenkaReady: core.tenka.ok,
     tenkaError: core.tenka.ok ? null : core.tenka.error,
     tenkaKpi: core.tenka.ok ? { totalTargetCount: totalTenka } : null,

@@ -61,6 +61,10 @@ export type ApoRankingRow = {
   sharePercent: number;
   isSelf: boolean;
   isPodium: boolean;
+  /** 目標登録(月次)のアポ獲得件数。未設定・取得不可は 0 */
+  targetApoCount: number;
+  /** 達成率(%)。targetApoCount <= 0 のときは 0 */
+  achievementRate: number;
 };
 
 export type PtBreakdownRow = {
@@ -173,41 +177,12 @@ function ptValueClass(): string {
   return "font-bold text-emerald-600 dark:font-black dark:text-emerald-400 dark:drop-shadow-[0_0_16px_rgba(52,211,153,0.45)]";
 }
 
-/**
- * 順位比較の横棒（アポ件数部門）。1位を100%とした割合で伸ばす。
- *
- * 以前は色を差し替えられるようにしていたが、切り替えていたのは売上金額部門
- * だけで、その部門を消したため色は緑の1色になった。
- * 幅は算出値なので style で渡す。Tailwind は動的なクラス名を生成しない。
- * 数値は同じ行に出ているので、読み上げの対象からは外す。
- */
-function RankBar({
-  value,
-  top,
-}: {
-  value: number;
-  /** 1位の値。棒の基準（0 なら棒は伸びない） */
-  top: number;
-}) {
-  return (
-    <div
-      className="mt-1 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700/60"
-      aria-hidden
-    >
-      <div
-        className="h-1.5 rounded-full bg-emerald-500 transition-[width] duration-300 dark:bg-emerald-400"
-        style={{ width: `${barRatio(value, top)}%` }}
-      />
-    </div>
-  );
-}
 
 /** 達成とみなす下限（%）。棒の色をここで切り替える */
-const PT_TARGET_ACHIEVED_RATE = 100;
+const RANKING_TARGET_ACHIEVED_RATE = 100;
 
 /**
- * 総合PTの棒の色。**この2色は総合PT専用**で、アポ件数部門の RankBar
- * （緑の1色）とは別に持つ。
+ * ランキングの棒の色。**総合PTとアポ件数で共有**する（同じ見せ方にそろえた）。
  *
  * 任意値クラスは完成形をそのまま書く（Tailwind は動的なクラス名を作らない）。
  *
@@ -215,20 +190,20 @@ const PT_TARGET_ACHIEVED_RATE = 100;
  *   11px では下限に近い。実機で読みにくければ #C8000F（白と約6.1:1）まで
  *   暗くする余地がある。変えるのはこの1行で足りる。
  */
-const PT_BAR_TONES = {
+const RANKING_BAR_TONES = {
   navy: "bg-[#1F4E9C] dark:bg-[#4C86D8]",
   red: "bg-[#E60012] dark:bg-[#FF3B45]",
 } as const;
 
 /** 塗りに重なるラベル。赤・紺とも濃色なので、明暗どちらでも白で通す */
-const PT_BAR_LABEL_ON_FILL = "text-white";
+const RANKING_BAR_LABEL_ON_FILL = "text-white";
 
-function isPtTargetAchieved(rate: number): boolean {
-  return rate >= PT_TARGET_ACHIEVED_RATE;
+function isRankingTargetAchieved(rate: number): boolean {
+  return rate >= RANKING_TARGET_ACHIEVED_RATE;
 }
 
-function ptBarTone(rate: number): "navy" | "red" {
-  return isPtTargetAchieved(rate) ? "red" : "navy";
+function rankingBarTone(rate: number): "navy" | "red" {
+  return isRankingTargetAchieved(rate) ? "red" : "navy";
 }
 
 /**
@@ -351,7 +326,7 @@ function PtStaffAvatar({
  * 回転中に 1.35 倍へ膨らむので、余白は margin ではなく親の gap で確保する
  * （margin だと拡縮のたびに行の幅が動きうる）。
  */
-function PtAchievedCoin() {
+function RankingAchievedCoin() {
   return (
     <span className="pt-coin shrink-0 self-center" role="img" aria-label="目標達成">
       <span className="pt-coin-face">💮</span>
@@ -380,20 +355,29 @@ function formatAchievementRateCompact(rate: number): string {
  *
  * 色は達成率で変える（100%以上 赤・未満と未設定 紺）。
  */
-function PtRankingBar({
-  pt,
-  topPt,
+/**
+ * 順位比較の棒。**総合PTとアポ件数で共有**する。
+ *
+ * 中に「実績 / 目標（達成率）」を出し、達成なら赤・未達なら紺で塗る。
+ * 目標が無い行は達成率そのものが無いので括弧を出さない。
+ * 数字の整形は PT も件数も同じ（3桁区切り）なので、単位で分けていない。
+ */
+function RankingProgressBar({
+  value,
+  top,
   target,
   rate,
 }: {
-  pt: number;
-  /** 1位の PT。棒の基準（0 なら棒は伸びない） */
-  topPt: number;
+  /** 実績。総合PTなら PT、アポ件数なら件数 */
+  value: number;
+  /** 1位の実績。棒の基準（0 なら棒は伸びない） */
+  top: number;
   target: number;
   rate: number;
 }) {
-  const ratio = barRatio(pt, topPt);
-  const tone = ptBarTone(rate);
+  const pt = value;
+  const ratio = barRatio(value, top);
+  const tone = rankingBarTone(rate);
   // 目標が無い行は達成率そのものが無いので、括弧ごと出さない
   const label =
     target > 0
@@ -406,14 +390,14 @@ function PtRankingBar({
     <div className="relative mt-2 h-6 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700/60">
       {/* 塗り。left 基準で伸ばす（inset-0 と width は同時に効かない） */}
       <div
-        className={`absolute inset-y-0 left-0 rounded-full transition-[width] duration-300 ${PT_BAR_TONES[tone]}`}
+        className={`absolute inset-y-0 left-0 rounded-full transition-[width] duration-300 ${RANKING_BAR_TONES[tone]}`}
         style={{ width: `${ratio}%` }}
       />
       <span className={`${labelClass} text-slate-700 dark:text-slate-200`}>
         {label}
       </span>
       <span
-        className={`${labelClass} ${PT_BAR_LABEL_ON_FILL}`}
+        className={`${labelClass} ${RANKING_BAR_LABEL_ON_FILL}`}
         style={{ clipPath: `inset(0 ${100 - ratio}% 0 0)` }}
         aria-hidden
       >
@@ -515,7 +499,7 @@ function PtPodiumCard({
                 </span>
               ) : null}
             </p>
-            {isPtTargetAchieved(row.achievementRate) ? <PtAchievedCoin /> : null}
+            {isRankingTargetAchieved(row.achievementRate) ? <RankingAchievedCoin /> : null}
           </div>
           {/* 2行目: 支社名。氏名と1行に並べていた頃の窮屈さを解消する */}
           {row.branch.trim() ? (
@@ -551,9 +535,9 @@ function PtPodiumCard({
         // 押しても何も出ないボタンは置かない。見た目は同じまま当たり判定だけ外す
         <div className="flex w-full items-center gap-3 text-left">{inner}</div>
       )}
-      <PtRankingBar
-        pt={row.pt}
-        topPt={topPt}
+      <RankingProgressBar
+        value={row.pt}
+        top={topPt}
         target={row.targetPt}
         rate={row.achievementRate}
       />
@@ -588,8 +572,8 @@ function PtListRow({
         >
           {row.rank}
         </span>
-        {isPtTargetAchieved(row.achievementRate) ? (
-          <PtAchievedCoin />
+        {isRankingTargetAchieved(row.achievementRate) ? (
+          <RankingAchievedCoin />
         ) : (
           <span className="pt-coin-slot shrink-0" aria-hidden="true" />
         )}
@@ -633,9 +617,9 @@ function PtListRow({
         // 押しても何も出ないボタンは置かない。見た目は同じまま当たり判定だけ外す
         <div className="flex w-full items-center gap-3 text-left">{inner}</div>
       )}
-      <PtRankingBar
-        pt={row.pt}
-        topPt={topPt}
+      <RankingProgressBar
+        value={row.pt}
+        top={topPt}
         target={row.targetPt}
         rate={row.achievementRate}
       />
@@ -736,19 +720,30 @@ function ApoPodiumCard({
           {row.rank}
         </span>
         <div className="min-w-0 flex-1">
-          <p className={`truncate text-[15px] font-bold ${PODIUM_NAME_CLASS}`}>
-            {row.staffName}
-            {row.isSelf ? (
-              <span className="ml-2 text-[11px] text-cyan-700 dark:text-cyan-300">あなた</span>
+          {/* 氏名 ＋ 花丸。総合PTの台座カードと同じ並び */}
+          <div className="flex min-w-0 items-center gap-1.5">
+            <p className={`min-w-0 truncate text-[15px] font-bold ${PODIUM_NAME_CLASS}`}>
+              {row.staffName}
+              {row.isSelf ? (
+                <span className="ml-2 text-[11px] text-cyan-700 dark:text-cyan-300">あなた</span>
+              ) : null}
+            </p>
+            {isRankingTargetAchieved(row.achievementRate) ? (
+              <RankingAchievedCoin />
             ) : null}
-          </p>
+          </div>
         </div>
         <p className={`shrink-0 text-[1.5rem] ${ptValueClass()}`}>
           {formatCount(row.apoCount)}
           <span className="ml-0.5 text-[13px] font-bold">件</span>
         </p>
       </div>
-      <RankBar value={row.apoCount} top={topCount} />
+      <RankingProgressBar
+        value={row.apoCount}
+        top={topCount}
+        target={row.targetApoCount}
+        rate={row.achievementRate}
+      />
     </div>
   );
 }
@@ -773,6 +768,11 @@ function ApoListRow({
         >
           {row.rank}
         </span>
+        {isRankingTargetAchieved(row.achievementRate) ? (
+          <RankingAchievedCoin />
+        ) : (
+          <span className="pt-coin-slot shrink-0" aria-hidden="true" />
+        )}
         <div className="min-w-0 flex-1">
           <p className="truncate text-[14px] font-semibold text-slate-800 dark:text-white">
             {row.staffName}
@@ -783,7 +783,12 @@ function ApoListRow({
         </div>
         <p className={`shrink-0 text-[15px] ${ptValueClass()}`}>{formatCount(row.apoCount)}件</p>
       </div>
-      <RankBar value={row.apoCount} top={topCount} />
+      <RankingProgressBar
+        value={row.apoCount}
+        top={topCount}
+        target={row.targetApoCount}
+        rate={row.achievementRate}
+      />
     </div>
   );
 }

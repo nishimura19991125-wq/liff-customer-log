@@ -14,6 +14,8 @@ import {
 } from "@/lib/sales-dashboard-record-date";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { formatYmKey } from "@/lib/fiscal-year";
+import { achievementRate } from "@/lib/sales-dashboard-achievement";
+import { sortByValueThenTarget } from "@/lib/sales-dashboard-ranking-sort";
 import {
   resolveApoDashboardFieldMap,
   salesDashboardApoAppId,
@@ -47,6 +49,10 @@ export type ApoDashboardRankingRow = {
   sharePercent: number;
   isSelf: boolean;
   isPodium: boolean;
+  /** 目標登録(月次)のアポ獲得件数。未設定・取得不可は 0 */
+  targetApoCount: number;
+  /** 達成率(%)。targetApoCount <= 0 のときは 0 */
+  achievementRate: number;
 };
 
 function dashboardMaxPages(): number {
@@ -269,30 +275,43 @@ export function sumApoMonths(
   return out;
 }
 
-export function sortApoAgg(items: ApoAggItem[]): ApoAggItem[] {
+/**
+ * ランキング対象外の担当者を落としてから、件数 → 目標 → 氏名 の順に並べる。
+ * 並びの規則は総合PTと共通（sales-dashboard-ranking-sort.ts）。
+ */
+export function sortApoAgg(
+  items: ApoAggItem[],
+  /** 正規化担当者名 → その期間のアポ目標。引けない担当者は 0 */
+  targetApoByStaff: Map<string, number>,
+): ApoAggItem[] {
   const visible = items.filter(
     (it) => !isExcludedSalesDashboardRankingName(it.name),
   );
-  return [...visible].sort(
-    (a, b) =>
-      b.apoCount - a.apoCount || a.name.localeCompare(b.name, "ja"),
-  );
+  return sortByValueThenTarget(visible, (it) => it.apoCount, targetApoByStaff);
 }
 
 export function buildApoRanking(
   sorted: ApoAggItem[],
   totalApo: number,
   bound: string,
+  /** 正規化担当者名 → その期間のアポ目標。引けない担当者は 0 */
+  targetApoByStaff: Map<string, number>,
 ): ApoDashboardRankingRow[] {
-  return sorted.map((item, i) => ({
-    rank: i + 1,
-    staffName: item.name,
-    apoCount: item.apoCount,
-    sharePercent:
-      totalApo > 0 ? Math.round((item.apoCount / totalApo) * 1000) / 10 : 0,
-    isSelf: normApClStaffName(item.name) === bound,
-    isPodium: i < 3,
-  }));
+  return sorted.map((item, i) => {
+    const targetApoCount = targetApoByStaff.get(item.name) ?? 0;
+    return {
+      rank: i + 1,
+      staffName: item.name,
+      apoCount: item.apoCount,
+      sharePercent:
+        totalApo > 0 ? Math.round((item.apoCount / totalApo) * 1000) / 10 : 0,
+      isSelf: normApClStaffName(item.name) === bound,
+      isPodium: i < 3,
+      targetApoCount,
+      // 総合PTと同じ式。作り直さない
+      achievementRate: achievementRate(item.apoCount, targetApoCount),
+    };
+  });
 }
 
 async function fetchAllPages(
@@ -374,13 +393,15 @@ export async function buildApoDashboardSection(
 
     const records = await fetchAllPages(apoAppId, wanted, listAuth);
     const byStaffMonth = aggregateApoRecords(records, fieldMap, filterValues);
-    const sorted = sortApoAgg(pickApoMonth(byStaffMonth, ymKey));
+    // この経路は目標を引かない（画面からは使っていない）
+    const noTargets = new Map<string, number>();
+    const sorted = sortApoAgg(pickApoMonth(byStaffMonth, ymKey), noTargets);
     const totalApo = sorted.reduce((s, x) => s + x.apoCount, 0);
 
     return {
       ok: true,
       kpi: { totalApoCount: totalApo },
-      ranking: buildApoRanking(sorted, totalApo, bound),
+      ranking: buildApoRanking(sorted, totalApo, bound, noTargets),
     };
   } catch (e) {
     return {

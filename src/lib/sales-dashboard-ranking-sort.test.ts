@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { sortByPtThenTarget } from "@/lib/sales-dashboard-ranking-sort";
+import { sortByValueThenTarget } from "@/lib/sales-dashboard-ranking-sort";
 
 function item(name: string, pt: number) {
   return { name, pt };
@@ -11,9 +11,11 @@ function order(
   items: Array<{ name: string; pt: number }>,
   targets: Record<string, number> = {},
 ): string[] {
-  return sortByPtThenTarget(items, new Map(Object.entries(targets))).map(
-    (x) => x.name,
-  );
+  return sortByValueThenTarget(
+    items,
+    (x) => x.pt,
+    new Map(Object.entries(targets)),
+  ).map((x) => x.name);
 }
 
 describe("★ PT の降順", () => {
@@ -80,12 +82,18 @@ describe("★ PT・目標とも同じなら氏名の五十音順", () => {
 describe("★ 防御", () => {
   it("元の配列を書き換えない", () => {
     const items = [item("安藤", 100), item("近藤", 300)];
-    sortByPtThenTarget(items, new Map());
+    sortByValueThenTarget(items, (x) => x.pt, new Map());
     expect(items.map((x) => x.name)).toEqual(["安藤", "近藤"]);
   });
 
   it("空でも落ちない", () => {
-    expect(sortByPtThenTarget([], new Map())).toEqual([]);
+    expect(
+      sortByValueThenTarget<{ name: string; pt: number }>(
+        [],
+        (x) => x.pt,
+        new Map(),
+      ),
+    ).toEqual([]);
   });
 
   it("目標のマップが空でも PT と氏名で並ぶ", () => {
@@ -102,7 +110,7 @@ describe("★ 防御", () => {
       { name: "安藤", pt: 100, contractCount: 0 },
     ];
     expect(
-      sortByPtThenTarget(rows, new Map()).map((x) => x.name),
+      sortByValueThenTarget(rows, (x) => x.pt, new Map()).map((x) => x.name),
     ).toEqual(["安藤", "近藤"]);
   });
 });
