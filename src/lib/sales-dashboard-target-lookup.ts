@@ -38,6 +38,49 @@ import {
 /** 目標アプリのページ上限。1人1ヶ月1行なので10ページ（1万行）で足りる */
 const TARGET_MAX_PAGES = 10;
 
+/** 読めなかった目標月の生値を残す件数。原因の切り分けに要る分だけ */
+const MONTH_SAMPLE_LIMIT = 2;
+/** 生値が長くても記録は頭だけにする */
+const MONTH_SAMPLE_MAX_LENGTH = 40;
+/** 月別の内訳を残す範囲。古い月まで出すとログが読めなくなる */
+const COUNTED_BY_YM_LIMIT = 24;
+
+/**
+ * 目標アプリを何件読んで、どこで落ちたかを残す。**氏名は出さない**（件数のみ）。
+ *
+ * 「PT目標を引けなかった担当者がいます」だけでは、目標が登録されていないのか、
+ * 目標月が読めていないのか、氏名の表記が食い違っているのかが分からない。
+ * monthSamples は読めなかった目標月の生値。日付列に個人情報は入らないので出せる。
+ */
+type TargetLookupCounts = {
+  total: number;
+  monthUnparsed: number;
+  noName: number;
+  /** 除外担当者（トラーチ倶楽部・卸案件など）で落とした件数 */
+  excludedName: number;
+  counted: number;
+};
+
+function logTargetLookupCounts(
+  counts: TargetLookupCounts,
+  countedByYm: Map<string, number>,
+  monthSamples: string[],
+): void {
+  const recent = [...countedByYm.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .slice(0, COUNTED_BY_YM_LIMIT);
+
+  console.info(
+    "[sales-dashboard] PT目標の取得内訳",
+    JSON.stringify({
+      ...counts,
+      months: countedByYm.size,
+      countedByYm: Object.fromEntries(recent),
+      ...(monthSamples.length ? { monthSamples } : {}),
+    }),
+  );
+}
+
 /** 目標値の読み方は実績側（aggregatePtRecords）と同じ。マイナス記号は落ちる */
 function parseNumber(raw: string): number {
   const digits = raw.replace(/[^\d]/g, "");
@@ -153,6 +196,17 @@ export async function fetchSalesDashboardPtTargets(): Promise<SalesDashboardTarg
       string,
       Map<string, SalesDashboardTargetItem>
     >();
+    /** 絞り込みの条件は変えていない。落ちた段を数えているだけ */
+    const counts: TargetLookupCounts = {
+      total: records.length,
+      monthUnparsed: 0,
+      noName: 0,
+      excludedName: 0,
+      counted: 0,
+    };
+    const monthSamples: string[] = [];
+    const countedByYm = new Map<string, number>();
+
     for (const row of records) {
       const rec = row.record;
       if (!rec || typeof rec !== "object") continue;
@@ -160,15 +214,31 @@ export async function fetchSalesDashboardPtTargets(): Promise<SalesDashboardTarg
 
       // 対象月では絞らない。全月を積んで、選ぶのは呼び出し側
       const ym = parseSalesDashboardRecordYmFromField(recObj, fieldMap.month);
-      if (!ym) continue;
+      if (!ym) {
+        counts.monthUnparsed += 1;
+        if (monthSamples.length < MONTH_SAMPLE_LIMIT) {
+          const raw = readCustomerInfoFieldValue(recObj, fieldMap.month);
+          if (raw) monthSamples.push(raw.slice(0, MONTH_SAMPLE_MAX_LENGTH));
+        }
+        continue;
+      }
 
       const name = normApClStaffName(
         readCustomerInfoFieldValue(recObj, fieldMap.staffName),
       );
+      if (!name) {
+        counts.noName += 1;
+        continue;
+      }
       // 実績側と同じ除外を掛ける。片側だけ除外すると達成率が歪む
-      if (!name || isExcludedSalesDashboardRankingName(name)) continue;
+      if (isExcludedSalesDashboardRankingName(name)) {
+        counts.excludedName += 1;
+        continue;
+      }
 
       const ymKey = formatYmKey(ym.year, ym.month1);
+      counts.counted += 1;
+      countedByYm.set(ymKey, (countedByYm.get(ymKey) ?? 0) + 1);
       let byMonth = byStaffMonth.get(name);
       if (!byMonth) {
         byMonth = new Map();
@@ -189,6 +259,8 @@ export async function fetchSalesDashboardPtTargets(): Promise<SalesDashboardTarg
       if (branchRaw) cur.branchRaw = branchRaw;
       byMonth.set(ymKey, cur);
     }
+
+    logTargetLookupCounts(counts, countedByYm, monthSamples);
 
     return { byStaffMonth, available: true };
   } catch (e) {

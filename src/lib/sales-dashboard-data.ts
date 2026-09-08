@@ -305,18 +305,34 @@ function buildRanking(
  */
 function warnMissingSalesTargets(
   names: readonly string[],
+  /** 実績（PT・契約件数・アポ）に現れた担当者。突合の突き合わせ先 */
+  actualNames: ReadonlySet<string>,
   targets: SalesDashboardTargetLookup,
 ): void {
   const missing = names.filter(
     (name) => (targets.byStaffMonth.get(name)?.size ?? 0) === 0,
   ).length;
-  if (missing === 0) return;
+
+  /**
+   * 目標側にあるのに実績側に居ない担当者。**ここが多ければ氏名の表記が
+   * 食い違っている**（目標アプリと お客様情報・アポ取得情報 で書き方が違う）。
+   * 0 に近ければ、単に目標が登録されていないだけと分かる。
+   */
+  let targetsWithoutRanking = 0;
+  targets.byStaffMonth.forEach((_v, name) => {
+    if (!actualNames.has(name)) targetsWithoutRanking += 1;
+  });
+
+  if (missing === 0 && targetsWithoutRanking === 0) return;
   console.warn(
     "[sales-dashboard] PT目標を引けなかった担当者がいます",
     JSON.stringify({
       missing,
       total: names.length,
       targetsAvailable: targets.available,
+      targetsWithoutRanking,
+      targetStaff: targets.byStaffMonth.size,
+      rankingStaff: actualNames.size,
     }),
   );
 }
@@ -456,13 +472,19 @@ export async function buildSalesDashboardCore(): Promise<SalesDashboardCore | nu
       ? buildContractCountByMonth(contractRecords, ptFieldMapCi)
       : new Map<string, Map<string, number>>();
 
-  // 支社は名簿から1回だけ引く。名前は全月ぶんを集めて渡す
-  const allNames = new Set<string>(ptByStaffMonth.keys());
-  contractCountByStaffMonth.forEach((_v, name) => allNames.add(name));
-  targets.byStaffMonth.forEach((_v, name) => allNames.add(name));
+  /**
+   * 実績側に現れた担当者。目標との突合で「どちら側にしか居ないか」を数える
+   * ために、目標由来の名前を混ぜる前の集合を分けて持つ。
+   */
+  const actualNames = new Set<string>(ptByStaffMonth.keys());
+  contractCountByStaffMonth.forEach((_v, name) => actualNames.add(name));
   if (apoTenka.apo.ok) {
-    apoTenka.apo.byStaffMonth.forEach((_v, name) => allNames.add(name));
+    apoTenka.apo.byStaffMonth.forEach((_v, name) => actualNames.add(name));
   }
+
+  // 支社は名簿から1回だけ引く。名前は全月ぶんを集めて渡す
+  const allNames = new Set<string>(actualNames);
+  targets.byStaffMonth.forEach((_v, name) => allNames.add(name));
   const rosterBranchByStaff = await resolveBranchByStaff([...allNames]);
 
   /**
@@ -470,7 +492,7 @@ export async function buildSalesDashboardCore(): Promise<SalesDashboardCore | nu
    * 叩いた回にしか出ない。応答の組み立て（buildSalesDashboardPayload）は
    * キャッシュから取り出すだけなので、月や年度を切り替えても増えない。
    */
-  warnMissingSalesTargets([...allNames], targets);
+  warnMissingSalesTargets([...allNames], actualNames, targets);
   warnMissingSalesBranches([...allNames], rosterBranchByStaff);
 
   return {
