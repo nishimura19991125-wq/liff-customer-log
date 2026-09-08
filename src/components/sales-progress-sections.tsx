@@ -1,5 +1,7 @@
 "use client";
 
+import { useId, useState } from "react";
+
 import { LiffCard } from "@/components/liff-chrome";
 import {
   SalesProgressHeadline,
@@ -20,9 +22,14 @@ import {
  * 依存させない**。段階1で core が返す progress / annualProgress と同じ形を
  * props で受け取るだけにしてある（構造が同じなのでそのまま渡せる）。
  *
- * ■ 折りたたみは持たない
- * 以前は「セクション全体」と「支社ごとの内訳」の2段が閉じていた。支社の下の
- * 個人は常に出す方針になったので、開閉の状態も aria-expanded も記号も持たない。
+ * ■ 折りたたみは「支社ごと」の1段だけ
+ * 以前は「セクション全体」と「支社ごとの内訳」の2段が閉じていた。支社の合計は
+ * 常に見えるようにしたいので、セクション全体の開閉は持たない。内訳だけを
+ * 支社ごとに開閉する。
+ *
+ * 開閉の状態はこのコンポーネントの中に持つ。支社別タブは PT とアポで
+ * **2回描いており、状態を中に持つことで自然に別々に開閉する**（片方で開いた
+ * 支社がもう片方でも開くことはない）。
  *
  * ■ 配色は営業ランキング（cyber-view）に合わせる
  * 移設先で浮かないよう、寄せるのは**こちら側だけ**。cyber-view には sky が
@@ -134,6 +141,20 @@ export function SalesProgressBranches({
   heading?: string;
 }) {
   const unit = salesProgressMetricUnit(metric);
+  /** 内訳を開いている支社。同時に複数開ける */
+  const [openBranches, setOpenBranches] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const listId = useId();
+
+  const toggle = (label: string) => {
+    setOpenBranches((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
 
   return (
     <section className="flex flex-col gap-2">
@@ -148,36 +169,56 @@ export function SalesProgressBranches({
          * 支社5件×十数名なので毎描画で回して問題ない
          */
         const members = sortSalesProgressStaffRows(branch.members, metric);
+        const open = openBranches.has(branch.label);
+        const memberListId = `${listId}-${branch.label}`;
         return (
           <div key={branch.label} className={BRANCH_CARD_CLASS}>
-            <SalesProgressRow
-              label={branch.label}
-              sub={`${branch.memberCount}名`}
-              metric={branch.metrics[metric]}
-              unit={unit}
-              tone="self"
-            />
+            {/*
+              支社の合計は開閉によらず常に出す。押せるのはこの1つだけで、
+              中に別のボタンは置かない（どちらが反応するか分からなくなるため）
+            */}
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-controls={memberListId}
+              onClick={() => toggle(branch.label)}
+              className="w-full text-left"
+            >
+              <SalesProgressRow
+                label={`${open ? "▾" : "▸"} ${branch.label}`}
+                sub={`${branch.memberCount}名`}
+                metric={branch.metrics[metric]}
+                unit={unit}
+                tone="self"
+              />
+            </button>
 
-            {members.length === 0 ? (
-              <p className={`py-2 ${NOTE_CLASS}`}>この支社の担当者はいません</p>
-            ) : (
-              <div className="mt-1 divide-y divide-slate-100 border-t border-slate-100 pt-1 dark:divide-slate-700/60 dark:border-slate-700/60">
-                {members.map((member) => (
-                  <div
-                    key={member.staffName}
-                    className={member.isSelf ? SELF_RING_CLASS : undefined}
-                  >
-                    <SalesProgressRow
-                      label={member.staffName}
-                      sub={member.isSelf ? "あなた" : undefined}
-                      metric={member.metrics[metric]}
-                      unit={unit}
-                      tone="branch"
-                    />
+            <div id={memberListId}>
+              {open ? (
+                members.length === 0 ? (
+                  <p className={`py-2 ${NOTE_CLASS}`}>
+                    この支社の担当者はいません
+                  </p>
+                ) : (
+                  <div className="mt-1 divide-y divide-slate-100 border-t border-slate-100 pt-1 dark:divide-slate-700/60 dark:border-slate-700/60">
+                    {members.map((member) => (
+                      <div
+                        key={member.staffName}
+                        className={member.isSelf ? SELF_RING_CLASS : undefined}
+                      >
+                        <SalesProgressRow
+                          label={member.staffName}
+                          sub={member.isSelf ? "あなた" : undefined}
+                          metric={member.metrics[metric]}
+                          unit={unit}
+                          tone="branch"
+                        />
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
+                )
+              ) : null}
+            </div>
           </div>
         );
       })}
