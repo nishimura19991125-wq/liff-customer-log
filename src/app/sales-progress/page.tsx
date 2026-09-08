@@ -13,10 +13,11 @@ import {
   LiffStaffBindPanel,
   LiffStaffBindingConfigNotice,
 } from "@/components/liff-chrome";
+import { SalesProgressHeadline } from "@/components/sales-progress-bar";
 import {
-  SalesProgressHeadline,
-  SalesProgressRow,
-} from "@/components/sales-progress-bar";
+  SalesProgressBranches,
+  SalesProgressOverall,
+} from "@/components/sales-progress-sections";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useLiffAccountStrip } from "@/hooks/use-liff-account-strip";
 import { useLiffSwr } from "@/hooks/use-liff-swr";
@@ -26,10 +27,7 @@ import {
   isLiffSwrSessionExpired,
   liffAuthedJsonFetch,
 } from "@/lib/liff-swr";
-import {
-  sortSalesProgressStaffRows,
-  type SalesProgressMetricKey,
-} from "@/lib/sales-progress-aggregate";
+import type { SalesProgressMetricKey } from "@/lib/sales-progress-aggregate";
 import type { SalesProgressPayload } from "@/app/api/sales-progress/route";
 
 /**
@@ -52,10 +50,6 @@ const METRIC_TABS: Array<{ id: SalesProgressMetricKey; label: string }> = [
   { id: "apo", label: "アポ" },
 ];
 
-function metricUnit(metric: SalesProgressMetricKey): string | undefined {
-  return metric === "apo" ? "件" : undefined;
-}
-
 export default function SalesProgressPage() {
   const [phase, setPhase] = useState<
     "init" | "need-login" | "ready" | "error" | "session-expired"
@@ -66,12 +60,6 @@ export default function SalesProgressPage() {
   const [idToken, setIdToken] = useState<string | null>(null);
   const [ym, setYm] = useState("");
   const [metric, setMetric] = useState<SalesProgressMetricKey>("pt");
-  const [branchOpen, setBranchOpen] = useState(false);
-  /** 内訳を開いている支社。同時に複数開ける */
-  const [openBranches, setOpenBranches] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const branchListId = useId();
   const metricGroupId = useId();
 
   const account = useLiffAccountStrip(idToken, phase === "ready");
@@ -203,16 +191,7 @@ export default function SalesProgressPage() {
   }
 
   const monthOptions = data?.monthOptions ?? [];
-  /**
-   * 選んでいる指標の実績順に並べ替える。並び順は応答に持たせないので、
-   * 切り替えでの再取得が起きない。支社5件×十数名なので毎描画で回して問題ない
-   */
-  const branches = (data?.branches ?? []).map((b) => ({
-    ...b,
-    members: sortSalesProgressStaffRows(b.members, metric),
-  }));
-  const unit = metricUnit(metric);
-  const metricLabel = metric === "apo" ? "アポ" : "PT";
+  /** 寄せ先の見出しは応答の末尾の支社。既定は「その他」 */
   const otherLabel = data?.branches[data.branches.length - 1]?.label ?? "その他";
 
   return (
@@ -366,124 +345,19 @@ export default function SalesProgressPage() {
                 </LiffCard>
 
                 {/* ── 全体の進捗（選んだ指標） ── */}
-                <LiffCard>
-                  <div className="px-4 py-3">
-                    <h2 className="text-[12px] font-bold text-slate-500 dark:text-slate-400">
-                      全体の進捗
-                    </h2>
-                    <SalesProgressHeadline
-                      label={metricLabel}
-                      metric={data.company[metric]}
-                      unit={unit}
-                      targetKnown={data.company[metric].target > 0}
-                    />
-                    {!data.targetsAvailable ? (
-                      <p
-                        role="status"
-                        aria-live="polite"
-                        className="mt-1 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300"
-                      >
-                        {data.monthLabel}の目標が登録されていません。達成率は「—」になります。
-                      </p>
-                    ) : null}
-                  </div>
-                </LiffCard>
+                <SalesProgressOverall
+                  company={data.company}
+                  metric={metric}
+                  targetsAvailable={data.targetsAvailable}
+                  periodLabel={data.monthLabel}
+                />
 
-                {/* ── 支社別（表形式・タップで内訳） ── */}
-                <LiffCard>
-                  <div className="px-4 py-3">
-                    <button
-                      type="button"
-                      aria-expanded={branchOpen}
-                      aria-controls={branchListId}
-                      onClick={() => setBranchOpen((v) => !v)}
-                      className="flex w-full items-center justify-between gap-2 text-left"
-                    >
-                      <span className="text-[12px] font-bold text-slate-500 dark:text-slate-400">
-                        支社別（{metricLabel}）
-                      </span>
-                      <span
-                        className={`text-slate-400 transition-transform ${
-                          branchOpen ? "rotate-90" : ""
-                        }`}
-                        aria-hidden
-                      >
-                        ›
-                      </span>
-                    </button>
-
-                    <div id={branchListId}>
-                      {branchOpen ? (
-                        <>
-                          <div className="mt-1 divide-y divide-slate-100 dark:divide-slate-700/60">
-                            {branches.map((b) => {
-                              const open = openBranches.has(b.label);
-                              const memberListId = `${branchListId}-${b.label}`;
-                              return (
-                                <div key={b.label}>
-                                  <button
-                                    type="button"
-                                    aria-expanded={open}
-                                    aria-controls={memberListId}
-                                    onClick={() =>
-                                      setOpenBranches((prev) => {
-                                        const next = new Set(prev);
-                                        if (next.has(b.label)) next.delete(b.label);
-                                        else next.add(b.label);
-                                        return next;
-                                      })
-                                    }
-                                    className="w-full text-left"
-                                  >
-                                    <SalesProgressRow
-                                      label={`${open ? "▾" : "▸"} ${b.label}`}
-                                      sub={`${b.memberCount}名`}
-                                      metric={b.metrics[metric]}
-                                      unit={unit}
-                                    />
-                                  </button>
-
-                                  <div id={memberListId}>
-                                    {open ? (
-                                      <div className="mb-2 ml-3 border-l border-slate-200 pl-3 dark:border-slate-700">
-                                        {b.members.length === 0 ? (
-                                          <p className="py-2 text-[12px] text-slate-500 dark:text-slate-400">
-                                            この支社の担当者はいません
-                                          </p>
-                                        ) : (
-                                          <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
-                                            {b.members.map((m) => (
-                                              <SalesProgressRow
-                                                key={m.staffName}
-                                                label={m.staffName}
-                                                metric={m.metrics[metric]}
-                                                unit={unit}
-                                                tone={m.isSelf ? "self" : "branch"}
-                                                emphasis={m.isSelf}
-                                              />
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          <p className="mt-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-                            支社が未設定の方と、上記以外の支社の方は「{otherLabel}
-                            」に含めています。合計は全社の数字と一致します。
-                          </p>
-                        </>
-                      ) : (
-                        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                          {branches.length}支社・タップで担当者ごとの内訳を表示
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </LiffCard>
+                {/* ── 支社別（折りたたみなし・個人まで常に表示） ── */}
+                <SalesProgressBranches
+                  branches={data.branches}
+                  metric={metric}
+                  otherLabel={otherLabel}
+                />
               </div>
             )}
           </>
