@@ -3,10 +3,10 @@ import { NextResponse } from "next/server";
 import { pocketErrorResponse } from "@/lib/api-error-response";
 
 import {
-  apiKeyForSalesDashboardPtPocket,
   isPocketHttpRateLimitError,
   pocketApiRateLimitRemainingMs,
 } from "@/lib/atpocket";
+import { customerInfoDashboardListAuths } from "@/lib/customer-info-config";
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import {
   buildFiscalYearOptions,
@@ -148,7 +148,7 @@ export async function GET(request: Request) {
       return NextResponse.json(
         {
           error:
-            "営業ランキングの集計に失敗しました（SALES_DASHBOARD_PT_APP_ID 等を確認してください）",
+            "営業ランキングの集計に失敗しました（CUSTOMER_INFO_APP_ID 等を確認してください）",
         },
         { status: 502 },
       );
@@ -177,9 +177,10 @@ export async function GET(request: Request) {
       const retrySec = Math.max(
         60,
         Math.ceil(
-          pocketApiRateLimitRemainingMs({
-            apiKey: apiKeyForSalesDashboardPtPocket(),
-          }) / 1000,
+          // 一番重い取得（お客様情報）のキーで残り時間を見る
+          pocketApiRateLimitRemainingMs(
+            customerInfoDashboardListAuths()[0],
+          ) / 1000,
         ) || 90,
       );
       if (stale) {

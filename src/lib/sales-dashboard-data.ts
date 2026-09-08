@@ -1,6 +1,6 @@
 import "server-only";
 
-import { apiKeyForAppFields, fetchAppFields } from "@/lib/atpocket";
+import { fetchAppFields } from "@/lib/atpocket";
 import {
   customerInfoDashboardFieldAuth,
   customerInfoDashboardListAuths,
@@ -39,14 +39,11 @@ import {
 } from "@/lib/sales-dashboard-tenka-aggregate";
 import {
   resolveContractCountFieldMap,
-  resolvePtDashboardFieldMap,
   salesDashboardApoAppId,
   salesDashboardContractAppId,
-  salesDashboardPtAppId,
-  type PtDashboardFieldMap,
 } from "@/lib/sales-dashboard-fields";
 import { achievementRate } from "@/lib/sales-dashboard-achievement";
-import { fetchSalesDashboardRecordPages, salesDashboardPtListAuths } from "@/lib/sales-dashboard-list-fetch";
+import { fetchSalesDashboardRecordPages } from "@/lib/sales-dashboard-list-fetch";
 import {
   fetchSalesDashboardPtTargets,
   pickTargetPtByStaff,
@@ -64,7 +61,6 @@ import {
   buildFiscalMonthOptions,
   currentYmInJst,
   fiscalYearMonths,
-  formatYmKey,
   type FiscalMonthSelection,
 } from "@/lib/fiscal-year";
 import {
@@ -161,106 +157,11 @@ type StaffAgg = {
   contractCount: number;
 };
 
-function parseNumber(raw: string): number {
-  const digits = raw.replace(/[^\d]/g, "");
-  const n = Number(digits);
-  return Number.isFinite(n) ? n : 0;
-}
-
 function monthKeyFromYm(year: number, month1: number): string {
   return `${year}-${String(month1).padStart(2, "0")}`;
 }
 
 /** 担当者名 → 年月（YYYY-MM）→ その月の PT 実績 */
-/**
- * 【切り替え中の確認用・次のコミットで削除する】
- *
- * PT集計表からの月別 PT。集計には**使わない**。お客様情報から出した数字と
- * 突き合わせてログに残すためだけに置いている。前提（PT集計表の元データは
- * お客様情報で、合計は一致する）が本番でも成り立つかを、切り替え後の
- * 1回目のログで確かめられるようにする。
- */
-function aggregatePtAppMonthly(
-  records: Array<{ record?: unknown }>,
-  fieldMap: PtDashboardFieldMap,
-): Map<string, Map<string, number>> {
-  const m = new Map<string, Map<string, number>>();
-
-  for (const row of records) {
-    const rec = row.record;
-    if (!rec || typeof rec !== "object") continue;
-    const recObj = rec as Record<string, unknown>;
-
-    const name = normApClStaffName(
-      readCustomerInfoFieldValue(recObj, fieldMap.salesperson),
-    );
-    if (!name || isExcludedSalesDashboardRankingName(name)) continue;
-
-    const ym = parseSalesDashboardRecordYmFromField(recObj, fieldMap.date);
-    if (!ym) continue;
-
-    const pt = fieldMap.pt
-      ? parseNumber(readCustomerInfoFieldValue(recObj, fieldMap.pt))
-      : 0;
-
-    const ymKey = formatYmKey(ym.year, ym.month1);
-    let byMonth = m.get(name);
-    if (!byMonth) {
-      byMonth = new Map();
-      m.set(name, byMonth);
-    }
-    byMonth.set(ymKey, (byMonth.get(ymKey) ?? 0) + pt);
-  }
-
-  return m;
-}
-
-/**
- * 【切り替え中の確認用・次のコミットで削除する】
- *
- * 直近の月について、PT集計表とお客様情報の合計を突き合わせて残す。
- * **氏名は出さない**（件数と合計だけ）。差が 0 でなければ見落としがある。
- */
-function warnPtSourceDifference(
-  ptApp: Map<string, Map<string, number>>,
-  customerInfo: CustomerPtMonthlyAgg,
-  ymKey: string,
-): void {
-  const sumOf = (m: Map<string, number> | undefined) => m?.get(ymKey) ?? 0;
-  let fromPtApp = 0;
-  const ptAppNames = new Set<string>();
-  ptApp.forEach((byMonth, name) => {
-    const v = sumOf(byMonth);
-    fromPtApp += v;
-    if (v !== 0) ptAppNames.add(name);
-  });
-
-  let fromCustomerInfo = 0;
-  const ciNames = new Set<string>();
-  customerInfo.forEach((byMonth, name) => {
-    const v = byMonth.get(ymKey)?.pt ?? 0;
-    fromCustomerInfo += v;
-    if (v !== 0) ciNames.add(name);
-  });
-
-  let onlyInPtApp = 0;
-  for (const n of ptAppNames) if (!ciNames.has(n)) onlyInPtApp += 1;
-  let onlyInCustomerInfo = 0;
-  for (const n of ciNames) if (!ptAppNames.has(n)) onlyInCustomerInfo += 1;
-
-  console.info(
-    "[sales-dashboard] PT集計元の突合",
-    JSON.stringify({
-      ym: ymKey,
-      fromPtApp,
-      fromCustomerInfo,
-      diff: fromCustomerInfo - fromPtApp,
-      onlyInPtApp,
-      onlyInCustomerInfo,
-    }),
-  );
-}
-
 /**
  * 契約情報: 担当者ごと・年月ごとの契約件数。
  *
@@ -470,42 +371,21 @@ export type SalesDashboardSelection = {
 };
 
 export async function buildSalesDashboardCore(): Promise<SalesDashboardCore | null> {
-  const ptAppId = salesDashboardPtAppId();
-  if (!ptAppId) return null;
-
-  const ptFieldAuth = { apiKey: apiKeyForAppFields("SALES_DASHBOARD_PT") };
-  const ptListAuths = salesDashboardPtListAuths();
   const contractFieldAuth = customerInfoDashboardFieldAuth();
   const contractListAuths = customerInfoDashboardListAuths();
   const contractAppId = salesDashboardContractAppId();
+  if (!contractAppId) return null;
 
-  const [apoTenka, ptFields, contractFields] = await Promise.all([
+  const [apoTenka, contractFields] = await Promise.all([
     buildApoAndTenkaMonthly(),
-    fetchAppFields(ptAppId, ptFieldAuth, {
-      operation: "sales-dashboard:pt-fields",
-      appEnv: "SALES_DASHBOARD_PT_APP_ID",
+    fetchAppFields(contractAppId, contractFieldAuth, {
+      operation: "sales-dashboard:contract-fields",
+      appEnv: "SALES_DASHBOARD_CONTRACT_APP_ID",
+    }).catch((e) => {
+      console.warn("[sales-dashboard] contract fields skipped", e);
+      return null;
     }),
-    contractAppId
-      ? fetchAppFields(contractAppId, contractFieldAuth, {
-          operation: "sales-dashboard:contract-fields",
-          appEnv: "SALES_DASHBOARD_CONTRACT_APP_ID",
-        }).catch((e) => {
-          console.warn("[sales-dashboard] contract fields skipped", e);
-          return null;
-        })
-      : Promise.resolve(null),
   ]);
-
-  const ptFieldMap = resolvePtDashboardFieldMap(ptFields);
-  if (!ptFieldMap) return null;
-
-  const ptWanted = [
-    ptFieldMap.salesperson,
-    ptFieldMap.date,
-    ptFieldMap.pt,
-    ptFieldMap.sales,
-    ptFieldMap.registrationNumber,
-  ].filter(Boolean) as string[];
 
   /**
    * 総合PTと契約件数はどちらもお客様情報の同じレコードから作る。列は
@@ -536,12 +416,8 @@ export async function buildSalesDashboardCore(): Promise<SalesDashboardCore | nu
   }
   const contractCsv = [...contractFieldIdSet].join(",");
 
-  const [ptRecords, contractRecords, targets] = await Promise.all([
-    fetchSalesDashboardRecordPages(ptAppId, ptWanted.join(","), ptListAuths, {
-      operation: "sales-dashboard:pt-records",
-      appEnv: "SALES_DASHBOARD_PT_APP_ID",
-    }),
-    contractAppId && contractCsv
+  const [contractRecords, targets] = await Promise.all([
+    contractCsv
       ? fetchSalesDashboardRecordPages(
           contractAppId,
           contractCsv,
@@ -576,13 +452,6 @@ export async function buildSalesDashboardCore(): Promise<SalesDashboardCore | nu
     ptFieldMapCi && contractRecords.length > 0
       ? buildContractCountByMonth(contractRecords, ptFieldMapCi)
       : new Map<string, Map<string, number>>();
-
-  // 【切り替え中の確認用・次のコミットで削除】前提どおり一致するかを残す
-  warnPtSourceDifference(
-    aggregatePtAppMonthly(ptRecords, ptFieldMap),
-    ptByStaffMonth,
-    currentYmInJst(),
-  );
 
   // 支社は名簿から1回だけ引く。名前は全月ぶんを集めて渡す
   const allNames = new Set<string>(ptByStaffMonth.keys());

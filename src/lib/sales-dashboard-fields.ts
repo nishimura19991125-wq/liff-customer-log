@@ -44,50 +44,6 @@ function pickByEnvOrKeywords(
   return pickByKeywords(fields, keywords);
 }
 
-export type PtDashboardFieldMap = {
-  salesperson: string;
-  pt: string | null;
-  sales: string | null;
-  date: string;
-  /** PT集計表の「登録番号」（お客様情報の APPT/CLPT 登録番号と突合・任意） */
-  registrationNumber: string | null;
-};
-
-export function resolvePtDashboardFieldMap(
-  fields: AtPocketFieldRow[],
-): PtDashboardFieldMap | null {
-  const salesperson = pickByEnvOrKeywords(
-    "SALES_DASHBOARD_PT_SALESPERSON_FIELD_ID",
-    fields,
-    ["営業担当", "担当者", "担当", "営業", "AP", "クローザー", "CL"],
-  );
-  const date = pickByEnvOrKeywords(
-    "SALES_DASHBOARD_PT_DATE_FIELD_ID",
-    fields,
-    ["PT加算日", "計上日", "契約日", "日付", "実績日", "売上日", "登録日"],
-  );
-  if (!salesperson || !date) return null;
-
-  const pt = pickByEnvOrKeywords(
-    "SALES_DASHBOARD_PT_PT_FIELD_ID",
-    fields,
-    ["PT", "ポイント", "point", "pt"],
-  );
-  const sales = pickByEnvOrKeywords(
-    "SALES_DASHBOARD_PT_SALES_FIELD_ID",
-    fields,
-    ["売上", "金額", "受注金額", "契約金額", "税込", "税抜", "販売単価"],
-  );
-  const registrationNumber = pickByEnvOrKeywords(
-    "SALES_DASHBOARD_PT_REGISTRATION_NUMBER_FIELD_ID",
-    fields,
-    ["登録番号"],
-    ["登録番号"],
-  );
-
-  return { salesperson, pt, sales, date, registrationNumber };
-}
-
 /**
  * 契約件数・総合PT が共通で使う列（お客様情報アプリ）。
  *
@@ -120,14 +76,6 @@ export function resolveContractCountFieldMap(
   );
 
   return { date, customerStatus };
-}
-
-export function salesDashboardPtAppId(): string | null {
-  return (
-    process.env.SALES_DASHBOARD_PT_APP_ID?.trim() ||
-    process.env.SALES_DASHBOARD_APP_ID?.trim() ||
-    null
-  );
 }
 
 export function salesDashboardContractAppId(): string | null {

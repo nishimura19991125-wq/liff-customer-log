@@ -37,10 +37,6 @@ export async function fetchSalesDashboardRecordPages(
   });
 }
 
-export function salesDashboardPtListAuths(): AtPocketFetchAuth[] {
-  return listAuthsForAppList("SALES_DASHBOARD_PT");
-}
-
 export function salesDashboardApoListAuths(): AtPocketFetchAuth[] {
   return listAuthsForAppList("SALES_DASHBOARD_APO");
 }

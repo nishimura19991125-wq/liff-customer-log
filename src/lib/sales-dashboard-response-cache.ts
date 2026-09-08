@@ -6,7 +6,6 @@ import { buildSalesDashboardCore } from "@/lib/sales-dashboard-data";
 import {
   salesDashboardApoAppId,
   salesDashboardContractAppId,
-  salesDashboardPtAppId,
 } from "@/lib/sales-dashboard-fields";
 import { salesProgressBranchConfig } from "@/lib/sales-target-fields";
 
@@ -65,11 +64,10 @@ function cacheTtlMs(): number {
 function cacheKey(): string {
   const branch = salesProgressBranchConfig();
   return JSON.stringify({
-    // v6: 期間キーを廃し、全月ぶんの core を1つ持つ形に変えた
-    v: 6,
+    // v7: 総合PTの集計元を PT集計表からお客様情報へ移した
+    v: 7,
     // 月が変わったら作り直す（当月の集計が前の月のまま残らないように）
     ym: currentYmInJst(),
-    pt: salesDashboardPtAppId() ?? "",
     contract: salesDashboardContractAppId() ?? "",
     apo: salesDashboardApoAppId() ?? "",
     // 支社の設定を変えたら作り直す
