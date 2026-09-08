@@ -9,11 +9,26 @@ import {
 } from "@/lib/atpocket";
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import {
+  FISCAL_ANNUAL_MONTH_KEY,
+  buildFiscalYearOptions,
+  currentFiscalYear,
+  currentYmInJst,
+  fiscalYearMonths,
+  parseFiscalMonthParam,
+  parseFiscalYearParam,
+  type FiscalMonthSelection,
+} from "@/lib/fiscal-year";
+import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
 import { tryConsumeManualRefresh } from "@/lib/manual-refresh-throttle";
-import type { SalesDashboardPayload } from "@/lib/sales-dashboard-data";
+import type {
+  SalesDashboardCore,
+  SalesDashboardPayload,
+  SalesDashboardSelection,
+} from "@/lib/sales-dashboard-data";
+import { buildSalesDashboardPayload } from "@/lib/sales-dashboard-data";
 import { personalizeSalesDashboardPayload } from "@/lib/sales-dashboard-personalize";
 import {
   getAnyStaleSalesDashboardCore,
@@ -55,6 +70,98 @@ function selfSummaryResponse(
   });
 }
 
+/**
+ * 期間の指定を解釈する。**値は allowlist でしか通さない。**
+ *
+ * ■ 新しい指定（fy / month）
+ *   fy    … 今年度・前年度の2つだけ。それ以外は今年度へ落とす
+ *   month … その年度に属する12ヶ月か "annual" だけ。それ以外は年間へ落とす
+ *   任意の年月を渡して過去を無制限に集計させない。
+ *
+ * ■ 旧クエリ（period=current|previous）
+ * 画面をまだ差し替えていないので受け続ける。当月・前月の年月へ翻訳して
+ * 同じ経路へ流す。**fy か month が指定されていればそちらを優先する。**
+ */
+function resolveSelection(url: URL): SalesDashboardSelection {
+  const nowMs = Date.now();
+  const rawFy = url.searchParams.get("fy");
+  const rawMonth = url.searchParams.get("month");
+  const rawPeriod = url.searchParams.get("period");
+
+  const fiscalYearOptions = buildFiscalYearOptions(nowMs).map((o) => ({
+    key: o.key,
+    label: o.label,
+  }));
+
+  if (rawFy === null && rawMonth === null && rawPeriod !== null) {
+    return legacySelection(rawPeriod, fiscalYearOptions, nowMs);
+  }
+
+  const fiscalYear = parseFiscalYearParam(rawFy, nowMs);
+  return {
+    fiscalYear,
+    fiscalYearOptions,
+    month: parseFiscalMonthParam(rawMonth, fiscalYear.startYear, nowMs),
+    legacyPeriod: "current",
+  };
+}
+
+/** 旧クエリ用。current=当月・previous=前月を、その月が属する年度で見る */
+function legacySelection(
+  rawPeriod: string,
+  fiscalYearOptions: Array<{ key: string; label: string }>,
+  nowMs: number,
+): SalesDashboardSelection {
+  const legacyPeriod = parseSalesDashboardPeriodParam(rawPeriod);
+  const [nowYear, nowMonth] = currentYmInJst(nowMs).split("-").map(Number);
+  const zeroBased =
+    (nowYear ?? 0) * 12 + ((nowMonth ?? 1) - 1) -
+    (legacyPeriod === "previous" ? 1 : 0);
+  const year = Math.floor(zeroBased / 12);
+  const month1 = (zeroBased % 12) + 1;
+
+  const startYear =
+    month1 >= 3 ? year : year - 1;
+  const fiscalYear =
+    fiscalYearOptions.find((o) => o.key === String(startYear)) ??
+    currentFiscalYear(nowMs);
+
+  const target = fiscalYearMonths(Number(fiscalYear.key)).find(
+    (m) => m.year === year && m.month1 === month1,
+  );
+  const month: FiscalMonthSelection = target
+    ? {
+        kind: "month",
+        ym: target.ym,
+        year: target.year,
+        month1: target.month1,
+        label: `${target.year}年${target.month1}月`,
+      }
+    : { kind: "annual", ym: FISCAL_ANNUAL_MONTH_KEY, label: "年間" };
+
+  return {
+    fiscalYear: {
+      key: fiscalYear.key,
+      label: fiscalYear.label,
+      startYear: Number(fiscalYear.key),
+    },
+    fiscalYearOptions,
+    month,
+    legacyPeriod,
+  };
+}
+
+function toPayload(
+  core: SalesDashboardCore,
+  boundStaffName: string,
+  selection: SalesDashboardSelection,
+): SalesDashboardPayload {
+  return personalizeSalesDashboardPayload(
+    buildSalesDashboardPayload(core, boundStaffName, selection),
+    boundStaffName,
+  );
+}
+
 /** 営業ダッシュボード（PT集計・全社員共通） */
 export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);
@@ -69,7 +176,7 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const period = parseSalesDashboardPeriodParam(url.searchParams.get("period"));
+  const selection = resolveSelection(url);
   /**
    * 応答を自分の1行に絞るか。**許可値は "self" だけ**で、未指定・未知の値は
    * 従来どおりの全量応答へ落とす（エラーにはしない）。
@@ -91,10 +198,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ needsStaffBind: true });
     }
 
-    const core = await getOrComputeSalesDashboardCore(period, forceRefresh);
-    const payload = core
-      ? personalizeSalesDashboardPayload(core, boundStaffName)
-      : null;
+    const core = await getOrComputeSalesDashboardCore(forceRefresh);
+    const payload = core ? toPayload(core, boundStaffName, selection) : null;
     if (!payload) {
       return NextResponse.json(
         {
@@ -124,8 +229,7 @@ export async function GET(request: Request) {
     console.error("[api/sales-dashboard]", e);
     if (isPocketHttpRateLimitError(e)) {
       const stale =
-        getStaleSalesDashboardCore(period) ??
-        getAnyStaleSalesDashboardCore();
+        getStaleSalesDashboardCore() ?? getAnyStaleSalesDashboardCore();
       const retrySec = Math.max(
         60,
         Math.ceil(
@@ -141,7 +245,7 @@ export async function GET(request: Request) {
         if (!boundStaffName) {
           return NextResponse.json({ needsStaffBind: true });
         }
-        const payload = personalizeSalesDashboardPayload(stale, boundStaffName);
+        const payload = toPayload(stale, boundStaffName, selection);
         if (selfOnly) {
           return selfSummaryResponse(payload, {
             rateLimited: true,

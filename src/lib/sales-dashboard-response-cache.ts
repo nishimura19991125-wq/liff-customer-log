@@ -1,22 +1,46 @@
 import "server-only";
 
-import { isPocketHttpRateLimitError } from "@/lib/atpocket";
-import type { SalesDashboardPayload } from "@/lib/sales-dashboard-data";
-import { buildSalesDashboardPayload } from "@/lib/sales-dashboard-data";
-import type { SalesDashboardPeriodKey } from "@/lib/sales-dashboard-period";
+import { currentYmInJst } from "@/lib/fiscal-year";
+import type { SalesDashboardCore } from "@/lib/sales-dashboard-data";
+import { buildSalesDashboardCore } from "@/lib/sales-dashboard-data";
 import {
   salesDashboardApoAppId,
   salesDashboardContractAppId,
   salesDashboardPtAppId,
 } from "@/lib/sales-dashboard-fields";
+import { salesProgressBranchConfig } from "@/lib/sales-target-fields";
+
+/**
+ * 営業ランキングのサーバ内キャッシュ。
+ *
+ * ■ 期間をキーに含めない
+ * core は**全月ぶん**を持つ。月や年度を切り替えても同じ core から取り出す
+ * だけなので、@pocket は叩かない。以前は "current" / "previous" ごとに
+ * 別エントリを持っていたが、その必要がなくなった。
+ *
+ * ■ 月替わりの取り扱い（重要）
+ * 期間をキーから落とすと、月が変わった瞬間に古い core が TTL いっぱい
+ * （最大30分）居座る。当月の集計が前の月のまま見えるのを避けるため、
+ * **JST の現在の年月をキーに混ぜ、さらに core.computedYm と突き合わせる。**
+ * 二重にしているのは、キーだけだと 429 時の stale 返却経路
+ * （getAnyStaleSalesDashboardCore）が古い月の core を拾えてしまうため。
+ *
+ * ■ キーに個人を混ぜない
+ * core は personalize 前。本人の isSelf を付けるのは route の仕事。
+ *
+ * ■ 429 の扱い
+ * ここでは握り潰さずそのまま投げる。猶予内の古い集計を出すのは route の
+ * 役目で、rateLimited / dashboardStale の目印もそちらで付ける。
+ * 以前は両方で stale を返していたが、経路が二重になっていた。
+ */
 
 type Entry = {
   expiresAt: number;
   staleUntil: number;
-  payload: SalesDashboardPayload;
+  core: SalesDashboardCore;
 };
 const store = new Map<string, Entry>();
-const inflight = new Map<string, Promise<SalesDashboardPayload | null>>();
+const inflight = new Map<string, Promise<SalesDashboardCore | null>>();
 
 /** 429 時に期限切れ TTL 後も返せる猶予（カレンダーと同様） */
 const SALES_DASHBOARD_STALE_SERVE_MS = 6 * 60 * 60 * 1000;
@@ -38,82 +62,85 @@ function cacheTtlMs(): number {
   return Math.min(3600, Math.max(60, sec)) * 1000;
 }
 
-function cacheKey(periodKey: SalesDashboardPeriodKey): string {
+function cacheKey(): string {
+  const branch = salesProgressBranchConfig();
   return JSON.stringify({
-    // v5: ランキング行に branch（所属支社）を足した
-    v: 5,
-    period: periodKey,
+    // v6: 期間キーを廃し、全月ぶんの core を1つ持つ形に変えた
+    v: 6,
+    // 月が変わったら作り直す（当月の集計が前の月のまま残らないように）
+    ym: currentYmInJst(),
     pt: salesDashboardPtAppId() ?? "",
     contract: salesDashboardContractAppId() ?? "",
     apo: salesDashboardApoAppId() ?? "",
+    // 支社の設定を変えたら作り直す
+    branches: branch.visibleBranches,
+    other: branch.otherLabel,
   });
 }
 
-export function getStaleSalesDashboardCore(
-  periodKey: SalesDashboardPeriodKey,
-): SalesDashboardPayload | null {
-  const hit = store.get(cacheKey(periodKey));
-  if (!hit || Date.now() > hit.staleUntil) return null;
-  return hit.payload;
+/** 月替わりをまたいだ core は使わない。キーと二重で見る */
+function isCurrentMonthCore(core: SalesDashboardCore): boolean {
+  return core.computedYm === currentYmInJst();
 }
 
-export function getAnyStaleSalesDashboardCore(): SalesDashboardPayload | null {
+export function getStaleSalesDashboardCore(): SalesDashboardCore | null {
+  const hit = store.get(cacheKey());
+  if (!hit || Date.now() > hit.staleUntil) return null;
+  if (!isCurrentMonthCore(hit.core)) return null;
+  return hit.core;
+}
+
+/**
+ * キーが変わっていても（アプリID・支社設定の変更など）、まだ猶予内の
+ * core があれば返す。429 のときだけ使う最後の手段。
+ * **月をまたいだものは返さない。**
+ */
+export function getAnyStaleSalesDashboardCore(): SalesDashboardCore | null {
   const now = Date.now();
   let best: Entry | null = null;
   for (const entry of store.values()) {
     if (entry.staleUntil <= now) continue;
+    if (!isCurrentMonthCore(entry.core)) continue;
     if (!best || entry.staleUntil > best.staleUntil) {
       best = entry;
     }
   }
-  return best?.payload ?? null;
+  return best?.core ?? null;
 }
 
-/** 全社員共通の集計結果（isSelf は未付与・API で個人化） */
+/** 全社員共通の集計（本人分の付与は呼び出し側で行う） */
 export async function getOrComputeSalesDashboardCore(
-  periodKey: SalesDashboardPeriodKey,
   /** 画面の「更新」。キャッシュを無視して取り直す（呼び出し側で連打を抑えること） */
   forceRefresh = false,
-): Promise<SalesDashboardPayload | null> {
-  const key = cacheKey(periodKey);
-  const ttl = cacheTtlMs();
+): Promise<SalesDashboardCore | null> {
+  const key = cacheKey();
   const now = Date.now();
   const hit = store.get(key);
-  if (!forceRefresh && hit && hit.expiresAt > now) return hit.payload;
+  if (
+    !forceRefresh &&
+    hit &&
+    hit.expiresAt > now &&
+    isCurrentMonthCore(hit.core)
+  ) {
+    return hit.core;
+  }
 
   const pending = inflight.get(key);
   if (pending) return pending;
 
+  const ttl = cacheTtlMs();
   const p = (async () => {
     try {
-      const payload = await buildSalesDashboardPayload("", periodKey);
-      if (payload) {
+      const core = await buildSalesDashboardCore();
+      if (core) {
         const savedAt = Date.now();
         store.set(key, {
           expiresAt: savedAt + ttl,
           staleUntil: savedAt + ttl + SALES_DASHBOARD_STALE_SERVE_MS,
-          payload,
+          core,
         });
       }
-      return payload;
-    } catch (e) {
-      if (isPocketHttpRateLimitError(e)) {
-        const stale =
-          getStaleSalesDashboardCore(periodKey) ??
-          getAnyStaleSalesDashboardCore();
-        if (stale) {
-          console.warn(
-            "[sales-dashboard-response-cache] serving stale payload after 429",
-            periodKey,
-          );
-          return {
-            ...stale,
-            rateLimited: true,
-            dashboardStale: true,
-          };
-        }
-      }
-      throw e;
+      return core;
     } finally {
       inflight.delete(key);
     }
