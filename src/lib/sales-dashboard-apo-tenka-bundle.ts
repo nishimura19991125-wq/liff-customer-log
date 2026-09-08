@@ -67,6 +67,10 @@ export function buildTenkaRanking(
  * 黙って通るので、掴んだ列の見出しを残しておかないと気づけない。
  *
  * 出すのは列の uniqueId と見出しだけで、レコードの中身は出さない。
+ *
+ * negotiationStatus はアポキャンを判定する列。環境変数名が
+ * SALES_DASHBOARD_APO_STATUS_FIELD_ID なのは、以前これを見積ステータスだと
+ * 思っていた名残り。実体は商談ステータスで、変数名だけ実態に合わせてある。
  */
 function logResolvedApoFields(
   fieldMap: ApoDashboardFieldMap,
@@ -81,7 +85,7 @@ function logResolvedApoFields(
       date: describe(fieldMap.date),
       salesperson: describe(fieldMap.salesperson),
       apoType: describe(fieldMap.apoType),
-      estimateStatus: describe(fieldMap.estimateStatus),
+      negotiationStatus: describe(fieldMap.negotiationStatus),
     }),
   );
 }
@@ -147,7 +151,7 @@ export async function buildApoAndTenkaMonthly(): Promise<ApoTenkaMonthlyBundle> 
       apoFieldMap.salesperson,
       apoFieldMap.apoType,
       apoFieldMap.date,
-      apoFieldMap.estimateStatus,
+      apoFieldMap.negotiationStatus,
       ...(tenkaFieldMap
         ? [
             tenkaFieldMap.closeType,

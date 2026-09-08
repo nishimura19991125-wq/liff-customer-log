@@ -196,7 +196,10 @@ function collectPtActuals(
   return { rowsWithoutName };
 }
 
-/** アポ取得情報：既存の aggregateApoRecords と同じフィルタ（アポキャン除外込み） */
+/**
+ * アポ取得情報：既存の aggregateApoRecords と同じフィルタ（アポキャン除外込み）。
+ * アポキャンを判定するのは商談ステータス（fieldMap.negotiationStatus）。
+ */
 function collectApoActuals(
   records: AtPocketRecordRow[],
   fieldMap: ApoDashboardFieldMap,
@@ -227,10 +230,10 @@ function collectApoActuals(
     const ym = parseSalesDashboardRecordYmFromField(recObj, fieldMap.date);
     if (!isSalesProgressMonthMatch(ym, month)) continue;
 
-    if (fieldMap.estimateStatus) {
+    if (fieldMap.negotiationStatus) {
       const statusVal = readCustomerInfoFieldValue(
         recObj,
-        fieldMap.estimateStatus,
+        fieldMap.negotiationStatus,
       );
       if (isApoCancelStatus(statusVal)) continue;
     }
@@ -319,7 +322,7 @@ export async function buildSalesProgressCore(
         apoFieldMap.salesperson,
         apoFieldMap.apoType,
         apoFieldMap.date,
-        apoFieldMap.estimateStatus,
+        apoFieldMap.negotiationStatus,
       ]
         .filter(Boolean)
         .join(",")

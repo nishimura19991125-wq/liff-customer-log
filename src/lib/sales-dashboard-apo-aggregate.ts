@@ -74,6 +74,10 @@ function isApoTypeMatched(typeVal: string, filterValues: string[]): boolean {
   return filterValues.some((fv) => tv.includes(fv));
 }
 
+/**
+ * アポキャンか。判定するのは @pocket の**商談ステータス**の値。
+ * 部分一致なので「アポキャン（顧客都合）」なども除外する。
+ */
 function isApoCancelStatus(statusVal: string): boolean {
   return normalizeStatus(statusVal).includes("アポキャン");
 }
@@ -206,10 +210,10 @@ export function aggregateApoRecords(
       continue;
     }
 
-    if (fieldMap.estimateStatus) {
+    if (fieldMap.negotiationStatus) {
       const statusVal = readCustomerInfoFieldValue(
         recObj,
-        fieldMap.estimateStatus,
+        fieldMap.negotiationStatus,
       );
       if (isApoCancelStatus(statusVal)) {
         counts.cancelled += 1;
@@ -363,7 +367,7 @@ export async function buildApoDashboardSection(
       fieldMap.salesperson,
       fieldMap.apoType,
       fieldMap.date,
-      fieldMap.estimateStatus,
+      fieldMap.negotiationStatus,
     ]
       .filter(Boolean)
       .join(",");

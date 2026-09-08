@@ -141,8 +141,16 @@ export type ApoDashboardFieldMap = {
   salesperson: string;
   apoType: string;
   date: string;
-  /** 未検出時はアポキャン除外なし（参照実装と同様） */
-  estimateStatus: string | null;
+  /**
+   * 「アポキャン」を判定する列。**実体は @pocket の「商談ステータス」**で、
+   * 環境変数 SALES_DASHBOARD_APO_STATUS_FIELD_ID がその列を指している。
+   * 以前は estimateStatus（見積ステータス）という名前だったが、@pocket 側で
+   * 見積ステータスと商談ステータスが別の列に分かれた際に実態とずれた。
+   * 「アポキャン」は商談ステータスの値なので、判定そのものは元から正しい。
+   *
+   * 未検出時はアポキャン除外なし（参照実装と同様）。
+   */
+  negotiationStatus: string | null;
 };
 
 function pickApoSalespersonFieldId(fields: AtPocketFieldRow[]): string | null {
@@ -202,14 +210,28 @@ export function resolveApoDashboardFieldMap(
     ["アポ種別"],
   );
   const date = pickApoDateFieldId(fields);
-  const estimateStatus = pickByEnvOrKeywords(
+  /**
+   * 環境変数名（SALES_DASHBOARD_APO_STATUS_FIELD_ID）は変えていない。
+   * Netlify に設定済みで、そこが商談ステータスの列を指している。
+   *
+   * ⚠ 見出しでの解決候補は「見積ステータス」のまま**意図して残している**。
+   *   ここを商談ステータスに変えると、環境変数が未設定の環境で解決される列が
+   *   入れ替わる＝集計結果が変わる。名前とコメントだけを実態に合わせ、
+   *   どの列を読むかは変えていない。
+   */
+  const negotiationStatus = pickByEnvOrKeywords(
     "SALES_DASHBOARD_APO_STATUS_FIELD_ID",
     fields,
     ["見積ステータス", "見積ｽﾃｰﾀｽ", "見積ステータス区分"],
     ["見積ステータス"],
   );
   if (!salesperson || !apoType || !date) return null;
-  return { salesperson, apoType, date, estimateStatus: estimateStatus ?? null };
+  return {
+    salesperson,
+    apoType,
+    date,
+    negotiationStatus: negotiationStatus ?? null,
+  };
 }
 
 /** アポ種別フィルタ（部分一致）。未設定時は ranking_pt_dashboard.config.js 既定相当 */

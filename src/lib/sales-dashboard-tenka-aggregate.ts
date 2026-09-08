@@ -242,7 +242,7 @@ export async function buildTenkaDashboardSection(
       fieldMap.closeType,
       fieldMap.meetingPlace,
       fieldMap.leadTime,
-      fieldMap.estimateStatus,
+      fieldMap.negotiationStatus,
     ]
       .filter(Boolean)
       .join(",");

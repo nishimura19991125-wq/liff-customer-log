@@ -11,7 +11,7 @@ const FIELD_MAP: ApoDashboardFieldMap = {
   salesperson: "field-1",
   apoType: "field-2",
   date: "field-3",
-  estimateStatus: "field-4",
+  negotiationStatus: "field-4",
 };
 
 const FILTER_VALUES = ["ダイレクト", "お客様紹介", "(DC)工務店OBリスト"];
@@ -352,7 +352,7 @@ describe("★ 集計の条件は変えていない", () => {
   it("見積ステータス列が無ければアポキャン除外は掛からない", () => {
     const m = aggregateApoRecords(
       [rec({}), rec({ status: "アポキャン" })],
-      { ...FIELD_MAP, estimateStatus: null },
+      { ...FIELD_MAP, negotiationStatus: null },
       FILTER_VALUES,
     );
     expect(pickApoMonth(m, "2026-09")[0]?.apoCount).toBe(2);
