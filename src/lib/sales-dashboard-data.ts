@@ -69,7 +69,6 @@ import {
   lookupStaffWorkplaceByStaffName,
   resolveStaffWorkplaceLookupConfig,
 } from "@/lib/staff-workplace-lookup";
-import type { SalesDashboardPeriodKey } from "@/lib/sales-dashboard-period";
 import { isExcludedSalesDashboardRankingName } from "@/lib/sales-dashboard-ranking-exclude";
 import {
   parseSalesDashboardRecordYmFromField,
@@ -137,7 +136,6 @@ export type SalesDashboardProgressPayload = {
 
 export type SalesDashboardPayload = {
   staffName: string;
-  period: SalesDashboardPeriodKey;
   periodLabel: string;
   periodHint: string;
   /** 選択中の年度 */
@@ -563,28 +561,35 @@ function buildRanking(
  * 目標アプリ側の登録漏れか氏名の表記ゆれと分かる。
  */
 function warnMissingSalesTargets(
-  ranking: SalesDashboardRankingRow[],
-  targetsAvailable: boolean,
+  names: readonly string[],
+  targets: SalesDashboardTargetLookup,
 ): void {
-  const missing = ranking.filter((r) => r.targetPt <= 0).length;
+  const missing = names.filter(
+    (name) => (targets.byStaffMonth.get(name)?.size ?? 0) === 0,
+  ).length;
   if (missing === 0) return;
   console.warn(
     "[sales-dashboard] PT目標を引けなかった担当者がいます",
     JSON.stringify({
       missing,
-      total: ranking.length,
-      targetsAvailable,
+      total: names.length,
+      targetsAvailable: targets.available,
     }),
   );
 }
 
 /** 支社を引けなかった人数を残す。**氏名は出さない**（件数のみ） */
-function warnMissingSalesBranches(ranking: SalesDashboardRankingRow[]): void {
-  const missing = ranking.filter((r) => !r.branch).length;
+function warnMissingSalesBranches(
+  names: readonly string[],
+  rosterBranchByStaff: Map<string, string>,
+): void {
+  const missing = names.filter(
+    (name) => !rosterBranchByStaff.get(name)?.trim(),
+  ).length;
   if (missing === 0) return;
   console.warn(
     "[sales-dashboard] 所属支社を引けなかった担当者がいます",
-    JSON.stringify({ missing, total: ranking.length }),
+    JSON.stringify({ missing, total: names.length }),
   );
 }
 
@@ -660,11 +665,6 @@ export type SalesDashboardSelection = {
   fiscalYear: { key: string; startYear: number; label: string };
   fiscalYearOptions: Array<{ key: string; label: string }>;
   month: FiscalMonthSelection;
-  /**
-   * 旧クエリ（?period=current|previous）で来たときの目印。
-   * 画面をまだ差し替えていないので、応答の period は残している。
-   */
-  legacyPeriod: SalesDashboardPeriodKey;
 };
 
 export async function buildSalesDashboardCore(): Promise<SalesDashboardCore | null> {
@@ -787,6 +787,14 @@ export async function buildSalesDashboardCore(): Promise<SalesDashboardCore | nu
   }
   const rosterBranchByStaff = await resolveBranchByStaff([...allNames]);
 
+  /**
+   * 設定の取りこぼしを残す。**core を組み立てたときだけ**＝実際に @pocket を
+   * 叩いた回にしか出ない。応答の組み立て（buildSalesDashboardPayload）は
+   * キャッシュから取り出すだけなので、月や年度を切り替えても増えない。
+   */
+  warnMissingSalesTargets([...allNames], targets);
+  warnMissingSalesBranches([...allNames], rosterBranchByStaff);
+
   return {
     computedYm: currentYmInJst(),
     ptByStaffMonth,
@@ -884,9 +892,6 @@ export function buildSalesDashboardPayload(
     targetPtByStaff,
     core.rosterBranchByStaff,
   );
-  warnMissingSalesTargets(ranking, core.targets.available);
-  warnMissingSalesBranches(ranking);
-
   // ── アポ件数 ──────────────────────────────────────
   const apoItems = core.apo.ok
     ? single
@@ -947,7 +952,6 @@ export function buildSalesDashboardPayload(
 
   return {
     staffName: boundStaffName,
-    period: selection.legacyPeriod,
     periodLabel: labels.label,
     periodHint: labels.hint,
     fiscalYear: selection.fiscalYear,

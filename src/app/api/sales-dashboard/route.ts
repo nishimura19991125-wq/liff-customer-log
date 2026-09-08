@@ -9,14 +9,9 @@ import {
 } from "@/lib/atpocket";
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import {
-  FISCAL_ANNUAL_MONTH_KEY,
   buildFiscalYearOptions,
-  currentFiscalYear,
-  currentYmInJst,
-  fiscalYearMonths,
   parseFiscalMonthParam,
   parseFiscalYearParam,
-  type FiscalMonthSelection,
 } from "@/lib/fiscal-year";
 import {
   lineAuthUnauthorizedResponse,
@@ -35,7 +30,6 @@ import {
   getOrComputeSalesDashboardCore,
   getStaleSalesDashboardCore,
 } from "@/lib/sales-dashboard-response-cache";
-import { parseSalesDashboardPeriodParam } from "@/lib/sales-dashboard-period";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
 export const dynamic = "force-dynamic";
@@ -73,81 +67,31 @@ function selfSummaryResponse(
 /**
  * 期間の指定を解釈する。**値は allowlist でしか通さない。**
  *
- * ■ 新しい指定（fy / month）
  *   fy    … 今年度・前年度の2つだけ。それ以外は今年度へ落とす
  *   month … その年度に属する12ヶ月か "annual" だけ。それ以外は年間へ落とす
- *   任意の年月を渡して過去を無制限に集計させない。
  *
- * ■ 旧クエリ（period=current|previous）
- * 画面をまだ差し替えていないので受け続ける。当月・前月の年月へ翻訳して
- * 同じ経路へ流す。**fy か month が指定されていればそちらを優先する。**
+ * 任意の年月を渡して過去を無制限に集計させない。未指定のときは今年度・当月
+ * （過去の年度を選んでいれば年間）になる。
+ *
+ * 旧クエリ（?period=current|previous）は画面の差し替えに伴い廃止した。
+ * ホームの ?scope=self は period を付けておらず、この既定に乗る。
  */
 function resolveSelection(url: URL): SalesDashboardSelection {
   const nowMs = Date.now();
-  const rawFy = url.searchParams.get("fy");
-  const rawMonth = url.searchParams.get("month");
-  const rawPeriod = url.searchParams.get("period");
-
   const fiscalYearOptions = buildFiscalYearOptions(nowMs).map((o) => ({
     key: o.key,
     label: o.label,
   }));
+  const fiscalYear = parseFiscalYearParam(url.searchParams.get("fy"), nowMs);
 
-  if (rawFy === null && rawMonth === null && rawPeriod !== null) {
-    return legacySelection(rawPeriod, fiscalYearOptions, nowMs);
-  }
-
-  const fiscalYear = parseFiscalYearParam(rawFy, nowMs);
   return {
     fiscalYear,
     fiscalYearOptions,
-    month: parseFiscalMonthParam(rawMonth, fiscalYear.startYear, nowMs),
-    legacyPeriod: "current",
-  };
-}
-
-/** 旧クエリ用。current=当月・previous=前月を、その月が属する年度で見る */
-function legacySelection(
-  rawPeriod: string,
-  fiscalYearOptions: Array<{ key: string; label: string }>,
-  nowMs: number,
-): SalesDashboardSelection {
-  const legacyPeriod = parseSalesDashboardPeriodParam(rawPeriod);
-  const [nowYear, nowMonth] = currentYmInJst(nowMs).split("-").map(Number);
-  const zeroBased =
-    (nowYear ?? 0) * 12 + ((nowMonth ?? 1) - 1) -
-    (legacyPeriod === "previous" ? 1 : 0);
-  const year = Math.floor(zeroBased / 12);
-  const month1 = (zeroBased % 12) + 1;
-
-  const startYear =
-    month1 >= 3 ? year : year - 1;
-  const fiscalYear =
-    fiscalYearOptions.find((o) => o.key === String(startYear)) ??
-    currentFiscalYear(nowMs);
-
-  const target = fiscalYearMonths(Number(fiscalYear.key)).find(
-    (m) => m.year === year && m.month1 === month1,
-  );
-  const month: FiscalMonthSelection = target
-    ? {
-        kind: "month",
-        ym: target.ym,
-        year: target.year,
-        month1: target.month1,
-        label: `${target.year}年${target.month1}月`,
-      }
-    : { kind: "annual", ym: FISCAL_ANNUAL_MONTH_KEY, label: "年間" };
-
-  return {
-    fiscalYear: {
-      key: fiscalYear.key,
-      label: fiscalYear.label,
-      startYear: Number(fiscalYear.key),
-    },
-    fiscalYearOptions,
-    month,
-    legacyPeriod,
+    month: parseFiscalMonthParam(
+      url.searchParams.get("month"),
+      fiscalYear.startYear,
+      nowMs,
+    ),
   };
 }
 
