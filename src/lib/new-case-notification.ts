@@ -19,7 +19,7 @@ const LABEL_CUSTOMER_NAME = "お客様名　 ";
 const LABEL_CREATOR = "案件作成者";
 
 /** 本文の1行目。前後の絵文字まで含めて固定 */
-export const NEW_CASE_NOTIFICATION_HEADING = "🐣新規案件が追加されました🐣";
+export const NEW_CASE_NOTIFICATION_HEADING = "🎊契約おめでとうございます🎊";
 
 export type NewCaseNotificationInput = {
   /** お客様情報アプリが採番した T番号 */
@@ -39,9 +39,9 @@ function plain(raw: string | null | undefined): string {
 export function buildNewCaseNotificationText(
   input: NewCaseNotificationInput,
 ): string {
+  // 見出しの下に空行は入れない（見出しの次の行が T番号）
   return [
     NEW_CASE_NOTIFICATION_HEADING,
-    "",
     `${LABEL_T_NUMBER}：${plain(input.tNumber)}`,
     `${LABEL_CUSTOMER_NAME}：${plain(input.customerName)}`,
     `${LABEL_CREATOR}：${plain(input.creatorName)}`,

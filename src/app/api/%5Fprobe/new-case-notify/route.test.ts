@@ -100,7 +100,7 @@ describe("調査用ルートの入口", () => {
     expect(res.status).toBe(200);
     expect(body.dryRun).toBe(true);
     expect(body.webhookConfigured).toBe(true);
-    expect(body.text).toContain("🐣新規案件が追加されました🐣");
+    expect(body.text).toContain("🎊契約おめでとうございます🎊");
     expect(h.notifyCalls).toEqual([]);
   });
 

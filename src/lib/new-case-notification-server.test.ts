@@ -65,7 +65,7 @@ describe("notifyNewCaseCreated", () => {
     expect(outcome).toEqual({ kind: "sent" });
     expect(h.lookedUpLineUserIds).toEqual(["U-line-1"]);
     expect(h.sentTexts).toHaveLength(1);
-    expect(h.sentTexts[0]).toContain("🐣新規案件が追加されました🐣");
+    expect(h.sentTexts[0]).toContain("🎊契約おめでとうございます🎊");
     expect(h.sentTexts[0]).toContain("T番号　 　 ：T-1234");
     expect(h.sentTexts[0]).toContain("お客様名　 ：山田太郎");
     expect(h.sentTexts[0]).toContain("案件作成者：西村");
