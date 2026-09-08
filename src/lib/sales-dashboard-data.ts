@@ -50,6 +50,7 @@ import {
   fetchSalesDashboardPtTargets,
   pickTargetPtByStaff,
   sumTargetPtByStaff,
+  targetStaffNamesForMonths,
   type SalesDashboardTargetLookup,
 } from "@/lib/sales-dashboard-target-lookup";
 import {
@@ -651,6 +652,21 @@ export function buildSalesDashboardPayload(
     byStaff.set(name, { name, pt, contractCount: 0 });
   });
   mergeContractCounts(byStaff, core.contractCountByStaffMonth, ymKeys);
+
+  /**
+   * 実績が無くても、その月に目標がある人はランキングへ載せる。
+   *
+   * 支社別（buildSalesDashboardProgress）は「実績がある人＋目標がある人」を
+   * 並べており、ランキングだけ実績のある人に限っていたため、同じ画面で顔ぶれが
+   * 食い違っていた。並び順の第2キー（目標の降順）も、PT が 0 の人が載らない
+   * ぶん効いていなかった。判定は支社別と同じで、目標の値が 0 の行も「目標あり」
+   * として扱う。
+   */
+  targetStaffNamesForMonths(core.targets, ymKeys).forEach((name) => {
+    if (!byStaff.has(name)) {
+      byStaff.set(name, { name, pt: 0, contractCount: 0 });
+    }
+  });
 
   // 目標は並び替えの第2キーなので、並べる前に引いておく
   const targetPtByStaff = single

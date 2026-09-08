@@ -169,6 +169,29 @@ export function pickTargetPtByStaff(
   return out;
 }
 
+/**
+ * 指定の月に目標行がある担当者。
+ *
+ * **値が 0 の行も「目標あり」として数える**（pickTargetPtByStaff は 0 を
+ * 落とすので、そちらでは代用できない）。支社別の対象の決め方
+ * （buildSalesDashboardProgress の namesWithTarget）と同じ判定にしてある。
+ */
+export function targetStaffNamesForMonths(
+  lookup: SalesDashboardTargetLookup,
+  ymKeys: readonly string[],
+): Set<string> {
+  const out = new Set<string>();
+  lookup.byStaffMonth.forEach((byMonth, name) => {
+    for (const ymKey of ymKeys) {
+      if (byMonth.has(ymKey)) {
+        out.add(name);
+        return;
+      }
+    }
+  });
+  return out;
+}
+
 /** 複数月ぶんの PT 目標を足して取り出す（年度累計用） */
 export function sumTargetPtByStaff(
   lookup: SalesDashboardTargetLookup,
