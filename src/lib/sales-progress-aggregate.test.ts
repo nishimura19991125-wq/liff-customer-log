@@ -3,13 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateSalesProgressByBranch,
   buildCompanySalesProgress,
-  computeAchievement,
   formatSalesProgressNumber,
   formatSalesProgressRate,
-  pickSelfSalesProgress,
-  SALES_PROGRESS_UNASSIGNED_GROUP,
   sortSalesProgressStaffRows,
-  summarizeSalesProgressMatching,
   type SalesActualRow,
   type SalesTargetRow,
 } from "@/lib/sales-progress-aggregate";
@@ -42,83 +38,53 @@ function actual(
 
 /** 並び替えの検証用。PT だけ動かし、アポは固定にする */
 function buildMetrics(ptActual: number, ptTarget: number) {
-  return {
-    pt: computeAchievement(ptActual, ptTarget),
-    apo: computeAchievement(0, 0),
-  };
+  return buildCompanySalesProgress(
+    [target("並び替え", { pt: ptTarget, apoCount: 0 })],
+    [actual("並び替え", { pt: ptActual, apoCount: 0 })],
+  );
 }
 
-describe("computeAchievement", () => {
+/**
+ * 達成率の式。computeAchievement は非公開なので、合計を出す入口
+ * （buildCompanySalesProgress）越しに検証する。目標・実績を1行ずつ渡せば
+ * そのまま式へ届く。
+ */
+function rate(actualPt: number, targetPt: number) {
+  return buildCompanySalesProgress(
+    [target("山田太郎", { pt: targetPt })],
+    [actual("山田太郎", { pt: actualPt })],
+  ).pt;
+}
+
+describe("達成率の式", () => {
   it("達成率を小数第1位まで出す", () => {
-    const m = computeAchievement(1_694_490, 10_800_000);
+    const m = rate(1_694_490, 10_800_000);
     expect(m.ratePercent).toBe(15.7);
     expect(m.barPercent).toBe(15.7);
   });
 
   it("目標が0のとき達成率は null（0除算を避ける）", () => {
-    const m = computeAchievement(500, 0);
+    const m = rate(500, 0);
     expect(m.ratePercent).toBeNull();
     expect(m.barPercent).toBe(0);
     expect(m.actual).toBe(500);
   });
 
   it("目標が負・NaN でも null", () => {
-    expect(computeAchievement(500, -1).ratePercent).toBeNull();
-    expect(computeAchievement(500, Number.NaN).ratePercent).toBeNull();
+    expect(rate(500, -1).ratePercent).toBeNull();
+    expect(rate(500, Number.NaN).ratePercent).toBeNull();
   });
 
   it("100%超でもバーは振り切れず、数値はそのまま出す", () => {
-    const m = computeAchievement(1_848_155, 1_350_000);
+    const m = rate(1_848_155, 1_350_000);
     expect(m.ratePercent).toBe(136.9);
     expect(m.barPercent).toBe(100);
   });
 
   it("実績0でも目標があれば 0.0%（「—」ではない）", () => {
-    const m = computeAchievement(0, 1_000_000);
+    const m = rate(0, 1_000_000);
     expect(m.ratePercent).toBe(0);
     expect(m.barPercent).toBe(0);
-  });
-});
-
-describe("pickSelfSalesProgress（本人分だけ）", () => {
-  const targets = [target("山田太郎"), target("鈴木花子", { pt: 2_000_000 })];
-  const actuals = [
-    actual("山田太郎", { pt: 500_000, apoCount: 4 }),
-    actual("鈴木花子", { pt: 9_999_999, apoCount: 99 }),
-  ];
-
-  it("氏名で突合し、他人の数字が混ざらない", () => {
-    const self = pickSelfSalesProgress(targets, actuals, "山田太郎");
-    expect(self.metrics.pt.actual).toBe(500_000);
-    expect(self.metrics.pt.target).toBe(1_000_000);
-    expect(self.metrics.pt.ratePercent).toBe(50);
-    expect(self.metrics.apo.actual).toBe(4);
-    expect(self.metrics.apo.target).toBe(10);
-    expect(self.targetMissing).toBe(false);
-  });
-
-  it("目標が無い人は実績だけ返り、達成率は「—」", () => {
-    const self = pickSelfSalesProgress([], actuals, "山田太郎");
-    expect(self.metrics.pt.actual).toBe(500_000);
-    expect(self.metrics.pt.target).toBe(0);
-    expect(self.metrics.pt.ratePercent).toBeNull();
-    expect(self.targetMissing).toBe(true);
-  });
-
-  it("名簿に無い氏名を渡してもゼロで返る（他人の数字を返さない）", () => {
-    const self = pickSelfSalesProgress(targets, actuals, "存在しない人");
-    expect(self.metrics.pt.actual).toBe(0);
-    expect(self.metrics.pt.target).toBe(0);
-    expect(self.metrics.apo.actual).toBe(0);
-  });
-
-  it("同じ人の目標行が複数あれば合算する", () => {
-    const self = pickSelfSalesProgress(
-      [target("山田太郎", { pt: 100 }), target("山田太郎", { pt: 200 })],
-      [],
-      "山田太郎",
-    );
-    expect(self.metrics.pt.target).toBe(300);
   });
 });
 
@@ -365,7 +331,7 @@ describe("aggregateSalesProgressByBranch", () => {
 
   it("並びの指定が無ければ目標の大きい順、寄せ先は最後", () => {
     const rows = aggregateSalesProgressByBranch(targets, actuals, {
-      fallbackLabel: SALES_PROGRESS_UNASSIGNED_GROUP,
+      fallbackLabel: "目標未登録",
     });
     expect(rows.map((r) => r.label)).toEqual([
       "奈良本社",
@@ -499,34 +465,6 @@ describe("sortSalesProgressStaffRows（PT/アポの切り替え）", () => {
       "アオキ",
       "サトウ",
     ]);
-  });
-});
-
-describe("summarizeSalesProgressMatching", () => {
-  it("突合できなかった人数を数える（氏名は返さない）", () => {
-    const s = summarizeSalesProgressMatching(
-      [target("山田太郎"), target("鈴木花子"), target("佐藤一郎")],
-      [actual("山田太郎"), actual("高橋二郎"), actual("田中三郎")],
-      { targetRowsWithoutName: 2, actualRowsWithoutName: 1 },
-    );
-    expect(s.targetsWithoutActual).toBe(2); // 鈴木花子・佐藤一郎
-    expect(s.actualsWithoutTarget).toBe(2); // 高橋二郎・田中三郎
-    expect(s.targetRowsWithoutName).toBe(2);
-    expect(s.actualRowsWithoutName).toBe(1);
-    // 件数だけを返し、氏名そのものは載せない
-    const json = JSON.stringify(s);
-    for (const name of ["山田", "鈴木", "佐藤", "高橋", "田中"]) {
-      expect(json).not.toContain(name);
-    }
-  });
-
-  it("同じ人が複数行あっても人数として1回だけ数える", () => {
-    const s = summarizeSalesProgressMatching(
-      [target("山田太郎"), target("山田太郎")],
-      [actual("高橋二郎"), actual("高橋二郎")],
-    );
-    expect(s.targetsWithoutActual).toBe(1);
-    expect(s.actualsWithoutTarget).toBe(1);
   });
 });
 

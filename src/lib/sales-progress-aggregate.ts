@@ -19,8 +19,13 @@
  * 認証と名簿への紐付けが必須である点は変わらない。
  */
 
-/** 所属が決まらない行の既定の寄せ先。支社別では「その他」を渡して使う */
-export const SALES_PROGRESS_UNASSIGNED_GROUP = "目標未登録";
+/**
+ * 所属が決まらない行の既定の寄せ先。
+ *
+ * 呼び出し側は fallbackLabel（「その他」）を必ず渡すので、これが表に出るのは
+ * 指定を忘れたときだけ。外から使う入口は要らないので公開しない。
+ */
+const SALES_PROGRESS_UNASSIGNED_GROUP = "目標未登録";
 
 /** 目標1行（担当者ごと・対象月ぶん） */
 export type SalesTargetRow = {
@@ -57,8 +62,8 @@ export type SalesProgressMetrics = {
 /** 指標の切り替え。画面上部の PT / アポ に対応する */
 export type SalesProgressMetricKey = "pt" | "apo";
 
-/** 支社の内訳1人分（タスクL） */
-export type SalesProgressStaffRow = {
+/** 支社の内訳1人分（タスクL）。SalesProgressGroupRow.members の要素 */
+type SalesProgressStaffRow = {
   staffName: string;
   metrics: SalesProgressMetrics;
 };
@@ -72,17 +77,6 @@ export type SalesProgressGroupRow = {
   members: SalesProgressStaffRow[];
 };
 
-export type SalesProgressMatchSummary = {
-  /** 目標はあるが実績が1件も無い担当者数 */
-  targetsWithoutActual: number;
-  /** 実績はあるが目標が無い担当者数（表記ゆれ・未登録の疑い） */
-  actualsWithoutTarget: number;
-  /** 目標側の担当者名が空で捨てた行数 */
-  targetRowsWithoutName: number;
-  /** 実績側の担当者名が空で捨てた行数 */
-  actualRowsWithoutName: number;
-};
-
 function safeNumber(n: number): number {
   return Number.isFinite(n) ? n : 0;
 }
@@ -90,8 +84,12 @@ function safeNumber(n: number): number {
 /**
  * 達成率。目標が0以下・未設定なら null を返す（画面は「—」）。
  * 小数第1位まで（136.9 など）。
+ *
+ * 外から直接は呼ばない。合計を出す入口（buildCompanySalesProgress /
+ * aggregateSalesProgressByBranch）を通す。式そのものの検証もその入口越しに
+ * 行う（テストのためだけに公開範囲を広げない）。
  */
-export function computeAchievement(
+function computeAchievement(
   actualRaw: number,
   targetRaw: number,
 ): SalesProgressMetric {
@@ -112,7 +110,7 @@ type Totals = { pt: number; apoCount: number };
 
 const ZERO: Totals = { pt: 0, apoCount: 0 };
 
-export function buildSalesProgressMetrics(
+function buildSalesProgressMetrics(
   actual: Totals,
   target: Totals,
 ): SalesProgressMetrics {
@@ -125,47 +123,6 @@ export function buildSalesProgressMetrics(
 function sumInto(acc: Totals, row: Totals): void {
   acc.pt += safeNumber(row.pt);
   acc.apoCount += safeNumber(row.apoCount);
-}
-
-/**
- * 本人の数字だけを取り出す。
- * 目標が無い場合も実績は返す（達成率は「—」になる）。
- */
-export function pickSelfSalesProgress(
-  targets: SalesTargetRow[],
-  actuals: SalesActualRow[],
-  selfStaffName: string,
-): {
-  metrics: SalesProgressMetrics;
-  /** 対象月の目標が1件も無いか */
-  targetMissing: boolean;
-} {
-  const self = selfStaffName.trim();
-  if (!self) {
-    return {
-      metrics: buildSalesProgressMetrics({ ...ZERO }, { ...ZERO }),
-      targetMissing: true,
-    };
-  }
-
-  const target = { ...ZERO };
-  let targetFound = false;
-  for (const row of targets) {
-    if (row.staffName !== self) continue;
-    targetFound = true;
-    sumInto(target, row);
-  }
-
-  const actual = { ...ZERO };
-  for (const row of actuals) {
-    if (row.staffName !== self) continue;
-    sumInto(actual, row);
-  }
-
-  return {
-    metrics: buildSalesProgressMetrics(actual, target),
-    targetMissing: !targetFound,
-  };
 }
 
 /** 全社合計。人数によらず常に返す（個人を特定できないため） */
@@ -317,35 +274,6 @@ export function sortSalesProgressStaffRows<T extends SalesProgressStaffRow>(
     if (am.target !== bm.target) return bm.target - am.target;
     return a.staffName.localeCompare(b.staffName, "ja");
   });
-}
-
-/**
- * 突合できなかった件数。運用で気づけるようサーバログへ出す用（K-1）。
- * 氏名そのものは返さない。
- */
-export function summarizeSalesProgressMatching(
-  targets: SalesTargetRow[],
-  actuals: SalesActualRow[],
-  opts?: { targetRowsWithoutName?: number; actualRowsWithoutName?: number },
-): SalesProgressMatchSummary {
-  const targetNames = new Set(targets.map((r) => r.staffName).filter(Boolean));
-  const actualNames = new Set(actuals.map((r) => r.staffName).filter(Boolean));
-
-  let targetsWithoutActual = 0;
-  for (const n of targetNames) {
-    if (!actualNames.has(n)) targetsWithoutActual += 1;
-  }
-  let actualsWithoutTarget = 0;
-  for (const n of actualNames) {
-    if (!targetNames.has(n)) actualsWithoutTarget += 1;
-  }
-
-  return {
-    targetsWithoutActual,
-    actualsWithoutTarget,
-    targetRowsWithoutName: opts?.targetRowsWithoutName ?? 0,
-    actualRowsWithoutName: opts?.actualRowsWithoutName ?? 0,
-  };
 }
 
 // ─────────────────────────────────────────────────── 表示用の整形
