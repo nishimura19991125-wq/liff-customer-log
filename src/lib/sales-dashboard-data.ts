@@ -311,15 +311,38 @@ function buildRanking(
  * （isLookupConfigFailure）。一部が未登録なだけで警告が出続けると、本当の
  * 異常に気づけない。
  */
-function logSalesTargetMatching(
-  names: readonly string[],
+function logSalesTargetMatching(params: {
+  names: readonly string[];
   /** 実績（PT・契約件数・アポ）に現れた担当者。突合の突き合わせ先 */
-  actualNames: ReadonlySet<string>,
-  targets: SalesDashboardTargetLookup,
-): void {
+  actualNames: ReadonlySet<string>;
+  /** 当月の総合PTランキングに載る担当者（PT実績か契約件数がある人） */
+  rankingNamesThisMonth: ReadonlySet<string>;
+  /** JST の現在の年月。当月ぶんの突合に使う */
+  ym: string;
+  targets: SalesDashboardTargetLookup;
+}): void {
+  const { names, actualNames, rankingNamesThisMonth, ym, targets } = params;
+
   const missing = names.filter(
     (name) => (targets.byStaffMonth.get(name)?.size ?? 0) === 0,
   ).length;
+
+  /**
+   * 当月ぶんの突合。**母数は missing と同じ names** にそろえてあるので、
+   * 2つの数字を直接比べられる。
+   *
+   * missing は「どの月にも目標行が無い人」で、画面が見ているのは選択月だけ。
+   * 例えば missing 12・missingThisMonth 21 なら、その差の9人は**別の月にだけ
+   * 目標がある**人。画面では「目標なし」に見えるのに missing には数えられない、
+   * という食い違いがこれで分かる。
+   */
+  const missingThisMonth = names.filter(
+    (name) => !targets.byStaffMonth.get(name)?.has(ym),
+  ).length;
+  let targetStaffThisMonth = 0;
+  targets.byStaffMonth.forEach((byMonth) => {
+    if (byMonth.has(ym)) targetStaffThisMonth += 1;
+  });
 
   /**
    * 目標側にあるのに実績側に居ない担当者。**ここが多ければ氏名の表記が
@@ -338,6 +361,10 @@ function logSalesTargetMatching(
     targetsWithoutRanking,
     targetStaff: targets.byStaffMonth.size,
     rankingStaff: actualNames.size,
+    ym,
+    missingThisMonth,
+    targetStaffThisMonth,
+    rankingThisMonth: rankingNamesThisMonth.size,
   });
 
   console.info("[sales-dashboard] PT目標の突合", detail);
@@ -514,6 +541,20 @@ export async function buildSalesDashboardCore(): Promise<SalesDashboardCore | nu
   // 支社は名簿から1回だけ引く。名前は全月ぶんを集めて渡す
   const allNames = new Set<string>(actualNames);
   targets.byStaffMonth.forEach((_v, name) => allNames.add(name));
+
+  /**
+   * 当月の総合PTランキングに載る担当者。目標の突合を画面と同じ土俵で見る
+   * ために出す。条件は buildSalesDashboardPayload の組み立てと同じで、
+   * その月に PT の行があるか、契約件数が1件以上ある人。
+   */
+  const thisYm = currentYmInJst();
+  const rankingNamesThisMonth = new Set<string>();
+  ptByStaffMonth.forEach((byMonth, name) => {
+    if (byMonth.has(thisYm)) rankingNamesThisMonth.add(name);
+  });
+  contractCountByStaffMonth.forEach((byMonth, name) => {
+    if ((byMonth.get(thisYm) ?? 0) > 0) rankingNamesThisMonth.add(name);
+  });
   const rosterBranchByStaff = await resolveBranchByStaff([...allNames]);
 
   /**
@@ -523,11 +564,18 @@ export async function buildSalesDashboardCore(): Promise<SalesDashboardCore | nu
    *
    * 件数は毎回 info で残し、warn は設定・権限を疑うときだけ足す。
    */
-  logSalesTargetMatching([...allNames], actualNames, targets);
+  logSalesTargetMatching({
+    names: [...allNames],
+    actualNames,
+    rankingNamesThisMonth,
+    ym: thisYm,
+    targets,
+  });
   logSalesBranchLookup([...allNames], rosterBranchByStaff);
 
   return {
-    computedYm: currentYmInJst(),
+    // ログに出した当月と必ず同じ値にする（月境をまたいでもずれない）
+    computedYm: thisYm,
     ptByStaffMonth,
     contractCountByStaffMonth,
     ptBreakdownByStaffMonth,

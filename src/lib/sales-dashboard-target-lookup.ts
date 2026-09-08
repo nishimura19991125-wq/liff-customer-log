@@ -59,25 +59,73 @@ type TargetLookupCounts = {
   /** 除外担当者（トラーチ倶楽部・卸案件など）で落とした件数 */
   excludedName: number;
   counted: number;
+  /**
+   * 目標粗利が 0 で登録されている行数。
+   *
+   * 0 で登録された人と、そもそも登録が無い人は**画面上の見え方が同じ**
+   * （どちらも targetPt 0・達成率を出せない）。どちらなのかをここで分ける。
+   * 表示と並び順は変えていない。
+   */
+  zeroPtRows: number;
 };
+
+/** 新しい順に、月ごとの数を並べる */
+function recentByYm(byYm: Map<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    [...byYm.entries()]
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .slice(0, COUNTED_BY_YM_LIMIT),
+  );
+}
 
 function logTargetLookupCounts(
   counts: TargetLookupCounts,
   countedByYm: Map<string, number>,
+  staffByYm: Map<string, Set<string>>,
   monthSamples: string[],
 ): void {
-  const recent = [...countedByYm.entries()]
-    .sort((a, b) => b[0].localeCompare(a[0]))
-    .slice(0, COUNTED_BY_YM_LIMIT);
+  const staffCountByYm = new Map<string, number>();
+  staffByYm.forEach((names, ymKey) => staffCountByYm.set(ymKey, names.size));
 
   console.info(
     "[sales-dashboard] PT目標の取得内訳",
     JSON.stringify({
       ...counts,
       months: countedByYm.size,
-      countedByYm: Object.fromEntries(recent),
+      countedByYm: recentByYm(countedByYm),
+      targetStaffByYm: recentByYm(staffCountByYm),
       ...(monthSamples.length ? { monthSamples } : {}),
     }),
+  );
+
+  warnDuplicateTargetRows(countedByYm, staffCountByYm);
+}
+
+/**
+ * 同じ担当者・同じ月の目標が2件以上ある月を警告する。**氏名は出さない**。
+ *
+ * 目標は合算されるので、重複があるとその人の目標が二重になり、達成率が
+ * 実際より低く出る。行数と担当者数の差がそのまま重複件数になる。
+ */
+function warnDuplicateTargetRows(
+  countedByYm: Map<string, number>,
+  staffCountByYm: Map<string, number>,
+): void {
+  const duplicatesByYm: Record<string, number> = {};
+  let total = 0;
+  countedByYm.forEach((rows, ymKey) => {
+    const staff = staffCountByYm.get(ymKey) ?? 0;
+    const extra = rows - staff;
+    if (extra > 0) {
+      duplicatesByYm[ymKey] = extra;
+      total += extra;
+    }
+  });
+  if (total === 0) return;
+
+  console.warn(
+    "[sales-dashboard] 同じ担当者・同じ月の目標が重複しています（目標が二重になり達成率が低く出ます）",
+    JSON.stringify({ duplicateRows: total, duplicatesByYm }),
   );
 }
 
@@ -203,9 +251,12 @@ export async function fetchSalesDashboardPtTargets(): Promise<SalesDashboardTarg
       noName: 0,
       excludedName: 0,
       counted: 0,
+      zeroPtRows: 0,
     };
     const monthSamples: string[] = [];
     const countedByYm = new Map<string, number>();
+    /** 月ごとの担当者。行数と突き合わせて重複登録を見つける */
+    const staffByYm = new Map<string, Set<string>>();
 
     for (const row of records) {
       const rec = row.record;
@@ -239,6 +290,9 @@ export async function fetchSalesDashboardPtTargets(): Promise<SalesDashboardTarg
       const ymKey = formatYmKey(ym.year, ym.month1);
       counts.counted += 1;
       countedByYm.set(ymKey, (countedByYm.get(ymKey) ?? 0) + 1);
+      const staff = staffByYm.get(ymKey) ?? new Set<string>();
+      staff.add(name);
+      staffByYm.set(ymKey, staff);
       let byMonth = byStaffMonth.get(name);
       if (!byMonth) {
         byMonth = new Map();
@@ -247,7 +301,9 @@ export async function fetchSalesDashboardPtTargets(): Promise<SalesDashboardTarg
 
       const cur = byMonth.get(ymKey) ?? { pt: 0, apoCount: 0, branchRaw: "" };
       // 同じ人に複数行あるときは合算する（営業進捗の集計と同じ扱い）
-      cur.pt += parseNumber(readCustomerInfoFieldValue(recObj, fieldMap.pt));
+      const ptOfRow = parseNumber(readCustomerInfoFieldValue(recObj, fieldMap.pt));
+      if (ptOfRow === 0) counts.zeroPtRows += 1;
+      cur.pt += ptOfRow;
       cur.apoCount += parseNumber(
         readCustomerInfoFieldValue(recObj, fieldMap.apoCount),
       );
@@ -260,7 +316,7 @@ export async function fetchSalesDashboardPtTargets(): Promise<SalesDashboardTarg
       byMonth.set(ymKey, cur);
     }
 
-    logTargetLookupCounts(counts, countedByYm, monthSamples);
+    logTargetLookupCounts(counts, countedByYm, staffByYm, monthSamples);
 
     return { byStaffMonth, available: true };
   } catch (e) {
