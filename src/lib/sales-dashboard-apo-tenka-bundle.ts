@@ -1,7 +1,8 @@
 import "server-only";
 import { safePocketErrorText } from "@/lib/api-error-response";
 
-import { apiKeyForAppFields, fetchAppFields } from "@/lib/atpocket";
+import { apiKeyForAppFields, fetchAppFields, type AtPocketFieldRow } from "@/lib/atpocket";
+import { fieldCaptionByUniqueId } from "@/lib/customer-info-record";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import {
   aggregateApoRecords,
@@ -21,6 +22,7 @@ import {
   salesDashboardApoAppId,
   salesDashboardApoTenkaTypeFilterValues,
   salesDashboardApoTypeFilterValues,
+  type ApoDashboardFieldMap,
 } from "@/lib/sales-dashboard-fields";
 import {
   fetchSalesDashboardRecordPages,
@@ -56,6 +58,35 @@ function buildTenkaRanking(
     isSelf: normApClStaffName(item.name) === bound,
     isPodium: i < 3,
   }));
+}
+
+/**
+ * アポ件数が実際に読んでいる列を1回だけ残す。
+ *
+ * 列は環境変数（SALES_DASHBOARD_APO_*_FIELD_ID）か見出しのどちらかで
+ * 解決する。環境変数を使う経路は uniqueId がスキーマに在るかしか見ず、
+ * 見出しとは照合しない（resolveConfiguredFieldToSchemaUniqueId）。
+ * @pocket 側で列を作り替えて同じ uniqueId が別の意味になっていても
+ * 黙って通るので、掴んだ列の見出しを残しておかないと気づけない。
+ *
+ * 出すのは列の uniqueId と見出しだけで、レコードの中身は出さない。
+ */
+function logResolvedApoFields(
+  fieldMap: ApoDashboardFieldMap,
+  fields: AtPocketFieldRow[],
+): void {
+  const describe = (id: string | null) =>
+    id ? { id, caption: fieldCaptionByUniqueId(fields, id) } : null;
+
+  console.info(
+    "[sales-dashboard] アポ件数が読む列",
+    JSON.stringify({
+      date: describe(fieldMap.date),
+      salesperson: describe(fieldMap.salesperson),
+      apoType: describe(fieldMap.apoType),
+      estimateStatus: describe(fieldMap.estimateStatus),
+    }),
+  );
 }
 
 export type ApoTenkaBundleResult = {
@@ -101,6 +132,8 @@ export async function buildApoAndTenkaSections(
         tenka: { ok: false, error: err },
       };
     }
+
+    logResolvedApoFields(apoFieldMap, apoFields);
 
     const tenkaFieldError =
       "AP天下賞の必須フィールド（AP担当者・アポ種別・日付・片クロor両クロ・商談場所・商談化リードタイム）の特定に失敗しました";
