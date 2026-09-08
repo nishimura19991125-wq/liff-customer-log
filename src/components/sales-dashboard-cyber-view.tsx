@@ -3,10 +3,19 @@
 import { useEffect, useState } from "react";
 
 import { LiffCard } from "@/components/liff-chrome";
+import {
+  SalesProgressBranches,
+  SalesProgressOverall,
+  type SalesProgressSectionData,
+} from "@/components/sales-progress-sections";
+import { FISCAL_ANNUAL_MONTH_KEY } from "@/lib/fiscal-year";
 import { formatDisplayYmd } from "@/lib/format-display-ymd";
 import { barRatio } from "@/lib/sales-dashboard-bar-ratio";
 
-export type DashboardPeriod = "current" | "previous";
+/**
+ * 部門タブ。**進捗の指標（SalesProgressMetricKey）と同じ2値**なので、
+ * 全体の進捗・支社別にはそのまま渡している。
+ */
 export type DashboardDepartment = "pt" | "apo";
 
 export type DashboardKpi = {
@@ -66,9 +75,20 @@ export type PtBreakdownRow = {
  */
 export type DashboardPayload = {
   staffName: string;
-  period: DashboardPeriod;
   periodLabel: string;
   periodHint: string;
+  /** 選択中の年度 */
+  fiscalYear: { key: string; startYear: number; label: string };
+  /** 選べる年度（今年度・前年度） */
+  fiscalYearOptions: Array<{ key: string; label: string }>;
+  /** 選べる月（3〜2月の12ヶ月＋「年間」） */
+  monthOptions: Array<{ key: string; label: string }>;
+  /** 選択中の月。YYYY-MM か "annual" */
+  selectedMonth: string;
+  /** 選択期間の全体・支社別 */
+  progress: SalesProgressSectionData;
+  /** その年度の累計。年間を選んでいるときは progress と同じ中身 */
+  annualProgress: SalesProgressSectionData;
   kpi: DashboardKpi;
   ranking: RankingRow[];
   /** 正規化担当者名 → PT 明細（全員閲覧可） */
@@ -447,6 +467,7 @@ function PtPodiumCard({
   idToken,
   expanded,
   onToggle,
+  breakdownEnabled,
 }: {
   row: RankingRow;
   breakdown: PtBreakdownRow[];
@@ -456,19 +477,11 @@ function PtPodiumCard({
   idToken?: string | null;
   expanded: boolean;
   onToggle: () => void;
+  /** 明細を開けるか。年間を選んでいるときは false（明細を作っていない） */
+  breakdownEnabled: boolean;
 }) {
-  return (
-    <div
-      className={`${PODIUM_CARD_SHELL} ${
-        row.isSelf ? "ring-2 ring-inset ring-cyan-300/80 dark:ring-cyan-400/35" : ""
-      }`}
-    >
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        className="flex w-full items-center gap-3 text-left"
-      >
+  const inner = (
+    <>
         <span
           className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${RANK_BADGE_CLASS}`}
         >
@@ -496,18 +509,41 @@ function PtPodiumCard({
               {row.branch.trim()}
             </p>
           ) : null}
-          <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
-            {expanded ? "▲ 明細を閉じる" : "▼ PT明細"}
-          </p>
+          {breakdownEnabled ? (
+            <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+              {expanded ? "▲ 明細を閉じる" : "▼ PT明細"}
+            </p>
+          ) : null}
         </div>
-      </button>
+    </>
+  );
+
+  return (
+    <div
+      className={`${PODIUM_CARD_SHELL} ${
+        row.isSelf ? "ring-2 ring-inset ring-cyan-300/80 dark:ring-cyan-400/35" : ""
+      }`}
+    >
+      {breakdownEnabled ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          className="flex w-full items-center gap-3 text-left"
+        >
+          {inner}
+        </button>
+      ) : (
+        // 押しても何も出ないボタンは置かない。見た目は同じまま当たり判定だけ外す
+        <div className="flex w-full items-center gap-3 text-left">{inner}</div>
+      )}
       <PtRankingBar
         pt={row.pt}
         topPt={topPt}
         target={row.targetPt}
         rate={row.achievementRate}
       />
-      {expanded ? (
+      {breakdownEnabled && expanded ? (
         <PtBreakdownPanel rows={breakdown} />
       ) : null}
     </div>
@@ -520,6 +556,7 @@ function PtListRow({
   topPt,
   expanded,
   onToggle,
+  breakdownEnabled,
 }: {
   row: RankingRow;
   breakdown: PtBreakdownRow[];
@@ -527,19 +564,11 @@ function PtListRow({
   topPt: number;
   expanded: boolean;
   onToggle: () => void;
+  /** 明細を開けるか。年間を選んでいるときは false（明細を作っていない） */
+  breakdownEnabled: boolean;
 }) {
-  return (
-    <div
-      className={`rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm dark:border-emerald-500/15 dark:bg-slate-900/50 ${
-        row.isSelf ? "ring-2 ring-inset ring-cyan-300/70 dark:ring-cyan-400/30" : ""
-      }`}
-    >
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        className="flex w-full items-center gap-3 text-left"
-      >
+  const inner = (
+    <>
         <span
           className={`flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold ${RANK_BADGE_CLASS}`}
         >
@@ -562,18 +591,41 @@ function PtListRow({
             </p>
             <PtBranchLabel branch={row.branch} />
           </div>
-          <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">
-            {expanded ? "▲ 明細を閉じる" : "▼ PT明細"}
-          </p>
+          {breakdownEnabled ? (
+            <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">
+              {expanded ? "▲ 明細を閉じる" : "▼ PT明細"}
+            </p>
+          ) : null}
         </div>
-      </button>
+    </>
+  );
+
+  return (
+    <div
+      className={`rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm dark:border-emerald-500/15 dark:bg-slate-900/50 ${
+        row.isSelf ? "ring-2 ring-inset ring-cyan-300/70 dark:ring-cyan-400/30" : ""
+      }`}
+    >
+      {breakdownEnabled ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          className="flex w-full items-center gap-3 text-left"
+        >
+          {inner}
+        </button>
+      ) : (
+        // 押しても何も出ないボタンは置かない。見た目は同じまま当たり判定だけ外す
+        <div className="flex w-full items-center gap-3 text-left">{inner}</div>
+      )}
       <PtRankingBar
         pt={row.pt}
         topPt={topPt}
         target={row.targetPt}
         rate={row.achievementRate}
       />
-      {expanded ? (
+      {breakdownEnabled && expanded ? (
         <PtBreakdownPanel rows={breakdown} />
       ) : null}
     </div>
@@ -584,11 +636,14 @@ function PtRankingSection({
   rows,
   breakdownByStaff,
   idToken,
+  breakdownEnabled,
 }: {
   rows: RankingRow[];
   breakdownByStaff: Record<string, PtBreakdownRow[]>;
   /** 上位3位の顔写真の取得に使う */
   idToken?: string | null;
+  /** 明細を開けるか。年間はサーバが明細を作らないので false */
+  breakdownEnabled: boolean;
 }) {
   const [expandedName, setExpandedName] = useState<string | null>(null);
 
@@ -622,6 +677,7 @@ function PtRankingSection({
               idToken={idToken}
               expanded={expandedName === row.staffName}
               onToggle={() => toggle(row.staffName)}
+              breakdownEnabled={breakdownEnabled}
             />
           ))}
         </div>
@@ -636,6 +692,7 @@ function PtRankingSection({
               topPt={topPt}
               expanded={expandedName === row.staffName}
               onToggle={() => toggle(row.staffName)}
+              breakdownEnabled={breakdownEnabled}
             />
           ))}
         </div>
@@ -770,6 +827,17 @@ export function SalesDashboardCyberView({
   const rankingTitle =
     department === "pt" ? "総合PTランキング" : "アポ件数ランキング";
 
+  /**
+   * 年間を選んでいるか。
+   *
+   * ・PT明細はサーバが年間ぶんを作らない（応答が跳ねるため）ので、
+   *   明細のトグル自体を出さない
+   * ・進捗は年度累計の annualProgress を使う。年間のとき progress と
+   *   同じ中身だが、どちらを見ているかを式に残しておく
+   */
+  const isAnnual = data.selectedMonth === FISCAL_ANNUAL_MONTH_KEY;
+  const progress = isAnnual ? data.annualProgress : data.progress;
+
   return (
     <div className="flex flex-col gap-5">
       <p className="text-[13px] text-slate-500 dark:text-emerald-200/50">
@@ -799,6 +867,15 @@ export function SalesDashboardCyberView({
           />
         </div>
 
+        <div className="mb-3">
+          <SalesProgressOverall
+            company={progress.company}
+            metric={department}
+            targetsAvailable={progress.targetsAvailable}
+            periodLabel={data.periodLabel}
+          />
+        </div>
+
         <h2 className="mb-3 text-[15px] font-bold tracking-wide text-slate-800 dark:text-emerald-50">
           {rankingTitle}
         </h2>
@@ -822,8 +899,19 @@ export function SalesDashboardCyberView({
             rows={data.ranking}
             breakdownByStaff={data.ptBreakdownByStaff ?? {}}
             idToken={idToken}
+            breakdownEnabled={!isAnnual}
           />
         )}
+
+        <div className="mt-5">
+          <SalesProgressBranches
+            branches={progress.branches}
+            metric={department}
+            otherLabel={
+              progress.branches[progress.branches.length - 1]?.label ?? "その他"
+            }
+          />
+        </div>
       </section>
     </div>
   );
