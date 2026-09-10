@@ -15,12 +15,18 @@
  * **この配列の順序が画面の表示順になる。** 環境変数
  * SALES_PROGRESS_VISIBLE_BRANCHES を設定した場合も、その並び順を
  * そのまま表示順として使う。実績の大小では並べ替えない。
+ *
+ * 突き合わせは完全一致なので、**@pocket の実際の値と綴りを合わせること**。
+ * ずれると該当者が全員「その他」へ落ち、ここに書いた支社が0名で残る。
+ * 2026-09 時点の実際の値に合わせてある（旧「奈良本社」「埼玉支社」は
+ * @pocket 側で「奈良支社」「関東支社」へ変わり、「本社」が加わった）。
  */
 export const SALES_PROGRESS_DEFAULT_VISIBLE_BRANCHES: readonly string[] = [
-  "奈良本社",
+  "奈良支社",
   "京都支社",
   "名古屋支社",
-  "埼玉支社",
+  "関東支社",
+  "本社",
 ];
 
 export const SALES_PROGRESS_DEFAULT_OTHER_BRANCH_LABEL = "その他";
@@ -29,7 +35,7 @@ function nfkc(s: string): string {
   return (s ?? "").normalize("NFKC").replace(/\s+/g, "").trim();
 }
 
-/** `埼玉支社,奈良本社,...` を配列にする。空・未設定なら既定値 */
+/** `関東支社,奈良支社,...` を配列にする。空・未設定なら既定値 */
 export function parseSalesProgressVisibleBranches(
   raw: string | undefined,
 ): string[] {

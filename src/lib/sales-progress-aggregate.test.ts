@@ -26,7 +26,7 @@ function target(
   staffName: string,
   over: Partial<SalesTargetRow> = {},
 ): SalesTargetRow {
-  return { staffName, branch: "奈良本社", apoCount: 10, pt: 1_000_000, ...over };
+  return { staffName, branch: "奈良支社", apoCount: 10, pt: 1_000_000, ...over };
 }
 
 function actual(
@@ -106,7 +106,7 @@ describe("buildCompanySalesProgress", () => {
 
 describe("resolveSalesProgressBranch（支社の振り分け）", () => {
   it("表示対象の支社はそのまま", () => {
-    expect(resolveSalesProgressBranch("奈良本社", BRANCH_CONFIG)).toBe("奈良本社");
+    expect(resolveSalesProgressBranch("奈良支社", BRANCH_CONFIG)).toBe("奈良支社");
     expect(resolveSalesProgressBranch("京都支社", BRANCH_CONFIG)).toBe("京都支社");
   });
 
@@ -123,19 +123,20 @@ describe("resolveSalesProgressBranch（支社の振り分け）", () => {
   });
 
   it("全角半角・空白のゆれを吸収し、設定側の表記で返す", () => {
-    expect(resolveSalesProgressBranch(" 奈良本社 ", BRANCH_CONFIG)).toBe("奈良本社");
-    expect(resolveSalesProgressBranch("奈良 本社", BRANCH_CONFIG)).toBe("奈良本社");
+    expect(resolveSalesProgressBranch(" 奈良支社 ", BRANCH_CONFIG)).toBe("奈良支社");
+    expect(resolveSalesProgressBranch("奈良 支社", BRANCH_CONFIG)).toBe("奈良支社");
   });
 
 });
 
 describe("支社の表示順", () => {
-  it("既定は 奈良本社 → 京都支社 → 名古屋支社 → 埼玉支社 → その他", () => {
+  it("既定は 奈良支社 → 京都支社 → 名古屋支社 → 関東支社 → 本社 → その他", () => {
     expect(salesProgressBranchOrder(BRANCH_CONFIG)).toEqual([
-      "奈良本社",
+      "奈良支社",
       "京都支社",
       "名古屋支社",
-      "埼玉支社",
+      "関東支社",
+      "本社",
       "その他",
     ]);
   });
@@ -143,14 +144,14 @@ describe("支社の表示順", () => {
   it("環境変数の並び順がそのまま表示順になる", () => {
     const config = {
       visibleBranches: parseSalesProgressVisibleBranches(
-        "名古屋支社,埼玉支社,奈良本社,京都支社",
+        "名古屋支社,関東支社,奈良支社,京都支社",
       ),
       otherLabel: SALES_PROGRESS_DEFAULT_OTHER_BRANCH_LABEL,
     };
     expect(salesProgressBranchOrder(config)).toEqual([
       "名古屋支社",
-      "埼玉支社",
-      "奈良本社",
+      "関東支社",
+      "奈良支社",
       "京都支社",
       "その他",
     ]);
@@ -158,10 +159,11 @@ describe("支社の表示順", () => {
 
   it("環境変数が未設定なら既定の並び順を使う", () => {
     expect(parseSalesProgressVisibleBranches(undefined)).toEqual([
-      "奈良本社",
+      "奈良支社",
       "京都支社",
       "名古屋支社",
-      "埼玉支社",
+      "関東支社",
+      "本社",
     ]);
     expect(parseSalesProgressVisibleBranches("")).toEqual([
       ...SALES_PROGRESS_DEFAULT_VISIBLE_BRANCHES,
@@ -170,30 +172,30 @@ describe("支社の表示順", () => {
 
   it("寄せ先は常に末尾。設定の途中に書かれていても動かさない", () => {
     const config = {
-      visibleBranches: ["奈良本社", "その他", "京都支社"],
+      visibleBranches: ["奈良支社", "その他", "京都支社"],
       otherLabel: "その他",
     };
     expect(salesProgressBranchOrder(config)).toEqual([
-      "奈良本社",
+      "奈良支社",
       "京都支社",
       "その他",
     ]);
   });
 
   it("寄せ先の名前を変えても末尾に置く", () => {
-    const config = { visibleBranches: ["奈良本社"], otherLabel: "他" };
-    expect(salesProgressBranchOrder(config)).toEqual(["奈良本社", "他"]);
+    const config = { visibleBranches: ["奈良支社"], otherLabel: "他" };
+    expect(salesProgressBranchOrder(config)).toEqual(["奈良支社", "他"]);
   });
 
   it("重複と空白だけの項目は取り除く", () => {
     const config = {
       visibleBranches: parseSalesProgressVisibleBranches(
-        "奈良本社, 京都支社 ,奈良本社,  ,京都支社",
+        "奈良支社, 京都支社 ,奈良支社,  ,京都支社",
       ),
       otherLabel: "その他",
     };
     expect(salesProgressBranchOrder(config)).toEqual([
-      "奈良本社",
+      "奈良支社",
       "京都支社",
       "その他",
     ]);
@@ -203,9 +205,9 @@ describe("支社の表示順", () => {
     const order = salesProgressBranchOrder(BRANCH_CONFIG);
     const rows = aggregateSalesProgressByBranch(
       [
-        // 実績・目標とも埼玉が最大。実績順なら先頭に来てしまう組み合わせ
-        target("A", { branch: "埼玉支社", pt: 9_000_000 }),
-        target("B", { branch: "奈良本社", pt: 1_000_000 }),
+        // 実績・目標とも関東が最大。実績順なら先頭に来てしまう組み合わせ
+        target("A", { branch: "関東支社", pt: 9_000_000 }),
+        target("B", { branch: "奈良支社", pt: 1_000_000 }),
         target("C", { branch: "京都支社", pt: 2_000_000 }),
         target("D", { branch: "名古屋支社", pt: 3_000_000 }),
       ],
@@ -213,10 +215,11 @@ describe("支社の表示順", () => {
       { fallbackLabel: "その他", ensureLabels: order },
     );
     expect(rows.map((r) => r.label)).toEqual([
-      "奈良本社",
+      "奈良支社",
       "京都支社",
       "名古屋支社",
-      "埼玉支社",
+      "関東支社",
+      "本社",
       "その他",
     ]);
   });
@@ -224,10 +227,10 @@ describe("支社の表示順", () => {
 
 describe("aggregateSalesProgressByBranch", () => {
   const targets = [
-    target("A", { branch: "奈良本社", pt: 6_000_000, apoCount: 10 }),
-    target("B", { branch: "奈良本社", pt: 4_800_000, apoCount: 10 }),
+    target("A", { branch: "奈良支社", pt: 6_000_000, apoCount: 10 }),
+    target("B", { branch: "奈良支社", pt: 4_800_000, apoCount: 10 }),
     target("C", { branch: "京都支社", pt: 3_000_000, apoCount: 5 }),
-    target("D", { branch: "埼玉支社", pt: 2_000_000, apoCount: 5 }),
+    target("D", { branch: "関東支社", pt: 2_000_000, apoCount: 5 }),
   ];
   const actuals = [
     actual("A", { pt: 1_000_000, apoCount: 3 }),
@@ -242,7 +245,7 @@ describe("aggregateSalesProgressByBranch", () => {
       fallbackLabel: "その他",
       ensureLabels: order,
     });
-    const nara = rows.find((r) => r.label === "奈良本社");
+    const nara = rows.find((r) => r.label === "奈良支社");
     expect(nara?.metrics.pt.target).toBe(10_800_000);
     expect(nara?.metrics.pt.actual).toBe(1_694_490);
     expect(nara?.metrics.pt.ratePercent).toBe(15.7);
@@ -324,7 +327,7 @@ describe("aggregateSalesProgressByBranch", () => {
       [...actuals, actual("謎の人"), actual("", { pt: 500 })],
       { fallbackLabel: "その他", ensureLabels: order },
     );
-    const nara = rows.find((r) => r.label === "奈良本社");
+    const nara = rows.find((r) => r.label === "奈良支社");
     expect(nara?.metrics.pt.actual).toBe(1_694_490);
     expect(nara?.metrics.pt.target).toBe(10_800_000);
   });
@@ -334,9 +337,9 @@ describe("aggregateSalesProgressByBranch", () => {
       fallbackLabel: "目標未登録",
     });
     expect(rows.map((r) => r.label)).toEqual([
-      "奈良本社",
+      "奈良支社",
       "京都支社",
-      "埼玉支社",
+      "関東支社",
     ]);
   });
 });
@@ -344,9 +347,9 @@ describe("aggregateSalesProgressByBranch", () => {
 describe("個人内訳（タスクL）", () => {
   const order = salesProgressBranchOrder(BRANCH_CONFIG);
   const targets = [
-    target("山田太郎", { branch: "埼玉支社", pt: 2_000_000, apoCount: 8 }),
-    target("佐藤花子", { branch: "埼玉支社", pt: 1_800_000, apoCount: 4 }),
-    target("鈴木一郎", { branch: "埼玉支社", pt: 1_500_000, apoCount: 6 }),
+    target("山田太郎", { branch: "関東支社", pt: 2_000_000, apoCount: 8 }),
+    target("佐藤花子", { branch: "関東支社", pt: 1_800_000, apoCount: 4 }),
+    target("鈴木一郎", { branch: "関東支社", pt: 1_500_000, apoCount: 6 }),
   ];
   const actuals = [
     actual("山田太郎", { pt: 1_200_000, apoCount: 1 }),
@@ -354,16 +357,16 @@ describe("個人内訳（タスクL）", () => {
     // 鈴木一郎 は実績なし
   ];
 
-  function saitama(t = targets, a = actuals) {
+  function kanto(t = targets, a = actuals) {
     const rows = aggregateSalesProgressByBranch(t, a, {
       fallbackLabel: "その他",
       ensureLabels: order,
     });
-    return rows.find((r) => r.label === "埼玉支社")!;
+    return rows.find((r) => r.label === "関東支社")!;
   }
 
   it("担当者ごとの内訳を持ち、支社の合計と一致する", () => {
-    const b = saitama();
+    const b = kanto();
     expect(b.members.map((m) => m.staffName)).toHaveLength(3);
     const sumActual = b.members.reduce((s, m) => s + m.metrics.pt.actual, 0);
     const sumTarget = b.members.reduce((s, m) => s + m.metrics.pt.target, 0);
@@ -372,7 +375,7 @@ describe("個人内訳（タスクL）", () => {
   });
 
   it("既定の並びは PT 実績の降順", () => {
-    expect(saitama().members.map((m) => m.staffName)).toEqual([
+    expect(kanto().members.map((m) => m.staffName)).toEqual([
       "山田太郎",
       "佐藤花子",
       "鈴木一郎",
@@ -380,14 +383,14 @@ describe("個人内訳（タスクL）", () => {
   });
 
   it("実績が無い担当者も内訳に含まれ、達成率は数値で出る（目標があるため）", () => {
-    const suzuki = saitama().members.find((m) => m.staffName === "鈴木一郎");
+    const suzuki = kanto().members.find((m) => m.staffName === "鈴木一郎");
     expect(suzuki?.metrics.pt.actual).toBe(0);
     expect(suzuki?.metrics.pt.target).toBe(1_500_000);
     expect(suzuki?.metrics.pt.ratePercent).toBe(0);
   });
 
   it("目標未登録の担当者も内訳に含まれ、達成率は「—」", () => {
-    const b = saitama(targets, [
+    const b = kanto(targets, [
       ...actuals,
       // 目標が無い＝目標行が無い人。支社が引けないので寄せ先に入る
       actual("高橋二郎", { pt: 300_000, apoCount: 2 }),
@@ -409,7 +412,7 @@ describe("個人内訳（タスクL）", () => {
   });
 
   it("同じ支社に目標だけの人と実績だけの人が混ざっても人数と一致する", () => {
-    const b = saitama();
+    const b = kanto();
     expect(b.memberCount).toBe(b.members.length);
   });
 });
@@ -417,15 +420,15 @@ describe("個人内訳（タスクL）", () => {
 describe("sortSalesProgressStaffRows（PT/アポの切り替え）", () => {
   const rows = aggregateSalesProgressByBranch(
     [
-      target("山田太郎", { branch: "埼玉支社", pt: 2_000_000, apoCount: 8 }),
-      target("佐藤花子", { branch: "埼玉支社", pt: 1_800_000, apoCount: 4 }),
+      target("山田太郎", { branch: "関東支社", pt: 2_000_000, apoCount: 8 }),
+      target("佐藤花子", { branch: "関東支社", pt: 1_800_000, apoCount: 4 }),
     ],
     [
       actual("山田太郎", { pt: 1_200_000, apoCount: 1 }),
       actual("佐藤花子", { pt: 494_490, apoCount: 9 }),
     ],
     { fallbackLabel: "その他" },
-  ).find((r) => r.label === "埼玉支社")!.members;
+  ).find((r) => r.label === "関東支社")!.members;
 
   it("PT を選ぶと PT 実績の降順", () => {
     expect(sortSalesProgressStaffRows(rows, "pt").map((m) => m.staffName)).toEqual([
