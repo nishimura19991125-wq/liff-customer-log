@@ -16,7 +16,7 @@ export const PAYMENT_METHOD_OPTIONS = [
 export const FIT_TYPE_OPTIONS = ["FIT", "非FIT"] as const;
 
 /**
- * 印鑑登録証明書・委任状を非表示にする売電方式。
+ * 書類の一部（NON_FIT_HIDDEN_DOCUMENT_KEYS）を非表示にする売電方式。
  * FIT_TYPE_OPTIONS の実物と同じ文字列を指すこと。
  */
 export const FIT_TYPE_NON_FIT = "非FIT" as const;
@@ -202,21 +202,31 @@ export function shouldShowWiringMethod(installationType: string): boolean {
 }
 
 /**
- * 売電方式が「非FIT」のとき非表示にする書類。
+ * 売電方式が「非FIT」のとき非表示にする書類（条件W）。
  *
- * 印鑑登録証明書と委任状3項目。**この4キーの定義はここ1箇所だけ**にする。
- * 表示・必須・保存・非表示時の既定値適用が、すべてこの集合と
- * shouldShowSealAndProxyDocuments を参照する。
+ * **項目を増やすときはこの集合だけを直すこと。** 表示・必須・保存・
+ * 非表示時の既定値適用は、すべてこの集合と shouldShowNonFitHiddenDocuments を
+ * 参照している。isCustomerInfoFormFieldVisible にも key ごとの分岐は書かない
+ * （switch の手前でこの集合をまとめて見る）。
+ *
+ * 項目ごとに条件を書き分けると、足すたびに直す箇所が増え、
+ * どこか1つ漏れた時点で「画面に出ていない値が保存される」事故に戻る。
  */
-export const SEAL_AND_PROXY_DOCUMENT_KEYS: ReadonlySet<string> = new Set([
+export const NON_FIT_HIDDEN_DOCUMENT_KEYS: ReadonlySet<string> = new Set([
+  // 印鑑登録証明書
   "sealRegistrationCertificate",
+  // 委任状3項目
   "powerOfAttorneyStorage",
   "powerOfAttorneyChangeCert",
   "powerOfAttorneyIdPassword",
+  // 同意書3項目
+  "equipmentCertConsent",
+  "operatingCostReportConsent",
+  "freeUseGenerationConsent",
 ]);
 
 /**
- * 印鑑登録証明書・委任状(3項目)を表示するか（売電方式の観点のみ）。
+ * 条件W：NON_FIT_HIDDEN_DOCUMENT_KEYS の書類を表示するか（売電方式の観点のみ）。
  *
  * **表示・必須・保存の3つを必ずこの1関数から導くこと。**
  * 表示条件と保存条件を別々に書くと、書類16項目で起きたのと同じ
@@ -229,7 +239,7 @@ export const SEAL_AND_PROXY_DOCUMENT_KEYS: ReadonlySet<string> = new Set([
  * 比較は trim のみで NFKC 正規化はしない（設置種別・支払方法など
  * 他の選択肢の比較と同じ作法。NFKC を掛けているのは室内現調ステータスだけ）。
  */
-export function shouldShowSealAndProxyDocuments(
+export function shouldShowNonFitHiddenDocuments(
   values: CustomerInfoFormValues,
 ): boolean {
   return (values.fitType ?? "").trim() !== FIT_TYPE_NON_FIT;

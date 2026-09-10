@@ -13,8 +13,8 @@ import {
   introductionRequiresBuilderName,
   introductionRequiresReferralFee,
   preApplicationRequiresDocuments,
-  SEAL_AND_PROXY_DOCUMENT_KEYS,
-  shouldShowSealAndProxyDocuments,
+  NON_FIT_HIDDEN_DOCUMENT_KEYS,
+  shouldShowNonFitHiddenDocuments,
   shouldShowWiringMethod,
   subsidyIncludesCity,
   subsidyIncludesOther,
@@ -210,6 +210,24 @@ export function isCustomerInfoFormFieldVisible(
   const preApplication = norm(values.preApplication);
   const introduction = norm(values.introduction);
 
+  /**
+   * 条件W：売電方式が「非FIT」のとき隠す書類。
+   *
+   * **key ごとの分岐は書かない。** 対象の定義は
+   * NON_FIT_HIDDEN_DOCUMENT_KEYS（options.ts）1箇所だけにして、
+   * 項目を足すときはそこだけを直す。
+   *
+   * switch の**手前**で見るので、下の設置種別による条件（条件T／条件U）は
+   * 一切変えずに「かつ 非FITでない」を足したのと同じ意味になる。
+   * 条件が元から無い項目（印鑑登録証明書）は、そのまま条件W だけで決まる。
+   */
+  if (
+    NON_FIT_HIDDEN_DOCUMENT_KEYS.has(key) &&
+    !shouldShowNonFitHiddenDocuments(values)
+  ) {
+    return false;
+  }
+
   switch (key) {
     case "referralFee":
       return introductionRequiresReferralFee(introduction);
@@ -272,29 +290,16 @@ export function isCustomerInfoFormFieldVisible(
     case "indoorSurveyScheduledDate":
       return isIndoorSurveyStatusNotDone(indoorSurveyStatus);
     case "feedInBankAccountForm":
+    case "powerOfAttorneyStorage":
     case "equipmentCertConsent":
     case "operatingCostReportConsent":
     case "freeUseGenerationConsent":
       return INSTALLATION_TYPES_WITH_SOLAR_PANEL.has(installationType);
-    /**
-     * 委任状(創蓄)。設置種別の条件（条件T）はそのままに、
-     * 「かつ 売電方式が非FITでない」を足す
-     */
-    case "powerOfAttorneyStorage":
-      return (
-        INSTALLATION_TYPES_WITH_SOLAR_PANEL.has(installationType) &&
-        shouldShowSealAndProxyDocuments(values)
-      );
-    /** 委任状(変更認定用)・(ID・パスワード開示用)。条件U に同じ AND を足す */
     case "powerOfAttorneyChangeCert":
     case "powerOfAttorneyIdPassword":
-      return (
-        INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY.has(installationType) &&
-        shouldShowSealAndProxyDocuments(values)
+      return INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY.has(
+        installationType,
       );
-    /** 印鑑登録証明書。設置種別の条件は元から無く、売電方式だけで決まる */
-    case "sealRegistrationCertificate":
-      return shouldShowSealAndProxyDocuments(values);
     case "subsidyPreApplicationDocs":
       return preApplicationRequiresDocuments(preApplication);
     case "apBranch":
@@ -345,7 +350,7 @@ function shouldPreserveHiddenFieldOnPut(
 ): boolean {
   if (POCKET_PRESERVE_WHEN_HIDDEN_KEYS.has(fieldKey)) return true;
   /**
-   * 売電方式が「非FIT」で消えた印鑑登録証明書・委任状は、@pocket を一切触らない。
+   * 条件W（非FIT）で消えた書類は、@pocket を一切触らない。
    *
    * 既定の書類の動きでは、値が空・"-"・"不要" のときに hiddenValue（＝「不要」）を
    * 書き込む。FIT で登録した顧客をあとから非FIT に変えたときに、@pocket に
@@ -355,8 +360,8 @@ function shouldPreserveHiddenFieldOnPut(
    * 非FIT で消えた場合だけ、ここで payload から落とす。
    */
   if (
-    SEAL_AND_PROXY_DOCUMENT_KEYS.has(fieldKey) &&
-    !shouldShowSealAndProxyDocuments(values)
+    NON_FIT_HIDDEN_DOCUMENT_KEYS.has(fieldKey) &&
+    !shouldShowNonFitHiddenDocuments(values)
   ) {
     return true;
   }
@@ -475,11 +480,11 @@ export function applyCustomerInfoHiddenDefaultsToValues(
     }
     // 非表示のあいだ値を残す項目は "-" で潰さない（保存でも送らない）
     if (POCKET_PRESERVE_WHEN_HIDDEN_KEYS.has(def.key)) continue;
-    // 非FIT で消えた印鑑登録証明書・委任状も「不要」で潰さない。
+    // 条件W（非FIT）で消えた書類も「不要」で潰さない。
     // 画面の値をそのまま残すことで、FIT に戻したとき元の回収状況が見える
     if (
-      SEAL_AND_PROXY_DOCUMENT_KEYS.has(def.key) &&
-      !shouldShowSealAndProxyDocuments(next)
+      NON_FIT_HIDDEN_DOCUMENT_KEYS.has(def.key) &&
+      !shouldShowNonFitHiddenDocuments(next)
     ) {
       continue;
     }
