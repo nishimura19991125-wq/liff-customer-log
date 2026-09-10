@@ -13,6 +13,8 @@ import {
   introductionRequiresBuilderName,
   introductionRequiresReferralFee,
   preApplicationRequiresDocuments,
+  SEAL_AND_PROXY_DOCUMENT_KEYS,
+  shouldShowSealAndProxyDocuments,
   shouldShowWiringMethod,
   subsidyIncludesCity,
   subsidyIncludesOther,
@@ -270,16 +272,29 @@ export function isCustomerInfoFormFieldVisible(
     case "indoorSurveyScheduledDate":
       return isIndoorSurveyStatusNotDone(indoorSurveyStatus);
     case "feedInBankAccountForm":
-    case "powerOfAttorneyStorage":
     case "equipmentCertConsent":
     case "operatingCostReportConsent":
     case "freeUseGenerationConsent":
       return INSTALLATION_TYPES_WITH_SOLAR_PANEL.has(installationType);
+    /**
+     * 委任状(創蓄)。設置種別の条件（条件T）はそのままに、
+     * 「かつ 売電方式が非FITでない」を足す
+     */
+    case "powerOfAttorneyStorage":
+      return (
+        INSTALLATION_TYPES_WITH_SOLAR_PANEL.has(installationType) &&
+        shouldShowSealAndProxyDocuments(values)
+      );
+    /** 委任状(変更認定用)・(ID・パスワード開示用)。条件U に同じ AND を足す */
     case "powerOfAttorneyChangeCert":
     case "powerOfAttorneyIdPassword":
-      return INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY.has(
-        installationType,
+      return (
+        INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY.has(installationType) &&
+        shouldShowSealAndProxyDocuments(values)
       );
+    /** 印鑑登録証明書。設置種別の条件は元から無く、売電方式だけで決まる */
+    case "sealRegistrationCertificate":
+      return shouldShowSealAndProxyDocuments(values);
     case "subsidyPreApplicationDocs":
       return preApplicationRequiresDocuments(preApplication);
     case "apBranch":
@@ -326,8 +341,25 @@ function shouldPreserveHiddenFieldOnPut(
   raw: string,
   hiddenFallback: string,
   hiddenPut: string,
+  values: CustomerInfoFormValues,
 ): boolean {
   if (POCKET_PRESERVE_WHEN_HIDDEN_KEYS.has(fieldKey)) return true;
+  /**
+   * 売電方式が「非FIT」で消えた印鑑登録証明書・委任状は、@pocket を一切触らない。
+   *
+   * 既定の書類の動きでは、値が空・"-"・"不要" のときに hiddenValue（＝「不要」）を
+   * 書き込む。FIT で登録した顧客をあとから非FIT に変えたときに、@pocket に
+   * 入っている回収状況を上書きしてしまい、FIT に戻しても復元できない。
+   *
+   * 設置種別（条件T／条件U）で消えたときは従来どおり「不要」を書く。
+   * 非FIT で消えた場合だけ、ここで payload から落とす。
+   */
+  if (
+    SEAL_AND_PROXY_DOCUMENT_KEYS.has(fieldKey) &&
+    !shouldShowSealAndProxyDocuments(values)
+  ) {
+    return true;
+  }
   // 数量・金額・型番。panelCapacityKw の個別扱いはこの分岐に吸収した
   if (
     POCKET_DASH_WHEN_EMPTY_KEYS.has(fieldKey) ||
@@ -390,6 +422,7 @@ export function buildCustomerInfoFormPayload(
           raw,
           hiddenFallback,
           hiddenPut,
+          values,
         )
       ) {
         continue;
@@ -442,6 +475,14 @@ export function applyCustomerInfoHiddenDefaultsToValues(
     }
     // 非表示のあいだ値を残す項目は "-" で潰さない（保存でも送らない）
     if (POCKET_PRESERVE_WHEN_HIDDEN_KEYS.has(def.key)) continue;
+    // 非FIT で消えた印鑑登録証明書・委任状も「不要」で潰さない。
+    // 画面の値をそのまま残すことで、FIT に戻したとき元の回収状況が見える
+    if (
+      SEAL_AND_PROXY_DOCUMENT_KEYS.has(def.key) &&
+      !shouldShowSealAndProxyDocuments(next)
+    ) {
+      continue;
+    }
     if (!isCustomerInfoFormFieldVisible(def.key, next)) {
       if (
         POCKET_ZERO_WHEN_HIDDEN_KEYS.has(def.key) &&

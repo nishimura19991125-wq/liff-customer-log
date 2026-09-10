@@ -1,3 +1,5 @@
+import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
+
 export const PAYMENT_METHOD_OPTIONS = [
   "ソーラーローン",
   "頭金+ソーラーローン",
@@ -6,7 +8,18 @@ export const PAYMENT_METHOD_OPTIONS = [
   "提携先より振込",
 ] as const;
 
+/**
+ * 売電方式（@pocket「FIT or 非FIT」列）。
+ * **@pocket の実物と1文字も変えないこと。** 値がズレると、画面のリストが
+ * 未選択に見えるのに値だけ入る状態になる（書類16項目と同じ事故）。
+ */
 export const FIT_TYPE_OPTIONS = ["FIT", "非FIT"] as const;
+
+/**
+ * 印鑑登録証明書・委任状を非表示にする売電方式。
+ * FIT_TYPE_OPTIONS の実物と同じ文字列を指すこと。
+ */
+export const FIT_TYPE_NON_FIT = "非FIT" as const;
 
 export const SUBSIDY_OR_PREAPPLICATION_OPTIONS = [
   "無",
@@ -186,6 +199,40 @@ export const INSTALLATION_TYPES_WITH_WIRING_METHOD = new Set<string>([
  */
 export function shouldShowWiringMethod(installationType: string): boolean {
   return INSTALLATION_TYPES_WITH_WIRING_METHOD.has(installationType.trim());
+}
+
+/**
+ * 売電方式が「非FIT」のとき非表示にする書類。
+ *
+ * 印鑑登録証明書と委任状3項目。**この4キーの定義はここ1箇所だけ**にする。
+ * 表示・必須・保存・非表示時の既定値適用が、すべてこの集合と
+ * shouldShowSealAndProxyDocuments を参照する。
+ */
+export const SEAL_AND_PROXY_DOCUMENT_KEYS: ReadonlySet<string> = new Set([
+  "sealRegistrationCertificate",
+  "powerOfAttorneyStorage",
+  "powerOfAttorneyChangeCert",
+  "powerOfAttorneyIdPassword",
+]);
+
+/**
+ * 印鑑登録証明書・委任状(3項目)を表示するか（売電方式の観点のみ）。
+ *
+ * **表示・必須・保存の3つを必ずこの1関数から導くこと。**
+ * 表示条件と保存条件を別々に書くと、書類16項目で起きたのと同じ
+ * 「画面に出ていない値が保存時に書き込まれる」事故になる。
+ *
+ * 設置種別による既存の条件（条件T／条件U）はここでは見ない。
+ * 呼び出し側（isCustomerInfoFormFieldVisible）で AND を取る。
+ *
+ * 未選択（空）のときは表示する。「非FIT」を選んだときだけ隠す。
+ * 比較は trim のみで NFKC 正規化はしない（設置種別・支払方法など
+ * 他の選択肢の比較と同じ作法。NFKC を掛けているのは室内現調ステータスだけ）。
+ */
+export function shouldShowSealAndProxyDocuments(
+  values: CustomerInfoFormValues,
+): boolean {
+  return (values.fitType ?? "").trim() !== FIT_TYPE_NON_FIT;
 }
 
 /** 付近見取り図 */

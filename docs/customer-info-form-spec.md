@@ -186,14 +186,14 @@
 | groupCreditLifeInsurance | 団体信用生命保険 | 未回収 / 回収済み / 不要 | 必須 | 条件P |
 | feedInBankAccountForm | 売電先振込口座指定依頼書 | 未回収 / 回収済み / 不要 | 必須 | 条件T |
 | vicinitySketchMap | 付近見取り図 | **未作成 / 作成済み / 不要** | 必須 | |
-| powerOfAttorneyStorage | 委任状(創蓄) | 未回収 / 回収済み / 不要 | 必須 | 条件T |
-| powerOfAttorneyChangeCert | 委任状(変更認定用) | 未回収 / 回収済み / 不要 | 必須 | 条件U |
-| powerOfAttorneyIdPassword | 委任状(ID・パスワード開示用) | 未回収 / 回収済み / 不要 | 必須 | 条件U |
+| powerOfAttorneyStorage | 委任状(創蓄) | 未回収 / 回収済み / 不要 | 必須 | 条件T **かつ** 条件W |
+| powerOfAttorneyChangeCert | 委任状(変更認定用) | 未回収 / 回収済み / 不要 | 必須 | 条件U **かつ** 条件W |
+| powerOfAttorneyIdPassword | 委任状(ID・パスワード開示用) | 未回収 / 回収済み / 不要 | 必須 | 条件U **かつ** 条件W |
 | equipmentCertConsent | 設備認定に関する同意書 | 未回収 / 回収済み / 不要 | 必須 | 条件T |
 | operatingCostReportConsent | 運転費用年報提出に関する同意書 | 未回収 / 回収済み / 不要 | 必須 | 条件T |
 | personalInfoConsent | 個人情報の取扱に関する同意書 | 未回収 / 回収済み / 不要 | 必須 | |
 | freeUseGenerationConsent | 発電設備の無償使用に関する同意書 | 未回収 / 回収済み / 不要 | 必須 | 条件T |
-| sealRegistrationCertificate | 印鑑登録証明書 | 未回収 / 回収済み / 不要 | 必須 | |
+| sealRegistrationCertificate | 印鑑登録証明書 | 未回収 / 回収済み / 不要 | 必須 | 条件W |
 | registryBook | 登記簿 | **未確認 / 確認済み / 不要** | 必須 | |
 | subsidyPreApplicationDocs | 補助金事前申請書類 | 未回収 / 回収済み / 不要 | 必須 | 条件V |
 
@@ -284,6 +284,13 @@
 
     条件V  key == "subsidyPreApplicationDocs"
            → preApplication が空でも "無" でもない
+
+    条件W  key ∈ {sealRegistrationCertificate, powerOfAttorneyStorage,
+                  powerOfAttorneyChangeCert, powerOfAttorneyIdPassword}
+           → trim(fitType) != "非FIT"
+           # 未選択（空）は表示する。「非FIT」を選んだときだけ隠す。
+           # 設置種別の条件T／条件U は変えず、AND を取る。
+           # 印鑑登録証明書は元から設置種別の条件が無いので、条件W だけで決まる
 
     常に非表示  key ∈ {apBranch, clBranch, batteryModel1, batteryModel2}
            → false（保存時にサーバが値を作る）
@@ -442,7 +449,8 @@ for 各項目 in フォーム定義:
 | 数量・金額 | panelCount1, panelCount2, cashAmount, loanAmount, referralFee, extraPartsAmount | 整数（カンマなし） | `"0"` | `"0"`（4-5 の保護が優先） |
 | 容量 | panelCapacityKw | 小数（最大3桁） | `"0"` | `"0"`（同上） |
 | 型番・容量 | panelModel1, panelModel2, powerConModel1, powerConModel2, batteryCapacity1, batteryCapacity2, batteryModel1, batteryModel2 | 文字列 | `"-"` | `"-"`（同上） |
-| 書類16項目 | （1-8 参照） | 選んだ値 | 空文字 | `"不要"` |
+| 書類16項目 | （1-8 参照） | 選んだ値 | 空文字 | `"不要"`（4-5 の保護が優先） |
+| 印鑑登録証明書・委任状3項目 | 条件W の4 key | 選んだ値 | 空文字 | **条件W で消えたときは書かない**（4-5） |
 | 配線方式 | wiringMethod | 選んだ値 | 空文字 | **書かない**（4-5） |
 | それ以外 | | trim した文字列 | 空文字 | `"-"` |
 
@@ -451,9 +459,13 @@ for 各項目 in フォーム定義:
 **原則：非表示になった項目は payload から落とし、@pocket の値をそのまま残す。**
 
 ```
-関数 shouldPreserveHidden(key, raw, hiddenFallback, hiddenPut) -> boolean:
+関数 shouldPreserveHidden(key, raw, hiddenFallback, hiddenPut, values) -> boolean:
     # ① 常に残す項目（選択式で "-" が選択肢に無いもの）
     if key ∈ 常時保護リスト:                          return true   # 例: wiringMethod
+
+    # ①' 条件W（非FIT）で消えた印鑑登録証明書・委任状は @pocket を触らない。
+    #     設置種別（条件T／U）で消えたときは従来どおり "不要" を書く
+    if key ∈ 条件W の4 key かつ not 条件W:            return true
 
     # ② 数量・金額・型番は、値の有無にかかわらず残す
     if key ∈ {型番系, 数量金額系}:                     return true
@@ -476,6 +488,13 @@ for 各項目 in フォーム定義:
 未選択に見えるのに値だけ入っている状態になる。新しく選択式の項目を足すときは、
 ①の常時保護リストに入れるか必ず確認する。
 
+①' を足した理由：**FIT で登録した顧客をあとから非FIT に変えたとき、@pocket に
+入っている印鑑登録証明書・委任状の回収状況を上書きしないため。** 書類の既定の
+動きでは、値が空・`"-"`・`"不要"` のときに `"不要"` を書き込む。一度書くと
+FIT に戻しても復元できない（4-6 の巻き戻しは編集セッション中しか効かない）。
+非FIT のあいだは 4-6 の hiddenValue 適用も対象4 key を素通りさせる。
+画面上の値もそのまま残るので、FIT に戻せば元の回収状況が見える。
+
 ### 4-6. 表示条件が戻ったときの巻き戻し（書類16項目）
 
 非表示のあいだに書かれた既定値「不要」は、条件が戻って再表示されたとき、
@@ -485,6 +504,10 @@ for 各項目 in フォーム定義:
 - 画面を開き直すと追跡は消えるので、**すでに保存済みの「不要」は対象外**
 - 書類の表示条件は **支払方法・設置種別・事前申請有無の3つだけ**で決まる。
   それ以外の項目を変更したときは書類の値に触れないこと
+- **売電方式（条件W）はこの巻き戻しの対象外。** 非FIT のあいだは hiddenValue を
+  そもそも書かない（4-5 ①'）ので、戻すべき値が発生しない。
+  したがって fitType を「表示条件に効くキー」の集合に足してはいけない。
+  足すと非FIT に変えた瞬間に `"不要"` が書かれ、守りたかった値が消える
 
 ### 4-7. 取込キー（自動採番列）の規約
 
