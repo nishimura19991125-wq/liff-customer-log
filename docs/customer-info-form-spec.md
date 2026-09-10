@@ -76,6 +76,7 @@
 | apCompany | AP所属会社 | text | | 必須 | 常に非表示 | 裏側（AP担当者の所属会社を名簿から引く） |
 | clCompany | CL所属会社 | text | | 必須 | 常に非表示 | 裏側（同上） |
 | introduction | 導入経緯 | select | ダイレクト / (DC)工務店OBリスト / ソーラーパートナーズ / タイナビ / 工務店トスアップ / トラーチ倶楽部 / 卸案件 / お客様紹介 / HP / SNS / トレンディ / 大和ハウス / 産業用 | 必須 | | 通常 |
+| referralSource | 紹介元 | text | | **任意** | 条件A | 通常 |
 | referralFee | 紹介手数料 | comma-integer | | 必須 | 条件A | 通常 |
 | builderOrTorachiName | 工務店名またはトラーチ倶楽部 | text | | 必須 | 条件B | 通常 |
 | firstContractDate | 初回契約日 | date | | 必須 | | 通常 |
@@ -222,8 +223,16 @@
     installationType = trim(values.installationType)
     ...
 
-    条件A  key == "referralFee"
-           → introduction ∈ {(DC)工務店OBリスト, ソーラーパートナーズ, タイナビ, 工務店トスアップ}
+    条件A  key ∈ REFERRAL_SOURCE_FIELD_KEYS {referralSource, referralFee}
+           → introduction ∈ {(DC)工務店OBリスト, ソーラーパートナーズ, タイナビ,
+                             工務店トスアップ, お客様紹介, お取引先様からの紹介}
+           # 未選択（空）は表示しない。上記6値のときだけ表示する。
+           #
+           # ⚠ **key ごとの分岐を書かないこと。** 条件W と同じ形で、対象は
+           #   REFERRAL_SOURCE_FIELD_KEYS 1箇所だけに持ち、switch の手前で
+           #   まとめて判定する
+           # ⚠ 「お取引先様からの紹介」は導入経緯の選択肢にまだ無い。
+           #   @pocket 側に足されるまで、この値で表示されることはない
 
     条件B  key == "builderOrTorachiName"
            → introduction ∈ {(DC)工務店OBリスト, 工務店トスアップ, トラーチ倶楽部, 卸案件, お客様紹介}
@@ -455,6 +464,7 @@ for 各項目 in フォーム定義:
 | 郵便番号 | postalCode | `000-0000` | `"-"` | `"-"` |
 | 電話番号 | phone | ハイフン区切り | `"-"` | `"-"` |
 | 数量・金額 | panelCount1, panelCount2, cashAmount, loanAmount, referralFee, extraPartsAmount | 整数（カンマなし） | `"0"` | `"0"`（4-5 の保護が優先） |
+| 条件A の対象 | referralSource, referralFee | 上の行に同じ／trim した文字列 | 空文字 | **条件A で消えたときは書かない**（4-5） |
 | 容量 | panelCapacityKw | 小数（最大3桁） | `"0"` | `"0"`（同上） |
 | 型番・容量 | panelModel1, panelModel2, powerConModel1, powerConModel2, batteryCapacity1, batteryCapacity2, batteryModel1, batteryModel2 | 文字列 | `"-"` | `"-"`（同上） |
 | 書類16項目 | （1-8 参照） | 選んだ値 | 空文字 | `"不要"`（4-5 の保護が優先） |
@@ -474,6 +484,10 @@ for 各項目 in フォーム定義:
     # ①' 条件W（非FIT）で消えた書類は @pocket を触らない。
     #     設置種別（条件T／U）で消えたときは従来どおり "不要" を書く
     if key ∈ 条件W の key 集合 かつ not 条件W:        return true
+
+    # ①'' 条件A（導入経緯）で消えた紹介元・紹介手数料も @pocket を触らない。
+    #      紹介元は text なので、既定のままだと空・"-" のとき "-" を書く
+    if key ∈ 条件A の key 集合 かつ not 条件A:        return true
 
     # ② 数量・金額・型番は、値の有無にかかわらず残す
     if key ∈ {型番系, 数量金額系}:                     return true

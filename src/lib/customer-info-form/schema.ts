@@ -137,6 +137,16 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     type: "select",
     options: [...INTRODUCTION_ROUTE_OPTIONS],
   },
+  /**
+   * 紹介元。@pocket の列見出しも「紹介元」なので caption で解決できる。
+   * 自由入力・任意。表示条件は紹介手数料と同じ条件A（1箇所で判定）。
+   */
+  {
+    key: "referralSource",
+    caption: "紹介元",
+    type: "text",
+    required: false,
+  },
   {
     key: "referralFee",
     caption: "紹介手数料",

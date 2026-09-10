@@ -87,12 +87,35 @@ export const INTRODUCTION_ROUTE_OPTIONS = [
   "産業用",
 ] as const;
 
-/** 紹介手数料を表示・必須にする導入経緯 */
-export const INTRODUCTION_ROUTES_REQUIRING_REFERRAL_FEE = new Set<string>([
+/**
+ * 紹介元・紹介手数料を表示する導入経緯（条件A）。
+ *
+ * **@pocket の実物と1文字も変えないこと。** 値がズレると、その導入経緯を
+ * 選んだときに欄が出ない（気づきにくい形で入力が落ちる）。
+ *
+ * ⚠ 「お取引先様からの紹介」は INTRODUCTION_ROUTE_OPTIONS に無いため、
+ *   現状この値を画面から選ぶことはできない。@pocket の導入経緯に
+ *   その選択肢が足された時点で有効になるよう、条件側には入れてある。
+ */
+export const INTRODUCTION_ROUTES_WITH_REFERRAL_SOURCE = new Set<string>([
   "(DC)工務店OBリスト",
   "ソーラーパートナーズ",
   "タイナビ",
   "工務店トスアップ",
+  "お客様紹介",
+  "お取引先様からの紹介",
+]);
+
+/**
+ * 条件A の対象キー（紹介元・紹介手数料）。
+ *
+ * **項目を増やすときはこの集合だけを直すこと。** 表示・必須・保存・
+ * 非表示時の既定値適用が、すべてこの集合と shouldShowReferralSourceFields を
+ * 参照する。条件W（NON_FIT_HIDDEN_DOCUMENT_KEYS）と同じ構造。
+ */
+export const REFERRAL_SOURCE_FIELD_KEYS: ReadonlySet<string> = new Set([
+  "referralSource",
+  "referralFee",
 ]);
 
 /** 工務店名またはトラーチ倶楽部を表示・必須にする導入経緯 */
@@ -104,8 +127,23 @@ export const INTRODUCTION_ROUTES_REQUIRING_BUILDER_NAME = new Set<string>([
   "お客様紹介",
 ]);
 
-export function introductionRequiresReferralFee(introduction: string): boolean {
-  return INTRODUCTION_ROUTES_REQUIRING_REFERRAL_FEE.has(introduction.trim());
+/**
+ * 条件A：紹介元・紹介手数料を表示するか。
+ *
+ * **表示・必須・保存の3つを必ずこの1関数から導くこと。**
+ * 項目ごとに条件を書き分けると、足すたびに直す箇所が増え、
+ * どこか1つ漏れた時点で「画面に出ていない値が保存される」事故になる。
+ *
+ * 未選択（空）のときは表示しない。上記6つを選んだときだけ表示する。
+ * 比較は trim のみで NFKC 正規化はしない（設置種別・支払方法・売電方式など
+ * 他の選択肢の比較と同じ作法。NFKC を掛けているのは室内現調ステータスだけ）。
+ */
+export function shouldShowReferralSourceFields(
+  values: CustomerInfoFormValues,
+): boolean {
+  return INTRODUCTION_ROUTES_WITH_REFERRAL_SOURCE.has(
+    (values.introduction ?? "").trim(),
+  );
 }
 
 export function introductionRequiresBuilderName(introduction: string): boolean {

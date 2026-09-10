@@ -11,7 +11,8 @@ import {
   PAYMENT_METHODS_WITH_CASH,
   PAYMENT_METHODS_WITH_LOAN,
   introductionRequiresBuilderName,
-  introductionRequiresReferralFee,
+  REFERRAL_SOURCE_FIELD_KEYS,
+  shouldShowReferralSourceFields,
   preApplicationRequiresDocuments,
   NON_FIT_HIDDEN_DOCUMENT_KEYS,
   shouldShowNonFitHiddenDocuments,
@@ -228,9 +229,18 @@ export function isCustomerInfoFormFieldVisible(
     return false;
   }
 
+  /**
+   * 条件A：導入経緯で出し分ける紹介元・紹介手数料。
+   *
+   * 条件W と同じ形。key ごとの分岐は書かず、対象は
+   * REFERRAL_SOURCE_FIELD_KEYS（options.ts）1箇所だけで持つ。
+   * この2項目には他の条件が無いので、ここで表示・非表示が確定する。
+   */
+  if (REFERRAL_SOURCE_FIELD_KEYS.has(key)) {
+    return shouldShowReferralSourceFields(values);
+  }
+
   switch (key) {
-    case "referralFee":
-      return introductionRequiresReferralFee(introduction);
     case "builderOrTorachiName":
       return introductionRequiresBuilderName(introduction);
     case "panelCombo":
@@ -365,6 +375,20 @@ function shouldPreserveHiddenFieldOnPut(
   ) {
     return true;
   }
+  /**
+   * 条件A（導入経緯）で消えた紹介元・紹介手数料も @pocket を触らない。
+   *
+   * 紹介手数料は数量・金額として②でも保護されるが、紹介元は text なので
+   * 既定のままだと空・"-" のときに "-" を書き込む。導入経緯を別の値に
+   * 変えただけで @pocket の紹介元が消えることになるため、ここで落とす。
+   * 2項目を同じ集合で扱い、条件を書き分けない。
+   */
+  if (
+    REFERRAL_SOURCE_FIELD_KEYS.has(fieldKey) &&
+    !shouldShowReferralSourceFields(values)
+  ) {
+    return true;
+  }
   // 数量・金額・型番。panelCapacityKw の個別扱いはこの分岐に吸収した
   if (
     POCKET_DASH_WHEN_EMPTY_KEYS.has(fieldKey) ||
@@ -485,6 +509,14 @@ export function applyCustomerInfoHiddenDefaultsToValues(
     if (
       NON_FIT_HIDDEN_DOCUMENT_KEYS.has(def.key) &&
       !shouldShowNonFitHiddenDocuments(next)
+    ) {
+      continue;
+    }
+    // 条件A（導入経緯）で消えた紹介元・紹介手数料も潰さない。
+    // 画面の値をそのまま残すので、導入経緯を戻せば元の入力が見える
+    if (
+      REFERRAL_SOURCE_FIELD_KEYS.has(def.key) &&
+      !shouldShowReferralSourceFields(next)
     ) {
       continue;
     }

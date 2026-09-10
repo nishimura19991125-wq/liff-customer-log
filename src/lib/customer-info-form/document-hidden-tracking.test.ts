@@ -178,16 +178,21 @@ describe("書類と無関係な項目では書類に触れない", () => {
   });
 
   it("書類以外の非表示項目は従来どおり揃えられる", () => {
-    // 紹介ルート=工務店以外 → 紹介手数料は 0、工務店名は "-" に揃う（既存挙動）。
+    // 紹介ルート=工務店以外 → 工務店名は "-" に揃う（既存挙動）。
     // 工務店名を揃えないと shouldPreserveHiddenFieldOnPut の保護に掛かり、
-    // @pocket に古い工務店名が残り続けるため、トリガーからは外していない
+    // @pocket に古い工務店名が残り続けるため、トリガーからは外していない。
+    //
+    // 紹介手数料は条件A（紹介元と同じ判定）の対象になったので、ここでは
+    // 揃えない。以前は 0 に潰していたが、導入経緯を戻したときに画面の値が
+    // 0 のままになり、そのまま保存すると本当の手数料を上書きしていた。
+    // @pocket 側は shouldPreserveHiddenFieldOnPut が落とすので触らない
     const withBuilder = changeField(
-      { builderOrTorachiName: "テスト工務店" },
+      { builderOrTorachiName: "テスト工務店", referralFee: "50,000" },
       new Set(),
       "introduction",
       "自社",
     );
-    expect(withBuilder.values.referralFee).toBe("0");
+    expect(withBuilder.values.referralFee).toBe("50,000");
     expect(withBuilder.values.builderOrTorachiName).toBe("-");
   });
 
