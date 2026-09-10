@@ -75,7 +75,7 @@
 | clBranch | CL所属支店 | text | | 必須 | 常に非表示 | 裏側（同上） |
 | apCompany | AP所属会社 | text | | 必須 | 常に非表示 | 裏側（AP担当者の所属会社を名簿から引く） |
 | clCompany | CL所属会社 | text | | 必須 | 常に非表示 | 裏側（同上） |
-| introduction | 導入経緯 | select | ダイレクト / (DC)工務店OBリスト / ソーラーパートナーズ / タイナビ / 工務店トスアップ / トラーチ倶楽部 / 卸案件 / お客様紹介 / HP / SNS / トレンディ / 大和ハウス / 産業用 | 必須 | | 通常 |
+| introduction | 導入経緯 | select | ダイレクト / (DC)工務店OBリスト / ソーラーパートナーズ / タイナビ / 工務店トスアップ / トラーチ倶楽部 / 卸案件 / お客様紹介 / HP / SNS / トレンディ / 大和ハウス / 産業用 / お取引先様からの紹介 | 必須 | | 通常 |
 | referralSource | 紹介元 | text | | **任意** | 条件A | 通常 |
 | referralFee | 紹介手数料 | comma-integer | | 必須 | 条件A | 通常 |
 | builderOrTorachiName | 工務店名またはトラーチ倶楽部 | text | | 必須 | 条件B | 通常 |
@@ -231,8 +231,7 @@
            # ⚠ **key ごとの分岐を書かないこと。** 条件W と同じ形で、対象は
            #   REFERRAL_SOURCE_FIELD_KEYS 1箇所だけに持ち、switch の手前で
            #   まとめて判定する
-           # ⚠ 「お取引先様からの紹介」は導入経緯の選択肢にまだ無い。
-           #   @pocket 側に足されるまで、この値で表示されることはない
+           # 6値とも導入経緯の選択肢にある（画面から選べる）
 
     条件B  key == "builderOrTorachiName"
            → introduction ∈ {(DC)工務店OBリスト, 工務店トスアップ, トラーチ倶楽部, 卸案件, お客様紹介}

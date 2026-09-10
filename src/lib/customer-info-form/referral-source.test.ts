@@ -112,23 +112,13 @@ describe("スキーマ上の定義と並び", () => {
 describe("導入経緯の選択肢に条件A の6値があるか", () => {
   /**
    * 1つでも欠けていると、その導入経緯を選んだときに欄が出ない。
-   * 現状「お取引先様からの紹介」だけが選択肢に無い（@pocket 側の追加待ち）。
+   * 欠けても表示条件側は素通りするので、ここで固定して気づけるようにする。
    */
-  it("★ 5値は選択肢にあり、「お取引先様からの紹介」だけ無い", () => {
-    const present = SHOWN_ROUTES.filter((v) =>
-      (INTRODUCTION_ROUTE_OPTIONS as readonly string[]).includes(v),
-    );
+  it("★ 6値すべてが選択肢にある（欠けている値が無い）", () => {
     const missing = SHOWN_ROUTES.filter(
       (v) => !(INTRODUCTION_ROUTE_OPTIONS as readonly string[]).includes(v),
     );
-    expect(present).toEqual([
-      "(DC)工務店OBリスト",
-      "ソーラーパートナーズ",
-      "タイナビ",
-      "工務店トスアップ",
-      "お客様紹介",
-    ]);
-    expect(missing).toEqual(["お取引先様からの紹介"]);
+    expect(missing).toEqual([]);
   });
 
   it("条件A の集合はコード上6値ちょうど", () => {
@@ -332,9 +322,9 @@ describe("他の項目に影響していないこと", () => {
     }
   });
 
-  it("★ 導入経緯そのものは常に表示・選択肢13件のまま", () => {
+  it("★ 導入経緯そのものは常に表示・選択肢14件", () => {
     expect(isCustomerInfoFormFieldVisible("introduction", {})).toBe(true);
-    expect(INTRODUCTION_ROUTE_OPTIONS).toHaveLength(13);
+    expect(INTRODUCTION_ROUTE_OPTIONS).toHaveLength(14);
     expect(CUSTOMER_INFO_FORM_FIELD_MAP.get("introduction")?.options).toEqual([
       ...INTRODUCTION_ROUTE_OPTIONS,
     ]);

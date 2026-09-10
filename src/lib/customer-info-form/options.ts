@@ -70,7 +70,16 @@ export function customerStatusWithDefault(
   return t || CUSTOMER_STATUS_DEFAULT;
 }
 
-/** 導入経緯（@pocket リスト式） */
+/**
+ * 導入経緯（@pocket リスト式）。
+ *
+ * **@pocket の実物と値を一致させること。** 値がズレていると、画面のリストが
+ * 未選択に見えるのに値だけが入る状態になる（書類16項目と同じ事故）。
+ *
+ * ⚠ 並び順は @pocket の実物と突き合わせていない。「お取引先様からの紹介」は
+ *   位置が判断できなかったため末尾に足してある。@pocket 側の並びが分かった
+ *   時点でそろえてよい（並びは表示順を決めるだけで、判定には影響しない）。
+ */
 export const INTRODUCTION_ROUTE_OPTIONS = [
   "ダイレクト",
   "(DC)工務店OBリスト",
@@ -85,6 +94,7 @@ export const INTRODUCTION_ROUTE_OPTIONS = [
   "トレンディ",
   "大和ハウス",
   "産業用",
+  "お取引先様からの紹介",
 ] as const;
 
 /**
@@ -93,9 +103,7 @@ export const INTRODUCTION_ROUTE_OPTIONS = [
  * **@pocket の実物と1文字も変えないこと。** 値がズレると、その導入経緯を
  * 選んだときに欄が出ない（気づきにくい形で入力が落ちる）。
  *
- * ⚠ 「お取引先様からの紹介」は INTRODUCTION_ROUTE_OPTIONS に無いため、
- *   現状この値を画面から選ぶことはできない。@pocket の導入経緯に
- *   その選択肢が足された時点で有効になるよう、条件側には入れてある。
+ * 6値とも INTRODUCTION_ROUTE_OPTIONS に存在する（画面から選べる）。
  */
 export const INTRODUCTION_ROUTES_WITH_REFERRAL_SOURCE = new Set<string>([
   "(DC)工務店OBリスト",
