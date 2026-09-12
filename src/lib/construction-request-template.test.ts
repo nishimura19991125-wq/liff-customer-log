@@ -16,6 +16,7 @@ import {
   CONSTRUCTION_REQUEST_STATUS_OPTIONS,
 } from "@/lib/customer-info-form/options";
 import { CUSTOMER_INFO_FORM_FIELD_MAP } from "@/lib/customer-info-form/schema";
+import { BATTERY_ONLY_INSTALLATION_TYPES } from "@/lib/customer-info-form/options";
 import { INSTALLATION_TYPE_OPTIONS } from "@/lib/customer-info-form/schema";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 
@@ -52,9 +53,9 @@ function lineStartingWith(text: string, prefix: string): string | undefined {
 }
 
 describe("設置種別 → 工事種別", () => {
-  it("4種類すべてに対応がある（網羅漏れなし）", () => {
+  it("5種類すべてに対応がある（網羅漏れなし）", () => {
     expect(installationTypesWithoutWorkType()).toEqual([]);
-    expect(INSTALLATION_TYPE_OPTIONS).toHaveLength(4);
+    expect(INSTALLATION_TYPE_OPTIONS).toHaveLength(5);
   });
 
   it("それぞれ正しい工事種別になる", () => {
@@ -64,6 +65,12 @@ describe("設置種別 → 工事種別", () => {
     expect(constructionWorkTypeLabel("パワコン取替のみ")).toBe(
       "パワコン取替工事",
     );
+  });
+
+  it("★ 蓄電池だけの設置種別はどれも「蓄単工事」", () => {
+    for (const t of BATTERY_ONLY_INSTALLATION_TYPES) {
+      expect(constructionWorkTypeLabel(t), t).toBe("蓄単工事");
+    }
   });
 
   it("未知・未選択は null（推測で埋めない）", () => {

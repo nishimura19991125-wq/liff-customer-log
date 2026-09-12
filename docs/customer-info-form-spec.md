@@ -99,7 +99,7 @@
 
 | key | 見出し | 型 | 選択肢 | 必須 | 表示条件 | 区分 |
 |---|---|---|---|---|---|---|
-| installationType | 設置種別 | select | 太陽光パネル+蓄電池 / 蓄電池のみ / 太陽光パネルのみ / パワコン取替のみ | 必須 | | 通常 |
+| installationType | 設置種別 | select | 太陽光パネル+蓄電池 / 蓄電池のみ / **蓄電池増設のみ** / 太陽光パネルのみ / パワコン取替のみ | 必須 | | 通常 |
 | wiringMethod | 配線方式 | select | 全負荷 / 特定負荷 | 必須 | 条件H | 通常 |
 | manufacturer | メーカー | select | 実行時に取引先マスタから取得 | 必須 | | 通常 |
 | panelCombo | （なし・パネルの組み合わせ） | select | 無 / 有 | 必須 | 条件C | 画面のみ |
@@ -241,8 +241,15 @@
            # 記号は詰めない。C 以降を繰り上げると、コード中のコメントや
            #   他の章が指している条件とズレる
 
+    # ⚠ 「蓄電池のみ」と「蓄電池増設のみ」は**まったく同じ扱い**。
+    #   下の条件で「蓄電池のみ, 蓄電池増設のみ」と並べている箇所は、
+    #   実装では BATTERY_ONLY_INSTALLATION_TYPES（options.ts）1箇所から
+    #   展開している。同じ扱いの値が増えたときに直すのはそこだけ。
+    #   個別に文字列を並べると、1箇所でも足し忘れた時点でその条件だけ
+    #   挙動が食い違う（battery-only-parity.test.ts が総当たりで固定）
+
     条件C  key ∈ {panelCombo, panelModel1, panelCount1, panelCapacityKw}
-           → installationType ∉ {蓄電池のみ, パワコン取替のみ}
+           → installationType ∉ {蓄電池のみ, 蓄電池増設のみ, パワコン取替のみ}
 
     条件D  key ∈ {panelModel2, panelCount2}
            → 条件C かつ panelCombo == "有"
@@ -257,7 +264,7 @@
            → 条件F かつ batteryMulti == "有"
 
     条件H  key == "wiringMethod"
-           → installationType ∈ {太陽光パネル+蓄電池, 蓄電池のみ}
+           → installationType ∈ {太陽光パネル+蓄電池, 蓄電池のみ, 蓄電池増設のみ}
 
     条件I  key == "ecoCuteModel"   → ecoCuteNew == "有"
     条件J  key == "ihModel"        → ihNew == "有"
@@ -267,7 +274,7 @@
            → NFKC 正規化して trim した indoorSurveyStatus == "未実施"
 
     条件M  key == "roofMaterial"
-           → installationType ∉ {蓄電池のみ, パワコン取替のみ}
+           → installationType ∉ {蓄電池のみ, 蓄電池増設のみ, パワコン取替のみ}
 
     条件N  key == "roofMaterialModel"
            → 条件M かつ roofMaterial ∈ {平板瓦, 洋瓦, 和瓦, その他}
@@ -293,7 +300,7 @@
            → installationType ∈ {太陽光パネル+蓄電池, 太陽光パネルのみ}
 
     条件U  key ∈ {powerOfAttorneyChangeCert, powerOfAttorneyIdPassword}
-           → installationType ∈ {蓄電池のみ, パワコン取替のみ}
+           → installationType ∈ {蓄電池のみ, 蓄電池増設のみ, パワコン取替のみ}
 
     条件V  key == "subsidyPreApplicationDocs"
            → preApplication が空でも "無" でもない
@@ -323,7 +330,7 @@
 
 ```
 関数 shouldShowWiringMethod(installationType) -> boolean:
-    return trim(installationType) ∈ {"太陽光パネル+蓄電池", "蓄電池のみ"}
+    return trim(installationType) ∈ {"太陽光パネル+蓄電池"} ∪ 蓄電池のみの集合
 ```
 
 ---

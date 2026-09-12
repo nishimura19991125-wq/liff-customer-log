@@ -3,6 +3,7 @@ import { checkboxGroupValueToPocketArray } from "@/lib/customer-info-form/checkb
 import { contractAmountForPocket } from "@/lib/customer-info-form/form-change";
 import { commaIntegerForPocket } from "@/lib/customer-info-form/numeric-comma";
 import {
+  BATTERY_ONLY_INSTALLATION_TYPES,
   DOCUMENT_RADIO_HIDDEN_VALUE,
   INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY,
   INSTALLATION_TYPES_WITH_SOLAR_PANEL,
@@ -194,8 +195,9 @@ const ROOF_MATERIAL_MODEL_VISIBLE = new Set([
   "その他",
 ]);
 
+/** 屋根材・屋根材品番を非表示にする設置種別（条件M）。蓄電池だけの値は1箇所から展開する */
 const INSTALLATION_TYPES_HIDE_ROOF = new Set<string>([
-  "蓄電池のみ",
+  ...BATTERY_ONLY_INSTALLATION_TYPES,
   "パワコン取替のみ",
 ]);
 

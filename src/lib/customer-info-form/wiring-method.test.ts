@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BATTERY_ONLY_INSTALLATION_TYPES,
   INSTALLATION_TYPES_WITH_WIRING_METHOD,
   shouldShowWiringMethod,
 } from "@/lib/customer-info-form/options";
@@ -68,18 +69,27 @@ describe("shouldShowWiringMethod", () => {
 });
 
 describe("★ 配線方式を出す設置種別が @pocket の選択肢と一致している", () => {
-  it("2つとも設置種別の選択肢に含まれる", () => {
+  it("すべて設置種別の選択肢に含まれる", () => {
     // 1文字でもズレると、条件が永久に成立せず入力欄が出ない
     for (const v of INSTALLATION_TYPES_WITH_WIRING_METHOD) {
       expect([...INSTALLATION_TYPE_OPTIONS], `設置種別「${v}」`).toContain(v);
     }
   });
 
-  it("設置種別の4種類すべてで判定が定義どおり", () => {
+  it("設置種別のすべてで判定が定義どおり", () => {
     const shown = INSTALLATION_TYPE_OPTIONS.filter((t) =>
       shouldShowWiringMethod(t),
     );
-    expect(shown).toEqual(["太陽光パネル+蓄電池", "蓄電池のみ"]);
+    expect(shown).toEqual([
+      "太陽光パネル+蓄電池",
+      ...BATTERY_ONLY_INSTALLATION_TYPES,
+    ]);
+  });
+
+  it("★ 蓄電池だけの設置種別はどれも配線方式を出す", () => {
+    for (const t of BATTERY_ONLY_INSTALLATION_TYPES) {
+      expect(shouldShowWiringMethod(t), t).toBe(true);
+    }
   });
 });
 

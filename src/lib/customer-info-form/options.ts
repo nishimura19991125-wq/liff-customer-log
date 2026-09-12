@@ -178,19 +178,43 @@ export const COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS = [
   "不要",
 ] as const;
 
+/**
+ * 太陽光を伴わない「蓄電池だけ」の設置種別（@pocket「設置種別」列）。
+ *
+ * **@pocket の実物と1文字も変えないこと。** 値がズレると、画面のリストが
+ * 未選択に見えるのに値だけ入る状態になる（書類16項目と同じ事故）。
+ *
+ * ⚠ **同じ扱いの値が増えたときは、この集合だけを直すこと。**
+ *   設置種別を見る集合・対応表はすべてここから組み立てている。
+ *   個別に文字列を並べると、1箇所でも足し忘れた時点でその条件だけ
+ *   挙動が食い違う（画面には出ているのに保存されない、など）。
+ *
+ *   ここを参照している先:
+ *     INSTALLATION_TYPE_OPTIONS               （schema.ts・画面の選択肢）
+ *     INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY（条件U・委任状2項目）
+ *     INSTALLATION_TYPES_HIDE_PANEL           （条件C・太陽光関連の非表示）
+ *     INSTALLATION_TYPES_WITH_WIRING_METHOD   （条件H・配線方式）
+ *     INSTALLATION_TYPES_HIDE_ROOF            （条件M・屋根材）
+ *     WORK_TYPE_BY_INSTALLATION_TYPE          （施工依頼テンプレートの工事種別）
+ */
+export const BATTERY_ONLY_INSTALLATION_TYPES = [
+  "蓄電池のみ",
+  "蓄電池増設のみ",
+] as const;
+
 export const INSTALLATION_TYPES_WITH_SOLAR_PANEL = new Set<string>([
   "太陽光パネル+蓄電池",
   "太陽光パネルのみ",
 ]);
 
 export const INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY = new Set<string>([
-  "蓄電池のみ",
+  ...BATTERY_ONLY_INSTALLATION_TYPES,
   "パワコン取替のみ",
 ]);
 
 /** パネル組み合わせ・品番・枚数・容量を非表示にする設置種別（品番は "-"・枚数・容量は半角 0） */
 export const INSTALLATION_TYPES_HIDE_PANEL = new Set<string>([
-  "蓄電池のみ",
+  ...BATTERY_ONLY_INSTALLATION_TYPES,
   "パワコン取替のみ",
 ]);
 
@@ -219,7 +243,7 @@ export function installationTypeHidesBatterySection(
  */
 export const INSTALLATION_TYPES_WITH_WIRING_METHOD = new Set<string>([
   "太陽光パネル+蓄電池",
-  "蓄電池のみ",
+  ...BATTERY_ONLY_INSTALLATION_TYPES,
 ]);
 
 /**

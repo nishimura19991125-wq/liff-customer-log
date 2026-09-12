@@ -1,4 +1,5 @@
 import {
+  BATTERY_ONLY_INSTALLATION_TYPES,
   COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS,
   CONSTRUCTION_REQUEST_STATUS_OPTIONS,
   CUSTOMER_STATUS_OPTIONS,
@@ -17,9 +18,16 @@ import type { CustomerInfoFormFieldDef } from "@/lib/customer-info-form/types";
 
 const YES_NO = ["無", "有"] as const;
 
+/**
+ * 設置種別（@pocket「設置種別」列）。
+ * **@pocket の実物と1文字も変えないこと。**
+ *
+ * 蓄電池だけの値は BATTERY_ONLY_INSTALLATION_TYPES（options.ts）から展開する。
+ * 同じ扱いの値が増えたときに直すのはあちら1箇所だけ。
+ */
 export const INSTALLATION_TYPE_OPTIONS = [
   "太陽光パネル+蓄電池",
-  "蓄電池のみ",
+  ...BATTERY_ONLY_INSTALLATION_TYPES,
   "太陽光パネルのみ",
   "パワコン取替のみ",
 ] as const;

@@ -1,5 +1,6 @@
 import { checkboxGroupValueToPocketArray } from "@/lib/customer-info-form/checkbox-pocket";
 import {
+  BATTERY_ONLY_INSTALLATION_TYPES,
   installationTypeHidesBatterySection,
   installationTypeHidesPanelSection,
 } from "@/lib/customer-info-form/options";
@@ -25,15 +26,24 @@ export const CONSTRUCTION_REQUEST_STATUS_DONE = "済";
 const IDEOGRAPHIC_SPACE = String.fromCharCode(0x3000);
 
 
+/** 蓄電池だけの設置種別に付く工事種別（どの値でも同じ表記） */
+const BATTERY_ONLY_WORK_TYPE = "蓄単工事";
+
 /**
  * 設置種別 → 工事種別の表記。
  *
- * INSTALLATION_TYPE_OPTIONS の4種類すべてを網羅する。網羅漏れがあると
- * constructionWorkTypeLabel が null を返し、呼び出し側がテンプレートを出さない。
+ * INSTALLATION_TYPE_OPTIONS のすべてを網羅する。網羅漏れがあると
+ * constructionWorkTypeLabel が null を返し、呼び出し側がテンプレートを出さない
+ * （installationTypesWithoutWorkType をテストで固定している）。
+ *
+ * 蓄電池だけの値は BATTERY_ONLY_INSTALLATION_TYPES から展開する。同じ扱いの
+ * 値が増えてもここは直さなくてよい。
  */
 const WORK_TYPE_BY_INSTALLATION_TYPE: ReadonlyMap<string, string> = new Map([
   ["太陽光パネル+蓄電池", "創蓄工事"],
-  ["蓄電池のみ", "蓄単工事"],
+  ...BATTERY_ONLY_INSTALLATION_TYPES.map(
+    (t) => [t, BATTERY_ONLY_WORK_TYPE] as [string, string],
+  ),
   ["太陽光パネルのみ", "太陽光単体工事"],
   ["パワコン取替のみ", "パワコン取替工事"],
 ]);
