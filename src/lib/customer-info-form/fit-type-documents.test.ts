@@ -26,7 +26,8 @@ import type {
  *
  * 対象は7 key（印鑑登録証明書1・委任状3・同意書3）。
  * 「非FIT」を選んだときだけ隠す。未選択（空）は表示する。
- * 隠れているあいだは @pocket を一切触らない（"-" も「不要」も書かない）。
+ * 隠れているあいだは「不要」を書き込む（設置種別で隠れたときと同じ扱い）。
+ * "-" は16項目どの選択肢にも無いので、どの経路でも書かない。
  */
 
 /** 印鑑登録証明書。設置種別の条件は無い */
@@ -314,8 +315,8 @@ describe("必須：非FIT のとき7項目が必須にならない", () => {
   });
 });
 
-describe("保存：非FIT のとき7項目を payload に含めない", () => {
-  it("★ 値・設置種別を問わず、対象7項目を1つも送らない", () => {
+describe("保存：非FIT のとき7項目に「不要」を書く", () => {
+  it("★ 値・設置種別を問わず、対象7項目すべてに「不要」が入る", () => {
     for (const installationType of INSTALLATION_TYPE_OPTIONS) {
       for (const raw of ["", "-", "不要", "未回収", "回収済み"]) {
         const values: CustomerInfoFormValues = {
@@ -325,15 +326,13 @@ describe("保存：非FIT のとき7項目を payload に含めない", () => {
         for (const key of NON_FIT_HIDDEN_DOCUMENT_KEYS) values[key] = raw;
         const p = payloadFor(values);
         for (const key of NON_FIT_HIDDEN_DOCUMENT_KEYS) {
-          expect(p, `${installationType} / ${key} / ${raw}`).not.toHaveProperty(
-            key,
-          );
+          expect(p[key], `${installationType} / ${key} / ${raw}`).toBe("不要");
         }
       }
     }
   });
 
-  it('★ 値が空でも "-" でも「不要」を書かない（既存値が消えない）', () => {
+  it("★ 既存値が入っていても「不要」で上書きする", () => {
     const p = payloadFor({
       installationType: WITH_SOLAR,
       fitType: NON_FIT,
@@ -342,10 +341,10 @@ describe("保存：非FIT のとき7項目を payload に含めない", () => {
       [CONSENT_OPERATING]: "不要",
       [CONSENT_FREE_USE]: "回収済み",
     });
-    expect(p).not.toHaveProperty(SEAL);
-    expect(p).not.toHaveProperty(CONSENT_EQUIPMENT);
-    expect(p).not.toHaveProperty(CONSENT_OPERATING);
-    expect(p).not.toHaveProperty(CONSENT_FREE_USE);
+    expect(p[SEAL]).toBe("不要");
+    expect(p[CONSENT_EQUIPMENT]).toBe("不要");
+    expect(p[CONSENT_OPERATING]).toBe("不要");
+    expect(p[CONSENT_FREE_USE]).toBe("不要");
   });
 
   it("FIT なら従来どおり送る", () => {
@@ -376,8 +375,8 @@ describe("保存：非FIT のとき7項目を payload に含めない", () => {
   });
 });
 
-describe("非表示時の既定値適用でも「不要」で潰さない", () => {
-  it("★ 非FIT のあいだは applyCustomerInfoHiddenDefaults が7項目を書き換えない", () => {
+describe("非表示時の既定値適用でも「不要」に揃える", () => {
+  it("★ 非FIT のあいだは applyCustomerInfoHiddenDefaults が7項目を「不要」にする", () => {
     const raws = ["回収済み", "未回収", "回収済み", "", "未回収", "回収済み", ""];
     const before: CustomerInfoFormValues = {
       installationType: WITH_SOLAR,
@@ -391,8 +390,11 @@ describe("非表示時の既定値適用でも「不要」で潰さない", () =
     const after = applyCustomerInfoHiddenDefaultsToValues(before, {
       includeDocumentFields: true,
     });
+    // 画面の値と保存される値が一致する（どちらも「不要」）
+    const payload = payloadFor(before);
     for (const key of keys) {
-      expect(after[key], key).toBe(before[key]);
+      expect(after[key], key).toBe("不要");
+      expect(payload[key], key).toBe("不要");
     }
   });
 

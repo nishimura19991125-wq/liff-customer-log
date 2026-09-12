@@ -117,7 +117,7 @@ describe("M-1: 表示中の項目は従来どおり", () => {
   });
 });
 
-describe("M-1: 書類ステータスの扱いを変えていない（タスクG）", () => {
+describe("M-1: 書類ステータスは非表示なら必ず「不要」", () => {
   /** 設置種別が「蓄電池のみ」のときだけ出る書類 */
   const DOC_KEY = "powerOfAttorneyChangeCert";
 
@@ -130,13 +130,15 @@ describe("M-1: 書類ステータスの扱いを変えていない（タスクG�
     expect(p[DOC_KEY]).toBe("不要");
   });
 
-  it("非表示でも実データが残っていれば送らない（従来どおり保護）", () => {
+  it("★ 非表示なら実データが残っていても「不要」で上書きする", () => {
+    // 以前は値が残っていると送らずに保護していたが、画面に出ていない項目の
+    // 値が @pocket 側にだけ残り、画面の値と食い違っていた
     const p = payloadFor({
       installationType: WITH_PANEL,
       panelCombo: "無",
       [DOC_KEY]: "回収済み",
     });
-    expect(p).not.toHaveProperty(DOC_KEY);
+    expect(p[DOC_KEY]).toBe("不要");
   });
 
   it("表示中はその値をそのまま書く", () => {

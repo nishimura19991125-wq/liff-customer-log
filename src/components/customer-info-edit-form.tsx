@@ -981,9 +981,10 @@ export function CustomerInfoEditForm({
         key === "installationType" ||
         key === "indoorSurveyStatus" ||
         key === "preApplication" ||
-        key === "batteryMulti"
+        key === "batteryMulti" ||
+        key === "fitType"
       ) {
-        // 書類の表示条件は 支払方法・設置種別・事前申請有無 だけで決まる。
+        // 書類の表示条件は DOCUMENT_VISIBILITY_TRIGGER_KEYS の4つだけで決まる。
         // それ以外の変更で書類に hiddenValue を書くと、条件が変わっていないのに
         // 「不要」が焼き付く（タスクG-2）
         const isDocumentTrigger = DOCUMENT_VISIBILITY_TRIGGER_KEYS.has(key);

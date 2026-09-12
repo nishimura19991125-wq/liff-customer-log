@@ -3,6 +3,7 @@ import { checkboxGroupValueToPocketArray } from "@/lib/customer-info-form/checkb
 import { contractAmountForPocket } from "@/lib/customer-info-form/form-change";
 import { commaIntegerForPocket } from "@/lib/customer-info-form/numeric-comma";
 import {
+  DOCUMENT_RADIO_HIDDEN_VALUE,
   INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY,
   INSTALLATION_TYPES_WITH_SOLAR_PANEL,
   installationTypeHidesBatterySection,
@@ -120,6 +121,18 @@ function pocketFieldValueForPut(
   if (key === "contractAmount" && values) {
     if (!visible) return hiddenFallback;
     return contractAmountForPocket(values) || hiddenFallback;
+  }
+  /**
+   * 書類16項目は "-" を絶対に書かない。
+   *
+   * 非表示なら「不要」（hiddenFallback＝hiddenPayloadValue が保証する）。
+   * 表示中に "-" が入っているのは、過去の事故で @pocket に書かれた値を
+   * 読み込んだときだけ。選択肢に無い値なのでそのまま書き戻さず、
+   * 未選択と同じ空文字にして落とす。
+   */
+  if (CUSTOMER_DOCUMENT_KEYS.has(key)) {
+    if (!visible) return hiddenFallback;
+    return isEmptyPocketInput(raw) ? "" : raw.trim();
   }
   if (key === "postalCode") {
     if (!visible) return hiddenFallback;
@@ -318,9 +331,18 @@ export function isCustomerInfoFormFieldVisible(
   }
 }
 
+/**
+ * 非表示になったときに書き込む既定値。
+ *
+ * **書類16項目は必ず「不要」。** "-" は16項目どの選択肢にも無いので、
+ * 入ると画面のラジオは未選択に見えるのに値だけ残る（過去の事故そのもの）。
+ * schema 側にも hiddenValue を書いてあるが、1項目でも付け忘れると "-" に
+ * 落ちてしまうため、ここで CUSTOMER_DOCUMENT_KEYS を見て打ち消す。
+ */
 function hiddenPayloadValue(
-  def: { hiddenValue?: string },
+  def: { key: string; hiddenValue?: string },
 ): string {
+  if (CUSTOMER_DOCUMENT_KEYS.has(def.key)) return DOCUMENT_RADIO_HIDDEN_VALUE;
   return def.hiddenValue ?? HIDDEN_DASH;
 }
 
@@ -354,23 +376,25 @@ function shouldPreserveHiddenFieldOnPut(
   hiddenPut: string,
   values: CustomerInfoFormValues,
 ): boolean {
-  if (POCKET_PRESERVE_WHEN_HIDDEN_KEYS.has(fieldKey)) return true;
   /**
-   * 条件W（非FIT）で消えた書類は、@pocket を一切触らない。
+   * 書類16項目は、非表示になったら必ず「不要」を書く（保護しない）。
    *
-   * 既定の書類の動きでは、値が空・"-"・"不要" のときに hiddenValue（＝「不要」）を
-   * 書き込む。FIT で登録した顧客をあとから非FIT に変えたときに、@pocket に
-   * 入っている回収状況を上書きしてしまい、FIT に戻しても復元できない。
+   * 経路は問わない。売電方式（条件W／非FIT）で消えても、設置種別
+   * （条件T／条件U）や支払方法・事前申請で消えても、同じく「不要」。
+   * 既に入っている値も上書きする（FIT で「回収済み」だった顧客を非FIT に
+   * 変えると「不要」に置き換わる）。業務上そうしたい旨を確認済み。
    *
-   * 設置種別（条件T／条件U）で消えたときは従来どおり「不要」を書く。
-   * 非FIT で消えた場合だけ、ここで payload から落とす。
+   * 以前は「非FIT で消えたときは触らない」「値が残っていれば触らない」と
+   * していたが、画面には出ていない項目の値が @pocket 側にだけ残り、
+   * 保存される値と画面の値が食い違っていた。
+   * applyCustomerInfoHiddenDefaultsToValues も同じ規則で画面の値を
+   * 「不要」に揃えるので、両者は必ず一致する。
+   *
+   * ⚠ "-" は書かない。16項目どの選択肢にも無く、入るとラジオが未選択に
+   *   見えるのに値だけ残る（hiddenPayloadValue が「不要」を保証する）。
    */
-  if (
-    NON_FIT_HIDDEN_DOCUMENT_KEYS.has(fieldKey) &&
-    !shouldShowNonFitHiddenDocuments(values)
-  ) {
-    return true;
-  }
+  if (CUSTOMER_DOCUMENT_KEYS.has(fieldKey)) return false;
+  if (POCKET_PRESERVE_WHEN_HIDDEN_KEYS.has(fieldKey)) return true;
   /**
    * 条件A（導入経緯）で消えた紹介元・紹介手数料も @pocket を触らない。
    *
@@ -479,9 +503,14 @@ export function customerInfoRoofMaterialOptions(): readonly string[] {
  * 保存前に非表示項目を values 上でダッシュに揃える（UI プレビュー用）。
  *
  * includeDocumentFields=false のとき、書類16項目には触れない（タスクG-2）。
- * 書類の表示条件は 支払方法・設置種別・事前申請有無 の3つだけで決まるため、
- * それ以外（紹介ルート・室内現地調査実施状況・蓄電池複数台設置）の変更で
- * 書類に hiddenValue を書くのは、条件が変わっていないのに値を壊す動作になる。
+ * 書類の表示条件は 支払方法・設置種別・事前申請有無・売電方式 の4つだけで
+ * 決まるため、それ以外（紹介ルート・室内現地調査実施状況・蓄電池複数台設置）の
+ * 変更で書類に hiddenValue を書くのは、条件が変わっていないのに値を壊す動作になる。
+ * 4つの定義は DOCUMENT_VISIBILITY_TRIGGER_KEYS（document-hidden-tracking.ts）。
+ *
+ * includeDocumentFields=true のときは、非表示の書類を経路を問わず「不要」に
+ * 揃える。保存側（shouldPreserveHiddenFieldOnPut）が同じ規則で「不要」を
+ * 書くので、画面の値と保存される値が食い違わない。
  *
  * 3キー以外でも呼び出しは続ける。室内調査予定日・蓄電池容量② など
  * 書類以外の非表示項目に hiddenValue を揃えるのに必要なため。
@@ -499,14 +528,6 @@ export function applyCustomerInfoHiddenDefaultsToValues(
     }
     // 非表示のあいだ値を残す項目は "-" で潰さない（保存でも送らない）
     if (POCKET_PRESERVE_WHEN_HIDDEN_KEYS.has(def.key)) continue;
-    // 条件W（非FIT）で消えた書類も「不要」で潰さない。
-    // 画面の値をそのまま残すことで、FIT に戻したとき元の回収状況が見える
-    if (
-      NON_FIT_HIDDEN_DOCUMENT_KEYS.has(def.key) &&
-      !shouldShowNonFitHiddenDocuments(next)
-    ) {
-      continue;
-    }
     // 条件A（導入経緯）で消えた紹介元・紹介手数料も潰さない。
     // 画面の値をそのまま残すので、導入経緯を戻せば元の入力が見える
     if (

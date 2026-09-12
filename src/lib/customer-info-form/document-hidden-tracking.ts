@@ -2,8 +2,8 @@ import {
   CUSTOMER_DOCUMENT_SPECS,
   customerDocumentSpecByKey,
 } from "@/lib/customer-documents-spec";
+import { DOCUMENT_RADIO_HIDDEN_VALUE } from "@/lib/customer-info-form/options";
 import { isCustomerInfoFormFieldVisible } from "@/lib/customer-info-form/rules";
-import { CUSTOMER_INFO_FORM_FIELD_MAP } from "@/lib/customer-info-form/schema";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 
 /**
@@ -26,19 +26,20 @@ import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
  *   自動では直らない（既存データの扱いは別途判断）。
  */
 
-/** hiddenValue 未設定時の既定（rules.ts の HIDDEN_DASH と同じ） */
-const HIDDEN_DASH = "-";
-
-/** 書類項目の表示条件に影響するキー。これ以外の変更では書類項目に触れない */
+/**
+ * 書類項目の表示条件に影響するキー。これ以外の変更では書類項目に触れない。
+ *
+ * fitType（条件W）も表示条件なので入れてある。非FIT に変えた瞬間に
+ * 対象7項目が非表示になり、画面の値も保存される値も「不要」になる。
+ * 既存の回収状況を上書きするが、業務上そうしたい旨を確認済み。
+ * 同じ編集セッション中に FIT へ戻せば、システムが書いた分は未回収系へ戻る。
+ */
 export const DOCUMENT_VISIBILITY_TRIGGER_KEYS: ReadonlySet<string> = new Set([
   "paymentMethod",
   "installationType",
   "preApplication",
+  "fitType",
 ]);
-
-function hiddenValueForDocumentKey(key: string): string {
-  return CUSTOMER_INFO_FORM_FIELD_MAP.get(key)?.hiddenValue ?? HIDDEN_DASH;
-}
 
 export type DocumentHiddenReconcileResult = {
   values: CustomerInfoFormValues;
@@ -64,7 +65,9 @@ export function reconcileDocumentHiddenDefaults(opts: {
 
   for (const spec of CUSTOMER_DOCUMENT_SPECS) {
     const key = spec.key;
-    const hiddenValue = hiddenValueForDocumentKey(key);
+    // 非表示のあいだ書かれる値。書類16項目は必ず「不要」。
+    // schema の hiddenValue ではなく定数を直に見る（"-" に落ちる余地を作らない）
+    const hiddenValue = DOCUMENT_RADIO_HIDDEN_VALUE;
     const visible = isCustomerInfoFormFieldVisible(key, values);
 
     if (!visible) {

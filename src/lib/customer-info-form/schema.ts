@@ -373,7 +373,7 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     caption: "団体信用生命保険",
     type: "radio",
     options: [...COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS],
-    hiddenValue: "不要",
+    hiddenValue: DOCUMENT_RADIO_HIDDEN_VALUE,
   },
   {
     key: "fitType",
@@ -424,12 +424,14 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     caption: "商品売買・工事請負契約書",
     type: "radio",
     options: [...COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS],
+    hiddenValue: DOCUMENT_RADIO_HIDDEN_VALUE,
   },
   {
     key: "powerCompanyForm",
     caption: "電力会社記入用紙",
     type: "radio",
     options: [...COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS],
+    hiddenValue: DOCUMENT_RADIO_HIDDEN_VALUE,
   },
   {
     key: "feedInBankAccountForm",
