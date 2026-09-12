@@ -67,9 +67,26 @@ describe("設置種別 → 工事種別", () => {
     );
   });
 
-  it("★ 蓄電池だけの設置種別はどれも「蓄単工事」", () => {
+  /**
+   * 蓄電池だけの設置種別は、表示条件など他の5箇所では同じ扱いだが、
+   * **工事種別だけは表記が違う**。施工業者は1行目で工事の内容を読むため、
+   * 増設をまとめてしまうと別の工事として伝わらない。
+   */
+  it("★ 蓄電池だけの設置種別でも工事種別は分かれる", () => {
+    expect(constructionWorkTypeLabel("蓄電池のみ")).toBe("蓄単工事");
+    expect(constructionWorkTypeLabel("蓄電池増設のみ")).toBe("蓄電池増設工事");
+  });
+
+  it("★ 工事種別の表記は設置種別ごとに重複しない", () => {
+    const labels = INSTALLATION_TYPE_OPTIONS.map((t) =>
+      constructionWorkTypeLabel(t),
+    );
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("★ 蓄電池だけの設置種別は、どれも工事種別が定義されている", () => {
     for (const t of BATTERY_ONLY_INSTALLATION_TYPES) {
-      expect(constructionWorkTypeLabel(t), t).toBe("蓄単工事");
+      expect(constructionWorkTypeLabel(t), t).not.toBeNull();
     }
   });
 

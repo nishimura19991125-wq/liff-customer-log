@@ -195,7 +195,11 @@ export const COLLECTION_STATUS_WITH_UNNECESSARY_OPTIONS = [
  *     INSTALLATION_TYPES_HIDE_PANEL           （条件C・太陽光関連の非表示）
  *     INSTALLATION_TYPES_WITH_WIRING_METHOD   （条件H・配線方式）
  *     INSTALLATION_TYPES_HIDE_ROOF            （条件M・屋根材）
- *     WORK_TYPE_BY_INSTALLATION_TYPE          （施工依頼テンプレートの工事種別）
+ *
+ * ⚠ 施工依頼の工事種別（WORK_TYPE_BY_INSTALLATION_TYPE）は**例外**で、
+ *   ここを参照していない。表記が値ごとに違うため（蓄単工事 /
+ *   蓄電池増設工事）、あちらは値ごとに書き下している。
+ *   理由は construction-request-template.ts のコメントに書いてある。
  */
 export const BATTERY_ONLY_INSTALLATION_TYPES = [
   "蓄電池のみ",

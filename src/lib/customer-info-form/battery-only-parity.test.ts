@@ -171,6 +171,21 @@ function label(scenario: CustomerInfoFormValues): string {
   ].join(" / ");
 }
 
+/**
+ * 施工依頼テンプレートの工事種別の行（1行目の「【…】」）。
+ * メーカー・工事種別・施工予定日がこの1行に入る。
+ */
+function workTypeLine(text: string): string {
+  const line = text.split("\n").find((l) => l.startsWith("【"));
+  if (!line) throw new Error("工事種別の行が見つからない");
+  return line;
+}
+
+/** 工事種別の行を除いた本文。2値で違ってよいのはこの行だけ */
+function withoutWorkTypeLine(text: string): string[] {
+  return text.split("\n").filter((l) => !l.startsWith("【"));
+}
+
 /** 契約速報の本文。T番号・蓄電池設置箇所は比較に影響しない固定値 */
 function notificationText(
   installationType: string,
@@ -324,14 +339,30 @@ describe("画面の値（非表示時の既定値）：2値でまったく同じ
   }
 });
 
-describe("施工依頼テンプレート：2値でまったく同じ", () => {
-  it("★ 工事種別はどちらも「蓄単工事」", () => {
-    for (const t of BATTERY_ONLY_INSTALLATION_TYPES) {
-      expect(constructionWorkTypeLabel(t), t).toBe("蓄単工事");
-    }
+describe("施工依頼テンプレート：工事種別の行だけが違う", () => {
+  /**
+   * 工事種別だけは2値で表記が違う（集合から展開していない唯一の箇所）。
+   * 施工業者はテンプレート1行目で工事の内容を読むため、増設を
+   * 「蓄単工事」にまとめると別の工事として伝わらない。
+   *
+   * ここ以外は「蓄電池のみ」とまったく同じ。契約速報で
+   * 「設置種別の行だけが違う」としているのと同じ作法で、
+   * 工事種別の行を外した残りが一致することを固定する。
+   */
+  it("★ 蓄電池のみ→蓄単工事 / 蓄電池増設のみ→蓄電池増設工事", () => {
+    expect(constructionWorkTypeLabel(BATTERY_ONLY)).toBe("蓄単工事");
+    expect(constructionWorkTypeLabel(BATTERY_ADDITION_ONLY)).toBe(
+      "蓄電池増設工事",
+    );
   });
 
-  it("★ 本文が完全に一致する（設置種別の値は本文に出ない）", () => {
+  it("★ 2値の工事種別が違う（まとめて同じ表記に戻したら落ちる）", () => {
+    expect(constructionWorkTypeLabel(BATTERY_ADDITION_ONLY)).not.toBe(
+      constructionWorkTypeLabel(BATTERY_ONLY),
+    );
+  });
+
+  it("★ 工事種別の行を除けば本文が完全に一致する", () => {
     for (const scenario of SCENARIOS) {
       const a = buildConstructionRequestTemplate(
         valuesFor(BATTERY_ONLY, scenario),
@@ -340,8 +371,38 @@ describe("施工依頼テンプレート：2値でまったく同じ", () => {
         valuesFor(BATTERY_ADDITION_ONLY, scenario),
       );
       expect(a.ok, label(scenario)).toBe(true);
-      expect(b, label(scenario)).toEqual(a);
+      expect(b.ok, label(scenario)).toBe(true);
+      if (!a.ok || !b.ok) continue;
+
+      expect(withoutWorkTypeLine(b.text), label(scenario)).toEqual(
+        withoutWorkTypeLine(a.text),
+      );
     }
+  });
+
+  it("★ 違うのは工事種別の行だけで、そこは工事種別しか変わらない", () => {
+    const a = buildConstructionRequestTemplate(valuesFor(BATTERY_ONLY, {}));
+    const b = buildConstructionRequestTemplate(
+      valuesFor(BATTERY_ADDITION_ONLY, {}),
+    );
+    if (!a.ok || !b.ok) throw new Error("テンプレートを作れない");
+
+    expect(workTypeLine(a.text)).toContain("蓄単工事");
+    expect(workTypeLine(b.text)).toContain("蓄電池増設工事");
+    // 工事種別の部分だけを入れ替えれば同じ行になる
+    expect(workTypeLine(b.text).replace("蓄電池増設工事", "蓄単工事")).toBe(
+      workTypeLine(a.text),
+    );
+  });
+
+  it("★ result.workType もそれぞれの表記になる", () => {
+    const a = buildConstructionRequestTemplate(valuesFor(BATTERY_ONLY, {}));
+    const b = buildConstructionRequestTemplate(
+      valuesFor(BATTERY_ADDITION_ONLY, {}),
+    );
+    if (!a.ok || !b.ok) throw new Error("テンプレートを作れない");
+    expect(a.workType).toBe("蓄単工事");
+    expect(b.workType).toBe("蓄電池増設工事");
   });
 
   it("★ 未知の設置種別として弾かれない", () => {
