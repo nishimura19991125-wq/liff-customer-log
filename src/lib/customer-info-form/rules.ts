@@ -3,6 +3,7 @@ import { checkboxGroupValueToPocketArray } from "@/lib/customer-info-form/checkb
 import { contractAmountForPocket } from "@/lib/customer-info-form/form-change";
 import { commaIntegerForPocket } from "@/lib/customer-info-form/numeric-comma";
 import {
+  BATTERY_ADDITION_HIDDEN_DOCUMENT_KEYS,
   BATTERY_ONLY_INSTALLATION_TYPES,
   DOCUMENT_RADIO_HIDDEN_VALUE,
   INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY,
@@ -16,6 +17,7 @@ import {
   shouldShowReferralSourceFields,
   preApplicationRequiresDocuments,
   NON_FIT_HIDDEN_DOCUMENT_KEYS,
+  shouldShowBatteryAdditionHiddenDocuments,
   shouldShowNonFitHiddenDocuments,
   shouldShowWiringMethod,
   subsidyIncludesCity,
@@ -238,6 +240,26 @@ export function isCustomerInfoFormFieldVisible(
   if (
     NON_FIT_HIDDEN_DOCUMENT_KEYS.has(key) &&
     !shouldShowNonFitHiddenDocuments(values)
+  ) {
+    return false;
+  }
+
+  /**
+   * 条件X：設置種別が「蓄電池増設のみ」のとき隠す書類7項目。
+   *
+   * 条件W とまったく同じ形。**key ごとの分岐は書かない。** 対象の定義は
+   * BATTERY_ADDITION_HIDDEN_DOCUMENT_KEYS（options.ts）1箇所だけ。
+   *
+   * 条件U（委任状2項目を蓄電池系で表示する）とは逆を向くが、switch の
+   * 手前で見るので条件U を一切変えずに AND が掛かる。詳しい理由は
+   * options.ts の定数のコメントに書いてある。
+   *
+   * 条件W と3項目重なるが、どちらの経路でも書き込む値は「不要」なので
+   * OR で隠れれば足りる（重複を特別扱いしない）。
+   */
+  if (
+    BATTERY_ADDITION_HIDDEN_DOCUMENT_KEYS.has(key) &&
+    !shouldShowBatteryAdditionHiddenDocuments(values)
   ) {
     return false;
   }

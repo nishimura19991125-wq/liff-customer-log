@@ -306,6 +306,74 @@ export function shouldShowNonFitHiddenDocuments(
   return (values.fitType ?? "").trim() !== FIT_TYPE_NON_FIT;
 }
 
+/**
+ * 「蓄電池増設のみ」。
+ * BATTERY_ONLY_INSTALLATION_TYPES の実物と同じ文字列を指すこと
+ * （FIT_TYPE_NON_FIT と同じ作法。所属はテストで固定している）。
+ */
+export const INSTALLATION_TYPE_BATTERY_ADDITION_ONLY = "蓄電池増設のみ" as const;
+
+/**
+ * 設置種別が「蓄電池増設のみ」のとき非表示にする書類（条件X）。
+ *
+ * ■ ここが「蓄電池のみ」と「蓄電池増設のみ」で扱いが分かれる2つ目の例外
+ *   1つ目は施工依頼の工事種別（蓄単工事／蓄電池増設工事）。
+ *   それ以外（条件U・条件C・条件H・条件M・選択肢の並び）は2値とも
+ *   まったく同じ扱いで、BATTERY_ONLY_INSTALLATION_TYPES を参照している。
+ *   増設のときだけ不要になるのは、この7項目だけ。
+ *
+ * ■ 条件U とは逆を向くので、switch の**手前**でまとめて弾く
+ *   条件U（INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY）は委任状2項目を
+ *   「蓄電池のみ・蓄電池増設のみ・パワコン取替のみ」で**表示する**条件。
+ *   増設では隠したいので真逆になる。条件W と同じく switch の手前で見れば、
+ *   条件U の記述を一切変えずに「かつ 増設でない」を AND したのと同じ意味に
+ *   なる（条件が元から無い項目は、そのまま条件X だけで決まる）。
+ *
+ * ■ 条件U の集合から増設を抜く方法を採らなかった理由
+ *   その方法だと委任状2項目だけが条件U で、残り5項目は別の仕組みで隠れる
+ *   ことになり、**同じ「増設で隠す」が2種類の判定に分かれる**。
+ *   さらに INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY は
+ *   BATTERY_ONLY_INSTALLATION_TYPES から展開しているので、そこから増設を
+ *   抜くには展開をやめて値を並べ直すことになり、70540bc で作った
+ *   「1箇所を直せば済む形」が崩れる。
+ *
+ * ■ 非FIT（条件W）と3項目が重なるが、特別扱いはしない
+ *   委任状(変更認定用)・委任状(ID・パスワード開示用)・印鑑登録証明書 が重複する。
+ *   どちらの経路でも書き込む値は「不要」なので、OR で隠れれば足りる。
+ *
+ * **項目を増やすときはこの集合だけを直すこと。**
+ */
+export const BATTERY_ADDITION_HIDDEN_DOCUMENT_KEYS: ReadonlySet<string> =
+  new Set([
+    "powerCompanyForm",
+    "vicinitySketchMap",
+    "powerOfAttorneyChangeCert",
+    "powerOfAttorneyIdPassword",
+    "personalInfoConsent",
+    "sealRegistrationCertificate",
+    "registryBook",
+  ]);
+
+/**
+ * 条件X：BATTERY_ADDITION_HIDDEN_DOCUMENT_KEYS の書類を表示するか
+ * （設置種別の観点のみ）。
+ *
+ * **表示・必須・保存の3つを必ずこの1関数から導くこと。**
+ * 条件T／条件U など設置種別による既存の条件はここでは見ない。
+ * 呼び出し側（isCustomerInfoFormFieldVisible）で AND を取る。
+ *
+ * 「蓄電池増設のみ」を選んだときだけ隠す。「蓄電池のみ」は従来どおり。
+ * 比較は trim のみで NFKC 正規化はしない（設置種別の他の判定と同じ作法）。
+ */
+export function shouldShowBatteryAdditionHiddenDocuments(
+  values: CustomerInfoFormValues,
+): boolean {
+  return (
+    (values.installationType ?? "").trim() !==
+    INSTALLATION_TYPE_BATTERY_ADDITION_ONLY
+  );
+}
+
 /** 付近見取り図 */
 export const VICINITY_SKETCH_OPTIONS = [
   "未作成",

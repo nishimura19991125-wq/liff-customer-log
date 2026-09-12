@@ -184,20 +184,20 @@
 | key | 見出し | 選択肢 | 必須 | 表示条件 |
 |---|---|---|---|---|
 | salesConstructionContract | 商品売買・工事請負契約書 | 未回収 / 回収済み / 不要 | 必須 | |
-| powerCompanyForm | 電力会社記入用紙 | 未回収 / 回収済み / 不要 | 必須 | |
+| powerCompanyForm | 電力会社記入用紙 | 未回収 / 回収済み / 不要 | 必須 | 条件X |
 | loanPaper | ローン用紙 | 未回収 / 回収済み / 不要 | 必須 | 条件P |
 | groupCreditLifeInsurance | 団体信用生命保険 | 未回収 / 回収済み / 不要 | 必須 | 条件P |
 | feedInBankAccountForm | 売電先振込口座指定依頼書 | 未回収 / 回収済み / 不要 | 必須 | 条件T |
-| vicinitySketchMap | 付近見取り図 | **未作成 / 作成済み / 不要** | 必須 | |
+| vicinitySketchMap | 付近見取り図 | **未作成 / 作成済み / 不要** | 必須 | 条件X |
 | powerOfAttorneyStorage | 委任状(創蓄) | 未回収 / 回収済み / 不要 | 必須 | 条件T **かつ** 条件W |
-| powerOfAttorneyChangeCert | 委任状(変更認定用) | 未回収 / 回収済み / 不要 | 必須 | 条件U **かつ** 条件W |
-| powerOfAttorneyIdPassword | 委任状(ID・パスワード開示用) | 未回収 / 回収済み / 不要 | 必須 | 条件U **かつ** 条件W |
+| powerOfAttorneyChangeCert | 委任状(変更認定用) | 未回収 / 回収済み / 不要 | 必須 | 条件U **かつ** 条件W **かつ** 条件X |
+| powerOfAttorneyIdPassword | 委任状(ID・パスワード開示用) | 未回収 / 回収済み / 不要 | 必須 | 条件U **かつ** 条件W **かつ** 条件X |
 | equipmentCertConsent | 設備認定に関する同意書 | 未回収 / 回収済み / 不要 | 必須 | 条件T **かつ** 条件W |
 | operatingCostReportConsent | 運転費用年報提出に関する同意書 | 未回収 / 回収済み / 不要 | 必須 | 条件T **かつ** 条件W |
-| personalInfoConsent | 個人情報の取扱に関する同意書 | 未回収 / 回収済み / 不要 | 必須 | |
+| personalInfoConsent | 個人情報の取扱に関する同意書 | 未回収 / 回収済み / 不要 | 必須 | 条件X |
 | freeUseGenerationConsent | 発電設備の無償使用に関する同意書 | 未回収 / 回収済み / 不要 | 必須 | 条件T **かつ** 条件W |
-| sealRegistrationCertificate | 印鑑登録証明書 | 未回収 / 回収済み / 不要 | 必須 | 条件W |
-| registryBook | 登記簿 | **未確認 / 確認済み / 不要** | 必須 | |
+| sealRegistrationCertificate | 印鑑登録証明書 | 未回収 / 回収済み / 不要 | 必須 | 条件W **かつ** 条件X |
+| registryBook | 登記簿 | **未確認 / 確認済み / 不要** | 必須 | 条件X |
 | subsidyPreApplicationDocs | 補助金事前申請書類 | 未回収 / 回収済み / 不要 | 必須 | 条件V |
 
 > **選択肢を減らさないこと。** 過去に一部の書類へ「未回収 / 回収済み」の2択を当てていたが、
@@ -319,6 +319,25 @@
            # ⚠ **key ごとの分岐を書かないこと。** 条件W は key の集合を
            #   1つ持ち、他の条件（switch）の**手前**でまとめて判定する。
            #   対象を増やすときに直すのは、その集合1箇所だけにする
+
+    条件X  key ∈ BATTERY_ADDITION_HIDDEN_DOCUMENT_KEYS
+                  {powerCompanyForm, vicinitySketchMap,
+                   powerOfAttorneyChangeCert, powerOfAttorneyIdPassword,
+                   personalInfoConsent, sealRegistrationCertificate,
+                   registryBook}
+           → trim(installationType) != "蓄電池増設のみ"
+           # 「蓄電池増設のみ」を選んだときだけ隠す。「蓄電池のみ」は従来どおり。
+           #
+           # ⚠ **key ごとの分岐を書かないこと。** 条件W と同じ形で、key の集合を
+           #   1つ持ち、switch の**手前**でまとめて判定する。
+           #
+           # ⚠ 条件U（委任状2項目を蓄電池系で**表示する**）とは逆を向く。
+           #   手前で弾くことで、条件U を一切変えずに AND が掛かる。
+           #   条件U の集合から増設を抜く方法は採らない（判定が2種類に分かれ、
+           #   BATTERY_ONLY_INSTALLATION_TYPES の展開も崩れるため）。
+           #
+           # 条件W と3項目（委任状2種・印鑑登録証明書）が重なるが、どちらの
+           # 経路でも書き込む値は「不要」なので OR で隠れれば足りる。
 
     常に非表示  key ∈ {apBranch, clBranch, batteryModel1, batteryModel2}
            → false（保存時にサーバが値を作る）
