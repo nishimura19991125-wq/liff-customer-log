@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CUSTOMER_DOCUMENT_SPECS } from "@/lib/customer-documents-spec";
 import {
   NON_FIT_HIDDEN_DOCUMENT_KEYS,
+  shouldShowBatteryAdditionHiddenDocuments,
   shouldShowNonFitHiddenDocuments,
 } from "@/lib/customer-info-form/options";
 import {
@@ -30,7 +31,10 @@ import type {
  * "-" は16項目どの選択肢にも無いので、どの経路でも書かない。
  */
 
-/** 印鑑登録証明書。設置種別の条件は無い */
+/**
+ * 印鑑登録証明書。条件T／条件U の設置種別条件は無い。
+ * ただし条件X（設置種別「蓄電池増設のみ」）の対象なので、増設では隠れる。
+ */
 const SEAL = "sealRegistrationCertificate";
 /** 委任状(創蓄)。設置種別は条件T＝太陽光あり */
 const PROXY_STORAGE = "powerOfAttorneyStorage";
@@ -93,6 +97,21 @@ function missingDocumentKeys(values: CustomerInfoFormValues): string[] {
   });
   return findMissingRequiredCustomerInfoFields(fields, values).map((f) => f.key);
 }
+
+/**
+ * 条件X（設置種別「蓄電池増設のみ」で書類7項目を隠す）の**対象外**の設置種別。
+ * 判定関数から導くので、条件X の対象が増えてもここは書き換えなくてよい。
+ */
+const INSTALLATION_TYPES_OUTSIDE_CONDITION_X = INSTALLATION_TYPE_OPTIONS.filter(
+  (installationType) =>
+    shouldShowBatteryAdditionHiddenDocuments({ installationType }),
+);
+
+/** 条件X の対象になる設置種別 */
+const INSTALLATION_TYPES_INSIDE_CONDITION_X = INSTALLATION_TYPE_OPTIONS.filter(
+  (installationType) =>
+    !shouldShowBatteryAdditionHiddenDocuments({ installationType }),
+);
 
 /** 条件W の対象外の書類（残り9項目） */
 const OTHER_DOCUMENT_KEYS = CUSTOMER_DOCUMENT_SPECS.map((s) => s.key).filter(
@@ -245,15 +264,51 @@ describe("設置種別による切り替えは変えていない（条件T／条
       }
     });
 
-    it(`${label}：印鑑登録証明書は設置種別に関わらず表示`, () => {
-      for (const installationType of INSTALLATION_TYPE_OPTIONS) {
+    /**
+     * 元は「印鑑登録証明書は設置種別に関わらず表示」だった。
+     *
+     * 条件X（設置種別「蓄電池増設のみ」のとき隠す書類7項目）の導入で、
+     * 印鑑登録証明書もその7項目に入ったため、この主張は成立しなくなった。
+     *
+     * このテストが本来守りたかったのは
+     * **条件W の対象が条件T／条件U の設置種別条件に影響されないこと**
+     * （印鑑登録証明書には条件T／条件U が無いので、太陽光あり・なしの
+     * どちらでも表示される）。主張をそちらへ寄せ直し、条件X で隠れる
+     * 設置種別だけを対象から外す。除外した分は下の describe で
+     * 「隠れること」を明示的に固定している。
+     *
+     * 除外は shouldShowBatteryAdditionHiddenDocuments から導く。条件X の
+     * 対象が増えても、ここを書き換えずに意味が保たれる。
+     */
+    it(`${label}：印鑑登録証明書は条件T／条件U に影響されない`, () => {
+      for (const installationType of INSTALLATION_TYPES_OUTSIDE_CONDITION_X) {
         expect(
           isCustomerInfoFormFieldVisible(SEAL, { installationType, fitType }),
           installationType,
         ).toBe(true);
       }
     });
+
+    it(`${label}：条件X の設置種別では印鑑登録証明書が隠れる`, () => {
+      for (const installationType of INSTALLATION_TYPES_INSIDE_CONDITION_X) {
+        expect(
+          isCustomerInfoFormFieldVisible(SEAL, { installationType, fitType }),
+          installationType,
+        ).toBe(false);
+      }
+    });
   }
+
+  /**
+   * 除外が空振りしていないことを押さえる。
+   * 片方が空だと上の2つのどちらかが何も検査しなくなる。
+   */
+  it("★ 条件X の内と外に設置種別が分かれている", () => {
+    expect(INSTALLATION_TYPES_INSIDE_CONDITION_X).toEqual(["蓄電池増設のみ"]);
+    expect(INSTALLATION_TYPES_OUTSIDE_CONDITION_X).toHaveLength(4);
+    // 「蓄電池のみ」は条件X の対象ではない（退行の検出）
+    expect(INSTALLATION_TYPES_OUTSIDE_CONDITION_X).toContain("蓄電池のみ");
+  });
 
   it("★ 設置種別で消えた対象は、FIT なら従来どおり「不要」を書く", () => {
     // 条件T の対象は太陽光なしで非表示。FIT なので条件W の保護には入らない

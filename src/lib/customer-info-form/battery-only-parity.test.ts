@@ -5,7 +5,9 @@ import {
   constructionWorkTypeLabel,
 } from "@/lib/construction-request-template";
 import { buildContractNotificationText } from "@/lib/contract-notification";
+import { CUSTOMER_DOCUMENT_KEYS } from "@/lib/customer-documents-spec";
 import {
+  BATTERY_ADDITION_HIDDEN_DOCUMENT_KEYS,
   BATTERY_ONLY_INSTALLATION_TYPES,
   FIT_TYPE_OPTIONS,
   INSTALLATION_TYPES_BATTERY_OR_POWERCON_ONLY,
@@ -13,6 +15,7 @@ import {
   INSTALLATION_TYPES_HIDE_PANEL,
   INSTALLATION_TYPES_WITH_SOLAR_PANEL,
   INSTALLATION_TYPES_WITH_WIRING_METHOD,
+  shouldShowBatteryAdditionHiddenDocuments,
 } from "@/lib/customer-info-form/options";
 import {
   applyCustomerInfoHiddenDefaultsToValues,
@@ -150,12 +153,52 @@ function valuesFor(
   return { ...baseValues(), ...scenario, installationType };
 }
 
+/**
+ * 「蓄電池のみ」と「蓄電池増設のみ」で**違ってよい**箇所の一覧。
+ *
+ * 2値は原則まったく同じ扱いで、設置種別を見る条件は
+ * BATTERY_ONLY_INSTALLATION_TYPES（条件U・条件C・条件H・条件M・選択肢の並び）
+ * を参照している。違ってよいのはここに挙げた分だけ。
+ *
+ * ⚠ **3つ目を足すときは、必ずこの一覧にも足すこと。**
+ *   件数をテストで固定してあるので、黙って増やすと落ちる。
+ *   下の総当たりも、ここに挙げた分だけを比較から外している。
+ *   一覧に無い差が生まれれば総当たりが落ちて気づける。
+ */
+const ALLOWED_DIFFERENCES = [
+  {
+    id: "workType",
+    label: "施工依頼の工事種別（蓄単工事 / 蓄電池増設工事）",
+    since: "c928643",
+  },
+  {
+    id: "batteryAdditionHiddenDocuments",
+    label: "条件X：蓄電池増設のみで隠す書類7項目",
+    since: "条件X の追加",
+  },
+] as const;
+
+/** 条件X で隠れる7キー。2値の比較から外す唯一の項目群 */
+const CONDITION_X_KEYS = [...BATTERY_ADDITION_HIDDEN_DOCUMENT_KEYS];
+
 /** 設置種別の列そのものは値が違って当然なので、比較から外す */
 function withoutInstallationType(
   record: Record<string, unknown>,
 ): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(record).filter(([key]) => key !== "installationType"),
+  );
+}
+
+/**
+ * 2値の比較対象。設置種別の列と、条件X で隠れる7項目を外す。
+ * 外すのは ALLOWED_DIFFERENCES に挙げた分だけ。
+ */
+function comparable(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(withoutInstallationType(record)).filter(
+      ([key]) => !BATTERY_ADDITION_HIDDEN_DOCUMENT_KEYS.has(key),
+    ),
   );
 }
 
@@ -234,12 +277,174 @@ describe("選択肢への追加", () => {
   });
 });
 
-describe("表示：2値でまったく同じ", () => {
-  it("★ 全項目 × 条件の総当たりで表示判定が一致する", () => {
+describe("2値で違ってよい箇所", () => {
+  /**
+   * 一覧が増えていないかを固定する。3つ目の例外を足すときは、
+   * ALLOWED_DIFFERENCES に追記したうえでこの件数も直すこと。
+   * 一覧に無い差が生まれた場合は、下の総当たりが落ちて気づける。
+   */
+  it("★ 違ってよいのは2箇所だけ（工事種別・条件X の書類7項目）", () => {
+    expect(ALLOWED_DIFFERENCES).toHaveLength(2);
+    expect(ALLOWED_DIFFERENCES.map((d) => d.id)).toEqual([
+      "workType",
+      "batteryAdditionHiddenDocuments",
+    ]);
+  });
+
+  it("★ 条件X の対象はこの7キーちょうど", () => {
+    expect([...CONDITION_X_KEYS].sort()).toEqual(
+      [
+        "powerCompanyForm",
+        "vicinitySketchMap",
+        "powerOfAttorneyChangeCert",
+        "powerOfAttorneyIdPassword",
+        "personalInfoConsent",
+        "sealRegistrationCertificate",
+        "registryBook",
+      ].sort(),
+    );
+  });
+
+  it("7キーとも書類16項目に含まれる", () => {
+    for (const key of CONDITION_X_KEYS) {
+      expect(CUSTOMER_DOCUMENT_KEYS.has(key), key).toBe(true);
+    }
+  });
+});
+
+describe("条件X：蓄電池増設のみで書類7項目が隠れる", () => {
+  it("★ 増設では7項目が非表示になる", () => {
+    for (const scenario of SCENARIOS) {
+      const values = valuesFor(BATTERY_ADDITION_ONLY, scenario);
+      for (const key of CONDITION_X_KEYS) {
+        expect(
+          isCustomerInfoFormFieldVisible(key, values),
+          `${key} / ${label(scenario)}`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("★ 増設では7項目が必須から外れる", () => {
+    for (const scenario of SCENARIOS) {
+      const missing = findMissingRequiredCustomerInfoFields(VALIDATE_FIELDS, {
+        ...scenario,
+        installationType: BATTERY_ADDITION_ONLY,
+      }).map((f) => f.key);
+      for (const key of CONDITION_X_KEYS) {
+        expect(missing, `${key} / ${label(scenario)}`).not.toContain(key);
+      }
+    }
+  });
+
+  it("★ 増設では7項目の payload が「不要」になる（既存値も上書き）", () => {
+    for (const scenario of SCENARIOS) {
+      const payload = buildCustomerInfoFormPayload(
+        valuesFor(BATTERY_ADDITION_ONLY, scenario),
+        RESOLVED,
+      );
+      for (const key of CONDITION_X_KEYS) {
+        expect(payload[key], `${key} / ${label(scenario)}`).toBe("不要");
+      }
+    }
+  });
+
+  it("★ 増設では7項目の画面の値も「不要」になる", () => {
+    for (const scenario of SCENARIOS) {
+      const shown = applyCustomerInfoHiddenDefaultsToValues(
+        valuesFor(BATTERY_ADDITION_ONLY, scenario),
+        { includeDocumentFields: true },
+      );
+      for (const key of CONDITION_X_KEYS) {
+        expect(shown[key], `${key} / ${label(scenario)}`).toBe("不要");
+      }
+    }
+  });
+
+  /** 退行の検出。「蓄電池のみ」まで隠れてしまったら落ちる */
+  it("★ 蓄電池のみでは7項目が従来どおり（条件T/U/W の範囲でしか隠れない）", () => {
+    // 条件T・条件U・条件W が効かない組み合わせを選ぶ
+    const base = {
+      installationType: BATTERY_ONLY,
+      fitType: "FIT",
+      paymentMethod: "ソーラーローン",
+      preApplication: "都道府県",
+    };
+    // 蓄電池のみは条件U の対象なので委任状2項目は表示される
+    for (const key of [
+      "powerCompanyForm",
+      "vicinitySketchMap",
+      "powerOfAttorneyChangeCert",
+      "powerOfAttorneyIdPassword",
+      "personalInfoConsent",
+      "sealRegistrationCertificate",
+      "registryBook",
+    ]) {
+      expect(isCustomerInfoFormFieldVisible(key, base), key).toBe(true);
+    }
+  });
+
+  it("★ 蓄電池のみでは7項目の値がそのまま保存される", () => {
+    const values = {
+      ...baseValues(),
+      installationType: BATTERY_ONLY,
+      fitType: "FIT",
+      paymentMethod: "ソーラーローン",
+      preApplication: "都道府県",
+      ...Object.fromEntries(CONDITION_X_KEYS.map((k) => [k, "回収済み"])),
+    };
+    const payload = buildCustomerInfoFormPayload(values, RESOLVED);
+    for (const key of CONDITION_X_KEYS) {
+      expect(payload[key], key).toBe("回収済み");
+    }
+  });
+
+  /** 条件U を触っていないことの確認 */
+  it("★ パワコン取替のみでは委任状2項目が従来どおり表示・必須", () => {
+    const base = {
+      installationType: POWERCON_ONLY,
+      fitType: "FIT",
+      paymentMethod: "ソーラーローン",
+      preApplication: "都道府県",
+    };
+    for (const key of ["powerOfAttorneyChangeCert", "powerOfAttorneyIdPassword"]) {
+      expect(isCustomerInfoFormFieldVisible(key, base), key).toBe(true);
+    }
+    const missing = findMissingRequiredCustomerInfoFields(
+      VALIDATE_FIELDS,
+      base,
+    ).map((f) => f.key);
+    expect(missing).toContain("powerOfAttorneyChangeCert");
+    expect(missing).toContain("powerOfAttorneyIdPassword");
+  });
+
+  it("★ 他の設置種別は条件X の対象外", () => {
+    for (const installationType of [
+      WITH_SOLAR,
+      BATTERY_ONLY,
+      SOLAR_ONLY,
+      POWERCON_ONLY,
+    ]) {
+      expect(
+        shouldShowBatteryAdditionHiddenDocuments({ installationType }),
+        installationType,
+      ).toBe(true);
+    }
+    expect(
+      shouldShowBatteryAdditionHiddenDocuments({
+        installationType: BATTERY_ADDITION_ONLY,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("表示：条件X の7項目を除けば2値で一致", () => {
+  it("★ 全項目 × 条件の総当たりで表示判定が一致する（7項目を除く）", () => {
     for (const scenario of SCENARIOS) {
       const a = valuesFor(BATTERY_ONLY, scenario);
       const b = valuesFor(BATTERY_ADDITION_ONLY, scenario);
       for (const field of CUSTOMER_INFO_FORM_FIELDS) {
+        if (BATTERY_ADDITION_HIDDEN_DOCUMENT_KEYS.has(field.key)) continue;
         expect(
           isCustomerInfoFormFieldVisible(field.key, b),
           `${field.key} / ${label(scenario)}`,
@@ -260,26 +465,27 @@ describe("表示：2値でまったく同じ", () => {
   });
 });
 
-describe("必須：2値でまったく同じ", () => {
-  it("★ 総当たりで未入力判定の対象が一致する", () => {
+describe("必須：条件X の7項目を除けば2値で一致", () => {
+  it("★ 総当たりで未入力判定の対象が一致する（7項目を除く）", () => {
     for (const scenario of SCENARIOS) {
       // 空のときに必須が効くかを見るため、土台は使わず空で回す
       const empty = { ...scenario };
-      const a = findMissingRequiredCustomerInfoFields(VALIDATE_FIELDS, {
-        ...empty,
-        installationType: BATTERY_ONLY,
-      }).map((f) => f.key);
-      const b = findMissingRequiredCustomerInfoFields(VALIDATE_FIELDS, {
-        ...empty,
-        installationType: BATTERY_ADDITION_ONLY,
-      }).map((f) => f.key);
-      expect(b, label(scenario)).toEqual(a);
+      const missingFor = (installationType: string): string[] =>
+        findMissingRequiredCustomerInfoFields(VALIDATE_FIELDS, {
+          ...empty,
+          installationType,
+        })
+          .map((f) => f.key)
+          .filter((k) => !BATTERY_ADDITION_HIDDEN_DOCUMENT_KEYS.has(k));
+      expect(missingFor(BATTERY_ADDITION_ONLY), label(scenario)).toEqual(
+        missingFor(BATTERY_ONLY),
+      );
     }
   });
 });
 
-describe("保存：2値でまったく同じ", () => {
-  it("★ 総当たりで payload が一致する（設置種別の列だけ除く）", () => {
+describe("保存：条件X の7項目を除けば2値で一致", () => {
+  it("★ 総当たりで payload が一致する（設置種別の列と7項目を除く）", () => {
     for (const scenario of SCENARIOS) {
       const a = buildCustomerInfoFormPayload(
         valuesFor(BATTERY_ONLY, scenario),
@@ -289,9 +495,7 @@ describe("保存：2値でまったく同じ", () => {
         valuesFor(BATTERY_ADDITION_ONLY, scenario),
         RESOLVED,
       );
-      expect(withoutInstallationType(b), label(scenario)).toEqual(
-        withoutInstallationType(a),
-      );
+      expect(comparable(b), label(scenario)).toEqual(comparable(a));
     }
   });
 
@@ -302,7 +506,7 @@ describe("保存：2値でまったく同じ", () => {
     }
   });
 
-  it("★ 空のときも payload が一致する", () => {
+  it("★ 空のときも payload が一致する（7項目を除く）", () => {
     for (const scenario of SCENARIOS) {
       const a = buildCustomerInfoFormPayload(
         { ...scenario, installationType: BATTERY_ONLY },
@@ -312,16 +516,14 @@ describe("保存：2値でまったく同じ", () => {
         { ...scenario, installationType: BATTERY_ADDITION_ONLY },
         RESOLVED,
       );
-      expect(withoutInstallationType(b), label(scenario)).toEqual(
-        withoutInstallationType(a),
-      );
+      expect(comparable(b), label(scenario)).toEqual(comparable(a));
     }
   });
 });
 
-describe("画面の値（非表示時の既定値）：2値でまったく同じ", () => {
+describe("画面の値（非表示時の既定値）：条件X の7項目を除けば2値で一致", () => {
   for (const includeDocumentFields of [true, false]) {
-    it(`★ includeDocumentFields=${includeDocumentFields} で結果が一致する`, () => {
+    it(`★ includeDocumentFields=${includeDocumentFields} で結果が一致する（7項目を除く）`, () => {
       for (const scenario of SCENARIOS) {
         const a = applyCustomerInfoHiddenDefaultsToValues(
           valuesFor(BATTERY_ONLY, scenario),
@@ -331,9 +533,7 @@ describe("画面の値（非表示時の既定値）：2値でまったく同じ
           valuesFor(BATTERY_ADDITION_ONLY, scenario),
           { includeDocumentFields },
         );
-        expect(withoutInstallationType(b), label(scenario)).toEqual(
-          withoutInstallationType(a),
-        );
+        expect(comparable(b), label(scenario)).toEqual(comparable(a));
       }
     });
   }
