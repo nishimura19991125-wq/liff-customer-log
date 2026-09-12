@@ -293,35 +293,9 @@ describe("非表示時の既定値適用でも潰さない", () => {
     expect(after[REFERRAL_SOURCE]).toBe("A商事");
     expect(after[REFERRAL_FEE]).toBe("50,000");
   });
-
-  it("工務店名は従来どおり - に揃う（この2項目だけの扱い）", () => {
-    const after = applyCustomerInfoHiddenDefaultsToValues({
-      introduction: "ダイレクト",
-      builderOrTorachiName: "テスト工務店",
-    });
-    expect(after.builderOrTorachiName).toBe("-");
-  });
 });
 
 describe("他の項目に影響していないこと", () => {
-  it("★ 工務店名の表示条件は変えていない（条件B のまま）", () => {
-    const shown = [
-      "(DC)工務店OBリスト",
-      "工務店トスアップ",
-      "トラーチ倶楽部",
-      "卸案件",
-      "お客様紹介",
-    ];
-    for (const route of INTRODUCTION_ROUTE_OPTIONS) {
-      expect(
-        isCustomerInfoFormFieldVisible("builderOrTorachiName", {
-          introduction: route,
-        }),
-        route,
-      ).toBe(shown.includes(route));
-    }
-  });
-
   it("★ 導入経緯そのものは常に表示・選択肢14件", () => {
     expect(isCustomerInfoFormFieldVisible("introduction", {})).toBe(true);
     expect(INTRODUCTION_ROUTE_OPTIONS).toHaveLength(14);

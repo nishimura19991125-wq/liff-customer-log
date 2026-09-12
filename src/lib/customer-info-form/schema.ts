@@ -152,11 +152,6 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     caption: "紹介手数料",
     type: "comma-integer",
   },
-  {
-    key: "builderOrTorachiName",
-    caption: "工務店名またはトラーチ倶楽部",
-    type: "text",
-  },
   { key: "firstContractDate", caption: "初回契約日", type: "date" },
   { key: "contractDate", caption: "契約日", type: "date" },
   {

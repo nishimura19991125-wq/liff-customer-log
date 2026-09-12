@@ -126,15 +126,6 @@ export const REFERRAL_SOURCE_FIELD_KEYS: ReadonlySet<string> = new Set([
   "referralFee",
 ]);
 
-/** 工務店名またはトラーチ倶楽部を表示・必須にする導入経緯 */
-export const INTRODUCTION_ROUTES_REQUIRING_BUILDER_NAME = new Set<string>([
-  "(DC)工務店OBリスト",
-  "工務店トスアップ",
-  "トラーチ倶楽部",
-  "卸案件",
-  "お客様紹介",
-]);
-
 /**
  * 条件A：紹介元・紹介手数料を表示するか。
  *
@@ -152,10 +143,6 @@ export function shouldShowReferralSourceFields(
   return INTRODUCTION_ROUTES_WITH_REFERRAL_SOURCE.has(
     (values.introduction ?? "").trim(),
   );
-}
-
-export function introductionRequiresBuilderName(introduction: string): boolean {
-  return INTRODUCTION_ROUTES_REQUIRING_BUILDER_NAME.has(introduction.trim());
 }
 
 export const INPUT_STATUS_PENDING = "未入力" as const;

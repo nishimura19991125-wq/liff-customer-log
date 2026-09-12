@@ -10,7 +10,6 @@ import {
   isIndoorSurveyStatusNotDone,
   PAYMENT_METHODS_WITH_CASH,
   PAYMENT_METHODS_WITH_LOAN,
-  introductionRequiresBuilderName,
   REFERRAL_SOURCE_FIELD_KEYS,
   shouldShowReferralSourceFields,
   preApplicationRequiresDocuments,
@@ -209,7 +208,6 @@ export function isCustomerInfoFormFieldVisible(
   const subsidy = norm(values.subsidy);
   const indoorSurveyStatus = values.indoorSurveyStatus;
   const preApplication = norm(values.preApplication);
-  const introduction = norm(values.introduction);
 
   /**
    * 条件W：売電方式が「非FIT」のとき隠す書類。
@@ -241,8 +239,6 @@ export function isCustomerInfoFormFieldVisible(
   }
 
   switch (key) {
-    case "builderOrTorachiName":
-      return introductionRequiresBuilderName(introduction);
     case "panelCombo":
     case "panelModel1":
     case "panelCount1":
@@ -487,10 +483,9 @@ export function customerInfoRoofMaterialOptions(): readonly string[] {
  * それ以外（紹介ルート・室内現地調査実施状況・蓄電池複数台設置）の変更で
  * 書類に hiddenValue を書くのは、条件が変わっていないのに値を壊す動作になる。
  *
- * 3キー以外でも呼び出しは続ける。それらは 紹介手数料・工務店名・
- * 室内調査予定日・蓄電池容量② の hiddenValue 適用に必要で、
- * とくに工務店名は shouldPreserveHiddenFieldOnPut の保護に掛かるため、
- * ここで揃えないと @pocket に古い値が残り続ける。
+ * 3キー以外でも呼び出しは続ける。室内調査予定日・蓄電池容量② など
+ * 書類以外の非表示項目に hiddenValue を揃えるのに必要なため。
+ * （紹介元・紹介手数料は条件A で素通りさせる。工務店名は項目ごと廃止した）
  */
 export function applyCustomerInfoHiddenDefaultsToValues(
   values: CustomerInfoFormValues,

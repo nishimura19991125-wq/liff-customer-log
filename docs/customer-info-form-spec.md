@@ -78,7 +78,6 @@
 | introduction | 導入経緯 | select | ダイレクト / (DC)工務店OBリスト / ソーラーパートナーズ / タイナビ / 工務店トスアップ / トラーチ倶楽部 / 卸案件 / お客様紹介 / HP / SNS / トレンディ / 大和ハウス / 産業用 / お取引先様からの紹介 | 必須 | | 通常 |
 | referralSource | 紹介元 | text | | **任意** | 条件A | 通常 |
 | referralFee | 紹介手数料 | comma-integer | | 必須 | 条件A | 通常 |
-| builderOrTorachiName | 工務店名またはトラーチ倶楽部 | text | | 必須 | 条件B | 通常 |
 | firstContractDate | 初回契約日 | date | | 必須 | | 通常 |
 | contractDate | 契約日 | date | | 必須 | | 通常 |
 
@@ -233,8 +232,11 @@
            #   まとめて判定する
            # 6値とも導入経緯の選択肢にある（画面から選べる）
 
-    条件B  key == "builderOrTorachiName"
-           → introduction ∈ {(DC)工務店OBリスト, 工務店トスアップ, トラーチ倶楽部, 卸案件, お客様紹介}
+    条件B  廃止（欠番）。「工務店名またはトラーチ倶楽部」は項目ごと削除した。
+           @pocket 側で列名を「紹介元」に変えたため参照先の列が無くなり、
+           役割は条件A の紹介元が引き継いでいる。
+           # 記号は詰めない。C 以降を繰り上げると、コード中のコメントや
+           #   他の章が指している条件とズレる
 
     条件C  key ∈ {panelCombo, panelModel1, panelCount1, panelCapacityKw}
            → installationType ∉ {蓄電池のみ, パワコン取替のみ}
