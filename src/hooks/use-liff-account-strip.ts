@@ -5,7 +5,10 @@ import { useCallback, useEffect, useState } from "react";
 
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { LIFF_PROFILE_CACHE_KEY } from "@/lib/liff-profile-cache-key";
-import { fetchStaffApiWithSessionCache } from "@/lib/staff-api-session-cache";
+import {
+  clearStaffApiSessionCache,
+  fetchStaffApiWithSessionCache,
+} from "@/lib/staff-api-session-cache";
 
 type StaffApiPayload = {
   staff?: { id: string; name: string; importKey?: string }[];
@@ -177,6 +180,17 @@ export function useLiffAccountStrip(idToken: string | null, enabled: boolean) {
         }
         const n = payload.boundStaff?.name?.trim();
         if (n) setBoundStaffName(n);
+
+        /**
+         * 紐づけ前に保存された boundStaff: null を捨てる。
+         *
+         * 捨てないと、直後の再取得も次のページでのマウントも
+         * sessionStorage のキャッシュ（TTL 30分）から boundStaff: null を
+         * 読み、**ページ遷移のたびに紐づけ画面が再表示される。**
+         * 破棄することで下の再取得が実際に /api/staff を呼び、
+         * department / staffRole まで揃った値が入る。
+         */
+        clearStaffApiSessionCache();
 
         try {
           const { res: staffRes, data: staffData } =

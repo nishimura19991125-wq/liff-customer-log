@@ -52,6 +52,30 @@ export function writeStaffApiSessionCache(
   }
 }
 
+/**
+ * キャッシュを破棄する。次の取得で必ず /api/staff を呼び直す。
+ *
+ * ■ なぜ「更新」ではなく「破棄」か
+ * 紐づけ（POST /api/staff/bind）の応答は boundStaff: {id, name} だけで、
+ * department / staffRole を含まない。応答の値でキャッシュを書き換えると、
+ * **部署と AP/CL 役割が欠けたまま 30 分保持される**。
+ * 破棄して取り直せば、/api/staff が揃った値を返す。
+ *
+ * ■ 呼ぶ場所
+ * 紐づけ成功の直後（use-liff-account-strip.ts）と、再ログイン時
+ * （liff-session.ts の clearLiffProfileCache）。
+ * 破棄しないと、紐づけ前に保存された boundStaff: null が最大 30 分残り、
+ * ページ遷移のたびに紐づけ画面が再表示される。
+ */
+export function clearStaffApiSessionCache(): void {
+  if (typeof sessionStorage === "undefined") return;
+  try {
+    sessionStorage.removeItem(STAFF_API_SESSION_CACHE_KEY);
+  } catch {
+    /* プライベートブラウジング等。消せなくても致命的ではない */
+  }
+}
+
 export async function fetchStaffApiWithSessionCache(
   idToken: string,
 ): Promise<{

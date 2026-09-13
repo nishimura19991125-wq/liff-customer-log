@@ -3,6 +3,7 @@
 import liff from "@line/liff";
 
 import { LIFF_PROFILE_CACHE_KEY } from "@/lib/liff-profile-cache-key";
+import { clearStaffApiSessionCache } from "@/lib/staff-api-session-cache";
 
 /** ID トークンの exp を確認（期限切れなら true） */
 export function isIdTokenExpired(token: string, skewMs = 30_000): boolean {
@@ -19,12 +20,20 @@ export function isIdTokenExpired(token: string, skewMs = 30_000): boolean {
   }
 }
 
+/**
+ * 再ログイン時に破棄するセッションキャッシュ。
+ *
+ * **スタッフ名簿の応答キャッシュも一緒に捨てる。** 捨てないと、別の LINE
+ * アカウントでログインし直しても前のアカウントの boundStaff が最大 30 分
+ * 残る（紐づけ済みに見える／未紐づけに見える、のどちらも起こる）。
+ */
 export function clearLiffProfileCache(): void {
   try {
     sessionStorage.removeItem(LIFF_PROFILE_CACHE_KEY);
   } catch {
     /* ignore */
   }
+  clearStaffApiSessionCache();
 }
 
 function redirectUri(): string {
