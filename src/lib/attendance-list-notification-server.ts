@@ -67,15 +67,20 @@ function isMissingClockOutTargetCompany(company: string | null): boolean {
  * ■ 名簿から会社が引けなかった人は載せない
  * 名簿の登録漏れの人が毎日出続けるのを防ぐため。ただし黙って消すと
  * 漏れに気づけないので、**件数だけ**残す（氏名は出さない）。
- * 名簿そのものが引けなかったときも同じ扱いで、全員が引けなかった人になる。
- * 個別の登録漏れと区別が付くよう、そのときは別の1行を残す。
+ *
+ * ■ 未退勤の**全員**が引けなかったときは null（＝送らない）
+ * 名簿そのものが引けていない疑いが強い。そのまま絞ると0人になり、
+ * 未退勤者がいるのに「全員が退勤打刻済みです」が流れてしまう。
+ * 一部の人だけ引けないのは個別の登録漏れなので、その人を外して送る。
  */
 async function keepTargetCompanyOnly<T extends { staffName: string }>(
   people: T[],
-): Promise<T[]> {
+): Promise<T[] | null> {
   if (people.length === 0) return people;
 
   let companies: Array<string | null>;
+  /** 名簿の照会そのものが失敗したときの例外の種別 */
+  let lookupErrorName: string | null = null;
   try {
     const cfg = await resolveStaffAssignmentLookupConfig();
     if (!cfg) throw new Error("not-configured");
@@ -86,20 +91,25 @@ async function keepTargetCompanyOnly<T extends { staffName: string }>(
       ),
     );
   } catch (e) {
-    // 例外の中身には名簿の値が載りうる。種別と件数だけ出す
-    console.error(
-      "[attendance-list] 名簿から所属会社を引けませんでした（未退勤の全員を対象外にします）",
-      JSON.stringify({
-        unresolvedCount: people.length,
-        name: e instanceof Error ? e.name : "unknown",
-      }),
-    );
-    return [];
+    // 例外の中身には名簿の値が載りうる。種別だけ控える
+    lookupErrorName = e instanceof Error ? e.name : "unknown";
+    companies = people.map(() => null);
   }
 
   const unresolvedCount = companies.filter(
     (c) => !normApClStaffName(c ?? undefined),
   ).length;
+  if (unresolvedCount === people.length) {
+    console.error(
+      "[attendance-list] 名簿から所属会社を引けませんでした（未退勤の全員が引けないため送りません）",
+      JSON.stringify({
+        unresolvedCount,
+        lookupFailed: lookupErrorName !== null,
+        ...(lookupErrorName ? { name: lookupErrorName } : {}),
+      }),
+    );
+    return null;
+  }
   if (unresolvedCount > 0) {
     console.warn(
       "[attendance-list] 名簿から所属会社を引けなかった人を対象外にしました",
@@ -123,6 +133,8 @@ export type AttendanceListNotifyOutcome = {
     | "rate-limited"
     | "fetch-failed"
     | "send-failed"
+    /** 未退勤者がいるのに、全員の所属会社を名簿から引けなかった */
+    | "company-unresolved"
     | "dry-run";
   /** 出勤打刻があった人数 */
   attendeeCount: number;
@@ -193,6 +205,12 @@ export async function runAttendanceListNotification(
       : await keepTargetCompanyOnly(
           roster.attendees.filter((a) => !a.clockOut),
         );
+
+  // 誰が対象か判断できない。「全員が退勤打刻済みです」と流さず、送らない
+  // （理由と件数は keepTargetCompanyOnly が残している）
+  if (people === null) {
+    return { ...base, attendeeCount, skipped: "company-unresolved" };
+  }
 
   const text =
     mode === "clock-in"

@@ -382,8 +382,12 @@ describe("★ ②-2 未退勤リストは所属会社で絞る", () => {
     expect(h.companyLookupNames).toHaveLength(0);
   });
 
+  /**
+   * 未退勤者がいるのに全員の会社が引けないときは送らない。
+   * 絞ると0人になり、「全員が退勤打刻済みです」と誤って流れるため。
+   */
   it.each(["not-configured", "throws"] as const)(
-    "名簿そのものが引けない（%s）ときは全員を対象外にし、件数だけ残す",
+    "★ 名簿そのものが引けない（%s）ときは送らず、件数だけ残す",
     async (state) => {
       h.companyLookup = state;
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -391,14 +395,112 @@ describe("★ ②-2 未退勤リストは所属会社で絞る", () => {
 
       const outcome = await runAttendanceListNotification("missing-clock-out");
 
-      expect(outcome.sent).toBe(true);
+      expect(outcome.sent).toBe(false);
+      expect(outcome.skipped).toBe("company-unresolved");
       expect(outcome.listedCount).toBe(0);
-      expect(h.sentTexts[0]).toContain("全員が退勤打刻済みです");
+      expect(outcome.attendeeCount).toBe(4);
+      expect(h.sentTexts).toHaveLength(0);
       const logged = errorSpy.mock.calls.flat().join(" ");
+      expect(logged).toContain("送りません");
       expect(logged).toContain('"unresolvedCount":3');
-      expect(logged).not.toContain("社員A");
+      expect(logged).toContain('"lookupFailed":true');
+      for (const name of ["社員A", "社員B", "社員C", "社員D"]) {
+        expect(logged).not.toContain(name);
+      }
     },
   );
+
+  it("★ 名簿は引けても未退勤の全員が会社不明なら送らない", async () => {
+    h.companyByName = { 社員A: null, 社員B: "", 社員C: "   ", 社員D: null };
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    errorSpy.mockClear();
+
+    const outcome = await runAttendanceListNotification("missing-clock-out");
+
+    expect(outcome.sent).toBe(false);
+    expect(outcome.skipped).toBe("company-unresolved");
+    expect(h.sentTexts).toHaveLength(0);
+    const logged = errorSpy.mock.calls.flat().join(" ");
+    expect(logged).toContain('"unresolvedCount":3');
+    expect(logged).toContain('"lookupFailed":false');
+  });
+
+  it("★ dryRun でも同じ判定（本文を作らない）", async () => {
+    h.companyLookup = "throws";
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const outcome = await runAttendanceListNotification("missing-clock-out", {
+      dryRun: true,
+      includeText: true,
+    });
+
+    expect(outcome.skipped).toBe("company-unresolved");
+    expect(outcome.text).toBeUndefined();
+  });
+
+  it.each(["not-configured", "throws"] as const)(
+    "★ 未退勤が0人なら、名簿が引けなくても（%s）従来どおり送る",
+    async (state) => {
+      h.companyLookup = state;
+      h.roster = {
+        ok: true,
+        workDate: "2026-08-21",
+        attendees: [
+          attendee("社員A", "09:00", "18:00", "DX事業部"),
+          attendee("社員B", "09:05", "18:10", "DC事業部"),
+        ],
+      };
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      errorSpy.mockClear();
+
+      const outcome = await runAttendanceListNotification("missing-clock-out");
+
+      expect(outcome.sent).toBe(true);
+      expect(h.sentTexts[0]).toBe(
+        [
+          "▼退勤打刻もれ▼",
+          "8/21（金）",
+          "----------------",
+          "全員が退勤打刻済みです",
+        ].join("\n"),
+      );
+      // 絞る相手がいないので名簿は見ない。失敗の記録も出ない
+      expect(h.companyLookupNames).toHaveLength(0);
+      expect(errorSpy).not.toHaveBeenCalled();
+    },
+  );
+
+  it("★ 一部の人だけ引けないときは、その人を除いて送る", async () => {
+    // 社員A は対象会社、社員B・社員C は会社不明
+    h.companyByName = { ...h.companyByName, 社員B: null };
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    warnSpy.mockClear();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    errorSpy.mockClear();
+
+    const outcome = await runAttendanceListNotification("missing-clock-out");
+
+    expect(outcome.sent).toBe(true);
+    expect(outcome.listedCount).toBe(1);
+    expect(h.sentTexts[0]).toContain("社員A");
+    expect(h.sentTexts[0]).not.toContain("社員B");
+    expect(h.sentTexts[0]).not.toContain("社員C");
+    expect(warnSpy.mock.calls.flat().join(" ")).toContain(
+      '"unresolvedCount":2',
+    );
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it("★ 引けた人が全員他社なら「全員が退勤打刻済みです」を送る", async () => {
+    // 社員C だけ会社不明。全員が引けないわけではないので送る
+    h.companyByName = { ...h.companyByName, 社員A: "株式会社KAGARIBI" };
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const outcome = await runAttendanceListNotification("missing-clock-out");
+
+    expect(outcome.sent).toBe(true);
+    expect(h.sentTexts[0]).toContain("全員が退勤打刻済みです");
+  });
 
   it("★ 出勤者リスト（9:32）は絞らない。他社も会社不明の人も載る", async () => {
     const outcome = await runAttendanceListNotification("clock-in");
