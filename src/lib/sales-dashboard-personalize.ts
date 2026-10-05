@@ -39,6 +39,10 @@ export function personalizeSalesDashboardPayload(
       ...r,
       isSelf: normApClStaffName(r.staffName) === bound,
     })),
+    apRanking: core.apRanking.map((r) => ({
+      ...r,
+      isSelf: normApClStaffName(r.staffName) === bound,
+    })),
     tenkaRanking: core.tenkaRanking.map((r) => ({
       ...r,
       isSelf: normApClStaffName(r.staffName) === bound,

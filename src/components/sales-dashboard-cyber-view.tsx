@@ -20,17 +20,20 @@ import { barRatio } from "@/lib/sales-dashboard-bar-ratio";
  *   PT とアポの両方を並べるタブで、指標が1つに決まらない。そのまま
  *   metric へ渡さず、departmentMetric() で明示的に出し分けること。
  */
-export type DashboardDepartment = "pt" | "apo" | "branch";
+export type DashboardDepartment = "pt" | "apo" | "ap" | "branch";
 
 /**
  * 部門タブ → 進捗の指標。
  * 支社別タブは PT とアポを縦に並べるので単一の指標に決まらない。null を
  * 返し、呼ぶ側が2つぶんを明示的に描く。
+ *
+ * APランキングも null。目標を持たない部門なので、目標に対する「全体の進捗」
+ * を出さない（出すなら PT かアポ件数の進捗になり、別の部門の数字になる）。
  */
 function departmentMetric(
   department: DashboardDepartment,
 ): SalesProgressMetricKey | null {
-  return department === "branch" ? null : department;
+  return department === "branch" || department === "ap" ? null : department;
 }
 
 export type DashboardKpi = {
@@ -52,6 +55,18 @@ export type RankingRow = {
   achievementRate: number;
   /** スタッフ名簿の勤務場所（所属支社）。引けなければ空文字 */
   branch: string;
+};
+
+/** APランキングの1行。**目標・達成率は持たない** */
+export type ApRankingRow = {
+  rank: number;
+  staffName: string;
+  /** 期間内の APPT の合計 */
+  appt: number;
+  /** アポ実績数（アポ件数タブと同じ集計結果） */
+  apoCount: number;
+  isSelf: boolean;
+  isPodium: boolean;
 };
 
 export type ApoRankingRow = {
@@ -115,6 +130,9 @@ export type DashboardPayload = {
   apoError: string | null;
   apoKpi: { totalApoCount: number } | null;
   apoRanking: ApoRankingRow[];
+  /** APランキングを集計できたか（導入経緯の列を解決できないと false） */
+  apReady?: boolean;
+  apRanking?: ApRankingRow[];
   tenkaReady: boolean;
   tenkaError: string | null;
   tenkaKpi: { totalTargetCount: number } | null;
@@ -124,6 +142,7 @@ export type DashboardPayload = {
 const DEPARTMENT_TABS: Array<{ id: DashboardDepartment; label: string }> = [
   { id: "pt", label: "総合PTランキング" },
   { id: "apo", label: "アポ件数" },
+  { id: "ap", label: "APランキング" },
   { id: "branch", label: "支社別" },
 ];
 
@@ -817,6 +836,108 @@ function ApoRankingSection({ rows }: { rows: ApoRankingRow[] }) {
   );
 }
 
+/**
+ * APランキングの1行（台座・一覧で共用）。
+ *
+ * 出すのは APPT とアポ実績数の2つだけ。**達成率・目標・目標に対する棒は
+ * 出さない**（この部門に目標は無い）。総合PT・アポ件数の行とは作りを分けて
+ * あるので、RankingProgressBar（目標と達成率を描く）は使わない。
+ */
+function ApRankingRowCard({
+  row,
+  apoReady,
+}: {
+  row: ApRankingRow;
+  /** アポ件数の集計が使えるか。使えないときは件数を「—」にする */
+  apoReady: boolean;
+}) {
+  const podium = row.rank <= 3;
+  return (
+    <div
+      className={`${
+        podium
+          ? PODIUM_CARD_SHELL
+          : "rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm dark:border-emerald-500/15 dark:bg-slate-900/50"
+      } ${
+        row.isSelf ? "ring-2 ring-inset ring-cyan-300/80 dark:ring-cyan-400/35" : ""
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <span
+          className={`flex shrink-0 items-center justify-center rounded-full font-bold ${
+            podium ? "size-10 text-[15px]" : "size-9 text-[14px]"
+          } ${RANK_BADGE_CLASS}`}
+        >
+          {row.rank}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p
+            className={`truncate ${
+              podium
+                ? `text-[15px] font-bold ${PODIUM_NAME_CLASS}`
+                : "text-[14px] font-semibold text-slate-800 dark:text-white"
+            }`}
+          >
+            {row.staffName}
+            {row.isSelf ? (
+              <span className="ml-2 text-[11px] text-cyan-700 dark:text-cyan-300">
+                あなた
+              </span>
+            ) : null}
+          </p>
+          <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">
+            アポ実績 {apoReady ? `${formatPt(row.apoCount)}件` : "—"}
+          </p>
+        </div>
+        <p className="shrink-0 text-right">
+          <span className={`text-[17px] font-bold ${ptValueClass()}`}>
+            {formatPt(row.appt)}
+          </span>
+          <span className="ml-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+            PT
+          </span>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ApRankingSection({
+  rows,
+  ready,
+  apoReady,
+}: {
+  rows: ApRankingRow[];
+  ready: boolean;
+  apoReady: boolean;
+}) {
+  if (!ready) {
+    return (
+      <LiffCard>
+        <p className="px-4 py-6 text-center text-[13px] text-slate-500 dark:text-slate-400">
+          APランキングを集計できません（お客様情報の「導入経緯」の列を確認してください）
+        </p>
+      </LiffCard>
+    );
+  }
+  if (rows.length === 0) {
+    return (
+      <LiffCard>
+        <p className="px-4 py-6 text-center text-[13px] text-slate-500 dark:text-slate-400">
+          対象期間のデータがありません
+        </p>
+      </LiffCard>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-3">
+      {rows.map((row) => (
+        <ApRankingRowCard key={`ap-${row.rank}`} row={row} apoReady={apoReady} />
+      ))}
+    </div>
+  );
+}
+
 type Props = {
   data: DashboardPayload;
   department: DashboardDepartment;
@@ -885,7 +1006,7 @@ export function SalesDashboardCyberView({
           />
         </div>
 
-        {metric === null ? (
+        {department === "branch" ? (
           /**
            * 支社別タブ。PT とアポを**縦に分けて**並べる。支社ごとに両方を
            * 混ぜると、スマホでは1行が詰まって読めなくなる。
@@ -913,7 +1034,25 @@ export function SalesDashboardCyberView({
               />
             </div>
           </div>
-        ) : (
+        ) : department === "ap" ? (
+          /**
+           * APランキング。目標の無い部門なので、全体の進捗（目標に対する
+           * 達成）は置かない。APPT とアポ実績数だけを並べる
+           */
+          <>
+            <h2 className="mb-1 text-[15px] font-bold tracking-wide text-slate-800 dark:text-emerald-50">
+              APランキング
+            </h2>
+            <p className="mb-3 text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
+              導入経緯がダイレクト・お客様紹介・(DC)工務店OBリストの契約の APPT を合計しています。
+            </p>
+            <ApRankingSection
+              rows={data.apRanking ?? []}
+              ready={data.apReady ?? false}
+              apoReady={apoReady}
+            />
+          </>
+        ) : metric === null ? null : (
           <>
             <div className="mb-3">
               <SalesProgressOverall

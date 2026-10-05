@@ -21,6 +21,12 @@ import {
   type PtBreakdownRow,
 } from "@/lib/sales-dashboard-customer-pt";
 import {
+  aggregateCustomerInfoApPt,
+  buildApRanking,
+  resolveCustomerInfoApPtFieldMap,
+  type ApRankingRow,
+} from "@/lib/sales-dashboard-ap-pt";
+import {
   buildApoAndTenkaMonthly,
   buildTenkaRanking,
   sortTenkaAgg,
@@ -99,6 +105,9 @@ export type SalesDashboardRankingRow = {
 
 export type { PtBreakdownRow };
 
+/** APランキングの1行。目標・達成率は持たない */
+export type SalesDashboardApRankingRow = ApRankingRow;
+
 /** 支社別の内訳1人分。isSelf はキャッシュに入れず personalize で付ける */
 export type SalesDashboardProgressMember = {
   staffName: string;
@@ -146,6 +155,13 @@ export type SalesDashboardPayload = {
   apoError: string | null;
   apoKpi: ApoDashboardKpi | null;
   apoRanking: ApoDashboardRankingRow[];
+  /**
+   * APランキングを集計できたか。お客様情報の導入経緯の列を解決できないと
+   * false（絞り込めないまま数えた数字は出さない）
+   */
+  apReady: boolean;
+  /** AP部門。APPT の合計とアポ実績数。**目標・達成率は含めない** */
+  apRanking: SalesDashboardApRankingRow[];
   tenkaReady: boolean;
   tenkaError: string | null;
   tenkaKpi: { totalTargetCount: number } | null;
@@ -429,6 +445,13 @@ export type SalesDashboardCore = {
   contractCountByStaffMonth: Map<string, Map<string, number>>;
   /** 年月 → 担当者名 → PT明細。応答へは選択月ぶんだけ載せる */
   ptBreakdownByStaffMonth: Map<string, Record<string, PtBreakdownRow[]>>;
+  /**
+   * APランキング用。AP担当者名 → 年月 → その月の APPT（導入経緯で絞った分）。
+   * 導入経緯の列を解決できなかったときは null（＝集計していない）。
+   * 総合PT（ptByStaffMonth）とは別に持つ。あちらへ混ぜると総合PT・支社別・
+   * ホームのカードの数字が変わってしまう
+   */
+  apPtByStaffMonth?: CustomerPtMonthlyAgg | null;
   apo:
     | { ok: true; byStaffMonth: ApoMonthlyAgg }
     | { ok: false; error: string };
@@ -477,7 +500,19 @@ export async function buildSalesDashboardCore(): Promise<SalesDashboardCore | nu
       ? resolveCustomerInfoPtFieldMap(contractFields, contractBase)
       : null;
 
+  // APランキングは総合PTと同じ列に、導入経緯だけを足して読む
+  const apPtFieldMap =
+    contractFields && ptFieldMapCi
+      ? resolveCustomerInfoApPtFieldMap(contractFields, ptFieldMapCi)
+      : null;
+  if (contractFields && ptFieldMapCi && !apPtFieldMap) {
+    console.warn(
+      "[sales-dashboard] お客様情報の導入経緯の列を解決できません（APランキングは集計しません）",
+    );
+  }
+
   const contractFieldIdSet = new Set<string>();
+  if (apPtFieldMap) contractFieldIdSet.add(apPtFieldMap.introduction);
   if (ptFieldMapCi) {
     for (const id of [
       ptFieldMapCi.date,
@@ -524,6 +559,14 @@ export async function buildSalesDashboardCore(): Promise<SalesDashboardCore | nu
       };
   const ptByStaffMonth = customerPt.byStaffMonth;
   const ptBreakdownByStaffMonth = customerPt.breakdownByStaffMonth;
+
+  /**
+   * APランキング。**同じ取得結果**から APPT だけを別に積む（@pocket への
+   * 問い合わせは増えない）。総合PTの集計には手を入れていない
+   */
+  const apPtByStaffMonth = apPtFieldMap
+    ? aggregateCustomerInfoApPt(contractRecords, apPtFieldMap)
+    : null;
 
   const contractCountByStaffMonth =
     ptFieldMapCi && contractRecords.length > 0
@@ -581,6 +624,7 @@ export async function buildSalesDashboardCore(): Promise<SalesDashboardCore | nu
     ptByStaffMonth,
     contractCountByStaffMonth,
     ptBreakdownByStaffMonth,
+    apPtByStaffMonth,
     apo: apoTenka.apo,
     tenka: apoTenka.tenka,
     targets,
@@ -711,6 +755,22 @@ export function buildSalesDashboardPayload(
   const apoSorted = sortApoAgg(apoItems, targetApoByStaff);
   const totalApo = apoSorted.reduce((s, x) => s + x.apoCount, 0);
 
+  // ── APランキング（APPT とアポ実績数） ─────────────
+  /**
+   * アポ実績数は**実績のある人ぶんだけ**（apoActualItems）から引く。
+   * アポ件数ランキング用の apoItems には「目標だけある人」が 0 件で
+   * 足してあるが、APランキングは目標を使わないのでそちらは見ない。
+   * どちらの配列も書き換えないので、アポ件数タブ・支社別には影響しない
+   */
+  const apPtByStaffMonth = core.apPtByStaffMonth ?? null;
+  const apRanking = apPtByStaffMonth
+    ? buildApRanking(
+        sumCustomerPtMonths(apPtByStaffMonth, ymKeys),
+        new Map(apoActualItems.map((it) => [it.name, it.apoCount] as const)),
+        bound,
+      )
+    : [];
+
   // ── AP天下賞（画面には出していないが型は保つ） ──
   const tenkaItems = core.tenka.ok
     ? single
@@ -786,6 +846,8 @@ export function buildSalesDashboardPayload(
     apoRanking: core.apo.ok
       ? buildApoRanking(apoSorted, totalApo, bound, targetApoByStaff)
       : [],
+    apReady: apPtByStaffMonth !== null,
+    apRanking,
     tenkaReady: core.tenka.ok,
     tenkaError: core.tenka.ok ? null : core.tenka.error,
     tenkaKpi: core.tenka.ok ? { totalTargetCount: totalTenka } : null,

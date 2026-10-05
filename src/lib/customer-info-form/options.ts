@@ -97,6 +97,27 @@ export const INTRODUCTION_ROUTE_OPTIONS = [
   "お取引先様からの紹介",
 ] as const;
 
+/** 導入経緯の選択肢の1つ */
+export type IntroductionRoute = (typeof INTRODUCTION_ROUTE_OPTIONS)[number];
+
+/**
+ * 営業ランキングの AP部門（APランキング）で集計の対象にする導入経緯。
+ *
+ * ⚠ **INTRODUCTION_ROUTE_OPTIONS にある文字列だけ**を書けるようにしてある
+ *    （satisfies）。1文字でも違えば型エラーになるので、選択肢と食い違った
+ *    まま黙って0件になることがない。括弧は半角、DC・OB は半角大文字。
+ *
+ * アポ件数の絞り込み既定値（sales-dashboard-fields.ts の
+ * salesDashboardApoTypeFilterValues）と同じ3つだが、あちらはアポ情報アプリの
+ * 「アポ種別」に対する部分一致、こちらはお客様情報の「導入経緯」に対する
+ * 完全一致で、見ている列が違う。
+ */
+export const AP_RANKING_INTRODUCTION_ROUTES = [
+  "ダイレクト",
+  "お客様紹介",
+  "(DC)工務店OBリスト",
+] as const satisfies readonly IntroductionRoute[];
+
 /**
  * 紹介元・紹介手数料を表示する導入経緯（条件A）。
  *

@@ -65,7 +65,8 @@ function cacheKey(): string {
   const branch = salesProgressBranchConfig();
   return JSON.stringify({
     // v7: 総合PTの集計元を PT集計表からお客様情報へ移した
-    v: 7,
+    // v8: AP部門（APランキング）を足した。取得列に導入経緯が増えている
+    v: 8,
     // 月が変わったら作り直す（当月の集計が前の月のまま残らないように）
     ym: currentYmInJst(),
     contract: salesDashboardContractAppId() ?? "",
