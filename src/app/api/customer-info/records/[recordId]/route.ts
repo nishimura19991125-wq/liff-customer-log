@@ -284,6 +284,57 @@ async function writeAkiNumberBackToCustomerInfo(input: {
   }
 }
 
+/**
+ * 工事レコードを削除したあと、お客様情報の Aki番号 を空にする。
+ *
+ * Aki番号 は工事レコードを指す番号（工事アプリの自動採番を控えたもの）。
+ * レコードが消えると指す先が無くなるので、残さない。
+ * お客様情報側ではテキスト列で、取込キーは T番号 のほう。空文字を書いても
+ * 取込キーの規約には触れない（T番号 は attachImportKeyAndUpdate が同送する）。
+ *
+ * 書き戻し（writeAkiNumberBackToCustomerInfo）と違い、**成否を返す**。
+ * 削除済みなのに番号が残ると存在しないレコードを指し続けるので、
+ * 失敗は画面へ伝える。
+ */
+async function clearCustomerInfoAkiNumber(input: {
+  appId: string;
+  recordId: string;
+  writeAuth: AtPocketFetchAuth;
+  appFields: AtPocketFieldRow[];
+  akiFieldId: string;
+  lineUserId: string;
+}): Promise<boolean> {
+  try {
+    const failed = await attachImportKeyAndUpdate(
+      input.appId,
+      input.recordId,
+      input.writeAuth,
+      input.appFields,
+      { [input.akiFieldId]: "" },
+      input.lineUserId,
+    );
+    if (failed) {
+      console.error(
+        "[api/customer-info] Aki番号 を空にできませんでした（取込キーを付けられません）",
+        JSON.stringify({ status: failed.status }),
+      );
+      return false;
+    }
+    invalidateCustomerInfoKeyLookupCache();
+    return true;
+  } catch (e) {
+    console.error(
+      "[api/customer-info] Aki番号 を空にできませんでした",
+      e instanceof Error ? e.message : String(e),
+    );
+    return false;
+  }
+}
+
+/** 削除は成立したが、お客様情報の Aki番号 を空にできなかったときの文言 */
+const CANCEL_AKI_CLEAR_FAILED_WARNING =
+  "キャンセル処理は完了し、工事登録アプリのレコードも削除しましたが、お客様情報の Aki番号 を消せませんでした。DX事業部へ連絡してください。";
+
 /** 取込キー（T番号）の列。解決できなければ空文字キーになるので呼び出し側で守る */
 function customerInfoImportKeySchemaId(appFields: AtPocketFieldRow[]): string {
   const env = customerInfoImportKeyFieldId();
@@ -817,9 +868,15 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       invalidateCustomerInfoPendingCache();
       invalidateCustomerInfoKeyLookupCache();
 
-      // V-7: お客様情報の更新が成功してから、工事登録アプリを更新する。
+      // V-7: お客様情報の更新が成功してから、工事登録アプリのレコードを
+      // 削除する（止めているときは3項目を空にする更新）。
       // ここで失敗しても保存は成功のまま warning を返す
       const warnings: string[] = [];
+      /** 保存前に控えてあった Aki番号（工事レコードを引くキー） */
+      const beforeAkiNumber =
+        loadedStaff && akiNumberFieldId
+          ? readCustomerInfoFieldValue(loadedStaff.record, akiNumberFieldId)
+          : "";
       let cancelResult: Awaited<
         ReturnType<typeof runCustomerCancelSideEffects>
       > | null = null;
@@ -827,10 +884,7 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         try {
           cancelResult = await runCustomerCancelSideEffects({
             tNumber: notificationExtras.tNumber,
-            akiNumber:
-              loadedStaff && akiNumberFieldId
-                ? readCustomerInfoFieldValue(loadedStaff.record, akiNumberFieldId)
-                : "",
+            akiNumber: beforeAkiNumber,
             lineUserId: auth.lineUserId,
           });
           warnings.push(...cancelResult.warnings);
@@ -841,6 +895,32 @@ export async function PUT(request: Request, ctx: RouteCtx) {
             "キャンセル処理は完了しましたが、工事登録アプリの更新に失敗しました。DX事業部へ連絡してください。",
           );
         }
+      }
+
+      /**
+       * 工事レコードを**削除したときだけ**、お客様情報の Aki番号 を空にする。
+       *
+       * 削除を止めている・複数一致で中止した・削除できなかった、のどれでも
+       * 工事レコードは残っているので、番号も残す（constructionDeleted が
+       * false のまま）。もともと控えが無ければ書く必要が無い。
+       *
+       * お客様情報の更新は上で済んでいるので、もう1回書くことになる。
+       * 削除の成否は後段を走らせるまで分からないため、1回にはまとめられない
+       */
+      if (
+        cancelResult?.constructionDeleted &&
+        akiNumberFieldId &&
+        beforeAkiNumber.trim()
+      ) {
+        const cleared = await clearCustomerInfoAkiNumber({
+          appId: cfg.appId,
+          recordId,
+          writeAuth,
+          appFields,
+          akiFieldId: akiNumberFieldId,
+          lineUserId: auth.lineUserId,
+        });
+        if (!cleared) warnings.push(CANCEL_AKI_CLEAR_FAILED_WARNING);
       }
 
       /**
@@ -905,6 +985,7 @@ export async function PUT(request: Request, ctx: RouteCtx) {
           ? {
               cancelled: {
                 constructionUpdated: cancelResult.constructionUpdated,
+                constructionDeleted: cancelResult.constructionDeleted,
               },
             }
           : {}),

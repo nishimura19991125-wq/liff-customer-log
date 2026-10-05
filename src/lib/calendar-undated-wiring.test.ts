@@ -118,11 +118,18 @@ describe("物理削除の呼び出し口（案B）", () => {
    *    選ばれ、かつ calendar-move-source-disposition の判定を
    *    すべて通ったときだけ消す。1〜2 と違い、消すのは
    *    **お客様名が入っている案件レコード**なので条件は逆向き。
+   * 4. customer-cancel-server（ルートではなく lib）
+   *    顧客ステータスをキャンセルにしたとき、その案件の工事レコードを消す。
+   *    以前は3項目を空にして残していたが、お客様名と T番号 が残って
+   *    空き枠にもならず宙に浮いていた。3 と同じく消すのは案件レコード。
+   *    同じ案件のレコードが複数あるとき・削除ログを残せないときは消さない
+   *    （customer-cancel-delete-guard の判定をすべて通ったときだけ）。
    */
   const DELETE_ALLOWED = [
     "src/app/api/calendar/assign-case-to-slot/route.ts",
     "src/app/api/calendar/assign-customer-case/route.ts",
     "src/app/api/calendar/move-construction-case/route.ts",
+    "src/lib/customer-cancel-server.ts",
   ] as const;
 
   /** 削除を1件も増やさない設計にした経路 */
@@ -132,7 +139,7 @@ describe("物理削除の呼び出し口（案B）", () => {
     "src/app/api/calendar/create-record/route.ts",
   ] as const;
 
-  it("★ 削除を呼ぶのは許可した3経路だけ", () => {
+  it("★ 削除を呼ぶのは許可した4経路だけ", () => {
     for (const rel of DELETE_FORBIDDEN) {
       const src = read(rel);
       expect(src, `${rel} が deleteRecord を呼んでいる`).not.toContain(
@@ -155,6 +162,55 @@ describe("物理削除の呼び出し口（案B）", () => {
     expect(route).toContain("if (!deletionLog.ok)");
     // 止められる形になっている
     expect(route).toContain("assignDeletesEmptySlotEnabled");
+  });
+
+  /**
+   * キャンセル時の削除（4）。消すのは案件レコードで、戻せない。
+   * 作法は他の経路と同じ（A-4）であることを固定する
+   */
+  it("★ キャンセル時の削除は判定関数と削除ログを通る", () => {
+    const src = read("src/lib/customer-cancel-server.ts");
+    // 可否判定を素通しして消していない
+    expect(src).toContain("decideCancelConstructionDeletion");
+    // A-4: 全項目を記録できたときだけ消す
+    expect(src).toContain("formatDeletionContent");
+    expect(src).toContain("if (!deletionLog.ok)");
+    // 止められる形になっている
+    expect(src).toContain("customerCancelDeletesConstructionRecordEnabled");
+  });
+
+  it("★ キャンセル時の削除は1箇所だけ", () => {
+    const src = read("src/lib/customer-cancel-server.ts");
+
+    expect(src.split("await deleteRecord(").length - 1).toBe(1);
+    expect(src).toContain("deleteConstructionRecordForCancel");
+  });
+
+  it("★ キャンセル時の削除は、判定 → 削除ログ → 削除 の順に書かれている", () => {
+    const src = read("src/lib/customer-cancel-server.ts");
+    const fn = src.slice(
+      src.indexOf("async function deleteConstructionRecordForCancel"),
+    );
+
+    const decideAt = fn.indexOf("decideCancelConstructionDeletion(");
+    const logAt = fn.indexOf('operation: "delete"');
+    const guardAt = fn.indexOf("if (!deletionLog.ok)");
+    const deleteAt = fn.indexOf("await deleteRecord(");
+    for (const at of [decideAt, logAt, guardAt, deleteAt]) {
+      expect(at).toBeGreaterThan(-1);
+    }
+    expect(decideAt).toBeLessThan(logAt);
+    expect(logAt).toBeLessThan(guardAt);
+    expect(guardAt).toBeLessThan(deleteAt);
+  });
+
+  it("★ 削除の判定と止めるスイッチは、判定モジュールに閉じている", () => {
+    const guard = read("src/lib/customer-cancel-delete-guard.ts");
+
+    expect(guard).toContain("export function decideCancelConstructionDeletion");
+    expect(guard).toContain("CUSTOMER_CANCEL_DELETE_CONSTRUCTION_RECORD");
+    // 判定しかしない（@pocket の読み書きを持ち込まない）
+    expect(guard).not.toContain("@/lib/atpocket");
   });
 
   it("★ 空き枠を案件に変える経路では消さない", () => {

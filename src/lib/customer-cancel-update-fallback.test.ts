@@ -1,14 +1,24 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * 顧客ステータスをキャンセルにしたときの、工事登録アプリ側の処理。
+ * 顧客ステータスをキャンセルにしたときの、工事登録アプリ側の処理のうち、
+ * **削除を止めているとき（CUSTOMER_CANCEL_DELETE_CONSTRUCTION_RECORD=false）の
+ * 従来動作**。
  *
- * もとは「空き枠の作成が @pocket で 400 になった件」を固定するために
- * 作ったファイルで、名前もそこから来ている。空き枠の自動作成は廃止したので、
- * いま固定しているのは次の3つ。
- *   - 空き枠を作らないこと
+ * 既定では工事レコードを削除する（customer-cancel-delete.test.ts）。
+ * 止めたときは「以前の挙動にそのまま戻る」ことが要件なので、削除へ変える
+ * 前からあったテストを、主張を変えずにここへ残してある。全体の beforeEach で
+ * 環境変数を false にしている点だけが違う。
+ *
+ * 固定しているのは次の4つ。
  *   - 工事レコードの3項目を空にする更新（取込キーは Aki番号）
- *   - 工事レコードの引き当て（Aki番号 → T番号）
+ *   - 工事レコードの引き当て（Aki番号 → T番号）。複数一致でも最初の1件
+ *   - 削除しないこと（お客様情報の Aki番号 を消す合図も立てない）
+ *   - 空き枠を作らないこと（こちらは削除する・しないに関係なく廃止）
+ *
+ * ファイル名は customer-cancel-empty-slot.test.ts から変えた。もとは
+ * 「空き枠の作成が @pocket で 400 になった件」を固定するためのファイルで、
+ * 空き枠の自動作成を廃止したあとは名前が実態と合わなくなっていた。
  */
 
 const h = vi.hoisted(() => ({
@@ -28,6 +38,9 @@ const h = vi.hoisted(() => ({
   auditFails: false,
   /** true のとき recordAuditLog が投げる */
   auditThrows: false,
+  /** 削除を止めているときは呼ばれてはいけない */
+  deleteCalls: [] as string[],
+  recordGets: [] as string[],
 }));
 
 const APP_FIELDS = [
@@ -45,6 +58,13 @@ vi.mock("@/lib/atpocket", () => ({
   apiKeyForCalendarPocket1: () => "read-key",
   apiKeyForCalendarWrite: () => "write-key",
   fetchAppFields: async () => APP_FIELDS,
+  fetchRecordById: async (_appId: string, recordId: string) => {
+    h.recordGets.push(recordId);
+    return null;
+  },
+  deleteRecord: async (_appId: string, recordId: string) => {
+    h.deleteCalls.push(recordId);
+  },
   createRecord: async (
     appId: string,
     payload: Record<string, unknown>,
@@ -98,9 +118,23 @@ const { runCustomerCancelSideEffects } = await import(
   "@/lib/customer-cancel-server"
 );
 
+const savedDeleteFlag = process.env.CUSTOMER_CANCEL_DELETE_CONSTRUCTION_RECORD;
+
+afterEach(() => {
+  if (savedDeleteFlag === undefined) {
+    delete process.env.CUSTOMER_CANCEL_DELETE_CONSTRUCTION_RECORD;
+  } else {
+    process.env.CUSTOMER_CANCEL_DELETE_CONSTRUCTION_RECORD = savedDeleteFlag;
+  }
+});
+
 beforeEach(() => {
   process.env.CALENDAR_APP_ID = "77";
+  // このファイルは「削除を止めているとき」の従来動作だけを見る
+  process.env.CUSTOMER_CANCEL_DELETE_CONSTRUCTION_RECORD = "false";
   delete process.env.CALENDAR_CUSTOMER_STATUS_FIELD_ID;
+  h.deleteCalls = [];
+  h.recordGets = [];
   h.createCalls = [];
   h.importKeyWriteCalls = [];
   h.updateCalls = [];
@@ -294,5 +328,77 @@ describe("★ 工事レコードの引き当て", () => {
     expect(h.createCalls).toHaveLength(0);
     expect(result.warnings).toHaveLength(1);
     warnSpy.mockRestore();
+  });
+});
+
+/**
+ * 止めているときは、**完全に以前の挙動へ戻る**。
+ * 止めた状態で挙動が変わると、問題が起きたときに切り分けができない。
+ */
+describe("★ 削除を止めているときは削除しない", () => {
+  it("★ 工事レコードを削除しない（3項目を空にする更新だけ）", async () => {
+    const result = await runCustomerCancelSideEffects(CANCEL_OPTS);
+
+    expect(result.constructionUpdated).toBe(true);
+    expect(result.constructionDeleted).toBe(false);
+    expect(h.deleteCalls).toEqual([]);
+    expect(h.importKeyWriteCalls).toHaveLength(1);
+  });
+
+  it("★ お客様情報の Aki番号 を消す合図（constructionDeleted）を立てない", async () => {
+    const result = await runCustomerCancelSideEffects({
+      ...CANCEL_OPTS,
+      akiNumber: "A0042",
+    });
+
+    // 工事レコードが残るので、番号の指す先がある
+    expect(result.constructionDeleted).toBe(false);
+  });
+
+  it("削除用の全項目の取り直し・削除ログも走らない", async () => {
+    await runCustomerCancelSideEffects(CANCEL_OPTS);
+
+    expect(h.recordGets).toEqual([]);
+    expect(h.auditOps).toEqual(["update"]);
+  });
+
+  it("★ 同じ T番号 が複数あっても、従来どおり最初の1件を更新する", async () => {
+    h.records = [
+      { recordId: 5001, record: { "field-1": "T00003372" } },
+      { recordId: 5009, record: { "field-1": "T00003372" } },
+    ];
+
+    const result = await runCustomerCancelSideEffects(CANCEL_OPTS);
+
+    expect(result.constructionUpdated).toBe(true);
+    expect(result.warnings).toEqual([]);
+    expect(h.importKeyWriteCalls).toHaveLength(1);
+    expect(h.importKeyWriteCalls[0]).toHaveProperty("recordId", "5001");
+    expect(h.deleteCalls).toEqual([]);
+  });
+
+  it("★ Aki番号 と T番号 で別々のレコードが一致しても、従来どおり Aki番号 側を更新する", async () => {
+    h.records = [
+      { recordId: 5001, record: { "field-1": "T00003372" } },
+      { recordId: 5002, record: { "field-101": "A0042" } },
+    ];
+
+    const result = await runCustomerCancelSideEffects({
+      ...CANCEL_OPTS,
+      akiNumber: "A0042",
+    });
+
+    expect(result.constructionUpdated).toBe(true);
+    expect(result.warnings).toEqual([]);
+    expect(h.importKeyWriteCalls[0]).toHaveProperty("recordId", "5002");
+  });
+
+  it("0 でも止まる（false と同じ扱い）", async () => {
+    process.env.CUSTOMER_CANCEL_DELETE_CONSTRUCTION_RECORD = "0";
+
+    const result = await runCustomerCancelSideEffects(CANCEL_OPTS);
+
+    expect(result.constructionUpdated).toBe(true);
+    expect(h.deleteCalls).toEqual([]);
   });
 });

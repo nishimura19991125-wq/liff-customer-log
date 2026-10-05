@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { buildCancelActionLines } from "@/lib/customer-cancel-plan";
 import {
   isCustomerStatusCancelled,
   isCustomerStatusCancelledExact,
@@ -49,5 +50,51 @@ describe("★ トリガーの判定は完全一致のみ", () => {
     expect(isCustomerStatusCancelled("キャンセル保留")).toBe(true);
     expect(isCustomerStatusCancelled("キャンセル")).toBe(true);
     expect(isCustomerStatusCancelled("工事待ち")).toBe(false);
+  });
+});
+
+/**
+ * 確認画面に並べる「実行されること」。
+ *
+ * 工事登録アプリの行は、**実際に行うほう**を出す。削除は元に戻せないので、
+ * 「項目を消します」と書いておいてレコードごと消すのも、その逆も避ける。
+ * 削除するかは環境変数で決まり、画面はサーバが返した plan だけを見る。
+ */
+describe("★ 確認画面の文言は削除の可否で出し分ける", () => {
+  const DELETE_LINE = "工事登録アプリのレコードを削除します";
+  const CLEAR_LINE = "工事登録アプリの該当項目も消します";
+
+  it("★ 削除するときは「レコードを削除します」", () => {
+    const lines = buildCancelActionLines({ deletesConstructionRecord: true });
+
+    expect(lines).toContain(DELETE_LINE);
+    expect(lines).not.toContain(CLEAR_LINE);
+  });
+
+  it("★ 削除を止めているときは「該当項目も消します」", () => {
+    const lines = buildCancelActionLines({ deletesConstructionRecord: false });
+
+    expect(lines).toContain(CLEAR_LINE);
+    expect(lines).not.toContain(DELETE_LINE);
+  });
+
+  it("お客様情報側の2行はどちらでも同じ", () => {
+    for (const deletesConstructionRecord of [true, false]) {
+      const lines = buildCancelActionLines({ deletesConstructionRecord });
+
+      expect(lines).toHaveLength(3);
+      expect(lines[0]).toBe("PT、APPT、CLPT を 0 にします");
+      expect(lines[1]).toBe(
+        "施工予定日、初回施工予定日、施工会社、工事対応者を消します",
+      );
+    }
+  });
+
+  it("★ 空き枠の行は出ない（自動作成は廃止）", () => {
+    for (const deletesConstructionRecord of [true, false]) {
+      const lines = buildCancelActionLines({ deletesConstructionRecord });
+
+      expect(lines.some((line) => line.includes("空き枠"))).toBe(false);
+    }
   });
 });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { customerCancelDeletesConstructionRecordEnabled } from "@/lib/customer-cancel-delete-guard";
 import type { CustomerCancelPlan } from "@/lib/customer-cancel-plan";
 import {
   lineAuthUnauthorizedResponse,
@@ -16,12 +17,18 @@ export const dynamic = "force-dynamic";
  *
  * 以前は空き枠を作るかどうか（営業日・祝日の判定）を返していた。
  * 空き枠の自動作成を廃止したので、その判定は返さない。
+ *
+ * 返すのは「工事登録アプリのレコードを削除するか」だけ。削除は
+ * CUSTOMER_CANCEL_DELETE_CONSTRUCTION_RECORD=false で止められるので、
+ * 止めている間は確認画面の文言も「項目を消します」のほうになる。
+ * 保存時（runCustomerCancelSideEffects）も同じ関数で判断する。
  */
 export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
 
-  // 工事レコードは削除しない（該当項目を空にするだけ）
-  const plan: CustomerCancelPlan = { deletesConstructionRecord: false };
+  const plan: CustomerCancelPlan = {
+    deletesConstructionRecord: customerCancelDeletesConstructionRecordEnabled(),
+  };
   return NextResponse.json({ ok: true, plan });
 }

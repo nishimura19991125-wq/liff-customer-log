@@ -15,3 +15,21 @@ export type CustomerCancelPlan = {
    */
   deletesConstructionRecord: boolean;
 };
+
+/**
+ * 確認画面に並べる「実行されること」。
+ *
+ * 工事登録アプリの行は、**実際に行うほう**を出す。削除は元に戻せないので、
+ * 「項目を消します」と書いておいてレコードごと消すのも、その逆も避ける。
+ * 削除するかはサーバの設定（CUSTOMER_CANCEL_DELETE_CONSTRUCTION_RECORD）で
+ * 決まるため、画面は plan を見るだけにしてある。
+ */
+export function buildCancelActionLines(plan: CustomerCancelPlan): string[] {
+  return [
+    "PT、APPT、CLPT を 0 にします",
+    "施工予定日、初回施工予定日、施工会社、工事対応者を消します",
+    plan.deletesConstructionRecord
+      ? "工事登録アプリのレコードを削除します"
+      : "工事登録アプリの該当項目も消します",
+  ];
+}

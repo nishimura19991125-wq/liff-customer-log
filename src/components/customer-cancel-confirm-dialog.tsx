@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 
 import { useIsClient } from "@/hooks/use-is-client";
 
+import { buildCancelActionLines } from "@/lib/customer-cancel-plan";
 import type { CustomerCancelPlan } from "@/lib/customer-cancel-plan";
 
 /**
@@ -17,15 +18,6 @@ import type { CustomerCancelPlan } from "@/lib/customer-cancel-plan";
 
 const DIALOG_BUTTON_CLASS =
   "w-full min-h-[48px] rounded-xl px-4 py-3 text-[14px] font-bold shadow-sm transition active:scale-[0.99] disabled:opacity-50";
-
-/** 確認画面に並べる「実行されること」 */
-export function buildCancelActionLines(): string[] {
-  return [
-    "PT、APPT、CLPT を 0 にします",
-    "施工予定日、初回施工予定日、施工会社、工事対応者を消します",
-    "工事登録アプリの該当項目も消します",
-  ];
-}
 
 export function CustomerCancelConfirmDialog({
   open,
@@ -125,7 +117,7 @@ export function CustomerCancelConfirmDialog({
               以下が実行されます。
             </p>
             <ul className="mt-1.5 space-y-1">
-              {buildCancelActionLines().map((line) => (
+              {buildCancelActionLines(plan).map((line) => (
                 <li
                   key={line}
                   className="text-[13px] leading-relaxed text-slate-800"

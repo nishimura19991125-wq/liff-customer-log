@@ -3,11 +3,17 @@ import "server-only";
 import {
   apiKeyForCalendarPocket1,
   apiKeyForCalendarWrite,
+  deleteRecord,
   fetchAppFields,
+  fetchRecordById,
 } from "@/lib/atpocket";
+import type { AtPocketFetchAuth } from "@/lib/atpocket";
 import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
 import { recordAuditLog } from "@/lib/audit-log";
-import { computeAuditChanges } from "@/lib/audit-log-changes";
+import {
+  computeAuditChanges,
+  formatDeletionContent,
+} from "@/lib/audit-log-changes";
 import { fetchCalendarConstructionRecordsCached } from "@/lib/calendar-construction-records-cache";
 import { invalidateCalendarConstructionRecordsCache } from "@/lib/calendar-construction-records-cache";
 import {
@@ -18,6 +24,10 @@ import {
   resolveConstructionTNumberFieldId,
 } from "@/lib/calendar-kojo";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
+import {
+  customerCancelDeletesConstructionRecordEnabled,
+  decideCancelConstructionDeletion,
+} from "@/lib/customer-cancel-delete-guard";
 import { resolveCustomerInfoConstructionHandlerFieldId } from "@/lib/customer-info-construction-handler";
 import { fieldCaptionByUniqueId } from "@/lib/customer-info-record";
 import { resolveCustomerInfoPtTransferFields } from "@/lib/customer-info-form/resolve-fields";
@@ -28,6 +38,19 @@ import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
  *
  * 順序は route 側で固定している。ここへ来るのはお客様情報の更新が
  * 成功したあとだけ。ここでの失敗は業務を止めず、warning として返す。
+ *
+ * ■ 工事レコードは削除する
+ * 以前は3項目（施工予定日・施工会社・工事対応者）を空にしてレコードを
+ * 残していた。お客様名と T番号 が残るため空き枠にもならず、宙に浮いた
+ * レコードになっていた。レコードごと削除する。
+ *
+ * **このリポジトリで4つ目の物理削除の呼び出し口。** 作法は他の3つ
+ * （assign-case-to-slot・assign-customer-case・move-construction-case）と
+ * 同じ（A-4）。削除直前に全項目を取り直し、削除ログを残せたときだけ消す。
+ * 可否の判定は customer-cancel-delete-guard.ts に閉じてテストで固定している。
+ *
+ * CUSTOMER_CANCEL_DELETE_CONSTRUCTION_RECORD=false で止めている間は、
+ * 従来どおり3項目を空にする更新に戻る。
  *
  * ■ 空き枠は作らない
  * 以前は、施工予定日が7営業日より先のとき同じ日・同じ施工会社の空き枠を
@@ -44,13 +67,32 @@ export type ConstructionClearedField =
 export type CustomerCancelSideEffectResult = {
   /** 画面に出す警告。空なら全部成功 */
   warnings: string[];
+  /** 削除を止めているときの従来動作。3項目を空にする更新が成立したか */
   constructionUpdated: boolean;
+  /**
+   * 工事レコードを削除したか。
+   * true のときだけ、呼び出し側がお客様情報の Aki番号 を空にする
+   * （レコードが消え、番号の指す先が無くなるため）
+   */
+  constructionDeleted: boolean;
 };
 
 const CONSTRUCTION_UPDATE_FAILED =
   "キャンセル処理は完了しましたが、工事登録アプリの更新に失敗しました。DX事業部へ連絡してください。";
 const CONSTRUCTION_NOT_FOUND =
   "キャンセル処理は完了しましたが、工事登録アプリに該当レコードが見つかりませんでした。DX事業部へ連絡してください。";
+/**
+ * 削除を見送ったときの文言。
+ *
+ * ⚠ **再試行を促す言葉を入れない。** キャンセル済みの案件を保存し直しても
+ *    この処理は走らないので、やり直しても直らない。
+ */
+const CONSTRUCTION_DELETE_AMBIGUOUS =
+  "キャンセル処理は完了しましたが、工事登録アプリに同じ案件のレコードが複数あるため、削除を中止しました。DX事業部へ連絡してください。";
+const CONSTRUCTION_DELETE_LOG_FAILED =
+  "キャンセル処理は完了しましたが、削除の記録を残せなかったため、工事登録アプリのレコードを削除していません。DX事業部へ連絡してください。";
+const CONSTRUCTION_DELETE_FAILED =
+  "キャンセル処理は完了しましたが、工事登録アプリのレコードを削除できませんでした。DX事業部へ連絡してください。";
 
 function coercePlainString(raw: unknown): string {
   if (raw == null) return "";
@@ -81,7 +123,8 @@ function coercePlainString(raw: unknown): string {
  * 記録は書き込みが済んでから行い、失敗はサーバログに留める。
  *
  * ここを「失敗したら止める」に変えないこと。止めてよいのは削除だけで、
- * それは assign-case-to-slot 側で deletionLog.ok を見る形で担保している。
+ * 削除は deleteConstructionRecordForCancel が deletionLog.ok を見て止めている
+ * （こちらは通さない）。この関数を通るのは、削除を止めているときの更新だけ。
  */
 async function recordAuditLogBestEffort(
   entry: Parameters<typeof recordAuditLog>[0],
@@ -131,6 +174,12 @@ async function findConstructionRecordIdForCancel(
   found: { recordId: string; matchedBy: string } | null;
   rowsTotal: number;
   rowsWithAkiKey: number;
+  /**
+   * 照合に使う列の**どちらか**で一致した、別々のレコードの数。
+   * found（優先順で最初に当たった1件）とは別に数える。削除してよいのは
+   * これが 1 のときだけ
+   */
+  matchedRecordCount: number;
 }> {
   const targets = keys
     .map((k) => ({
@@ -139,7 +188,12 @@ async function findConstructionRecordIdForCancel(
     }))
     .filter((k) => k.fieldId && k.want);
   if (targets.length === 0) {
-    return { found: null, rowsTotal: 0, rowsWithAkiKey: 0 };
+    return {
+      found: null,
+      rowsTotal: 0,
+      rowsWithAkiKey: 0,
+      matchedRecordCount: 0,
+    };
   }
 
   const records = await fetchCalendarConstructionRecordsCached(
@@ -158,7 +212,38 @@ async function findConstructionRecordIdForCancel(
       }
     }
   }
-  const stats = { rowsTotal: records.length, rowsWithAkiKey };
+  /**
+   * 一致したレコードを数える。**下の照合（優先順で最初の1件）は変えない。**
+   *
+   * Aki番号 で1件に決まっても、同じ T番号 の別レコードがあれば2件と数える。
+   * 同じ案件のレコードが2件ある状態（二重登録）で片方だけ消すと、
+   * もう片方が残る。どちらが残るかを制御できないので、削除側で止める
+   */
+  const matchedIds = new Set<string>();
+  for (const row of records) {
+    const rec = row.record;
+    if (!rec || typeof rec !== "object") continue;
+    const id = row.recordId ?? row.id;
+    const s = id == null ? "" : String(id).trim();
+    if (!s) continue;
+    const hit = targets.some(
+      (target) =>
+        normApClStaffName(
+          coercePlainString(
+            pickRecordValueByFieldAliases(
+              rec as Record<string, unknown>,
+              target.fieldId,
+            ),
+          ),
+        ) === target.want,
+    );
+    if (hit) matchedIds.add(s);
+  }
+  const stats = {
+    rowsTotal: records.length,
+    rowsWithAkiKey,
+    matchedRecordCount: matchedIds.size,
+  };
   // キーの優先順に全件を見る。先に Aki番号 で一巡してから T番号 へ落とす
   for (const target of targets) {
     for (const row of records) {
@@ -236,6 +321,7 @@ export async function runCustomerCancelSideEffects(opts: {
   const base: CustomerCancelSideEffectResult = {
     warnings: [],
     constructionUpdated: false,
+    constructionDeleted: false,
   };
 
   const calAppId = process.env.CALENDAR_APP_ID?.trim();
@@ -296,6 +382,7 @@ export async function runCustomerCancelSideEffects(opts: {
     lookupKeys.map((k) => k.fieldId),
   );
   let found: { recordId: string; matchedBy: string } | null = null;
+  let matchedRecordCount = 0;
   try {
     const lookup = await findConstructionRecordIdForCancel(
       calAppId,
@@ -304,6 +391,7 @@ export async function runCustomerCancelSideEffects(opts: {
       importKeyFieldId,
     );
     found = lookup.found;
+    matchedRecordCount = lookup.matchedRecordCount;
     /**
      * どちらの列で一致したかを残す。**件数と真偽値だけ**（氏名・T番号・
      * Aki番号 の値は出さない）。
@@ -347,9 +435,36 @@ export async function runCustomerCancelSideEffects(opts: {
     return { ...base, warnings: [CONSTRUCTION_NOT_FOUND] };
   }
 
+  const deleteEnabled = customerCancelDeletesConstructionRecordEnabled();
+  // 一致した件数を残す（件数と真偽値だけ。照合内訳のログとは別の行）
+  console.info(
+    "[customer-cancel] 工事レコードの一致件数",
+    JSON.stringify({ matchedRecords: matchedRecordCount, deleteEnabled }),
+  );
+
+  if (deleteEnabled) {
+    return deleteConstructionRecordForCancel({
+      calAppId,
+      constructionRecordId,
+      matchedRecordCount,
+      lookupKeys,
+      tNumber,
+      constructionFields,
+      readAuth,
+      writeAuth,
+      lineUserId: opts.lineUserId,
+    });
+  }
+
+  /**
+   * ここから下は、削除を止めているとき（
+   * CUSTOMER_CANCEL_DELETE_CONSTRUCTION_RECORD=false）の従来動作。
+   * **以前の挙動にそのまま戻す**ので、複数一致でも優先順で最初の1件を
+   * 更新する（止めた状態で挙動が変わると切り分けができない）
+   */
   const warnings: string[] = [];
 
-  // ── 1) 工事レコードの3項目を空にする（レコードは削除しない）
+  // ── 工事レコードの3項目を空にする（レコードは削除しない）
   const clearPatch: Record<string, unknown> = {};
   const clearTargets: Array<[ConstructionClearedField, string | undefined]> = [
     ["startDate", fids.startDate],
@@ -416,5 +531,143 @@ export async function runCustomerCancelSideEffects(opts: {
     invalidateAllCalendarPayloadCache();
   }
 
-  return { warnings, constructionUpdated };
+  return { warnings, constructionUpdated, constructionDeleted: false };
+}
+
+/**
+ * 工事レコードを削除する。**判定 → 削除ログ → 削除**の順を崩さないこと（A-4）。
+ *
+ * ■ 削除直前に全項目を取り直す
+ * 物理削除はログが唯一の復元手段なので、列を絞らずに取る。絞った列で
+ * 記録すると、読めていないだけの列を「空欄」として残してしまう。
+ * 照合は一覧のキャッシュで行っているので、取り直したレコードが今も
+ * この案件のものかの確認にもそのまま使う。
+ *
+ * ■ ログを残せなかったら消さない
+ * 更新のときの監査ログ（recordAuditLogBestEffort）とは逆。あちらは
+ * 「失敗しても続行」、こちらは「失敗したら中止」。
+ *
+ * ■ 消せなかったら警告だけ返す
+ * お客様情報のキャンセルは成立している。ここで投げても戻せない。
+ */
+async function deleteConstructionRecordForCancel(input: {
+  calAppId: string;
+  constructionRecordId: string;
+  matchedRecordCount: number;
+  lookupKeys: Array<{ fieldId: string | null; value: string }>;
+  tNumber: string;
+  constructionFields: Awaited<ReturnType<typeof fetchAppFields>>;
+  readAuth: AtPocketFetchAuth;
+  writeAuth: AtPocketFetchAuth;
+  lineUserId: string;
+}): Promise<CustomerCancelSideEffectResult> {
+  const notDeleted = (warning: string): CustomerCancelSideEffectResult => ({
+    warnings: [warning],
+    constructionUpdated: false,
+    constructionDeleted: false,
+  });
+
+  // 複数一致なら消さないと決まっているので、@pocket を触らない
+  let freshRecord: Record<string, unknown> | null = null;
+  if (input.matchedRecordCount === 1) {
+    try {
+      const row = await fetchRecordById(
+        input.calAppId,
+        input.constructionRecordId,
+        input.readAuth,
+      );
+      if (row?.record && typeof row.record === "object") {
+        freshRecord = row.record as Record<string, unknown>;
+      }
+    } catch (e) {
+      // 読めなかった＝中身が分からない。判定側が not_found で止める
+      console.error(
+        "[customer-cancel] 削除前の工事レコードの再取得に失敗しました",
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+  }
+
+  const decision = decideCancelConstructionDeletion({
+    enabled: true,
+    constructionRecordId: input.constructionRecordId,
+    matchedRecordCount: input.matchedRecordCount,
+    freshRecord,
+    keys: input.lookupKeys,
+  });
+  if (!decision.ok || !freshRecord) {
+    const reason = decision.ok ? "not_found" : decision.reason;
+    console.error(
+      "[customer-cancel] 工事レコードを削除しません",
+      JSON.stringify({
+        reason,
+        matchedRecords: input.matchedRecordCount,
+      }),
+    );
+    return notDeleted(
+      reason === "ambiguous"
+        ? CONSTRUCTION_DELETE_AMBIGUOUS
+        : CONSTRUCTION_DELETE_FAILED,
+    );
+  }
+
+  // A-4: 全項目を記録できたときだけ消す。await して ok を見る
+  let deletionLog: Awaited<ReturnType<typeof recordAuditLog>>;
+  try {
+    deletionLog = await recordAuditLog({
+      lineUserId: input.lineUserId,
+      operation: "delete",
+      targetAppId: input.calAppId,
+      targetRecordId: input.constructionRecordId,
+      targetTNumber: input.tNumber,
+      deletionContent: formatDeletionContent(freshRecord, {
+        labelOf: (fieldId) =>
+          fieldCaptionByUniqueId(input.constructionFields, fieldId),
+      }),
+    });
+  } catch (e) {
+    // recordAuditLog は投げない設計だが、投げたなら記録できていない
+    deletionLog = {
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+  if (!deletionLog.ok) {
+    console.error(
+      "[customer-cancel] 削除ログを残せないため工事レコードを削除しません",
+      JSON.stringify({
+        calAppId: input.calAppId,
+        recordId: input.constructionRecordId,
+        error: deletionLog.error,
+      }),
+    );
+    return notDeleted(CONSTRUCTION_DELETE_LOG_FAILED);
+  }
+
+  try {
+    await deleteRecord(
+      input.calAppId,
+      input.constructionRecordId,
+      input.writeAuth,
+    );
+  } catch (e) {
+    /**
+     * 削除ログを書いた直後で、レコードが実在するのに削除ログだけある
+     * 状態になっている。名指しで残す
+     */
+    console.error(
+      "[customer-cancel] 工事レコードの削除に失敗しました（削除ログは記録済み）",
+      JSON.stringify({
+        calAppId: input.calAppId,
+        recordId: input.constructionRecordId,
+      }),
+      e instanceof Error ? e.message : String(e),
+    );
+    return notDeleted(CONSTRUCTION_DELETE_FAILED);
+  }
+
+  invalidateCalendarConstructionRecordsCache();
+  invalidateAllCalendarPayloadCache();
+
+  return { warnings: [], constructionUpdated: false, constructionDeleted: true };
 }

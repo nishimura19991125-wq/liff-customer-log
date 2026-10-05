@@ -15,6 +15,11 @@ const h = vi.hoisted(() => ({
   /** runCustomerCancelSideEffects の呼び出し引数 */
   sideEffectCalls: [] as Array<Record<string, unknown>>,
   sideEffectWarnings: [] as string[],
+  /** 後段が工事レコードを削除したと返すか */
+  sideEffectDeleted: false,
+  /** この回数目（1始まり）の updateRecord を失敗させる。0 なら失敗させない */
+  failUpdateOnCall: 0,
+  updateAttempts: 0,
 }));
 
 const APP_FIELDS = [
@@ -74,6 +79,10 @@ vi.mock("@/lib/atpocket", () => ({
     _recordId: string,
     payload: Record<string, unknown>,
   ) => {
+    h.updateAttempts += 1;
+    if (h.failUpdateOnCall === h.updateAttempts) {
+      throw new Error("@pocket update record failed: 500");
+    }
     h.updateCalls.push(payload);
   },
 }));
@@ -88,7 +97,9 @@ vi.mock("@/lib/customer-cancel-server", async (importOriginal) => {
       h.sideEffectCalls.push(opts);
       return {
         warnings: h.sideEffectWarnings,
-        constructionUpdated: true,
+        // 削除したときは更新していない（どちらか片方だけが成立する）
+        constructionUpdated: !h.sideEffectDeleted,
+        constructionDeleted: h.sideEffectDeleted,
       };
     },
   };
@@ -145,7 +156,15 @@ async function put(formValues: Record<string, unknown>) {
   );
   return {
     status: res.status,
-    body: (await res.json()) as { ok?: boolean; error?: string; warning?: string },
+    body: (await res.json()) as {
+      ok?: boolean;
+      error?: string;
+      warning?: string;
+      cancelled?: {
+        constructionUpdated?: boolean;
+        constructionDeleted?: boolean;
+      };
+    },
   };
 }
 
@@ -164,6 +183,9 @@ beforeEach(() => {
   h.updateCalls = [];
   h.sideEffectCalls = [];
   h.sideEffectWarnings = [];
+  h.sideEffectDeleted = false;
+  h.failUpdateOnCall = 0;
+  h.updateAttempts = 0;
   h.beforeCustomerStatus = "工事待ち";
   h.beforeAkiNumber = "A0042";
 });
@@ -368,5 +390,111 @@ describe("★ 工事レコードを引くキーを渡す", () => {
       tNumber: "T00003372",
       akiNumber: "",
     });
+  });
+});
+
+/**
+ * 工事レコードを削除したら、お客様情報の Aki番号 も空にする。
+ *
+ * Aki番号 は工事レコードを指す番号（工事アプリの自動採番の控え）。
+ * レコードが消えると指す先が無くなる。**削除したときだけ**空にし、
+ * 工事レコードが残る場合（削除を止めている・中止した・失敗した）は残す。
+ */
+describe("★ 工事レコードを削除したとき、お客様情報の Aki番号 を空にする", () => {
+  // field-14 = お客様情報の Aki番号
+  it("★ 削除したら Aki番号 に空文字を書く", async () => {
+    h.sideEffectDeleted = true;
+
+    const { status, body } = await put(CANCEL_VALUES);
+
+    expect(status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.warning).toBeUndefined();
+    // 1回目がキャンセルの保存、2回目が Aki番号 を空にする書き込み
+    expect(h.updateCalls).toHaveLength(2);
+    expect(h.updateCalls[1]).toEqual({ "field-14": "" });
+  });
+
+  it("★ キャンセルの保存そのものには Aki番号 を載せない（削除の成否が分かる前）", async () => {
+    h.sideEffectDeleted = true;
+
+    await put(CANCEL_VALUES);
+
+    expect(h.updateCalls[0]).not.toHaveProperty("field-14");
+  });
+
+  it("★ 削除していないときは Aki番号 を残す（書き込みを増やさない）", async () => {
+    h.sideEffectDeleted = false;
+
+    await put(CANCEL_VALUES);
+
+    expect(h.updateCalls).toHaveLength(1);
+    expect(h.updateCalls[0]).not.toHaveProperty("field-14");
+  });
+
+  it("★ 複数一致などで削除を中止したときも Aki番号 を残す", async () => {
+    h.sideEffectDeleted = false;
+    h.sideEffectWarnings = [
+      "キャンセル処理は完了しましたが、工事登録アプリに同じ案件のレコードが複数あるため、削除を中止しました。DX事業部へ連絡してください。",
+    ];
+
+    const { body } = await put(CANCEL_VALUES);
+
+    expect(h.updateCalls).toHaveLength(1);
+    expect(body.warning).toContain("削除を中止しました");
+  });
+
+  it("もともと Aki番号 の控えが無ければ書かない", async () => {
+    h.sideEffectDeleted = true;
+    h.beforeAkiNumber = "";
+
+    await put(CANCEL_VALUES);
+
+    expect(h.updateCalls).toHaveLength(1);
+  });
+
+  it("★ Aki番号 の書き込みに失敗しても、削除は成立したまま警告を出す", async () => {
+    h.sideEffectDeleted = true;
+    // 2回目（Aki番号 を空にする書き込み）だけ失敗させる
+    h.failUpdateOnCall = 2;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { status, body } = await put(CANCEL_VALUES);
+    errorSpy.mockRestore();
+
+    expect(status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.cancelled?.constructionDeleted).toBe(true);
+    expect(body.warning).toBe(
+      "キャンセル処理は完了し、工事登録アプリのレコードも削除しましたが、お客様情報の Aki番号 を消せませんでした。DX事業部へ連絡してください。",
+    );
+    // キャンセルの保存は成立している
+    expect(h.updateCalls).toHaveLength(1);
+  });
+
+  it("応答に削除したかどうかが載る", async () => {
+    h.sideEffectDeleted = true;
+    expect((await put(CANCEL_VALUES)).body.cancelled).toEqual({
+      constructionUpdated: false,
+      constructionDeleted: true,
+    });
+
+    h.sideEffectDeleted = false;
+    expect((await put(CANCEL_VALUES)).body.cancelled).toEqual({
+      constructionUpdated: true,
+      constructionDeleted: false,
+    });
+  });
+
+  it("★ 削除してもお客様情報側のキャンセル内容は変わらない（APPT・CLPT が 0）", async () => {
+    h.sideEffectDeleted = true;
+
+    await put(CANCEL_VALUES);
+
+    expect(h.updateCalls[0]["field-11"]).toBe("0"); // APPT
+    expect(h.updateCalls[0]["field-12"]).toBe("0"); // CLPT
+    expect(h.updateCalls[0]["field-7"]).toBe(""); // 施工予定日
+    expect(h.updateCalls[0]["field-9"]).toBe(""); // 施工業者
+    expect(h.updateCalls[0]["field-10"]).toBe(""); // 工事対応者
   });
 });

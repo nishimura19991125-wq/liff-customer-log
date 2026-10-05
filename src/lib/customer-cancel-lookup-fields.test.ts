@@ -93,6 +93,7 @@ const { runCustomerCancelSideEffects } = await import(
 /** 列の解決に効く環境変数。テストの外の設定を持ち込まない */
 const ENV_KEYS = [
   "CALENDAR_APP_ID",
+  "CUSTOMER_CANCEL_DELETE_CONSTRUCTION_RECORD",
   "CALENDAR_CONSTRUCTION_IMPORT_KEY_FIELD_ID",
   "CALENDAR_CONSTRUCTION_UNIQUE_KEY_FIELD_ID",
   "CALENDAR_EMPTY_FILL_TNUMBER_FIELD_ID",
@@ -118,6 +119,13 @@ beforeEach(() => {
     delete process.env[k];
   }
   process.env.CALENDAR_APP_ID = "77";
+  /**
+   * ここは**照合だけ**を見る。どのレコードに当たったかは、従来の更新
+   * （3項目を空にする）の書き込み先で観測しているので、削除は止めておく。
+   * 照合は削除する・しないの分岐より前にあり、どちらでも同じものが走る。
+   * 削除の経路は customer-cancel-delete.test.ts が見ている
+   */
+  process.env.CUSTOMER_CANCEL_DELETE_CONSTRUCTION_RECORD = "false";
   h.fields = [...BASE_FIELDS, AKI_FIELD];
   h.records = [];
   h.listCsvs = [];
