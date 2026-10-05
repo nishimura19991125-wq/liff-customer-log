@@ -23,7 +23,92 @@ import {
   googleChatAttendanceListWebhookConfigured,
   sendGoogleChatAttendanceListMessage,
 } from "@/lib/google-chat";
+import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { listStaffDepartmentsInRosterOrder } from "@/lib/staff-department-lookup";
+import {
+  lookupStaffAssignmentByStaffName,
+  resolveStaffAssignmentLookupConfig,
+} from "@/lib/staff-workplace-lookup";
+
+/**
+ * 退勤打刻もれ（19:55）に載せる人の所属会社。
+ *
+ * スタッフ名簿の「所属会社」がこの値の人だけを載せる。
+ * 出勤者リスト（9:32）と打刻画面の「本日の出勤者」は絞らない。
+ *
+ * ⚠ **会社名が変わったら、この定数を直してデプロイすること。**
+ *    環境変数ではないので、Netlify の設定を変えても反映されない。
+ *    直す場所はここ1箇所だけ（比較は isMissingClockOutTargetCompany）。
+ *    名簿側の表記が先に変わると、全員が対象外になり
+ *    「全員が退勤打刻済みです」が流れ続ける。
+ */
+export const MISSING_CLOCK_OUT_TARGET_COMPANY = "株式会社トラーチ";
+
+/**
+ * 名簿の所属会社が対象会社か。
+ *
+ * NFKC → 連続空白を半角1つ → trim → 完全一致。氏名の突き合わせと同じ
+ * normApClStaffName をそのまま使う（正規化を別に作らない）。
+ */
+function isMissingClockOutTargetCompany(company: string | null): boolean {
+  const normalized = normApClStaffName(company ?? undefined);
+  return (
+    normalized !== "" &&
+    normalized === normApClStaffName(MISSING_CLOCK_OUT_TARGET_COMPANY)
+  );
+}
+
+/**
+ * 未退勤の人を対象会社の人だけに絞る。
+ *
+ * 名簿は部署の付与と同じキャッシュを共有するので、@pocket への取得は
+ * 増えない。
+ *
+ * ■ 名簿から会社が引けなかった人は載せない
+ * 名簿の登録漏れの人が毎日出続けるのを防ぐため。ただし黙って消すと
+ * 漏れに気づけないので、**件数だけ**残す（氏名は出さない）。
+ * 名簿そのものが引けなかったときも同じ扱いで、全員が引けなかった人になる。
+ * 個別の登録漏れと区別が付くよう、そのときは別の1行を残す。
+ */
+async function keepTargetCompanyOnly<T extends { staffName: string }>(
+  people: T[],
+): Promise<T[]> {
+  if (people.length === 0) return people;
+
+  let companies: Array<string | null>;
+  try {
+    const cfg = await resolveStaffAssignmentLookupConfig();
+    if (!cfg) throw new Error("not-configured");
+    companies = await Promise.all(
+      people.map(
+        async (p) =>
+          (await lookupStaffAssignmentByStaffName(p.staffName, cfg)).company,
+      ),
+    );
+  } catch (e) {
+    // 例外の中身には名簿の値が載りうる。種別と件数だけ出す
+    console.error(
+      "[attendance-list] 名簿から所属会社を引けませんでした（未退勤の全員を対象外にします）",
+      JSON.stringify({
+        unresolvedCount: people.length,
+        name: e instanceof Error ? e.name : "unknown",
+      }),
+    );
+    return [];
+  }
+
+  const unresolvedCount = companies.filter(
+    (c) => !normApClStaffName(c ?? undefined),
+  ).length;
+  if (unresolvedCount > 0) {
+    console.warn(
+      "[attendance-list] 名簿から所属会社を引けなかった人を対象外にしました",
+      JSON.stringify({ unresolvedCount }),
+    );
+  }
+
+  return people.filter((_, i) => isMissingClockOutTargetCompany(companies[i]));
+}
 
 export type AttendanceListNotifyMode = "clock-in" | "missing-clock-out";
 
@@ -41,7 +126,7 @@ export type AttendanceListNotifyOutcome = {
     | "dry-run";
   /** 出勤打刻があった人数 */
   attendeeCount: number;
-  /** 本文に載せた人数 */
+  /** 本文に載せた人数（未退勤リストは対象会社で絞った後の人数） */
   listedCount: number;
   /**
    * 組み立てた本文。
@@ -100,10 +185,14 @@ export async function runAttendanceListNotification(
   const departmentOrder = await departmentOrderOrEmpty();
   const attendeeCount = roster.attendees.length;
 
+  // 所属会社で絞るのは未退勤リストだけ。出勤者リストは全員を載せる。
+  // attendeeCount（全社の出勤者数）は絞らない。0 なら送らない挙動を保つ
   const people =
     mode === "clock-in"
       ? roster.attendees
-      : roster.attendees.filter((a) => !a.clockOut);
+      : await keepTargetCompanyOnly(
+          roster.attendees.filter((a) => !a.clockOut),
+        );
 
   const text =
     mode === "clock-in"
