@@ -47,6 +47,17 @@ function loggedText(): string {
     .join("\n");
 }
 
+/**
+ * 末尾の相関IDを外した本文。
+ *
+ * 相関IDは乱数の8桁16進なので、"429" や "12345" のような**数字だけの並び**が
+ * たまたま含まれることがある。「文言に含まれないこと」をIDごと見ると、
+ * 再現しない単発の失敗になる（実際に落ちた）。IDの形式は別のテストが見る。
+ */
+function withoutId(text: string): string {
+  return text.replace(/（ID: [0-9a-f]{8}）$/, "");
+}
+
 describe("safePocketErrorText", () => {
   it("★ 固定文言＋相関IDだけを返す", () => {
     const text = safePocketErrorText(new Error(RAW), {
@@ -75,7 +86,7 @@ describe("safePocketErrorText", () => {
       "@pocket",
       "Internal Server Error",
     ]) {
-      expect(text, leak).not.toContain(leak);
+      expect(withoutId(text), leak).not.toContain(leak);
     }
   });
 
@@ -86,7 +97,7 @@ describe("safePocketErrorText", () => {
     });
 
     expect(text).toContain("データ取得の利用上限に達しました");
-    expect(text).not.toContain("429");
+    expect(withoutId(text)).not.toContain("429");
   });
 
   it("★ 生メッセージは相関IDと一緒にサーバログへ残る", () => {

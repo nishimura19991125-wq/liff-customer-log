@@ -811,8 +811,11 @@ describe("★ 照合に失敗したときの相関ID", () => {
         expect(shown).toBeTruthy();
         expect(body.correlationId).toBe(shown);
         expect(logged).toContain(`correlationId=${shown}`);
-        // 生メッセージは画面へ出ない
-        expect(String(body.error)).not.toContain("429");
+        // 生メッセージは画面へ出ない。相関ID（乱数の16進）に "429" が
+        // 偶然入ることがあるので、IDを外した本文で見る
+        expect(
+          String(body.error).replace(/（ID: [0-9a-f]{8}）$/, ""),
+        ).not.toContain("429");
       });
     }
   }

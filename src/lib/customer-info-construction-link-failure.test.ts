@@ -382,7 +382,8 @@ describe("★ 画面へ出る文言に内部情報を出さない", () => {
       resetArrangement();
       const res = await failWith(s);
       for (const leak of LEAKS) {
-        expect(res.warning, `${s}: ${leak}`).not.toContain(leak);
+        // 相関ID（乱数の16進）に数字の並びが偶然入るので、本文だけを見る
+        expect(body(res.warning), `${s}: ${leak}`).not.toContain(leak);
       }
     }
   });
@@ -399,6 +400,7 @@ describe("★ 画面へ出る文言に内部情報を出さない", () => {
     if (res.kind !== "failed") return;
     expect(res.warning).toContain("再度の登録はせず");
     expect(res.warning).not.toContain("利用上限");
-    expect(res.warning).not.toContain("429");
+    // 相関IDに "429" が偶然入ることがあるので、本文だけを見る
+    expect(body(res.warning)).not.toContain("429");
   });
 });
