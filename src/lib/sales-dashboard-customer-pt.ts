@@ -17,9 +17,11 @@ import { parseSalesDashboardRecordYmdFromField } from "@/lib/sales-dashboard-rec
  *
  * ■ 帰属
  * 1レコードにつき **APPT は AP担当者へ、CLPT は CL担当者へ**足す。
- * 同一人物が AP と CL を兼ねるときは両方がその人に入るが、転記側
- * （computePtTransfer）が APPT を 0 にしているので合計は PT 全体になり、
- * 二重計上にはならない。別人なら半分ずつ入る。
+ * 転記側（computePtTransfer）は同一人物でも別人でも PT を折半して書く。
+ * 同一人物が AP と CL を兼ねるときは両方がその人に入り、合計が PT 全体に
+ * なる（二重計上にはならない）。別人なら半分ずつ入る。
+ * 以前の転記は同一人物のとき CLPT に全量・APPT に 0 を書いており、保存済みの
+ * レコードにはその形も残っているが、足せば同じ合計になる。
  *
  * ■ 月と除外
  * 月は**初回契約日**で判定する。顧客ステータスがキャンセルのレコードは

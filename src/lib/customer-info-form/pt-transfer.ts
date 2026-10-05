@@ -48,8 +48,13 @@ export type PtTransferResult = {
 };
 
 /**
- * AP担当者とCL担当者が同一なら CLPT に PT 全体、APPT は 0。
- * 異なる場合は PT÷2（小数点以下切り捨て）を APPT・CLPT にそれぞれ転記。
+ * PT÷2（小数点以下切り捨て）を APPT・CLPT にそれぞれ転記する。
+ *
+ * **AP担当者と CL担当者が同一でも折半する。** 以前は同一のとき CLPT に
+ * PT 全体・APPT に 0 を書いていたが、別人のときと同じ形に揃えた。
+ * 集計側は同一人物の APPT と CLPT を足すので、合計は変わらない。
+ *
+ * 奇数の PT は合計が 1 減る（1001 → 500 / 500）。別人のときと同じ。
  */
 export function computePtTransfer(values: CustomerInfoFormValues): PtTransferResult {
   const dash = "-";
@@ -58,15 +63,7 @@ export function computePtTransfer(values: CustomerInfoFormValues): PtTransferRes
     return { clpt: dash, appt: dash };
   }
 
-  const ap = normApClStaffName(values.apStaff);
-  const cl = normApClStaffName(values.clStaff);
-  const ptNum = Number(ptStr);
-
-  if (ap && cl && ap === cl) {
-    return { clpt: ptStr, appt: "0" };
-  }
-
-  const half = Math.floor(ptNum / 2);
+  const half = Math.floor(Number(ptStr) / 2);
   return { clpt: String(half), appt: String(half) };
 }
 

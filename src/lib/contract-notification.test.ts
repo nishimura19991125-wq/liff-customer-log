@@ -291,10 +291,17 @@ describe("★ APPT・CLPT の単位は「PT」（金額ではない）", () => {
     expect(line(text, "CLPT：")).toBe("CLPT：600PT");
   });
 
-  it("同一担当なら CLPT に全量・APPT は 0PT", () => {
+  it("★ 同一担当でも折半で出す（別人のときと同じ）", () => {
     const same = build({ apStaff: "西村太郎", clStaff: "西村太郎", pt: "12000" });
-    expect(line(same, "APPT：")).toBe("APPT：0PT");
-    expect(line(same, "CLPT：")).toBe("CLPT：12,000PT");
+    expect(line(same, "APPT：")).toBe("APPT：6,000PT");
+    expect(line(same, "CLPT：")).toBe("CLPT：6,000PT");
+  });
+
+  it("同一担当と別人で APPT・CLPT の行が同じになる", () => {
+    const same = build({ apStaff: "西村太郎", clStaff: "西村太郎", pt: "1,200" });
+    const different = build({ pt: "1,200" });
+    expect(line(same, "APPT：")).toBe(line(different, "APPT："));
+    expect(line(same, "CLPT：")).toBe(line(different, "CLPT："));
   });
 
   it("PT が未入力なら空欄。単位も付けない（computePtTransfer の \"-\"）", () => {
@@ -481,9 +488,10 @@ describe("通知本文の実例", () => {
         "T番号：T-2001",
         "契約日：2026/09/01",
         "AP担当者：西村太郎",
-        "APPT：0PT",
+        // AP と CL が同一担当でも折半（800 → 400 / 400）
+        "APPT：400PT",
         "CL担当者：西村太郎",
-        "CLPT：800PT",
+        "CLPT：400PT",
         "お客様名：鈴木花子",
         "フリガナ：スズキハナコ",
         "郵便番号：〒",

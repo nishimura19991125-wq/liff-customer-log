@@ -42,7 +42,6 @@ import {
 import {
   computePtTransfer,
   formatPtWithCommas,
-  isSameApClStaff,
   parsePtDigitsOnly,
 } from "@/lib/customer-info-form/pt-transfer";
 import { inferPanelComboFromValues } from "@/lib/customer-info-form/panel-combo";
@@ -515,24 +514,13 @@ function PtTransferHint({ values }: { values: CustomerInfoFormValues }) {
   const digits = parsePtDigitsOnly(values.pt ?? "");
   if (!digits) return null;
   const { clpt, appt } = computePtTransfer(values);
-  const same = isSameApClStaff(values);
   return (
     <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-      転記プレビュー:{" "}
-      {same ? (
-        <>
-          CLPT に <span className="font-semibold text-slate-700">{clpt}</span>
-          （AP・CL 同一担当）
-        </>
-      ) : (
-        <>
-          APPT <span className="font-semibold text-slate-700">{appt}</span>
-          {" / "}
-          CLPT <span className="font-semibold text-slate-700">{clpt}</span>
-          （PT÷2・切り捨て）
-        </>
-      )}
-      ・保存時はカンマなし
+      転記プレビュー: APPT{" "}
+      <span className="font-semibold text-slate-700">{appt}</span>
+      {" / "}
+      CLPT <span className="font-semibold text-slate-700">{clpt}</span>
+      （PT÷2・切り捨て）・保存時はカンマなし
     </p>
   );
 }

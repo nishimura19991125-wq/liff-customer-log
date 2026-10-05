@@ -70,7 +70,8 @@ describe("★ 帰属（APPT は AP担当者・CLPT は CL担当者）", () => {
   });
 
   it("同一人物が AP と CL を兼ねるとき、合計が1人分になる", () => {
-    // 転記側（computePtTransfer）は同一人物のとき APPT を 0 にする
+    // 以前の転記は同一人物のとき APPT を 0・CLPT を全量にしていた。
+    // いまは折半で書くが、保存済みのレコードにはこの形が残っている
     const records = [rec({ ap: "安藤太郎", cl: "安藤太郎", appt: "0", clpt: "100" })];
     expect(ptOf(records, "安藤太郎")).toBe(100);
     // 相手側に行が立たない
