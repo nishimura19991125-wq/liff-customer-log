@@ -229,20 +229,40 @@ async function findConstructionRecordIdForCancel(
   calAppId: string,
   fieldsCsv: string,
   keys: Array<{ fieldId: string | null; value: string }>,
-): Promise<{ recordId: string; matchedBy: string } | null> {
+  /** 診断用。この列のキーを持つ行を数える（照合には使わない） */
+  importKeyFieldId: string | null,
+): Promise<{
+  found: { recordId: string; matchedBy: string } | null;
+  rowsTotal: number;
+  rowsWithAkiKey: number;
+}> {
   const targets = keys
     .map((k) => ({
       fieldId: k.fieldId?.trim() ?? "",
       want: normApClStaffName(k.value),
     }))
     .filter((k) => k.fieldId && k.want);
-  if (targets.length === 0) return null;
+  if (targets.length === 0) {
+    return { found: null, rowsTotal: 0, rowsWithAkiKey: 0 };
+  }
 
   const records = await fetchCalendarConstructionRecordsCached(
     calAppId,
     fieldsCsv,
     null,
   );
+  const akiKey = importKeyFieldId?.trim() ?? "";
+  let rowsWithAkiKey = 0;
+  if (akiKey) {
+    for (const row of records) {
+      const rec = row.record;
+      if (!rec || typeof rec !== "object") continue;
+      if (recordHasFieldKey(rec as Record<string, unknown>, akiKey)) {
+        rowsWithAkiKey += 1;
+      }
+    }
+  }
+  const stats = { rowsTotal: records.length, rowsWithAkiKey };
   // キーの優先順に全件を見る。先に Aki番号 で一巡してから T番号 へ落とす
   for (const target of targets) {
     for (const row of records) {
@@ -258,10 +278,25 @@ async function findConstructionRecordIdForCancel(
       const id = row.recordId ?? row.id;
       if (id == null) continue;
       const s = String(id).trim();
-      if (s) return { recordId: s, matchedBy: target.fieldId };
+      if (s) {
+        return { found: { recordId: s, matchedBy: target.fieldId }, ...stats };
+      }
     }
   }
-  return null;
+  return { found: null, ...stats };
+}
+
+/**
+ * 行がその列のキーを持つか（値が空でも、キーがあれば true）。
+ * キーの表記ゆれ（field-N / field_N）は pickRecordValueByFieldAliases と同じ。
+ */
+function recordHasFieldKey(
+  rec: Record<string, unknown>,
+  fieldId: string,
+): boolean {
+  const m = /^field[-_](\d+)$/i.exec(fieldId);
+  const keys = m ? [fieldId, `field-${m[1]}`, `field_${m[1]}`] : [fieldId];
+  return keys.some((k) => Object.prototype.hasOwnProperty.call(rec, k));
 }
 
 /**
@@ -357,15 +392,58 @@ export async function runCustomerCancelSideEffects(opts: {
   const importKeyFieldId =
     resolveConstructionImportKeyFieldId(constructionFields);
 
-  const csv = collectConstructionFieldsCsv(fids);
+  const lookupKeys = [
+    // 工事アプリ側の主キー。転記待ちに左右されない
+    { fieldId: importKeyFieldId, value: opts.akiNumber ?? "" },
+    // 移行前からある案件はこちらで引ける
+    { fieldId: tNumberFieldId, value: tNumber },
+  ];
+  /**
+   * 取得列は**照合に使う列から作る**。別々に解決すると、照合する列が
+   * 取得列に入らないことがある。
+   *
+   * 以前は fids だけで取得していた。fids に Aki番号 は無く、T番号 も
+   * 見出しから解決した列で、照合側（環境変数を優先）と一致する保証が
+   * 無かった。@pocket が指定列だけを返すなら、その列での照合は一度も
+   * 成立しない。他の経路（customer-info-construction-link など）は
+   * 読む列を取得列へ明示的に足しており、それに揃えている。
+   * 解決できなかった列（null）は足されず、照合の対象からも外れる
+   */
+  const csv = collectConstructionFieldsCsv(
+    fids,
+    undefined,
+    lookupKeys.map((k) => k.fieldId),
+  );
   let found: { recordId: string; matchedBy: string } | null = null;
   try {
-    found = await findConstructionRecordIdForCancel(calAppId, csv, [
-      // 工事アプリ側の主キー。転記待ちに左右されない
-      { fieldId: importKeyFieldId, value: opts.akiNumber ?? "" },
-      // 移行前からある案件はこちらで引ける
-      { fieldId: tNumberFieldId, value: tNumber },
-    ]);
+    const lookup = await findConstructionRecordIdForCancel(
+      calAppId,
+      csv,
+      lookupKeys,
+      importKeyFieldId,
+    );
+    found = lookup.found;
+    /**
+     * どちらの列で一致したかを残す。**件数と真偽値だけ**（氏名・T番号・
+     * Aki番号 の値は出さない）。
+     *
+     * rowsWithAkiKey が 0 のまま rowsTotal だけ増えていれば、Aki番号 の列が
+     * 応答に載っていない＝Aki番号 での照合は成立していない。
+     */
+    console.info(
+      "[customer-cancel] 工事レコードの照合内訳",
+      JSON.stringify({
+        matchedBy: !found
+          ? "none"
+          : found.matchedBy === importKeyFieldId?.trim()
+            ? "aki"
+            : "tNumber",
+        akiProvided: Boolean(opts.akiNumber?.trim()),
+        rowsWithAkiKey: lookup.rowsWithAkiKey,
+        rowsTotal: lookup.rowsTotal,
+        tNumberInFields: csv.split(",").includes(tNumberFieldId),
+      }),
+    );
   } catch (e) {
     console.error("[customer-cancel] 工事レコードの照合に失敗", e);
     return { ...base, warnings: [CONSTRUCTION_UPDATE_FAILED] };
@@ -378,7 +456,8 @@ export async function runCustomerCancelSideEffects(opts: {
     console.warn(
       "[customer-cancel] 工事アプリに該当レコードが無いため、更新と空き枠作成をスキップ",
       JSON.stringify({
-        tNumber,
+        // 値そのものは出さない（真偽値のみ）
+        hasTNumber: Boolean(tNumber),
         // どちらのキーで探せたのかを残す。Aki番号 を渡せていないだけの
         // ことがあり、その場合は工事レコードはある
         hasAkiNumber: Boolean(opts.akiNumber?.trim()),
