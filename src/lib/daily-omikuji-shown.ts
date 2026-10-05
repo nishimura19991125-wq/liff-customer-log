@@ -6,8 +6,20 @@ import { jstDateKey } from "@/lib/missing-documents-cache";
 const STORAGE_KEY = "liff-daily-omikuji-shown-v1";
 export const DAILY_OMIKUJI_SHOWN_EVENT = "liff-daily-omikuji-shown";
 
-/** おみくじ＋出勤選択の表示開始時刻（JST） */
-export const DAILY_OMIKUJI_FROM_JST = "07:00";
+/**
+ * おみくじ＋出勤選択モーダルの表示開始時刻（JST）。
+ *
+ * この時刻より前にアプリを開いてもモーダルは出さず、時刻になったら出す
+ * （liff-pin-guard.tsx が残り時間でタイマーを掛ける）。
+ *
+ * ⚠ **退勤未打刻リマインダーを消す時刻とは別の定数。**
+ *    以前はこの1つを両方で共有していた（どちらも 07:00）。出勤選択の開始を
+ *    8:30 に遅らせるにあたり、目的が違うので分けた。あちらは
+ *    attendance-clock-out-reminder-client.ts の
+ *    CLOCK_OUT_REMINDER_UNTIL_NEXT_DAY_JST（07:00 のまま）。
+ *    共有したままだと、前日の退勤リマインダーが 8:30 まで出続けてしまう。
+ */
+export const DAILY_OMIKUJI_FROM_JST = "08:30";
 
 export function isAfterDailyOmikujiTimeJst(now = new Date()): boolean {
   return isAtOrAfterJstHm(DAILY_OMIKUJI_FROM_JST, now);

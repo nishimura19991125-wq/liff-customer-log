@@ -1,8 +1,23 @@
-import { DAILY_OMIKUJI_FROM_JST } from "@/lib/daily-omikuji-shown";
 import { isAtOrAfterJstHm, msUntilJstDateHm } from "@/lib/jst-hm";
 import { jstDateKey } from "@/lib/missing-documents-cache";
 
 export const CLOCK_OUT_REMINDER_FROM_JST = "18:30";
+
+/**
+ * 退勤未打刻リマインダーを**翌日の何時まで**出し続けるか（JST）。
+ * この時刻になったら、前日ぶんのリマインダーは自動で消える。
+ *
+ * ⚠ **出勤選択モーダルの開始時刻とは別の定数。**
+ *    以前は daily-omikuji-shown.ts の DAILY_OMIKUJI_FROM_JST を共有していた
+ *    （「出勤選択が出始めたら、前日の退勤リマインダーを消す」という連動で、
+ *    どちらも 07:00）。出勤選択の開始を 8:30 に遅らせたときに分けた。
+ *    目的が違う。こちらは前日の打刻忘れに気づいてもらうためのもので、
+ *    **退勤の打刻忘れは早く気づいたほうがよい**。朝いつまでも出し続けても
+ *    直せる人が増えるわけではないので、07:00 のまま据え置いている。
+ *
+ *    その結果、07:00〜08:30 の間はどちらも出ない。
+ */
+export const CLOCK_OUT_REMINDER_UNTIL_NEXT_DAY_JST = "07:00";
 
 const PENDING_STORAGE_KEY = "attendance-clock-out-pending-v1";
 const SKIPPED_STORAGE_KEY = "attendance-clock-out-skipped-v1";
@@ -41,7 +56,14 @@ function addCalendarDaysYmd(ymd: string, days: number): string | null {
   return `${yy}-${mm}-${dd}`;
 }
 
-/** 退勤未打刻リマインダーを翌日の出勤打刻表示開始（07:00）まで残すか */
+/**
+ * 退勤未打刻リマインダーをまだ出してよいか。
+ * 勤怠日の当日中と、翌日の CLOCK_OUT_REMINDER_UNTIL_NEXT_DAY_JST（07:00）
+ * より前まで残す。07:00 ちょうどで消える。
+ *
+ * 関数名の「ClockInDisplay」は、終了時刻を出勤選択モーダルの開始時刻と
+ * 共有していたころの名残。いまは出勤選択（08:30）とは連動していない
+ */
 export function isBeforeNextDayClockInDisplay(
   workDate: string,
   now = new Date(),
@@ -54,7 +76,7 @@ export function isBeforeNextDayClockInDisplay(
   const nextDay = addCalendarDaysYmd(work, 1);
   if (!nextDay) return false;
   if (today > nextDay) return false;
-  return !isAtOrAfterJstHm(DAILY_OMIKUJI_FROM_JST, now);
+  return !isAtOrAfterJstHm(CLOCK_OUT_REMINDER_UNTIL_NEXT_DAY_JST, now);
 }
 
 export function needsClockOutReminder(
@@ -183,7 +205,7 @@ export function getActivePendingClockOutReminder(
 
 /**
  * API の当日ステータスと pending を合成して、表示すべき退勤リマインダーを返す。
- * 翌日 07:00（出勤打刻表示開始）以降は自動で消える。
+ * 翌日 07:00（CLOCK_OUT_REMINDER_UNTIL_NEXT_DAY_JST）以降は自動で消える。
  * 「打刻しない」選択済みの勤怠日は出さない。
  */
 export function resolveClockOutReminderToShow(
@@ -230,14 +252,21 @@ export function resolveClockOutReminderToShow(
   return getActivePendingClockOutReminder(now);
 }
 
-/** 翌日の出勤打刻表示開始（workDate+1 の 07:00）までの残り ms */
+/**
+ * リマインダーが消える時刻（workDate+1 の 07:00）までの残り ms。
+ * すでに過ぎていれば null
+ */
 export function msUntilPendingClockOutExpires(
   pending: PendingClockOutReminder,
   now = new Date(),
 ): number | null {
   const nextDay = addCalendarDaysYmd(pending.workDate, 1);
   if (!nextDay) return null;
-  return msUntilJstDateHm(nextDay, DAILY_OMIKUJI_FROM_JST, now);
+  return msUntilJstDateHm(
+    nextDay,
+    CLOCK_OUT_REMINDER_UNTIL_NEXT_DAY_JST,
+    now,
+  );
 }
 
 export function clearClockOutReminderSnooze(): void {
