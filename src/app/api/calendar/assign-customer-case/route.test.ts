@@ -771,3 +771,49 @@ describe("★ 照合に失敗したときの文言（C①／C②）", () => {
     expect(String(thrown.body.error)).not.toBe(String(duplicated.body.error));
   });
 });
+
+/**
+ * 相関ID。画面の文言（末尾）・応答の correlationId・サーバログの3つに
+ * **同じID**が載ること。食い違うと、画面で伝えられたIDからログを引けない。
+ */
+describe("★ 照合に失敗したときの相関ID", () => {
+  const savedDetail = process.env.API_ERROR_DETAIL;
+
+  const PATHS = [
+    { name: "空き枠を指定した経路", extra: { slotRecordId: "slot-9" } },
+    { name: "空き枠を指定しない経路", extra: {} },
+  ] as const;
+
+  for (const p of PATHS) {
+    for (const kind of ["C①", "C②"] as const) {
+      it(`★ ${p.name}・${kind}: 文言のIDと応答の correlationId が一致し、ログにも出る`, async () => {
+        // 本番と同じ扱い（API_ERROR_DETAIL は NODE_ENV より先に効く）
+        process.env.API_ERROR_DETAIL = "0";
+        const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+        if (kind === "C①") h.lookupThrows = true;
+        else {
+          h.lookupRows = [
+            existingConstructionRow(),
+            { recordId: 56, record: { [T_ID]: "T00003420" } },
+          ];
+        }
+
+        const { status, body } = await call({ ...BASE_BODY, ...p.extra });
+        const logged = errorSpy.mock.calls
+          .map((c) => c.map((x) => String(x)).join(" "))
+          .join("\n");
+        errorSpy.mockRestore();
+        if (savedDetail === undefined) delete process.env.API_ERROR_DETAIL;
+        else process.env.API_ERROR_DETAIL = savedDetail;
+
+        const shown = String(body.error).match(/（ID: ([0-9a-f]{8})）$/)?.[1];
+        expect(status).toBe(502);
+        expect(shown).toBeTruthy();
+        expect(body.correlationId).toBe(shown);
+        expect(logged).toContain(`correlationId=${shown}`);
+        // 生メッセージは画面へ出ない
+        expect(String(body.error)).not.toContain("429");
+      });
+    }
+  }
+});

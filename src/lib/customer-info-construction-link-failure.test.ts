@@ -7,10 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * 同じ T番号 の工事レコードが2件あるときは再試行しても永久に直らないのに
  * 再試行を促しており、実際に二重登録の事故が起きた。
  *
- * ここで固定するのは次の3つ。
+ * ここで固定するのは次の5つ。
  *   - 失敗地点ごとに文言が違うこと
  *   - 再試行で直らない地点の文言が、再試行を促さないこと
  *   - 作成が成功したあとの失敗は、専用の文言で「再登録しない」と伝えること
+ *   - 相関IDが文言の末尾・戻り値・サーバログで同じであること
+ *   - 画面へ出る文言に @pocket の内部情報が入らないこと
  *
  * どの条件で failed になるか（判定）は customer-info-construction-link.test.ts
  * が持っている。ここは文言だけを見る。
@@ -160,8 +162,12 @@ function body(warning: string): string {
 }
 
 let errorSpy: ReturnType<typeof vi.spyOn>;
+let savedDetailFlag: string | undefined;
 
 beforeEach(() => {
+  // 本番と同じ扱い（API_ERROR_DETAIL は NODE_ENV より先に効く）
+  savedDetailFlag = process.env.API_ERROR_DETAIL;
+  process.env.API_ERROR_DETAIL = "0";
   process.env.CALENDAR_APP_ID = "app-con";
   delete process.env.CALENDAR_EMPTY_FILL_CUSTOMER_NAME_FIELD_ID;
   delete process.env.CALENDAR_EMPTY_FILL_TITLE_FIELD_ID;
@@ -177,6 +183,8 @@ beforeEach(() => {
 
 afterEach(() => {
   errorSpy.mockRestore();
+  if (savedDetailFlag === undefined) delete process.env.API_ERROR_DETAIL;
+  else process.env.API_ERROR_DETAIL = savedDetailFlag;
 });
 
 function loggedText(): string {
@@ -299,5 +307,98 @@ describe("★ 作成が成功したあとの後処理が失敗したとき", () 
     await failWith("D");
 
     expect(loggedText()).not.toContain("作成済み");
+  });
+});
+
+const ALL_SCENARIOS = ["A", "B", "C1", "C2", "D", "post-create"] as const;
+
+function resetArrangement() {
+  h.fields = FIELDS;
+  h.fieldsThrows = null;
+  h.listRows = [];
+  h.listThrows = null;
+  h.writeThrows = null;
+  h.ensureThrows = null;
+}
+
+describe("★ 相関ID", () => {
+  it("★ 文言の末尾・戻り値・サーバログに同じIDが載る（全地点）", async () => {
+    for (const s of ALL_SCENARIOS) {
+      resetArrangement();
+      errorSpy.mockClear();
+
+      const res = await failWith(s);
+
+      const shown = res.warning.match(/（ID: ([0-9a-f]{8})）$/)?.[1];
+      expect(shown, `${s}: 文言の末尾にIDが無い`).toBeTruthy();
+      expect(res.correlationId, s).toBe(shown);
+      expect(loggedText(), s).toContain(`correlationId=${shown}`);
+    }
+  });
+
+  it("★ 失敗ごとに別のIDが発行される", async () => {
+    const first = await failWith("C2");
+    const second = await failWith("C2");
+
+    expect(first.correlationId).not.toBe(second.correlationId);
+  });
+
+  it("★ 生メッセージはIDと一緒にサーバログへ残る", async () => {
+    const res = await failWith("D");
+
+    const logged = loggedText();
+    expect(logged).toContain(
+      `[customer-info-construction-link:write-failed] correlationId=${res.correlationId}`,
+    );
+    expect(logged).toContain("appsId=98765");
+  });
+
+  it("★ 作成済みのログにも同じIDが載る", async () => {
+    const res = await failWith("post-create");
+
+    const line = loggedText()
+      .split("\n")
+      .find((l) => l.includes("工事レコードは作成済み"));
+    expect(line).toContain(`correlationId=${res.correlationId}`);
+  });
+});
+
+describe("★ 画面へ出る文言に内部情報を出さない", () => {
+  const LEAKS = [
+    "appsId",
+    "98765",
+    "appsEnv",
+    "apiKey",
+    "operation",
+    "customer-info:",
+    "CALENDAR_APP_ID",
+    "CALENDAR_ATPOCKET_API_KEY",
+    "@pocket",
+    "Internal Server Error",
+  ];
+
+  it("★ appsId・operation・環境変数名・生メッセージが入らない（全地点）", async () => {
+    for (const s of ALL_SCENARIOS) {
+      resetArrangement();
+      const res = await failWith(s);
+      for (const leak of LEAKS) {
+        expect(res.warning, `${s}: ${leak}`).not.toContain(leak);
+      }
+    }
+  });
+
+  it("★ 429 でも失敗地点の文言のまま（共通の上限文言へ差し替えない）", async () => {
+    // 差し替わると「再登録しない」の案内が「1〜2分待って再度」に化ける
+    h.ensureThrows = new Error(
+      "@pocket get record failed: 429 Too Many Requests | appsId=98765",
+    );
+
+    const res = await linkCustomerInfoToConstruction(BASE);
+
+    expect(res).toMatchObject({ kind: "failed", reason: "post-create-failed" });
+    if (res.kind !== "failed") return;
+    expect(res.warning).toContain("再度の登録はせず");
+    expect(res.warning).not.toContain("利用上限");
+    expect(res.warning).not.toContain("429");
   });
 });

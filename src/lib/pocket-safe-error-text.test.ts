@@ -3,7 +3,10 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { safePocketErrorText } from "@/lib/api-error-response";
+import {
+  safePocketErrorText,
+  safePocketErrorTextWithId,
+} from "@/lib/api-error-response";
 
 /**
  * @pocket の生メッセージを画面へ出さない（段階4）。
@@ -211,5 +214,35 @@ describe("素通しの形を残さない", () => {
         "safePocketErrorText(",
       );
     }
+  });
+});
+
+/**
+ * 文言の末尾に載せたIDを、応答の別項目にも載せたい呼び出し元のための口。
+ * 文言とログは safePocketErrorText と同じでなければならない。
+ */
+describe("safePocketErrorTextWithId", () => {
+  it("★ 文言の末尾のIDと、返したIDが一致する", () => {
+    const { text, correlationId } = safePocketErrorTextWithId(new Error(RAW), {
+      scope: "sales-dashboard:apo",
+      message: "アポ件数ランキングの取得に失敗しました",
+    });
+
+    expect(text).toBe(
+      `アポ件数ランキングの取得に失敗しました（ID: ${correlationId}）`,
+    );
+    expect(correlationId).toMatch(/^[0-9a-f]{8}$/);
+    expect(loggedText()).toContain(
+      `[sales-dashboard:apo] correlationId=${correlationId}`,
+    );
+  });
+
+  it("ログは1回の失敗につき1行だけ（IDを2つ発行しない）", () => {
+    safePocketErrorTextWithId(new Error(RAW), {
+      scope: "sales-dashboard:apo",
+      message: "アポ件数ランキングの取得に失敗しました",
+    });
+
+    expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 });

@@ -60,6 +60,21 @@ export function safePocketErrorText(
   error: unknown,
   options: SafePocketErrorTextOptions,
 ): string {
+  return safePocketErrorTextWithId(error, options).text;
+}
+
+/**
+ * safePocketErrorText と同じ変換をして、**発行した相関IDも返す**。
+ *
+ * 文言の末尾に載せたIDを、応答の別項目（correlationId）にも載せたい
+ * 呼び出し元のためのもの。pocketErrorResponse と併用するとIDが2つ発行され、
+ * 画面の文言と応答の項目が食い違って追跡できなくなる。
+ * 文言・ログの形は safePocketErrorText と同一。
+ */
+export function safePocketErrorTextWithId(
+  error: unknown,
+  options: SafePocketErrorTextOptions,
+): { text: string; correlationId: string } {
   const raw = error instanceof Error ? error.message : String(error);
   const correlationId = randomUUID().slice(0, 8);
   const rateLimited = isPocketRateLimitMessage(raw);
@@ -74,9 +89,10 @@ export function safePocketErrorText(
     : options.message;
 
   // 本番は固定文言のみ。API_ERROR_DETAIL=1 のときだけ生メッセージを添える
-  return includeDetail()
+  const text = includeDetail()
     ? `${base}（${raw}）（ID: ${correlationId}）`
     : `${base}（ID: ${correlationId}）`;
+  return { text, correlationId };
 }
 
 export type PocketErrorResponseOptions = {

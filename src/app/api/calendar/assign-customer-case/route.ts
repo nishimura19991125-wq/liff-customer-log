@@ -539,7 +539,7 @@ export async function POST(request: Request) {
          * post-create-failed だけは工事レコードが**作成済み**
          */
         return NextResponse.json(
-          { error: linked.warning },
+          { error: linked.warning, correlationId: linked.correlationId },
           { status: LINK_FAILED_STATUS },
         );
       }
@@ -647,9 +647,12 @@ export async function POST(request: Request) {
        * 文言は連携側と同じものを使う。複数一致（lookup-ambiguous）は
        * 再試行しても直らないので、再試行を促さない
        */
-      const failure = describeConstructionLinkFailure(existing.reason);
+      const failure = describeConstructionLinkFailure(
+        existing.reason,
+        existing.cause,
+      );
       return NextResponse.json(
-        { error: failure.warning },
+        { error: failure.warning, correlationId: failure.correlationId },
         { status: LINK_FAILED_STATUS },
       );
     }

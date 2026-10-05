@@ -1,5 +1,6 @@
 import "server-only";
 
+import { safePocketErrorTextWithId } from "@/lib/api-error-response";
 import {
   apiKeyForCalendarPocket1,
   apiKeyForCalendarWrite,
@@ -66,6 +67,8 @@ export type CustomerInfoConstructionLinkResult =
       kind: "failed";
       reason: ConstructionLinkFailureReason;
       warning: string;
+      /** warning の末尾・サーバログと同じ相関ID。応答にも載せる */
+      correlationId: string;
     };
 
 /**
@@ -140,15 +143,35 @@ export const CONSTRUCTION_LINK_FAILURE_MESSAGES: Record<
 };
 
 /**
- * 失敗地点から画面向けの文言を作る。
+ * 失敗地点から画面向けの文言を作り、相関IDを発行する。
+ *
+ * 相関IDは文言の末尾・サーバログ・戻り値の3つに同じものが載る。
+ * 画面で伝えられたIDから、ログの生メッセージを引けるようにするため。
+ *
+ * cause は @pocket の生メッセージを持ちうる（appsId・operation・
+ * 使用した環境変数名まで載っている）ので、safePocketErrorText と同じ
+ * 変換を通し、画面へは固定文言とIDだけを出す。
+ * 429 でも文言を共通の上限文言へ差し替えないのは、失敗地点ごとの案内
+ * （とくに「再試行しない」）を保つため。
  *
  * 割り当て API（assign-customer-case）の事前照合も同じ文言を返すので
  * export している。文言を書き分けると、片方だけ再試行を促す表現が残る。
  */
 export function describeConstructionLinkFailure(
   reason: ConstructionLinkFailureReason,
-): { reason: ConstructionLinkFailureReason; warning: string } {
-  return { reason, warning: CONSTRUCTION_LINK_FAILURE_MESSAGES[reason] };
+  cause: unknown,
+): {
+  reason: ConstructionLinkFailureReason;
+  warning: string;
+  correlationId: string;
+} {
+  const message = CONSTRUCTION_LINK_FAILURE_MESSAGES[reason];
+  const { text, correlationId } = safePocketErrorTextWithId(cause, {
+    scope: `customer-info-construction-link:${reason}`,
+    message,
+    rateLimitedMessage: message,
+  });
+  return { reason, warning: text, correlationId };
 }
 
 export type FoundConstructionRecord =
@@ -156,9 +179,14 @@ export type FoundConstructionRecord =
   | { kind: "not-found" }
   /**
    * 探せなかった。作成に進んではいけない。
-   * reason は文言の出し分け用（照合の例外か、複数一致か）
+   * reason は文言の出し分け用（照合の例外か、複数一致か）。
+   * cause は相関ID付きでログへ残すための元の例外（画面へは出さない）
    */
-  | { kind: "error"; reason: "lookup-failed" | "lookup-ambiguous" };
+  | {
+      kind: "error";
+      reason: "lookup-failed" | "lookup-ambiguous";
+      cause: unknown;
+    };
 
 /**
  * 工事登録アプリを T番号 の完全一致で1件だけ探す。
@@ -202,7 +230,7 @@ export async function findConstructionRecordByTNumber(opts: {
       "[customer-info-construction-link] 工事レコードの照合に失敗しました",
       e instanceof Error ? e.message : String(e),
     );
-    return { kind: "error", reason: "lookup-failed" };
+    return { kind: "error", reason: "lookup-failed", cause: e };
   }
 
   const matched: { recordId: string; record: Record<string, unknown> }[] = [];
@@ -226,7 +254,13 @@ export async function findConstructionRecordByTNumber(opts: {
       "[customer-info-construction-link] 同じ T番号 の工事レコードが複数あるため特定しません",
       { count: matched.length },
     );
-    return { kind: "error", reason: "lookup-ambiguous" };
+    return {
+      kind: "error",
+      reason: "lookup-ambiguous",
+      cause: new Error(
+        `同じ T番号 の工事レコードが複数あります（${matched.length}件）`,
+      ),
+    };
   }
   return { kind: "not-found" };
 }
@@ -307,7 +341,7 @@ export async function linkCustomerInfoToConstruction(opts: {
     );
     return {
       kind: "failed",
-      ...describeConstructionLinkFailure("fields-fetch-failed"),
+      ...describeConstructionLinkFailure("fields-fetch-failed", e),
     };
   }
 
@@ -342,7 +376,10 @@ export async function linkCustomerInfoToConstruction(opts: {
     );
     return {
       kind: "failed",
-      ...describeConstructionLinkFailure("fields-unresolved"),
+      ...describeConstructionLinkFailure(
+        "fields-unresolved",
+        new Error("工事アプリの列を解決できません"),
+      ),
     };
   }
 
@@ -364,7 +401,10 @@ export async function linkCustomerInfoToConstruction(opts: {
   });
   if (found.kind === "error") {
     // 探せなかった。作りにいくと二重になるので何もしない
-    return { kind: "failed", ...describeConstructionLinkFailure(found.reason) };
+    return {
+      kind: "failed",
+      ...describeConstructionLinkFailure(found.reason, found.cause),
+    };
   }
 
   /**
@@ -514,15 +554,12 @@ export async function linkCustomerInfoToConstruction(opts: {
     return { kind: "created", recordId, akiNumber };
   } catch (e) {
     if (createdOnPocket) {
+      const failure = describeConstructionLinkFailure("post-create-failed", e);
       // レコードは出来ている。再登録されると二重になるので、ログにも残す
       console.error(
-        "[customer-info-construction-link] 工事レコードは作成済みですが、後続の処理に失敗しました（再登録すると二重になります）",
-        e instanceof Error ? e.message : String(e),
+        `[customer-info-construction-link] correlationId=${failure.correlationId} 工事レコードは作成済みですが、後続の処理に失敗しました（再登録すると二重になります）`,
       );
-      return {
-        kind: "failed",
-        ...describeConstructionLinkFailure("post-create-failed"),
-      };
+      return { kind: "failed", ...failure };
     }
     console.error(
       "[customer-info-construction-link] 工事レコードの書き込みに失敗しました",
@@ -530,7 +567,7 @@ export async function linkCustomerInfoToConstruction(opts: {
     );
     return {
       kind: "failed",
-      ...describeConstructionLinkFailure("write-failed"),
+      ...describeConstructionLinkFailure("write-failed", e),
     };
   }
 }
