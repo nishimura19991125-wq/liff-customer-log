@@ -47,6 +47,7 @@ import {
 import { isCustomerTNumberCancelled } from "@/lib/customer-cancelled-t-numbers";
 import { getCachedCustomerCrmSnapshot } from "@/lib/customer-crm-list";
 import {
+  describeConstructionLinkFailure,
   findConstructionRecordByTNumber,
   linkCustomerInfoToConstruction,
 } from "@/lib/customer-info-construction-link";
@@ -533,7 +534,10 @@ export async function POST(request: Request) {
       });
 
       if (linked.kind === "failed") {
-        // 探せなかった・書けなかった。工事レコードは作っていない
+        /**
+         * 探せなかった・書けなかった。文言は失敗地点ごとに分かれている。
+         * post-create-failed だけは工事レコードが**作成済み**
+         */
         return NextResponse.json(
           { error: linked.warning },
           { status: LINK_FAILED_STATUS },
@@ -637,12 +641,15 @@ export async function POST(request: Request) {
       fieldsCsv: lookupCsv,
     });
     if (existing.kind === "error") {
-      // 「見つからなかった」と「探せなかった」を取り違えない。何も書かない
+      /**
+       * 「見つからなかった」と「探せなかった」を取り違えない。何も書かない。
+       *
+       * 文言は連携側と同じものを使う。複数一致（lookup-ambiguous）は
+       * 再試行しても直らないので、再試行を促さない
+       */
+      const failure = describeConstructionLinkFailure(existing.reason);
       return NextResponse.json(
-        {
-          error:
-            "工事レコードの照合に失敗したため、割り当てを中止しました。時間をおいて再度お試しください。",
-        },
+        { error: failure.warning },
         { status: LINK_FAILED_STATUS },
       );
     }

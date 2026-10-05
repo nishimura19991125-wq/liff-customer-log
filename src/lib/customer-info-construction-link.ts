@@ -61,8 +61,35 @@ export type CustomerInfoConstructionLinkResult =
   | { kind: "skipped"; reason: string }
   | { kind: "created"; recordId: string; akiNumber: string }
   | { kind: "updated"; recordId: string }
-  /** 失敗。お客様情報の保存は成功しているので警告として伝える */
-  | { kind: "failed"; warning: string };
+  /** 失敗。warning は画面へそのまま出してよい文言 */
+  | {
+      kind: "failed";
+      reason: ConstructionLinkFailureReason;
+      warning: string;
+    };
+
+/**
+ * 失敗地点。**文言を地点ごとに分けるための区分**で、どの条件で失敗に
+ * なるか（判定）は変えていない。
+ *
+ * 以前は全地点で同じ文言（「時間をおいて保存し直す」）を返していた。
+ * 同じ T番号 の工事レコードが2件あるとき（lookup-ambiguous）は再試行しても
+ * 永久に直らないのに再試行を促しており、実際に二重登録の事故が起きた。
+ *
+ *   fields-fetch-failed  列定義の取得が例外（一過性のことが多い）
+ *   fields-unresolved    列を解決できない（設定の問題。再試行では直らない）
+ *   lookup-failed        照合が例外（429・タイムアウトなど）
+ *   lookup-ambiguous     同じ T番号 の工事レコードが複数ある
+ *   write-failed         書き込みが例外。工事レコードは作っていない
+ *   post-create-failed   **作成は成功した**あとの後処理が例外
+ */
+export type ConstructionLinkFailureReason =
+  | "fields-fetch-failed"
+  | "fields-unresolved"
+  | "lookup-failed"
+  | "lookup-ambiguous"
+  | "write-failed"
+  | "post-create-failed";
 
 /**
  * お客様情報の保存から工事登録アプリへ連携するか。
@@ -82,14 +109,56 @@ export function customerInfoConstructionLinkOnSaveEnabled(): boolean {
   );
 }
 
-const LINK_FAILED_WARNING =
-  "お客様情報は保存しましたが、工事カレンダーへの反映に失敗しました。時間をおいて施工予定日を保存し直すか、DX事業部へ連絡してください。";
+/**
+ * 失敗地点ごとの文言。
+ *
+ * ⚠ fields-unresolved・lookup-ambiguous・post-create-failed には
+ *    **再試行を促す言葉を入れない**（「時間をおいて」「もう一度」など）。
+ *    再試行しても直らず、post-create-failed は二重登録になる。
+ *    否定形（「繰り返さず」）でも再試行に触れる語は避けている。
+ *
+ * 書き出しを「お客様情報は保存しましたが」にしないのは、いま動いている
+ * 呼び出し元が工事カレンダーの割り当てで、そこではお客様情報を
+ * 保存していないため。
+ */
+export const CONSTRUCTION_LINK_FAILURE_MESSAGES: Record<
+  ConstructionLinkFailureReason,
+  string
+> = {
+  "fields-fetch-failed":
+    "工事カレンダーの設定を読み込めず、反映できませんでした。時間をおいてもう一度お試しください。解消しない場合はDX事業部へ連絡してください。",
+  "fields-unresolved":
+    "工事カレンダーの項目設定に問題があり、反映できませんでした。DX事業部へ連絡してください。",
+  "lookup-failed":
+    "工事レコードの照合ができず、反映を中止しました。時間をおいてもう一度お試しください。",
+  "lookup-ambiguous":
+    "同じT番号の工事レコードが複数あるため、反映を中止しました。DX事業部へ連絡してください。",
+  "write-failed":
+    "工事レコードの書き込みに失敗しました。時間をおいてもう一度お試しください。解消しない場合はDX事業部へ連絡してください。",
+  "post-create-failed":
+    "工事レコードは作成されましたが、後続の処理に失敗しました。再度の登録はせず、DX事業部へ連絡してください。",
+};
+
+/**
+ * 失敗地点から画面向けの文言を作る。
+ *
+ * 割り当て API（assign-customer-case）の事前照合も同じ文言を返すので
+ * export している。文言を書き分けると、片方だけ再試行を促す表現が残る。
+ */
+export function describeConstructionLinkFailure(
+  reason: ConstructionLinkFailureReason,
+): { reason: ConstructionLinkFailureReason; warning: string } {
+  return { reason, warning: CONSTRUCTION_LINK_FAILURE_MESSAGES[reason] };
+}
 
 export type FoundConstructionRecord =
   | { kind: "found"; recordId: string; record: Record<string, unknown> }
   | { kind: "not-found" }
-  /** 探せなかった。作成に進んではいけない */
-  | { kind: "error" };
+  /**
+   * 探せなかった。作成に進んではいけない。
+   * reason は文言の出し分け用（照合の例外か、複数一致か）
+   */
+  | { kind: "error"; reason: "lookup-failed" | "lookup-ambiguous" };
 
 /**
  * 工事登録アプリを T番号 の完全一致で1件だけ探す。
@@ -133,7 +202,7 @@ export async function findConstructionRecordByTNumber(opts: {
       "[customer-info-construction-link] 工事レコードの照合に失敗しました",
       e instanceof Error ? e.message : String(e),
     );
-    return { kind: "error" };
+    return { kind: "error", reason: "lookup-failed" };
   }
 
   const matched: { recordId: string; record: Record<string, unknown> }[] = [];
@@ -157,7 +226,7 @@ export async function findConstructionRecordByTNumber(opts: {
       "[customer-info-construction-link] 同じ T番号 の工事レコードが複数あるため特定しません",
       { count: matched.length },
     );
-    return { kind: "error" };
+    return { kind: "error", reason: "lookup-ambiguous" };
   }
   return { kind: "not-found" };
 }
@@ -236,7 +305,10 @@ export async function linkCustomerInfoToConstruction(opts: {
       "[customer-info-construction-link] 工事アプリの列定義を取得できません",
       e instanceof Error ? e.message : String(e),
     );
-    return { kind: "failed", warning: LINK_FAILED_WARNING };
+    return {
+      kind: "failed",
+      ...describeConstructionLinkFailure("fields-fetch-failed"),
+    };
   }
 
   const fids = resolveConstructionFieldIds(constructionFields);
@@ -268,7 +340,10 @@ export async function linkCustomerInfoToConstruction(opts: {
         hasStartDate: Boolean(startDateFieldId),
       },
     );
-    return { kind: "failed", warning: LINK_FAILED_WARNING };
+    return {
+      kind: "failed",
+      ...describeConstructionLinkFailure("fields-unresolved"),
+    };
   }
 
   const fieldsCsv = uniqueFieldsCsv(
@@ -289,7 +364,7 @@ export async function linkCustomerInfoToConstruction(opts: {
   });
   if (found.kind === "error") {
     // 探せなかった。作りにいくと二重になるので何もしない
-    return { kind: "failed", warning: LINK_FAILED_WARNING };
+    return { kind: "failed", ...describeConstructionLinkFailure(found.reason) };
   }
 
   /**
@@ -309,6 +384,13 @@ export async function linkCustomerInfoToConstruction(opts: {
   if (housing && housingFieldId) patch[housingFieldId] = housing;
   if (contractor && contractorFieldId) patch[contractorFieldId] = contractor;
   if (handler && handlerFieldId) patch[handlerFieldId] = handler;
+
+  /**
+   * 新規作成の書き込みが成功したか。
+   * 成功したあとの例外は「作っていない」失敗と分けて伝える。同じ文言で
+   * 再試行を促すと、同じ案件の工事レコードが二重にできる
+   */
+  let createdOnPocket = false;
 
   try {
     if (found.kind === "found") {
@@ -358,6 +440,7 @@ export async function linkCustomerInfoToConstruction(opts: {
       importKeyFieldId: importKeyFieldId ?? undefined,
       writeAuth,
     });
+    createdOnPocket = true;
     invalidateAllCalendarPayloadCache();
 
     let recordId = created
@@ -430,11 +513,25 @@ export async function linkCustomerInfoToConstruction(opts: {
 
     return { kind: "created", recordId, akiNumber };
   } catch (e) {
+    if (createdOnPocket) {
+      // レコードは出来ている。再登録されると二重になるので、ログにも残す
+      console.error(
+        "[customer-info-construction-link] 工事レコードは作成済みですが、後続の処理に失敗しました（再登録すると二重になります）",
+        e instanceof Error ? e.message : String(e),
+      );
+      return {
+        kind: "failed",
+        ...describeConstructionLinkFailure("post-create-failed"),
+      };
+    }
     console.error(
       "[customer-info-construction-link] 工事レコードの書き込みに失敗しました",
       e instanceof Error ? e.message : String(e),
     );
-    return { kind: "failed", warning: LINK_FAILED_WARNING };
+    return {
+      kind: "failed",
+      ...describeConstructionLinkFailure("write-failed"),
+    };
   }
 }
 

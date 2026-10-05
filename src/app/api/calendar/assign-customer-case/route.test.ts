@@ -700,3 +700,74 @@ describe("工事対応者フィールドが未設定の環境", () => {
     expect(h.writes[0]?.payload).not.toHaveProperty(HANDLER_ID);
   });
 });
+
+/**
+ * 照合に失敗したときの文言。
+ *
+ * 照合は2箇所で走る。空き枠を指定したときはルート自身の事前照合、
+ * 指定しないときは連携（linkCustomerInfoToConstruction）の中の照合。
+ * **どちらを通っても同じ分け方**になることを固定する。片方だけ直すと、
+ * 複数一致なのに再試行を促す文言が残る（実際に残っていた）。
+ */
+describe("★ 照合に失敗したときの文言（C①／C②）", () => {
+  /** 再試行を促す言い回し。否定形でも触れない取り決め */
+  const RETRY_WORDS = [
+    "時間をおいて",
+    "もう一度",
+    "再度",
+    "再試行",
+    "お試し",
+    "やり直",
+    "し直",
+    "しばらく",
+  ];
+
+  const duplicatedRows = () => [
+    existingConstructionRow(),
+    { recordId: 56, record: { [T_ID]: "T00003420" } },
+  ];
+
+  /** 空き枠あり＝ルートの事前照合 / なし＝連携の中の照合 */
+  const PATHS = [
+    { name: "空き枠を指定した経路", extra: { slotRecordId: "slot-9" } },
+    { name: "空き枠を指定しない経路", extra: {} },
+  ] as const;
+
+  for (const p of PATHS) {
+    it(`★ ${p.name}: 複数一致（C②）は再試行を促さない`, async () => {
+      h.lookupRows = duplicatedRows();
+
+      const { status, body } = await call({ ...BASE_BODY, ...p.extra });
+      const text = String(body.error);
+
+      expect(status).toBe(502);
+      expect(text).toContain("同じT番号の工事レコードが複数あるため");
+      expect(text).toContain("DX事業部へ連絡してください");
+      for (const w of RETRY_WORDS) expect(text, w).not.toContain(w);
+      expect(h.writes).toEqual([]);
+    });
+
+    it(`★ ${p.name}: 照合の例外（C①）は時間をおく案内になる`, async () => {
+      h.lookupThrows = true;
+
+      const { status, body } = await call({ ...BASE_BODY, ...p.extra });
+      const text = String(body.error);
+
+      expect(status).toBe(502);
+      expect(text).toContain("工事レコードの照合ができず");
+      expect(text).toContain("時間をおいてもう一度お試しください");
+      expect(h.writes).toEqual([]);
+    });
+  }
+
+  it("★ 空き枠を指定した経路でも C① と C② で文言が分かれる", async () => {
+    h.lookupThrows = true;
+    const thrown = await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+
+    h.lookupThrows = false;
+    h.lookupRows = duplicatedRows();
+    const duplicated = await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+
+    expect(String(thrown.body.error)).not.toBe(String(duplicated.body.error));
+  });
+});
