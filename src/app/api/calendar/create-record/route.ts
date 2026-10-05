@@ -397,9 +397,14 @@ export async function POST(request: Request) {
     if (!recordId && uniqueKey) {
       // この経路では監査ログを残せない（recordId が無いため）。
       // 実際に発生するかを観測するために記録する。
+      /**
+       * お客様名は出さない（氏名はログに残さない）。有無だけを真偽値で残す。
+       * Aki番号 は工事アプリの採番値で、recordId が無いこの場面では
+       * 該当レコードを探す唯一の手がかりなので残している
+       */
       console.error(
         "[api/calendar/create-record] recordId を解決できず監査ログを記録できません",
-        { akiNumber: uniqueKey, customerName },
+        { akiNumber: uniqueKey, hasCustomerName: Boolean(customerName) },
       );
     }
 
