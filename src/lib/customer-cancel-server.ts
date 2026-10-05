@@ -3,7 +3,6 @@ import "server-only";
 import {
   apiKeyForCalendarPocket1,
   apiKeyForCalendarWrite,
-  createRecord,
   fetchAppFields,
 } from "@/lib/atpocket";
 import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
@@ -14,17 +13,11 @@ import { invalidateCalendarConstructionRecordsCache } from "@/lib/calendar-const
 import {
   collectConstructionFieldsCsv,
   pickRecordValueByFieldAliases,
-  pocketFieldUniqueIdByCaption,
-  resolveConfiguredFieldToSchemaUniqueId,
   resolveConstructionFieldIds,
   resolveConstructionImportKeyFieldId,
   resolveConstructionTNumberFieldId,
 } from "@/lib/calendar-kojo";
-import { fetchJapanHolidayKeysForRange } from "@/lib/japan-holidays-api";
-import { CUSTOMER_STATUS_DEFAULT } from "@/lib/customer-info-form/options";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
-import { buildCustomerCancelPlan } from "@/lib/customer-cancel-plan";
-import type { CustomerCancelPlan } from "@/lib/customer-cancel-plan";
 import { resolveCustomerInfoConstructionHandlerFieldId } from "@/lib/customer-info-construction-handler";
 import { fieldCaptionByUniqueId } from "@/lib/customer-info-record";
 import { resolveCustomerInfoPtTransferFields } from "@/lib/customer-info-form/resolve-fields";
@@ -36,9 +29,10 @@ import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
  * 順序は route 側で固定している。ここへ来るのはお客様情報の更新が
  * 成功したあとだけ。ここでの失敗は業務を止めず、warning として返す。
  *
- * ■ 空き枠の削除は行わない
- * 削除は assign-case-to-slot の対象枠のみという約束を守る。ここは
- * 「工事レコードの3項目を空にする」「空き枠を新規作成する」だけ。
+ * ■ 空き枠は作らない
+ * 以前は、施工予定日が7営業日より先のとき同じ日・同じ施工会社の空き枠を
+ * 新規作成していた。この自動作成は廃止した（営業日の判定・祝日の取得・
+ * 空き枠の payload 組み立てもあわせて外してある）。
  */
 
 /** 工事登録アプリで空にする項目。初回施工予定日は工事アプリに列が無い */
@@ -51,18 +45,12 @@ export type CustomerCancelSideEffectResult = {
   /** 画面に出す警告。空なら全部成功 */
   warnings: string[];
   constructionUpdated: boolean;
-  emptySlotCreated: boolean;
-  emptySlotRecordId: string | null;
-  /** 実際に使った判定（ログ・レスポンス用） */
-  plan: CustomerCancelPlan;
 };
 
 const CONSTRUCTION_UPDATE_FAILED =
   "キャンセル処理は完了しましたが、工事登録アプリの更新に失敗しました。DX事業部へ連絡してください。";
 const CONSTRUCTION_NOT_FOUND =
   "キャンセル処理は完了しましたが、工事登録アプリに該当レコードが見つかりませんでした。DX事業部へ連絡してください。";
-const EMPTY_SLOT_FAILED =
-  "キャンセル処理は完了しましたが、空き枠の作成に失敗しました。DX事業部へ連絡してください。";
 
 function coercePlainString(raw: unknown): string {
   if (raw == null) return "";
@@ -86,16 +74,10 @@ function coercePlainString(raw: unknown): string {
 }
 
 /**
- * 空き枠に入れる顧客ステータス。
- * @pocket の既存の空き枠が「工事待ち」なので、作る枠もそれに合わせる。
- */
-const EMPTY_SLOT_CUSTOMER_STATUS = CUSTOMER_STATUS_DEFAULT;
-
-/**
  * 監査ログはベストエフォート（A-5）。**書き込みの成否に影響させない。**
  *
- * 以前は書き込みと同じ try に入れていたため、記録に失敗しただけで
- * 「空き枠の作成に失敗しました」と表示されていた（実際には作成済み）。
+ * 書き込みと同じ try に入れると、記録に失敗しただけで「更新に失敗しました」と
+ * 表示されてしまう（実際には更新済み）。
  * 記録は書き込みが済んでから行い、失敗はサーバログに留める。
  *
  * ここを「失敗したら止める」に変えないこと。止めてよいのは削除だけで、
@@ -124,92 +106,6 @@ async function recordAuditLogBestEffort(
       e,
     );
   }
-}
-
-/**
- * 空き枠レコードの中身を組み立てる。
- *
- * ■ 取込キー（Aki番号）の列を**空文字で載せる**理由
- * @pocket の作成APIは、取込キーの列がレコード本文に無いと
- * 「取込設定にキー項目を追加してください」で 400 を返す。値は空でよく、
- * 空なら自動採番される。他の新規作成も同じことをしている:
- *   - buildConstructionFillPatch（create-record）… 取込キー列に "" を載せる
- *   - applyAttendanceAutoNumberOnCreate（勤怠）… 取込キー列に "" を入れる
- *
- * ⚠ 以前はここに T番号 を載せていた。工事アプリが T番号 を自動採番し、
- *   取込キーも兼ねていたため。採番元がお客様情報アプリへ移り、
- *   工事アプリの取込キーは Aki番号 になったので載せる列を変えている。
- *   T番号 は載せない（採番されないので空文字を入れても意味が無い）。
- *
- * ■ お客様名は載せない
- * 空のままにすることで空き枠として扱われる（constructionTitleFieldIsEmpty）。
- */
-export function buildEmptySlotPayload(input: {
-  /** 工事登録アプリの取込キー（Aki番号）列 */
-  importKeyFieldId: string;
-  startDateFieldId: string;
-  contractorFieldId: string;
-  /** 解決できないときは null。その場合ステータス無しで作る */
-  customerStatusFieldId: string | null;
-  dayKey: string;
-  contractor: string;
-}): Record<string, unknown> {
-  const payload: Record<string, unknown> = {
-    // 値は入れない。@pocket が自動採番する
-    [input.importKeyFieldId]: "",
-    [input.startDateFieldId]: input.dayKey,
-    [input.contractorFieldId]: input.contractor,
-  };
-  if (input.customerStatusFieldId) {
-    payload[input.customerStatusFieldId] = EMPTY_SLOT_CUSTOMER_STATUS;
-  }
-  return payload;
-}
-
-/** 工事登録アプリの顧客ステータス列。環境変数優先・未設定なら見出し完全一致 */
-export function resolveConstructionCustomerStatusFieldId(
-  constructionFields: Awaited<ReturnType<typeof fetchAppFields>>,
-): string | null {
-  const env = process.env.CALENDAR_CUSTOMER_STATUS_FIELD_ID?.trim();
-  if (env) {
-    return resolveConfiguredFieldToSchemaUniqueId(env, constructionFields);
-  }
-  return pocketFieldUniqueIdByCaption(constructionFields, "顧客ステータス");
-}
-
-/**
- * 空き枠の判定に使う祝日。外部APIから取り、失敗したら**土日のみ**に落ちる。
- * 外部依存で保存そのものが止まらないようにする。
- */
-export async function resolveCancelPlanWithHolidays(input: {
-  todayDayKey: string;
-  constructionDate: string;
-  contractor: string;
-}): Promise<CustomerCancelPlan> {
-  const target = (input.constructionDate ?? "").trim();
-  let holidayKeys: ReadonlySet<string> = new Set<string>();
-  let degraded = false;
-  if (target) {
-    const lookup = await fetchJapanHolidayKeysForRange(
-      input.todayDayKey,
-      target,
-    );
-    holidayKeys = lookup.keys;
-    degraded = lookup.degraded;
-  }
-  if (degraded) {
-    console.warn(
-      "[customer-cancel] 祝日を取得できなかったため土日のみで営業日を数えます",
-      JSON.stringify({ todayDayKey: input.todayDayKey, target }),
-    );
-  }
-  return buildCustomerCancelPlan({
-    todayDayKey: input.todayDayKey,
-    constructionDate: input.constructionDate,
-    contractor: input.contractor,
-    holidayKeys,
-    holidaysDegraded: degraded,
-  });
 }
 
 /**
@@ -335,26 +231,11 @@ export async function runCustomerCancelSideEffects(opts: {
    * 工事レコードを引く主キーで、T番号 が転記されていない案件でも当たる
    */
   akiNumber?: string;
-  /** キャンセル前の施工予定日（空き枠の判定と作成に使う） */
-  constructionDate: string;
-  /** キャンセル前の施工会社（空き枠の判定と作成に使う） */
-  contractor: string;
-  /** 操作した日（YYYY-MM-DD） */
-  todayDayKey: string;
   lineUserId: string;
 }): Promise<CustomerCancelSideEffectResult> {
-  const plan = await resolveCancelPlanWithHolidays({
-    todayDayKey: opts.todayDayKey,
-    constructionDate: opts.constructionDate,
-    contractor: opts.contractor,
-  });
-
   const base: CustomerCancelSideEffectResult = {
     warnings: [],
     constructionUpdated: false,
-    emptySlotCreated: false,
-    emptySlotRecordId: null,
-    plan,
   };
 
   const calAppId = process.env.CALENDAR_APP_ID?.trim();
@@ -388,7 +269,7 @@ export async function runCustomerCancelSideEffects(opts: {
     console.error("[customer-cancel] 工事アプリの T番号 列を解決できません");
     return { ...base, warnings: [CONSTRUCTION_NOT_FOUND] };
   }
-  /** 空き枠の作成に要る取込キー（Aki番号）。無ければ空き枠は作らない */
+  /** 工事アプリの取込キー（Aki番号）。照合と更新の両方で使う */
   const importKeyFieldId =
     resolveConstructionImportKeyFieldId(constructionFields);
 
@@ -451,10 +332,9 @@ export async function runCustomerCancelSideEffects(opts: {
   const constructionRecordId = found?.recordId ?? null;
 
   if (!constructionRecordId) {
-    // 工事レコードが無い＝カレンダー上でその日を押さえていない。
-    // 空き枠を作ると存在しなかった空きを増やすことになるので作らない。
+    // 工事レコードが無い＝カレンダー上でその日を押さえていない
     console.warn(
-      "[customer-cancel] 工事アプリに該当レコードが無いため、更新と空き枠作成をスキップ",
+      "[customer-cancel] 工事アプリに該当レコードが無いため、更新をスキップ",
       JSON.stringify({
         // 値そのものは出さない（真偽値のみ）
         hasTNumber: Boolean(tNumber),
@@ -491,7 +371,6 @@ export async function runCustomerCancelSideEffects(opts: {
        * T番号 のまま残っていた。@pocket は取込キーの列が本文に無いと
        * 更新を 400 で返すので、キャンセルしても工事レコードの
        * 施工予定日が消えず、案件がカレンダーに残っていた。
-       * 空き枠の作成も constructionUpdated を見ているので道連れで飛ぶ。
        *
        * allowMissingImportKey は他の工事アプリ更新（fill-empty-slot・
        * assign-case-to-slot・schedule-undated-case）と同じ扱い。
@@ -532,101 +411,10 @@ export async function runCustomerCancelSideEffects(opts: {
     }
   }
 
-  // ── 2) 空き枠の作成（条件を満たすときだけ）
-  let emptySlotCreated = false;
-  let emptySlotRecordId: string | null = null;
-  if (constructionUpdated && plan.createsEmptySlot) {
-    const startId = fids.startDate?.trim();
-    const contractorId = fids.contractor?.trim();
-    if (!startId || !contractorId || !importKeyFieldId) {
-      // 取込キーの列が無いと @pocket が作成を拒むので、ここで諦める
-      console.error(
-        "[customer-cancel] 施工予定日／施工会社／取込キー（Aki番号）の列を解決できず、空き枠を作成できません",
-        {
-          hasStartDate: Boolean(startId),
-          hasContractor: Boolean(contractorId),
-          hasImportKey: Boolean(importKeyFieldId),
-        },
-      );
-      warnings.push(EMPTY_SLOT_FAILED);
-    } else {
-      const slotStatusId =
-        resolveConstructionCustomerStatusFieldId(constructionFields);
-      if (!slotStatusId) {
-        console.warn(
-          "[customer-cancel] 工事アプリの顧客ステータス列を解決できません。空き枠はステータス無しで作成します",
-        );
-      }
-      const slotPayload = buildEmptySlotPayload({
-        importKeyFieldId,
-        startDateFieldId: startId,
-        contractorFieldId: contractorId,
-        customerStatusFieldId: slotStatusId,
-        dayKey: plan.emptySlotDayKey,
-        contractor: plan.emptySlotContractor,
-      });
-      try {
-        // 新規作成なので取込キーで既存を探す必要が無い。
-        // create-record ルート・勤怠の打刻と同じく createRecord を直接使う
-        const created = await createRecord(calAppId, slotPayload, writeAuth);
-        emptySlotCreated = true;
-        emptySlotRecordId =
-          created.recordIdHint?.trim() ||
-          (created.row?.recordId != null
-            ? String(created.row.recordId)
-            : null);
-      } catch (e) {
-        console.error("[customer-cancel] 空き枠の作成に失敗", e);
-        warnings.push(EMPTY_SLOT_FAILED);
-      }
-
-      // V-8: 「なぜこの空き枠ができたか」を後から追えるようにする。
-      // 作成が済んでから記録し、記録の失敗は作成の成否に影響させない
-      if (emptySlotCreated) {
-        await recordAuditLogBestEffort(
-          {
-            lineUserId: opts.lineUserId,
-            operation: "create",
-            targetAppId: calAppId,
-            targetRecordId: emptySlotRecordId ?? "",
-            targetTNumber: tNumber,
-            changes: [
-              {
-                fieldId: "__cancel_empty_slot__",
-                label: "空き枠の自動作成",
-                before: "",
-                after: `T番号 ${tNumber} のキャンセルにより作成（${plan.emptySlotDayKey} / ${plan.emptySlotContractor} / ${plan.businessDays}営業日先）`,
-              },
-              {
-                fieldId: startId,
-                label: fieldCaptionByUniqueId(constructionFields, startId),
-                before: "",
-                after: plan.emptySlotDayKey,
-              },
-              {
-                fieldId: contractorId,
-                label: fieldCaptionByUniqueId(constructionFields, contractorId),
-                before: "",
-                after: plan.emptySlotContractor,
-              },
-            ],
-          },
-          "空き枠の作成",
-        );
-      }
-    }
-  }
-
-  if (constructionUpdated || emptySlotCreated) {
+  if (constructionUpdated) {
     invalidateCalendarConstructionRecordsCache();
     invalidateAllCalendarPayloadCache();
   }
 
-  return {
-    warnings,
-    constructionUpdated,
-    emptySlotCreated,
-    emptySlotRecordId,
-    plan,
-  };
+  return { warnings, constructionUpdated };
 }

@@ -643,18 +643,13 @@ function CustomerInfoPageContent() {
       if (savingCancelled && !beforeCancelled) {
         setRequiredFieldErrors(new Set());
         setSaveFeedback(null);
-        // 祝日は外部APIを使うためサーバでしか引けない。
-        // 実行内容の判断はサーバに一本化し、画面はその結果を出すだけにする
+        // 実行内容はサーバの設定で決まる。
+        // 判断はサーバに一本化し、画面はその結果を出すだけにする
         setCancelPlanLoading(true);
         try {
-          const params = new URLSearchParams({
-            constructionDate: formValuesToSave.constructionDate ?? "",
-            contractor: formValuesToSave.constructionContractor ?? "",
+          const res = await fetch("/api/customer-info/cancel-plan", {
+            headers: { Authorization: `Bearer ${token}` },
           });
-          const res = await fetch(
-            `/api/customer-info/cancel-plan?${params.toString()}`,
-            { headers: { Authorization: `Bearer ${token}` } },
-          );
           const data = (await res.json()) as {
             ok?: boolean;
             plan?: CustomerCancelPlan;

@@ -56,7 +56,6 @@ import {
   readContractNotificationExtraValues,
   resolveContractNotificationExtraFieldIds,
 } from "@/lib/contract-notification-server";
-import { todayJstDayKey } from "@/lib/customer-cancel-plan";
 import {
   applyCustomerCancelToPayload,
   runCustomerCancelSideEffects,
@@ -756,15 +755,6 @@ export async function PUT(request: Request, ctx: RouteCtx) {
         beforeCustomerStatus !== null &&
         !isCustomerStatusCancelledExact(beforeCustomerStatus);
 
-      // 空き枠の判定は**消す前**の施工予定日・施工会社で行う。
-      // 画面の確認ダイアログが見ている値と同じものを使う
-      const cancelSource = cancelTriggered
-        ? {
-            constructionDate: values.constructionDate ?? "",
-            contractor: values.constructionContractor ?? "",
-          }
-        : null;
-
       if (cancelTriggered) {
         // V-2: PT を 0 にし、4項目のうちフォームにある3項目を空にする。
         // 工事対応者はフォーム外の列なので payload 側で消す
@@ -827,13 +817,13 @@ export async function PUT(request: Request, ctx: RouteCtx) {
       invalidateCustomerInfoPendingCache();
       invalidateCustomerInfoKeyLookupCache();
 
-      // V-7: お客様情報の更新が成功してから、工事登録アプリの更新と
-      // 空き枠の作成を行う。ここで失敗しても保存は成功のまま warning を返す
+      // V-7: お客様情報の更新が成功してから、工事登録アプリを更新する。
+      // ここで失敗しても保存は成功のまま warning を返す
       const warnings: string[] = [];
       let cancelResult: Awaited<
         ReturnType<typeof runCustomerCancelSideEffects>
       > | null = null;
-      if (cancelTriggered && cancelSource) {
+      if (cancelTriggered) {
         try {
           cancelResult = await runCustomerCancelSideEffects({
             tNumber: notificationExtras.tNumber,
@@ -841,9 +831,6 @@ export async function PUT(request: Request, ctx: RouteCtx) {
               loadedStaff && akiNumberFieldId
                 ? readCustomerInfoFieldValue(loadedStaff.record, akiNumberFieldId)
                 : "",
-            constructionDate: cancelSource.constructionDate,
-            contractor: cancelSource.contractor,
-            todayDayKey: todayJstDayKey(),
             lineUserId: auth.lineUserId,
           });
           warnings.push(...cancelResult.warnings);
@@ -918,7 +905,6 @@ export async function PUT(request: Request, ctx: RouteCtx) {
           ? {
               cancelled: {
                 constructionUpdated: cancelResult.constructionUpdated,
-                emptySlotCreated: cancelResult.emptySlotCreated,
               },
             }
           : {}),

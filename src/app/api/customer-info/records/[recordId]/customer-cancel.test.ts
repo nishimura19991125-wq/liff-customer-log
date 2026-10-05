@@ -89,15 +89,6 @@ vi.mock("@/lib/customer-cancel-server", async (importOriginal) => {
       return {
         warnings: h.sideEffectWarnings,
         constructionUpdated: true,
-        emptySlotCreated: false,
-        emptySlotRecordId: null,
-        plan: {
-          createsEmptySlot: false,
-          emptySlotDayKey: "",
-          emptySlotContractor: "",
-          skipReason: "too-soon" as const,
-          businessDays: 0,
-        },
       };
     },
   };
@@ -178,18 +169,23 @@ beforeEach(() => {
 });
 
 describe("★ ① キャンセル以外 → キャンセル で処理が実行される", () => {
-  it("後段の処理が呼ばれ、保存前の施工予定日・施工会社が渡る", async () => {
+  /*
+   * 以前は「保存前の施工予定日・施工会社が渡る」ことも見ていた。
+   * その2つは後段が空き枠を作るかどうかの判定にだけ使っていた値で、
+   * 空き枠の自動作成を廃止したので引数ごと無くなった。
+   * 後段が呼ばれること・工事レコードを引く T番号 が渡ることは変わらない
+   */
+  it("後段の処理が呼ばれ、工事レコードを引く T番号 が渡る", async () => {
     const { status, body } = await put(CANCEL_VALUES);
 
     expect(status).toBe(200);
     expect(body.ok).toBe(true);
     expect(h.sideEffectCalls).toHaveLength(1);
-    expect(h.sideEffectCalls[0]).toMatchObject({
-      tNumber: "T00003372",
-      // 消す**前**の値で空き枠を判定する
-      constructionDate: "2026-12-01",
-      contractor: "ピュアライフ",
-    });
+    expect(h.sideEffectCalls[0]).toMatchObject({ tNumber: "T00003372" });
+    // 空き枠の判定用の値は渡さない
+    expect(h.sideEffectCalls[0]).not.toHaveProperty("constructionDate");
+    expect(h.sideEffectCalls[0]).not.toHaveProperty("contractor");
+    expect(h.sideEffectCalls[0]).not.toHaveProperty("todayDayKey");
   });
 
   it("顧客ステータスが空だった案件でも実行される", async () => {

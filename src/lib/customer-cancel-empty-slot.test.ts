@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * 空き枠の作成が @pocket で 400 になった件の修正。
+ * 顧客ステータスをキャンセルにしたときの、工事登録アプリ側の処理。
  *
- * 原因は取込キー（T番号）の列を payload に載せていなかったこと。
- * writePocketRecordWithImportKey は「取込キーで既存を探して更新する」ための
- * 関数で、新規作成では素通しになるだけだった。createRecord を直接使う。
+ * もとは「空き枠の作成が @pocket で 400 になった件」を固定するために
+ * 作ったファイルで、名前もそこから来ている。空き枠の自動作成は廃止したので、
+ * いま固定しているのは次の3つ。
+ *   - 空き枠を作らないこと
+ *   - 工事レコードの3項目を空にする更新（取込キーは Aki番号）
+ *   - 工事レコードの引き当て（Aki番号 → T番号）
  */
 
 const h = vi.hoisted(() => ({
@@ -91,15 +94,7 @@ vi.mock("@/lib/audit-log", () => ({
   },
 }));
 
-vi.mock("@/lib/japan-holidays-api", () => ({
-  // 祝日は取れた前提（土日のみのフォールバックは別テストで見ている）
-  fetchJapanHolidayKeysForRange: async () => ({
-    keys: new Set<string>(),
-    degraded: false,
-  }),
-}));
-
-const { buildEmptySlotPayload, runCustomerCancelSideEffects } = await import(
+const { runCustomerCancelSideEffects } = await import(
   "@/lib/customer-cancel-server"
 );
 
@@ -126,181 +121,83 @@ beforeEach(() => {
   ];
 });
 
-/** 十分に先の日付＝空き枠を作る条件を満たす */
-const FAR_FUTURE = {
+/**
+ * キャンセル処理へ渡す引数。
+ * 以前は空き枠の判定用に施工予定日・施工会社・操作日も渡していたが、
+ * 空き枠を作らなくなったので引数ごと無くなった
+ */
+const CANCEL_OPTS = {
   tNumber: "T00003372",
-  constructionDate: "2026-12-01",
-  contractor: "ピュアライフ",
-  todayDayKey: "2026-09-01",
   lineUserId: "U-test",
 };
 
-describe("★ 空き枠の payload", () => {
-  it("★ 取込キー（Aki番号）の列を空文字で載せる", () => {
-    const payload = buildEmptySlotPayload({
-      importKeyFieldId: "field-1",
-      startDateFieldId: "field-3",
-      contractorFieldId: "field-4",
-      customerStatusFieldId: "field-5",
-      dayKey: "2026-12-01",
-      contractor: "ピュアライフ",
-    });
+/**
+ * 空き枠の自動作成は廃止した。
+ *
+ * 以前は、施工予定日が7営業日より先のとき、同じ日・同じ施工会社の空き枠を
+ * 新規作成していた。ここにあった次のテストは、**対象の処理ごと無くなった**
+ * ので削除している（期待値の書き換えではない）。
+ *   - 空き枠の payload（buildEmptySlotPayload）の4件
+ *   - 空き枠の書き込み経路の8件（createRecord を呼ぶ・書き込みキー・
+ *     監査ログに作成を残す・条件を満たさない日付では作らない・
+ *     監査ログの失敗でも作成は成功・作成の失敗を警告にする）
+ * 代わりに「作らない」ことを固定する。
+ */
+describe("★ 空き枠は作らない", () => {
+  it("★ 工事レコードを更新できても、空き枠を新規作成しない", async () => {
+    const result = await runCustomerCancelSideEffects(CANCEL_OPTS);
 
-    // 列が無いと @pocket が「取込設定にキー項目を追加してください」で弾く。
-    // 値は空。空なら自動採番される
-    expect(payload).toHaveProperty("field-1", "");
+    expect(result.constructionUpdated).toBe(true);
+    expect(h.createCalls).toHaveLength(0);
   });
 
-  it("★ 既存の空き枠と同じ構成（顧客ステータス=工事待ち・施工予定日・施工会社）", () => {
-    const payload = buildEmptySlotPayload({
-      importKeyFieldId: "field-1",
-      startDateFieldId: "field-3",
-      contractorFieldId: "field-4",
-      customerStatusFieldId: "field-5",
-      dayKey: "2026-12-01",
-      contractor: "ピュアライフ",
-    });
+  it("★ 監査ログに「作成」は残らない", async () => {
+    await runCustomerCancelSideEffects(CANCEL_OPTS);
 
-    expect(payload).toEqual({
-      "field-1": "", // T番号（自動採番）
-      "field-3": "2026-12-01", // 施工予定日
-      "field-4": "ピュアライフ", // 施工会社
-      "field-5": "工事待ち", // 顧客ステータス
-    });
+    expect(h.auditOps).not.toContain("create");
   });
 
-  it("お客様名は載せない（空のままで空き枠として扱われる）", () => {
-    const payload = buildEmptySlotPayload({
-      importKeyFieldId: "field-1",
-      startDateFieldId: "field-3",
-      contractorFieldId: "field-4",
-      customerStatusFieldId: "field-5",
-      dayKey: "2026-12-01",
-      contractor: "ピュアライフ",
-    });
+  it("結果に空き枠の項目を含めない", async () => {
+    const result = await runCustomerCancelSideEffects(CANCEL_OPTS);
 
-    expect(payload).not.toHaveProperty("field-2");
+    expect(result).not.toHaveProperty("emptySlotCreated");
+    expect(result).not.toHaveProperty("emptySlotRecordId");
+    expect(result).not.toHaveProperty("plan");
   });
 
-  it("顧客ステータス列を解決できないときはその列だけ落ちる", () => {
-    const payload = buildEmptySlotPayload({
-      importKeyFieldId: "field-1",
-      startDateFieldId: "field-3",
-      contractorFieldId: "field-4",
-      customerStatusFieldId: null,
-      dayKey: "2026-12-01",
-      contractor: "ピュアライフ",
-    });
+  it("空き枠の作成に関する警告は出ない", async () => {
+    // 以前はここで「空き枠の作成に失敗しました」の警告が出ていた
+    h.failCreate = true;
 
-    expect(payload).toEqual({
-      "field-1": "",
-      "field-3": "2026-12-01",
-      "field-4": "ピュアライフ",
-    });
+    const result = await runCustomerCancelSideEffects(CANCEL_OPTS);
+
+    expect(result.warnings).toEqual([]);
   });
 });
 
-describe("★ 空き枠の書き込み経路", () => {
-  it("createRecord が呼ばれる", async () => {
-    const result = await runCustomerCancelSideEffects(FAR_FUTURE);
-
-    expect(result.emptySlotCreated).toBe(true);
-    expect(result.warnings).toEqual([]);
-    expect(h.createCalls).toHaveLength(1);
-    expect(h.createCalls[0].appId).toBe("77");
-  });
-
-  it("★ 空き枠の作成に writePocketRecordWithImportKey を使わない", async () => {
-    await runCustomerCancelSideEffects(FAR_FUTURE);
-
-    // 呼ばれるのは工事レコードの「更新」1回だけ。作成では使わない
-    expect(h.importKeyWriteCalls).toHaveLength(1);
-    expect(h.importKeyWriteCalls[0]).toHaveProperty("recordId", "5001");
-  });
-
-  it("★ 書き込む内容が既存の空き枠と同じ構成", async () => {
-    await runCustomerCancelSideEffects(FAR_FUTURE);
-
-    expect(h.createCalls[0].payload).toEqual({
-      // 取込キーは Aki番号。T番号（field-1）は載せない（採番されないため）
-      "field-101": "",
-      "field-3": "2026-12-01",
-      "field-4": "ピュアライフ",
-      "field-5": "工事待ち",
-    });
-  });
-
-  it("★ 書き込み権限のあるキー（create-record と同じ）を渡す", async () => {
-    await runCustomerCancelSideEffects(FAR_FUTURE);
-
-    expect(h.createCalls[0].apiKey).toBe("write-key");
-  });
-
-  it("★ 監査ログに作成が記録される", async () => {
-    const result = await runCustomerCancelSideEffects(FAR_FUTURE);
-
-    // 工事レコードの更新（update）と空き枠の作成（create）
-    expect(h.auditOps).toEqual(["update", "create"]);
-    expect(result.emptySlotRecordId).toBe("9001");
-  });
-
-  it("条件を満たさない日付では作らない（createRecord も呼ばない）", async () => {
-    const result = await runCustomerCancelSideEffects({
-      ...FAR_FUTURE,
-      constructionDate: "2026-09-03",
-    });
-
-    expect(result.emptySlotCreated).toBe(false);
-    expect(h.createCalls).toHaveLength(0);
-    expect(h.auditOps).toEqual(["update"]);
-  });
-
-  it("★ 監査ログが失敗しても、作成は成功として扱う", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    h.auditFails = true;
-
-    const result = await runCustomerCancelSideEffects(FAR_FUTURE);
-
-    // 作成は済んでいる。「作成に失敗」と表示してはいけない
-    expect(result.emptySlotCreated).toBe(true);
-    expect(result.emptySlotRecordId).toBe("9001");
-    expect(result.warnings).toEqual([]);
-    // 失敗はサーバログに留める
-    const logged = errorSpy.mock.calls.flat().join(" ");
-    expect(logged).toContain("監査ログを残せませんでした");
-  });
-
-  it("★ 監査ログが例外を投げても、作成は成功として扱う", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    h.auditThrows = true;
-
-    const result = await runCustomerCancelSideEffects(FAR_FUTURE);
-
-    expect(result.emptySlotCreated).toBe(true);
-    expect(result.warnings).toEqual([]);
-    expect(errorSpy).toHaveBeenCalled();
-  });
-
+/**
+ * 監査ログはベストエフォート（A-5）。記録の失敗を書き込みの失敗に見せない。
+ * 空き枠の作成側にあった同じ主張のテストは、作成ごと無くなった。
+ */
+describe("★ 工事レコードの更新と監査ログ", () => {
   it("★ 工事レコードの更新も、監査ログの失敗では失敗扱いにしない", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     h.auditFails = true;
 
-    const result = await runCustomerCancelSideEffects(FAR_FUTURE);
+    const result = await runCustomerCancelSideEffects(CANCEL_OPTS);
 
     expect(result.constructionUpdated).toBe(true);
     expect(result.warnings).toEqual([]);
   });
 
-  it("作成に失敗しても投げず、警告を返す", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    h.failCreate = true;
+  it("監査ログが例外を投げても、更新は成功として扱う", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    h.auditThrows = true;
 
-    const result = await runCustomerCancelSideEffects(FAR_FUTURE);
+    const result = await runCustomerCancelSideEffects(CANCEL_OPTS);
 
-    expect(result.emptySlotCreated).toBe(false);
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]).toContain("空き枠の作成に失敗");
-    expect(errorSpy).toHaveBeenCalled();
+    expect(result.constructionUpdated).toBe(true);
+    expect(result.warnings).toEqual([]);
   });
 });
 
@@ -314,7 +211,7 @@ describe("★ 空き枠の書き込み経路", () => {
  */
 describe("★ 工事レコードを空にする更新の取込キー", () => {
   it("★ 取込キーは Aki番号。T番号 ではない", async () => {
-    await runCustomerCancelSideEffects(FAR_FUTURE);
+    await runCustomerCancelSideEffects(CANCEL_OPTS);
 
     expect(h.importKeyWriteCalls).toHaveLength(1);
     // field-101 = Aki番号 / field-1 = T番号
@@ -325,13 +222,13 @@ describe("★ 工事レコードを空にする更新の取込キー", () => {
   it("★ Aki番号 が無い移行前の案件でもキャンセルできる", async () => {
     // 他の工事アプリ更新と同じ扱い。ここで例外にすると
     // 「Aki番号 が無い案件はキャンセルできない」になってしまう
-    await runCustomerCancelSideEffects(FAR_FUTURE);
+    await runCustomerCancelSideEffects(CANCEL_OPTS);
 
     expect(h.importKeyWriteCalls[0].allowMissingImportKey).toBe(true);
   });
 
   it("★ 空にするのは施工予定日・施工会社・工事対応者の3つ", async () => {
-    await runCustomerCancelSideEffects(FAR_FUTURE);
+    await runCustomerCancelSideEffects(CANCEL_OPTS);
 
     expect(h.updateCalls[0]).toEqual({
       "field-3": "",
@@ -357,7 +254,7 @@ describe("★ 工事レコードの引き当て", () => {
     ];
 
     const result = await runCustomerCancelSideEffects({
-      ...FAR_FUTURE,
+      ...CANCEL_OPTS,
       akiNumber: "A0042",
     });
 
@@ -367,7 +264,7 @@ describe("★ 工事レコードの引き当て", () => {
   });
 
   it("★ Aki番号 が無い移行前の案件は従来どおり T番号 で引ける", async () => {
-    const result = await runCustomerCancelSideEffects(FAR_FUTURE);
+    const result = await runCustomerCancelSideEffects(CANCEL_OPTS);
 
     expect(result.constructionUpdated).toBe(true);
     expect(h.importKeyWriteCalls[0]).toHaveProperty("recordId", "5001");
@@ -381,19 +278,18 @@ describe("★ 工事レコードの引き当て", () => {
       { recordId: 5002, record: { "field-101": "A0042" } },
     ];
 
-    await runCustomerCancelSideEffects({ ...FAR_FUTURE, akiNumber: "A0042" });
+    await runCustomerCancelSideEffects({ ...CANCEL_OPTS, akiNumber: "A0042" });
 
     expect(h.importKeyWriteCalls[0]).toHaveProperty("recordId", "5002");
   });
 
-  it("どちらでも引けなければ更新も空き枠作成もしない", async () => {
+  it("どちらでも引けなければ更新しない（空き枠も作らない）", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     h.records = [];
 
-    const result = await runCustomerCancelSideEffects(FAR_FUTURE);
+    const result = await runCustomerCancelSideEffects(CANCEL_OPTS);
 
     expect(result.constructionUpdated).toBe(false);
-    expect(result.emptySlotCreated).toBe(false);
     expect(h.importKeyWriteCalls).toHaveLength(0);
     expect(h.createCalls).toHaveLength(0);
     expect(result.warnings).toHaveLength(1);

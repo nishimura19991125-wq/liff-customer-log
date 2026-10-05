@@ -173,7 +173,6 @@ vi.mock("@/lib/customer-cancel-server", () => ({
     return {
       warnings: [],
       constructionUpdated: false,
-      emptySlotCreated: false,
     };
   },
 }));

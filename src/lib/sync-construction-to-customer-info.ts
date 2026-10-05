@@ -951,8 +951,7 @@ async function syncConstructionRecordToCustomerInfoAppInner(opts: {
    * 「キー項目「T番号」が取込設定に存在しないため登録できません」で 400 を返す。
    * 値は空でよく、空ならこのアプリ側で自動採番される。
    * 他の新規作成も同じことをしている:
-   *   - buildEmptySlotPayload（キャンセル時の空き枠）… 取込キー列に "" を入れる
-   *   - applyApoAutoNumberOnCreate（アポ取得）… 同上
+     *   - applyApoAutoNumberOnCreate（アポ取得）… 同上
    *   - buildConstructionFillPatch（工事登録）… 同上
    *
    * 更新のときは載せない。空文字を送ると既に採番されている T番号 を消しかねない。

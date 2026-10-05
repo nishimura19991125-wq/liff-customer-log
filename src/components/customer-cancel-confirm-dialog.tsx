@@ -11,33 +11,20 @@ import type { CustomerCancelPlan } from "@/lib/customer-cancel-plan";
  * 顧客ステータスを「キャンセル」にするときの確認（タスクV-6）。
  *
  * 消した値は復元できないので、**実際に実行される内容だけ**を並べて
- * 明示的に選ばせる。空き枠を作らない場合はその行を出さない。
+ * 明示的に選ばせる。
  * Esc は「やめる」扱い（誤って実行されないため）。
  */
 
 const DIALOG_BUTTON_CLASS =
   "w-full min-h-[48px] rounded-xl px-4 py-3 text-[14px] font-bold shadow-sm transition active:scale-[0.99] disabled:opacity-50";
 
-/** YYYY-MM-DD → 9月20日。解釈できない値はそのまま返す */
-export function formatCancelDialogDate(dayKey: string): string {
-  const m = dayKey.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return dayKey.trim();
-  return `${Number(m[2])}月${Number(m[3])}日`;
-}
-
-/** 確認画面に並べる「実行されること」。空き枠は条件を満たすときだけ */
-export function buildCancelActionLines(plan: CustomerCancelPlan): string[] {
-  const lines = [
+/** 確認画面に並べる「実行されること」 */
+export function buildCancelActionLines(): string[] {
+  return [
     "PT、APPT、CLPT を 0 にします",
     "施工予定日、初回施工予定日、施工会社、工事対応者を消します",
     "工事登録アプリの該当項目も消します",
   ];
-  if (plan.createsEmptySlot) {
-    lines.push(
-      `${formatCancelDialogDate(plan.emptySlotDayKey)}（${plan.emptySlotContractor}）に空き枠を作ります`,
-    );
-  }
-  return lines;
 }
 
 export function CustomerCancelConfirmDialog({
@@ -138,7 +125,7 @@ export function CustomerCancelConfirmDialog({
               以下が実行されます。
             </p>
             <ul className="mt-1.5 space-y-1">
-              {buildCancelActionLines(plan).map((line) => (
+              {buildCancelActionLines().map((line) => (
                 <li
                   key={line}
                   className="text-[13px] leading-relaxed text-slate-800"

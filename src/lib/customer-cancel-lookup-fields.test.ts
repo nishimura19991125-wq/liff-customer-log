@@ -86,13 +86,6 @@ vi.mock("@/lib/audit-log", () => ({
   recordAuditLog: async () => ({ ok: true, written: 1 }),
 }));
 
-vi.mock("@/lib/japan-holidays-api", () => ({
-  fetchJapanHolidayKeysForRange: async () => ({
-    keys: new Set<string>(),
-    degraded: false,
-  }),
-}));
-
 const { runCustomerCancelSideEffects } = await import(
   "@/lib/customer-cancel-server"
 );
@@ -145,13 +138,10 @@ afterEach(() => {
   }
 });
 
-/** 空き枠は作らない条件（施工予定日なし）。ここは照合だけを見る */
+/** ここは照合だけを見る */
 function cancel(extra: { akiNumber?: string } = {}) {
   return runCustomerCancelSideEffects({
     tNumber: T_NUMBER,
-    constructionDate: "",
-    contractor: "",
-    todayDayKey: "2026-09-01",
     lineUserId: "U-test",
     ...extra,
   });
