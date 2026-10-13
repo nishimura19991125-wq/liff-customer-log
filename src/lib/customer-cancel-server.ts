@@ -24,6 +24,7 @@ import {
   resolveConstructionTNumberFieldId,
 } from "@/lib/calendar-kojo";
 import { invalidateAllCalendarPayloadCache } from "@/lib/calendar-response-cache";
+import { applyCustomerCancelDateToPayload } from "@/lib/customer-cancel-date";
 import {
   customerCancelDeletesConstructionRecordEnabled,
   decideCancelConstructionDeletion,
@@ -286,11 +287,17 @@ function recordHasFieldKey(
  * PT は values.pt = "0" で computePtTransfer が 0 を返すが、V-2 のとおり
  * 計算結果に依存せず **APPT・CLPT を明示的に 0** で上書きする。
  * 工事対応者はフォームスキーマに無い列なので、ここで直接消す。
+ *
+ * キャンセル日（キャンセルした日・JST）も同じ payload に載せる。
+ * 列を解決できなければ載せないだけで、ほかの上書きは変わらない
+ * （customer-cancel-date.ts）。
  */
 export function applyCustomerCancelToPayload(
   payload: Record<string, unknown>,
   appFields: Awaited<ReturnType<typeof fetchAppFields>>,
-): { clearedHandler: boolean; zeroedPt: string[] } {
+  /** キャンセルした時刻。テストで固定するために受け取る */
+  now: Date = new Date(),
+): { clearedHandler: boolean; zeroedPt: string[]; wroteCancelDate: boolean } {
   const zeroedPt: string[] = [];
   for (const field of resolveCustomerInfoPtTransferFields(appFields).resolved) {
     if (field.key === "appt" || field.key === "clpt") {
@@ -299,13 +306,19 @@ export function applyCustomerCancelToPayload(
     }
   }
 
+  const wroteCancelDate = applyCustomerCancelDateToPayload(
+    payload,
+    appFields,
+    now,
+  );
+
   const handlerFieldId =
     resolveCustomerInfoConstructionHandlerFieldId(appFields);
   if (handlerFieldId) {
     payload[handlerFieldId] = "";
-    return { clearedHandler: true, zeroedPt };
+    return { clearedHandler: true, zeroedPt, wroteCancelDate };
   }
-  return { clearedHandler: false, zeroedPt };
+  return { clearedHandler: false, zeroedPt, wroteCancelDate };
 }
 
 export async function runCustomerCancelSideEffects(opts: {

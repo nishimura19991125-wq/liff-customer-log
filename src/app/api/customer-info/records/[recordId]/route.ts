@@ -60,6 +60,7 @@ import {
   applyCustomerCancelToPayload,
   runCustomerCancelSideEffects,
 } from "@/lib/customer-cancel-server";
+import { clearCustomerCancelDateInPayload } from "@/lib/customer-cancel-date";
 import { isCustomerStatusCancelledExact } from "@/lib/customer-status-label";
 import {
   applyDropboxFolderRenameToPayload,
@@ -843,6 +844,25 @@ export async function PUT(request: Request, ctx: RouteCtx) {
             "[api/customer-info/records/[recordId] PUT] 工事カレンダー側で管理する項目を保存対象から外しました",
             { dropped },
           );
+        }
+
+        /**
+         * キャンセルの解除（キャンセル → キャンセル以外）。**キャンセル日を
+         * 空にするだけ。** 工事レコードや PT には触らない。
+         *
+         * 判定はキャンセル処理と同じ完全一致。保存前を読めていなければ
+         * 動かさないのも同じ。
+         * 顧客ステータスを**実際に書き込む保存**に限る。顧客ステータスを
+         * 送ってこない保存はステータスを変えないので、解除ではない
+         */
+        const cancelReleased =
+          !savingCancelled &&
+          beforeCustomerStatus !== null &&
+          isCustomerStatusCancelledExact(beforeCustomerStatus) &&
+          Boolean(customerStatusFieldId) &&
+          Object.prototype.hasOwnProperty.call(payload, customerStatusFieldId);
+        if (cancelReleased) {
+          clearCustomerCancelDateInPayload(payload, appFields);
         }
       }
       if (Object.keys(payload).length === 0) {
