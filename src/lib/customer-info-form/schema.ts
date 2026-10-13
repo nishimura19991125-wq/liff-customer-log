@@ -4,6 +4,7 @@ import {
   CONSTRUCTION_REQUEST_STATUS_OPTIONS,
   CUSTOMER_STATUS_OPTIONS,
   DOCUMENT_RADIO_HIDDEN_VALUE,
+  EQUIPMENT_WARRANTY_PERIOD_OPTIONS,
   FIT_TYPE_OPTIONS,
   INDOOR_SURVEY_STATUS_OPTIONS,
   INPUT_STATUS_OPTIONS,
@@ -201,6 +202,18 @@ export const CUSTOMER_INFO_FORM_FIELDS: readonly CustomerInfoFormFieldDef[] = [
     options: [],
     /** 取引先会社一覧アプリから API 取得時に options を差し替え */
     optionsPending: true,
+  },
+  /**
+   * 機器保証期間。表示条件なし（常に表示）・必須。
+   * 選択肢は EQUIPMENT_WARRANTY_PERIOD_OPTIONS（options.ts）1箇所で持つ。
+   * 列は他の項目と同じく resolveCustomerInfoFormFieldId が解決する
+   * （CUSTOMER_INFO_FIELD_EQUIPMENT_WARRANTY_PERIOD、未設定なら見出し一致）。
+   */
+  {
+    key: "equipmentWarrantyPeriod",
+    caption: "機器保証期間",
+    type: "select",
+    options: [...EQUIPMENT_WARRANTY_PERIOD_OPTIONS],
   },
   {
     key: "panelCombo",

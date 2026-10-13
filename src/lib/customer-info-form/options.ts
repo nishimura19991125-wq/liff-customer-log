@@ -166,6 +166,22 @@ export function shouldShowReferralSourceFields(
   );
 }
 
+/**
+ * 機器保証期間（@pocket リスト式・単一選択）。
+ *
+ * **@pocket の実物と1文字も変えないこと。** 値がズレると、画面のリストが
+ * 未選択に見えるのに値だけ入る状態になる（書類16項目と同じ事故）。
+ *
+ * ⚠ **@pocket に選択肢を足しても、ここを直さないと画面には出ない。**
+ *   画面の選択肢は @pocket から取得しておらず、この配列がそのまま出る。
+ *   @pocket 側を変えたら必ずここも同じ文字列でそろえること。
+ */
+export const EQUIPMENT_WARRANTY_PERIOD_OPTIONS = [
+  "10年",
+  "15年",
+  "20年",
+] as const;
+
 export const INPUT_STATUS_PENDING = "未入力" as const;
 export const INPUT_STATUS_COMPLETE = "入力完了" as const;
 
