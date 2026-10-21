@@ -81,6 +81,12 @@ import {
 } from "@/lib/customer-info-construction-link";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 import { resolveCustomerInfoConstructionHandlerFieldId } from "@/lib/customer-info-construction-handler";
+import {
+  CLUB_CONSTRUCTION_HANDLER_NAME,
+  apClStaffAfterSave,
+  isClubApClPair,
+  shouldAutoFillClubConstructionHandler,
+} from "@/lib/customer-info-club-construction-handler";
 import { stripCustomerInfoConstructionFieldsFromPayload } from "@/lib/customer-info-construction-locked-fields";
 import { resolveCustomerInfoCreatorFieldId } from "@/lib/customer-info-creator-field";
 import {
@@ -160,6 +166,83 @@ async function readCustomerInfoPreSaveSnapshot(
     );
     return null;
   }
+}
+
+/**
+ * AP担当者・CL担当者が両方ともトラーチ倶楽部で、工事対応者が空なら
+ * payload に「トラーチ倶楽部」を足す（お客様情報アプリだけ）。
+ *
+ * ■ 工事対応者は必要なときだけ別に読む
+ * 保存前レコードの取得（readCustomerInfoPreSaveSnapshot）には足さない。
+ * 普段の保存で読む列を増やさないため
+ * （customer-info-save-construction-link.test.ts で固定している）。
+ * AP/CL が両方トラーチ倶楽部の保存に限って、工事対応者の列を1回だけ読む。
+ *
+ * ■ 判定できないときは触らない
+ * 列が解決できない・読めない・保存前の AP/CL が分からないときは入れない。
+ * 失敗しても保存そのものは止めない。
+ */
+async function fillClubConstructionHandlerIfEmpty(input: {
+  appId: string;
+  recordId: string;
+  readAuth: AtPocketFetchAuth;
+  appFields: AtPocketFieldRow[];
+  resolved: Awaited<ReturnType<typeof resolveCustomerInfoFormFields>>["resolved"];
+  payload: Record<string, unknown>;
+  loadedStaff: { apStaff?: string; clStaff?: string } | null;
+}): Promise<void> {
+  const { payload, loadedStaff } = input;
+  const apStaff = apClStaffAfterSave({
+    payload,
+    fieldId: input.resolved.find((f) => f.key === "apStaff")?.fieldId,
+    loaded: loadedStaff ? (loadedStaff.apStaff ?? "") : null,
+  });
+  const clStaff = apClStaffAfterSave({
+    payload,
+    fieldId: input.resolved.find((f) => f.key === "clStaff")?.fieldId,
+    loaded: loadedStaff ? (loadedStaff.clStaff ?? "") : null,
+  });
+  // 普段の保存はここで抜ける（@pocket を読まない）
+  if (!isClubApClPair(apStaff, clStaff)) return;
+
+  const handlerFieldId = resolveCustomerInfoConstructionHandlerFieldId(
+    input.appFields,
+  );
+  if (!handlerFieldId) {
+    console.warn(
+      "[api/customer-info/records/[recordId] PUT] 工事対応者の列を解決できないため自動入力しません",
+    );
+    return;
+  }
+  // フォームに無い列なので通常は載らない。載っていれば送り手の値を優先する
+  if (Object.prototype.hasOwnProperty.call(payload, handlerFieldId)) return;
+
+  let currentHandler: string | null = null;
+  try {
+    const row = await fetchRecordById(
+      input.appId,
+      input.recordId,
+      input.readAuth,
+      handlerFieldId,
+    );
+    if (row?.record && typeof row.record === "object") {
+      currentHandler = readCustomerInfoFieldValue(
+        row.record as Record<string, unknown>,
+        handlerFieldId,
+      );
+    }
+  } catch (e) {
+    console.warn(
+      "[api/customer-info/records/[recordId] PUT] 工事対応者の取得に失敗したため自動入力しません",
+      e,
+    );
+    return;
+  }
+
+  if (!shouldAutoFillClubConstructionHandler({ apStaff, clStaff, currentHandler })) {
+    return;
+  }
+  payload[handlerFieldId] = CLUB_CONSTRUCTION_HANDLER_NAME;
 }
 
 /** お客様情報アプリの住宅ステータス列。連携（sync 側）と同じ解決順にする */
@@ -870,6 +953,24 @@ export async function PUT(request: Request, ctx: RouteCtx) {
           { error: "更新する項目がありません" },
           { status: 400 },
         );
+      }
+
+      /**
+       * AP・CL が両方トラーチ倶楽部なら、空の工事対応者を埋める。
+       * キャンセルにする保存・キャンセル済みの保存では動かさない。
+       * キャンセルは工事対応者を**空にするのが仕事**で、ここで埋めると
+       * その結果を打ち消してしまう
+       */
+      if (!savingCancelled) {
+        await fillClubConstructionHandlerIfEmpty({
+          appId: cfg.appId,
+          recordId,
+          readAuth,
+          appFields,
+          resolved,
+          payload,
+          loadedStaff,
+        });
       }
 
       const keyErr = await attachImportKeyAndUpdate(

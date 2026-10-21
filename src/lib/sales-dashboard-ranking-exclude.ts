@@ -2,7 +2,14 @@ import "server-only";
 
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 
-/** ランキングから除外する担当者名の部分一致（ranking_pt_dashboard.js の hiddenSalesNames 相当 + 案件種別） */
+/**
+ * ランキングから除外する担当者名の部分一致（ranking_pt_dashboard.js の hiddenSalesNames 相当 + 案件種別）
+ *
+ * ⚠ 「トラーチ倶楽部」は customer-info-club-construction-handler.ts の
+ *   CLUB_CONSTRUCTION_HANDLER_NAME（工事対応者の自動入力）にも同じ文字列がある。
+ *   用途が違う（こちらは部分一致の除外語）ので共有しない。片方を変えても、
+ *   もう片方は変わらない。
+ */
 const EXCLUDED_STAFF_MARKERS = [
   "トラーチ倶楽部",
   "大和ハウス",
