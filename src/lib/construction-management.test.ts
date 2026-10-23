@@ -553,3 +553,51 @@ describe("空き枠（お客様名が空の工事レコード）", () => {
     expect(p.branches).not.toContain(OTHER);
   });
 });
+
+describe("自分の案件の判定に使う氏名", () => {
+  it("★ 足場の予定に、そのお客様の AP/CL の氏名が入る（表示値のまま）", () => {
+    const p = build({
+      customers: [
+        customer("1", { ap: "　担当　A ", cl: "担当 B", install: "2026-11-05" }),
+      ],
+    });
+    expect(p.events[0]?.apStaffNames).toEqual(["担当　A"]);
+    expect(p.events[0]?.clStaffNames).toEqual(["担当 B"]);
+  });
+
+  it("担当者の欄が空なら空の配列", () => {
+    const p = build({
+      customers: [customer("1", { ap: "", cl: "", install: "2026-11-05" })],
+    });
+    expect(p.events[0]?.apStaffNames).toEqual([]);
+    expect(p.events[0]?.clStaffNames).toEqual([]);
+  });
+
+  it("★ 施工予定は、同じ T番号 のお客様情報全員の AP/CL が入る", () => {
+    const p = build({
+      customers: [
+        customer("1", { tNumber: "T-1", ap: "担当 A", cl: "担当 B" }),
+        customer("2", { tNumber: "T-1", ap: "担当 C", cl: "担当 B" }),
+      ],
+      constructionRecords: [construction("c1", "2026-11-10", "T-1")],
+    });
+    const c = p.events.find((e) => e.kind === "construction")!;
+    expect(c.apStaffNames).toEqual(["担当 A", "担当 C"]);
+    expect(c.clStaffNames).toEqual(["担当 B"]);
+  });
+
+  it("お客様情報に無い施工予定は空の配列", () => {
+    const p = build({
+      constructionRecords: [construction("c1", "2026-11-10", "T-無し")],
+    });
+    expect(p.events[0]?.apStaffNames).toEqual([]);
+    expect(p.events[0]?.clStaffNames).toEqual([]);
+  });
+
+  it("★ 本人の氏名を返す。無ければ null", () => {
+    expect(build({ selfStaffName: "担当 A" }).selfStaffName).toBe("担当 A");
+    expect(build({ selfStaffName: null }).selfStaffName).toBeNull();
+    expect(build({ selfStaffName: "  " }).selfStaffName).toBeNull();
+    expect(build().selfStaffName).toBeNull();
+  });
+});

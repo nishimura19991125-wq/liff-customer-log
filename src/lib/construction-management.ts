@@ -66,6 +66,16 @@ export type ConstructionManagementEvent = {
    * （duplicateCustomerTNumber で分かる）。
    */
   dates: ConstructionManagementEventDates;
+  /**
+   * AP担当者・CL担当者の氏名（お客様情報の表示値。「自分の案件のみ」の判定用）。
+   *
+   * 正規化はしていない。画面側で normApClStaffName でそろえて突き合わせる。
+   * 施工予定で同じ T番号 のお客様情報が複数あれば、全員分が入る。
+   * API は必ず入れる。型を省略可能にしているのは、既存のテスト用データ
+   * （この項目を持たない）を書き換えずに済ませるため。
+   */
+  apStaffNames?: string[];
+  clStaffNames?: string[];
 };
 
 export type ConstructionManagementEventDates = {
@@ -95,6 +105,12 @@ export type ConstructionManagementPayload = {
   branches: string[];
   /** ログイン中の人の勤務場所（初期表示用）。引けなければ null */
   selfWorkplace: string | null;
+  /**
+   * ログイン中の人の氏名（名簿の表記のまま。「自分の案件のみ」の判定用）。
+   * 名簿に紐づいていなければ null。
+   * API は必ず入れる。型を省略可能にしている理由は apStaffNames と同じ。
+   */
+  selfStaffName?: string | null;
   /** 同じ T番号 が複数あった組の数（工事レコード側・お客様情報側） */
   duplicateTNumberGroups: { construction: number; customer: number };
   correlationId: string;
@@ -118,6 +134,8 @@ export type ConstructionManagementInput = {
   /** 名簿の勤務場所の一覧（listStaffWorkplacesInRosterOrder） */
   rosterWorkplaces: readonly string[];
   selfWorkplace: string | null;
+  /** ログイン中の人の氏名（名簿の表記のまま）。省略時は null */
+  selfStaffName?: string | null;
   correlationId: string;
 };
 
@@ -187,6 +205,20 @@ export function buildConstructionManagementPayload(
     }
     if (set.size === 0) set.add(CONSTRUCTION_MANAGEMENT_OTHER_BRANCH);
     return [...set];
+  };
+
+  /** AP（または CL）担当者の表示値。空は除き、重複は1つにする */
+  const staffDisplayNames = (
+    customers: readonly CustomerCrmCandidate[],
+    fieldId: string | null,
+  ): string[] => {
+    if (!fieldId) return [];
+    const names = new Set<string>();
+    for (const c of customers) {
+      const n = coerceCustomerInfoDisplayString(c.audience[fieldId]);
+      if (n) names.add(n);
+    }
+    return [...names];
   };
 
   // お客様情報を T番号 ごとにまとめる（同じ T番号 が複数あってもすべて持つ）
@@ -280,6 +312,8 @@ export function buildConstructionManagementPayload(
       duplicateConstructionTNumber: false,
       duplicateCustomerTNumber: Boolean(t && duplicateCustomerTs.has(t)),
       dates: datesOfCustomer(c, t),
+      apStaffNames: staffDisplayNames([c], input.apFieldId),
+      clStaffNames: staffDisplayNames([c], input.clFieldId),
     };
     const install = jstDayKeyFromPocketDate(s.installDate);
     if (inMonth(install)) {
@@ -349,6 +383,9 @@ export function buildConstructionManagementPayload(
         // 施工予定日はこの工事レコード自身の値
         construction: r.dayKey,
       },
+      // 同じ T番号 のお客様情報が複数あれば全員分（支店の和集合と同じ考え方）
+      apStaffNames: staffDisplayNames(matched, input.apFieldId),
+      clStaffNames: staffDisplayNames(matched, input.clFieldId),
     });
   }
 
@@ -387,6 +424,7 @@ export function buildConstructionManagementPayload(
     counts,
     branches,
     selfWorkplace: input.selfWorkplace,
+    selfStaffName: input.selfStaffName?.trim() || null,
     duplicateTNumberGroups: {
       construction: [...constructionCountByT.values()].filter((n) => n > 1)
         .length,

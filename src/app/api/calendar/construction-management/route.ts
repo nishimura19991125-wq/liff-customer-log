@@ -166,6 +166,8 @@ export async function GET(request: Request) {
       workplaceOfStaff: (name) => workplaceByName.get(name) ?? null,
       rosterWorkplaces,
       selfWorkplace,
+      // 勤務場所を引くために上で取った氏名をそのまま使う（取得は増えない）
+      selfStaffName: selfName,
       correlationId,
     });
 
@@ -186,6 +188,8 @@ export async function GET(request: Request) {
         ).length,
         hasOtherBranch: payload.branches.includes("その他"),
         hasSelfWorkplace: payload.selfWorkplace !== null,
+        // 氏名そのものは出さない。取れたかどうかだけ
+        hasSelfStaffName: Boolean(payload.selfStaffName),
       }),
     );
 

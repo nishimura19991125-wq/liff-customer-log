@@ -425,3 +425,82 @@ describe("入力", () => {
     },
   );
 });
+
+describe("本人の氏名", () => {
+  const EXISTING_KEYS = [
+    "year",
+    "month",
+    "events",
+    "counts",
+    "branches",
+    "selfWorkplace",
+    "duplicateTNumberGroups",
+    "correlationId",
+  ];
+  const EXISTING_EVENT_KEYS = [
+    "id",
+    "kind",
+    "dayKey",
+    "customerName",
+    "tNumber",
+    "branches",
+    "scaffoldContractor",
+    "scaffoldRequest",
+    "constructionContractor",
+    "customerMatched",
+    "duplicateConstructionTNumber",
+    "duplicateCustomerTNumber",
+    "dates",
+  ];
+
+  it("★ 応答に本人の氏名が入る。名簿に紐づいていなければ null", async () => {
+    h.selfName = "担当 B";
+    expect((await (await GET(req())).json()).selfStaffName).toBe("担当 B");
+
+    h.selfName = null;
+    expect((await (await GET(req())).json()).selfStaffName).toBeNull();
+  });
+
+  it("★ 既存の項目はすべて残る（予定の項目も）", async () => {
+    h.snapshot.items = [customer("1")];
+    h.constructionRows = [constructionRow("c1", "2026-11-10", "T-1")];
+
+    const body = await (await GET(req())).json();
+
+    for (const k of EXISTING_KEYS) expect(body).toHaveProperty(k);
+    expect(body.events.length).toBeGreaterThan(0);
+    for (const e of body.events) {
+      for (const k of EXISTING_EVENT_KEYS) expect(e).toHaveProperty(k);
+      expect(Array.isArray(e.apStaffNames)).toBe(true);
+      expect(Array.isArray(e.clStaffNames)).toBe(true);
+    }
+  });
+
+  it("★ 問い合わせ回数は増えない", async () => {
+    h.snapshot.items = [customer("1")];
+
+    await GET(req());
+
+    expect(h.fieldsCalls).toEqual(["cal-app"]);
+    expect(h.constructionCalls).toHaveLength(1);
+    expect(h.snapshotCalls).toBe(1);
+    expect(h.rosterCalls).toBe(1);
+  });
+
+  it("★ サーバのログに氏名を出さない（取れたかどうかだけ）", async () => {
+    h.selfName = "本人 名前";
+    h.snapshot.items = [customer("1")];
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await GET(req());
+
+    const dumped = [info, warn, err]
+      .flatMap((s) => s.mock.calls)
+      .map((c) => c.map((x) => String(x)).join(" "))
+      .join("\n");
+    expect(dumped).not.toContain("本人");
+    expect(dumped).toContain('"hasSelfStaffName":true');
+  });
+});
