@@ -105,6 +105,15 @@ body {
 }
 
 /**
+ * 工事カレンダーのタブ（src/app/calendar/page.tsx）の下に入る画面。
+ * セーフエリア（ノッチ）の上余白はタブの帯が受け持つので、
+ * 中の LiffScreen で二重に空けないよう通常の余白に戻す。
+ */
+.calendar-tab-shell .liff-screen > div {
+  padding-top: 0.5rem;
+}
+
+/**
  * カレンダーの `type="date"`（iOS LINE / Safari / Android WebView 共通）。
  * UA 既定の最小幅・カレンダーアイコン分を抑え、select/text と同じ幅に収める。
  */
