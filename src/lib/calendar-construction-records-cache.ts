@@ -17,7 +17,13 @@ type ConstructionCacheEntry = {
 };
 
 let constructionCache: ConstructionCacheEntry | null = null;
-let constructionInflight: Promise<AtPocketRecordRow[]> | null = null;
+/**
+ * 実行中の取得はキーごとに持つ。
+ *
+ * 1本だけ持ってキーを比べずに使い回すと、同時に来た別の月（別の query）の
+ * 要求に、先に始まった月の行を返してしまう。
+ */
+const constructionInflight = new Map<string, Promise<AtPocketRecordRow[]>>();
 
 const CONSTRUCTION_STALE_SERVE_MS = 6 * 60 * 60 * 1000;
 
@@ -76,9 +82,10 @@ export async function fetchCalendarConstructionRecordsCached(
     return stale;
   }
 
-  if (constructionInflight) return constructionInflight;
+  const running = constructionInflight.get(key);
+  if (running) return running;
 
-  constructionInflight = (async () => {
+  const inflight = (async () => {
     /**
      * 何件運んでいるかを出す（CALENDAR_TIMING_LOG=true のときだけ）。
      *
@@ -129,15 +136,23 @@ export async function fetchCalendarConstructionRecordsCached(
         return stale;
       }
       throw e;
-    } finally {
-      constructionInflight = null;
     }
   })();
 
-  return constructionInflight;
+  constructionInflight.set(key, inflight);
+  // 終わったら自分の分だけ外す。途中で invalidate されて同じキーの新しい
+  // 取得が入っていたら、それは消さない
+  const release = () => {
+    if (constructionInflight.get(key) === inflight) {
+      constructionInflight.delete(key);
+    }
+  };
+  inflight.then(release, release);
+
+  return inflight;
 }
 
 export function invalidateCalendarConstructionRecordsCache(): void {
   constructionCache = null;
-  constructionInflight = null;
+  constructionInflight.clear();
 }
