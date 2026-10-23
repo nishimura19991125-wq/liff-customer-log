@@ -551,7 +551,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              "工事カレンダーへの登録に必要な設定が足りません。DX事業部へ連絡してください。",
+              "施工カレンダーへの登録に必要な設定が足りません。DX事業部へ連絡してください。",
           },
           { status: 500 },
         );
@@ -822,7 +822,7 @@ export async function POST(request: Request) {
         error:
           detail.includes("list fields failed") || detail.includes("403")
             ? `工事アプリの設定取得に失敗しました。CALENDAR_ATPOCKET_API_KEY と CALENDAR_APP_ID を確認してください。(${detail})`
-            : "工事カレンダーへの割り当てに失敗しました。しばらくしてから再度お試しください。",
+            : "施工カレンダーへの割り当てに失敗しました。しばらくしてから再度お試しください。",
       },
       { status: 502 },
     );

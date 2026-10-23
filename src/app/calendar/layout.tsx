@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "工事カレンダー",
+  title: "施工カレンダー",
 };
 
 export default function CalendarLayout({

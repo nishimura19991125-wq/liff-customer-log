@@ -213,7 +213,7 @@ describe("★ 失敗地点ごとに文言が違う", () => {
     const res = await failWith("A");
 
     expect(res.reason).toBe("fields-fetch-failed");
-    expect(res.warning).toContain("工事カレンダーの設定を読み込めず");
+    expect(res.warning).toContain("施工カレンダーの設定を読み込めず");
     expect(res.warning).toContain("時間をおいてもう一度お試しください");
   });
 
@@ -221,7 +221,7 @@ describe("★ 失敗地点ごとに文言が違う", () => {
     const res = await failWith("B");
 
     expect(res.reason).toBe("fields-unresolved");
-    expect(res.warning).toContain("工事カレンダーの項目設定に問題があり");
+    expect(res.warning).toContain("施工カレンダーの項目設定に問題があり");
     expect(res.warning).toContain("DX事業部へ連絡してください");
     for (const w of RETRY_WORDS) expect(res.warning, w).not.toContain(w);
   });

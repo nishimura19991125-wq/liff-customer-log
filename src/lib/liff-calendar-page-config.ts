@@ -63,12 +63,12 @@ export type LiffCalendarPageConfig = {
 };
 
 export const CONSTRUCTION_CALENDAR_PAGE_CONFIG: LiffCalendarPageConfig = {
-  title: "工事カレンダー",
+  title: "施工カレンダー",
   description:
     "日付をタップで下に一覧表示。工事空枠は「情報を入力」からお客様名を登録できます。",
   calendarApiPath: "/api/calendar",
   disabledFallbackMessage:
-    "工事カレンダーは環境変数 CALENDAR_APP_ID 設定後に利用できます。",
+    "施工カレンダーは環境変数 CALENDAR_APP_ID 設定後に利用できます。",
   enableNewRecordPanel: true,
   enableEmptySlotFill: true,
   showEmptySlotGridStyle: true,

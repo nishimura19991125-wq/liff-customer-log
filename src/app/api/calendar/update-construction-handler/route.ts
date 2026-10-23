@@ -207,7 +207,7 @@ export async function POST(request: Request) {
         {
           error:
             formatConstructionCreateRecordError(customerInfoWrite.error) ||
-            "お客様情報の工事対応者を更新できませんでした。工事カレンダーも更新していません。",
+            "お客様情報の工事対応者を更新できませんでした。施工カレンダーも更新していません。",
         },
         { status: 502 },
       );
@@ -243,7 +243,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "お客様情報には反映されましたが、工事カレンダーの更新に失敗しました。" +
+            "お客様情報には反映されましたが、施工カレンダーの更新に失敗しました。" +
             (formatConstructionCreateRecordError(detail) || detail),
           customerInfoUpdated: true,
         },

@@ -46,7 +46,7 @@ export const CUSTOMER_INFO_CONSTRUCTION_LOCKED_FIELD_LABELS: Record<
 
 /** 画面に添える補足文。どこで変更するのかまで書く */
 export const CUSTOMER_INFO_CONSTRUCTION_LOCKED_HINT =
-  "工事カレンダーから変更してください";
+  "施工カレンダーから変更してください";
 
 export function isCustomerInfoConstructionFieldLocked(
   key: string,

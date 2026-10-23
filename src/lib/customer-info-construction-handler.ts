@@ -82,10 +82,10 @@ export type CustomerInfoHandlerWriteResult =
   | { kind: "failed"; error: string };
 
 const NOT_FOUND_WARNING =
-  "工事カレンダーは更新しましたが、お客様情報の該当レコードが見つかりませんでした。";
+  "施工カレンダーは更新しましたが、お客様情報の該当レコードが見つかりませんでした。";
 
 function notConfiguredWarning(detail: string): string {
-  return `工事カレンダーは更新しましたが、お客様情報への反映ができませんでした（${detail}）。`;
+  return `施工カレンダーは更新しましたが、お客様情報への反映ができませんでした（${detail}）。`;
 }
 
 /**

@@ -65,7 +65,7 @@ describe("★ 対象の項目", () => {
   });
 
   it("補足文はどこで変更するかまで書く", () => {
-    expect(CUSTOMER_INFO_CONSTRUCTION_LOCKED_HINT).toContain("工事カレンダー");
+    expect(CUSTOMER_INFO_CONSTRUCTION_LOCKED_HINT).toContain("施工カレンダー");
   });
 });
 

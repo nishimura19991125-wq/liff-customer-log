@@ -403,8 +403,8 @@ export default function HomeHubPage() {
         <div className="mt-6 flex flex-col gap-4">
           <LiffMenuCard
             href="/calendar"
-            title="工事カレンダー"
-            description="工事予定を月表示で確認し、詳細から @pocket を開けます。"
+            title="施工カレンダー"
+            description="工事予定・足場設置・足場解体を確認します。"
             icon={<CalendarGlyph />}
             disabled={needsStaffBind}
           />
