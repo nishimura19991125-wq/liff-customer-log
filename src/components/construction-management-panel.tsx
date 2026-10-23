@@ -19,6 +19,7 @@ import {
   keepBranchSelection,
   KIND_META,
   KIND_ORDER,
+  MY_CASES,
   resolveConstructionManagementViewState,
   shiftYearMonth,
   summarizeEventsByDay,
@@ -106,12 +107,14 @@ export function ConstructionManagementPanel() {
   const state = resolveConstructionManagementViewState({ data, error, ym });
   const payload = state.kind === "ready" ? state.payload : null;
 
-  // ── 支店（初回は本人の勤務場所。月を変えて一覧から消えたら全支店へ） ──
+  // ── 支店（初回は 自分の案件のみ → 本人の勤務場所 → 全支店 の順。
+  //    月を変えて一覧から消えたら全支店へ） ──
   const [branch, setBranch] = useState<string | null>(null);
+  const selfStaffName = payload?.selfStaffName ?? null;
   const effectiveBranch = payload
     ? branch === null
       ? initialBranchSelection(payload)
-      : keepBranchSelection(branch, payload.branches)
+      : keepBranchSelection(branch, payload.branches, Boolean(selfStaffName))
     : (branch ?? ALL_BRANCHES);
 
   // ── 区分（初期は3つとも ON・複数選択可） ──
@@ -137,7 +140,12 @@ export function ConstructionManagementPanel() {
   const filtered = useMemo(
     () =>
       payload
-        ? filterConstructionEvents(payload.events, effectiveBranch, kinds)
+        ? filterConstructionEvents(
+            payload.events,
+            effectiveBranch,
+            kinds,
+            payload.selfStaffName,
+          )
         : [],
     [payload, effectiveBranch, kinds],
   );
@@ -202,6 +210,9 @@ export function ConstructionManagementPanel() {
             disabled={!payload}
             className="h-12 w-full appearance-none rounded-xl border border-[#E2E8F0] bg-white pl-4 pr-10 text-[16px] font-semibold text-[#1E293B] disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
           >
+            {selfStaffName ? (
+              <option value={MY_CASES}>自分の案件のみ</option>
+            ) : null}
             <option value={ALL_BRANCHES}>全支店</option>
             {(payload?.branches ?? []).map((b) => (
               <option key={b} value={b}>
@@ -416,9 +427,19 @@ export function ConstructionManagementPanel() {
             </span>
           </h3>
           {dayEvents.length === 0 ? (
-            <p className="rounded-2xl border border-[#E2E8F0] bg-white px-4 py-6 text-center text-[14px] text-[#64748B] dark:border-slate-700 dark:bg-slate-800">
-              予定はありません
-            </p>
+            <div className="rounded-2xl border border-[#E2E8F0] bg-white px-4 py-6 text-center dark:border-slate-700 dark:bg-slate-800">
+              <p className="text-[14px] text-[#64748B]">予定はありません</p>
+              {/* 絞り込み中なら、全支店に切り替える導線を出す（取得の失敗とは別の表示） */}
+              {effectiveBranch !== ALL_BRANCHES ? (
+                <button
+                  type="button"
+                  onClick={() => setBranch(ALL_BRANCHES)}
+                  className="mt-3 min-h-11 rounded-xl border border-[#E2E8F0] bg-slate-50 px-5 text-[14px] font-bold text-[#16A34A] active:scale-[0.98] dark:border-slate-700 dark:bg-slate-900 dark:text-emerald-400"
+                >
+                  全支店で見る
+                </button>
+              ) : null}
+            </div>
           ) : (
             <ul className="flex flex-col gap-2">
               {dayEvents.map((e) => (

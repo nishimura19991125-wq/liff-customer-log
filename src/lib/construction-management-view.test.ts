@@ -11,8 +11,10 @@ import {
   formatDayHeading,
   formatDetailDate,
   initialBranchSelection,
+  isMyConstructionEvent,
   keepBranchSelection,
   KIND_META,
+  MY_CASES,
   resolveConstructionManagementViewState,
   shiftYearMonth,
   summarizeEventsByDay,
@@ -304,5 +306,109 @@ describe("デバッグ用の要点", () => {
     expect(text).not.toContain("顧客");
     expect(text).not.toContain("T-");
     expect(text).not.toContain("支店A");
+  });
+});
+
+describe("自分の案件のみ", () => {
+  const ME = "担当 自分";
+  const apMine = ev("scaffoldInstall", "2026-11-05", ["支店A"], {
+    apStaffNames: [ME],
+    clStaffNames: ["担当 他"],
+  });
+  const clMine = ev("construction", "2026-11-06", ["支店B"], {
+    apStaffNames: ["担当 他"],
+    clStaffNames: [ME],
+  });
+  const notMine = ev("scaffoldRemoval", "2026-11-07", ["支店A"], {
+    apStaffNames: ["担当 他"],
+    clStaffNames: ["担当 別"],
+  });
+  const noStaff = ev("construction", "2026-11-08", ["その他"]);
+  const MINE_EVENTS = [apMine, clMine, notMine, noStaff];
+
+  it("★ AP が自分の予定が残る", () => {
+    expect(filterConstructionEvents(MINE_EVENTS, MY_CASES, ALL_KINDS, ME)).toContain(apMine);
+  });
+
+  it("★ CL が自分の予定が残る", () => {
+    expect(filterConstructionEvents(MINE_EVENTS, MY_CASES, ALL_KINDS, ME)).toContain(clMine);
+  });
+
+  it("★ AP も CL も自分でない予定は除く（担当者の欄が無い予定も）", () => {
+    expect(filterConstructionEvents(MINE_EVENTS, MY_CASES, ALL_KINDS, ME)).toEqual([
+      apMine,
+      clMine,
+    ]);
+  });
+
+  it("★ 前後に空白があっても一致する", () => {
+    expect(isMyConstructionEvent(apMine, `  ${ME}　`)).toBe(true);
+    const padded = ev("construction", "2026-11-09", ["支店A"], {
+      apStaffNames: [` ${ME} `],
+    });
+    expect(isMyConstructionEvent(padded, ME)).toBe(true);
+  });
+
+  it("★ 全角半角・空白の違いがあっても一致する", () => {
+    const e = ev("construction", "2026-11-09", ["支店A"], {
+      apStaffNames: ["ﾀﾝﾄｳ　Ａ"],
+    });
+    expect(isMyConstructionEvent(e, "タントウ A")).toBe(true);
+    expect(isMyConstructionEvent(e, "タントウ B")).toBe(false);
+  });
+
+  it("自分の氏名が無ければ、どの予定も自分の案件にしない", () => {
+    expect(filterConstructionEvents(MINE_EVENTS, MY_CASES, ALL_KINDS, null)).toEqual([]);
+    expect(isMyConstructionEvent(apMine, "  ")).toBe(false);
+  });
+
+  it("★ 絞り込み後の件数（区分の絞り込みとも組み合わさる）", () => {
+    const mine = filterConstructionEvents(MINE_EVENTS, MY_CASES, ALL_KINDS, ME);
+    expect(countConstructionEvents(mine, ALL_KINDS)).toEqual({
+      scaffoldInstall: 1,
+      construction: 1,
+      scaffoldRemoval: 0,
+    });
+
+    const onlyInstall = new Set<ConstructionManagementEventKind>(["scaffoldInstall"]);
+    const mineInstall = filterConstructionEvents(MINE_EVENTS, MY_CASES, onlyInstall, ME);
+    expect(countConstructionEvents(mineInstall, onlyInstall)).toEqual({
+      scaffoldInstall: 1,
+      construction: null,
+      scaffoldRemoval: null,
+    });
+  });
+
+  it("★ 初期表示: 氏名が取れれば「自分の案件のみ」", () => {
+    expect(
+      initialBranchSelection(payload({ selfStaffName: ME, selfWorkplace: "支店A" })),
+    ).toBe(MY_CASES);
+  });
+
+  it("★ 初期表示: 氏名が取れなければ勤務場所", () => {
+    expect(
+      initialBranchSelection(payload({ selfStaffName: null, selfWorkplace: "支店B" })),
+    ).toBe("支店B");
+    expect(
+      initialBranchSelection(payload({ selfStaffName: "  ", selfWorkplace: "支店B" })),
+    ).toBe("支店B");
+  });
+
+  it("★ 初期表示: 勤務場所も取れなければ全支店", () => {
+    expect(
+      initialBranchSelection(payload({ selfStaffName: null, selfWorkplace: null })),
+    ).toBe(ALL_BRANCHES);
+  });
+
+  it("★ 自分の案件が0件でも、初期表示は「自分の案件のみ」のまま", () => {
+    const p = payload({ selfStaffName: ME, events: [notMine, noStaff] });
+    const initial = initialBranchSelection(p);
+    expect(initial).toBe(MY_CASES);
+    expect(filterConstructionEvents(p.events, initial, ALL_KINDS, ME)).toEqual([]);
+  });
+
+  it("月を変えても、氏名が取れている間は「自分の案件のみ」のまま", () => {
+    expect(keepBranchSelection(MY_CASES, [], true)).toBe(MY_CASES);
+    expect(keepBranchSelection(MY_CASES, ["支店A"], false)).toBe(ALL_BRANCHES);
   });
 });

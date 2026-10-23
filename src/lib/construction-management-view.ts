@@ -8,6 +8,7 @@
  * ⚠ ここは画面から読み込まれる。サーバー専用の部品は import しないこと
  *    （型だけは import type で読み込んでよい。実行時には消える）。
  */
+import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import type {
   ConstructionManagementCounts,
   ConstructionManagementEvent,
@@ -24,6 +25,29 @@ export type {
 
 /** 支店フィルターの「全支店」。支店名と重ならない値にしてある */
 export const ALL_BRANCHES = "__all__";
+
+/**
+ * 支店フィルターの「自分の案件のみ」。支店と同じ軸の選択肢として扱う
+ * （支店と同時には選べない）。支店名と重ならない値にしてある。
+ */
+export const MY_CASES = "__mine__";
+
+/**
+ * 予定の AP担当者 または CL担当者 が自分か。
+ *
+ * 突き合わせは支店の判定（サーバ側）と同じ normApClStaffName でそろえる
+ * （NFKC・空白の圧縮・前後の空白の除去）。自分の氏名が無ければ false。
+ */
+export function isMyConstructionEvent(
+  e: Pick<ConstructionManagementEvent, "apStaffNames" | "clStaffNames">,
+  selfStaffName: string | null | undefined,
+): boolean {
+  const me = normApClStaffName(selfStaffName ?? "");
+  if (!me) return false;
+  return [...(e.apStaffNames ?? []), ...(e.clStaffNames ?? [])].some(
+    (n) => normApClStaffName(n) === me,
+  );
+}
 
 /** 予定一覧・カレンダーのラベルの並び順（設置 → 施工 → 解体） */
 export const KIND_ORDER: readonly ConstructionManagementEventKind[] = [
@@ -50,11 +74,19 @@ export const ALL_KINDS: KindSelection = new Set(KIND_ORDER);
 
 /**
  * 支店フィルターの初期値。
- * 本人の勤務場所が一覧にあればそれ、無ければ「全支店」。
+ *
+ *   1. 本人の氏名が取れれば「自分の案件のみ」
+ *      （自分の案件が0件でもこのまま。勝手に全支店へ切り替えない）
+ *   2. 取れなければ、本人の勤務場所（一覧にあれば）
+ *   3. それも無ければ「全支店」
  */
 export function initialBranchSelection(
-  payload: Pick<ConstructionManagementPayload, "branches" | "selfWorkplace">,
+  payload: Pick<
+    ConstructionManagementPayload,
+    "branches" | "selfWorkplace" | "selfStaffName"
+  >,
 ): string {
+  if (normApClStaffName(payload.selfStaffName ?? "")) return MY_CASES;
   const self = payload.selfWorkplace?.trim();
   if (self && payload.branches.includes(self)) return self;
   return ALL_BRANCHES;
@@ -63,12 +95,15 @@ export function initialBranchSelection(
 /**
  * 選択中の支店が新しい月の一覧に無ければ「全支店」に戻す。
  * （「その他」はその月に該当が無ければ一覧から消えるため）
+ * 「自分の案件のみ」は、本人の氏名が取れている間はそのまま。
  */
 export function keepBranchSelection(
   selected: string,
   branches: readonly string[],
+  hasSelfStaffName = false,
 ): string {
   if (selected === ALL_BRANCHES) return selected;
+  if (selected === MY_CASES) return hasSelfStaffName ? selected : ALL_BRANCHES;
   return branches.includes(selected) ? selected : ALL_BRANCHES;
 }
 
@@ -78,6 +113,8 @@ export function keepBranchSelection(
  * 支店は AP か CL のどちらかの支店が一致すれば含める（API の branches は
  * 両者の和集合）。「その他」も1つの支店名として同じように扱う。
  *
+ * 「自分の案件のみ」（MY_CASES）は、AP担当者 または CL担当者 が自分の予定を残す。
+ *
  * ⚠ AP と CL の支店が違う案件は両方の支店に計上される。
  *    支店ごとの件数を足しても全体の件数とは一致しない。
  */
@@ -85,12 +122,14 @@ export function filterConstructionEvents(
   events: readonly ConstructionManagementEvent[],
   branch: string,
   kinds: KindSelection,
+  selfStaffName?: string | null,
 ): ConstructionManagementEvent[] {
-  return events.filter(
-    (e) =>
-      kinds.has(e.kind) &&
-      (branch === ALL_BRANCHES || e.branches.includes(branch)),
-  );
+  return events.filter((e) => {
+    if (!kinds.has(e.kind)) return false;
+    if (branch === ALL_BRANCHES) return true;
+    if (branch === MY_CASES) return isMyConstructionEvent(e, selfStaffName);
+    return e.branches.includes(branch);
+  });
 }
 
 /**
@@ -292,6 +331,7 @@ export function constructionManagementDebugSummary(
     branches: p.branches.length,
     hasOtherBranch: p.branches.includes("その他"),
     hasSelfWorkplace: p.selfWorkplace !== null,
+    hasSelfStaffName: Boolean(p.selfStaffName),
     duplicateTNumberGroups: p.duplicateTNumberGroups,
     unmatchedConstruction: p.events.filter(
       (e) => e.kind === "construction" && !e.customerMatched,
