@@ -487,3 +487,69 @@ describe("詳細表示の3つの日付", () => {
     });
   });
 });
+
+describe("空き枠（お客様名が空の工事レコード）", () => {
+  it("★ お客様名が空の工事レコードは施工予定に含めない", () => {
+    const p = build({
+      constructionRecords: [construction("slot", "2026-11-10", "", "")],
+    });
+    expect(p.events).toEqual([]);
+  });
+
+  it("★ 空白だけ（半角・全角）のお客様名も空き枠として除外する", () => {
+    const p = build({
+      constructionRecords: [
+        construction("s1", "2026-11-10", "", "   "),
+        construction("s2", "2026-11-11", "", "　　"),
+        construction("s3", "2026-11-12", "", " 　 "),
+      ],
+    });
+    expect(p.events).toEqual([]);
+  });
+
+  it("★ 件数からも除外する", () => {
+    const p = build({
+      customers: [customer("1", { install: "2026-11-05" })],
+      constructionRecords: [
+        construction("slot", "2026-11-10", "", ""),
+        construction("c1", "2026-11-11", "T-1"),
+      ],
+    });
+    expect(p.counts).toEqual({
+      scaffoldInstall: 1,
+      scaffoldRemoval: 0,
+      construction: 1,
+    });
+  });
+
+  it("★ お客様名がある工事レコードは従来どおり含める", () => {
+    const p = build({
+      constructionRecords: [
+        construction("slot", "2026-11-10", "", ""),
+        construction("c1", "2026-11-10", "T-1", "お客様あり"),
+      ],
+    });
+    expect(p.events.map((e) => e.id)).toEqual(["construction:c1"]);
+    expect(p.events[0]?.customerName).toBe("お客様あり");
+  });
+
+  it("★ 足場の予定（お客様情報から作る分）には影響しない", () => {
+    const p = build({
+      customers: [
+        customer("1", { install: "2026-11-05", removal: "2026-11-25" }),
+      ],
+      constructionRecords: [construction("slot", "2026-11-10", "", "")],
+    });
+    expect(kinds(p)).toEqual([
+      "scaffoldInstall:2026-11-05",
+      "scaffoldRemoval:2026-11-25",
+    ]);
+  });
+
+  it("空き枠は「その他」の一覧の判定にも入らない", () => {
+    const p = build({
+      constructionRecords: [construction("slot", "2026-11-10", "", "")],
+    });
+    expect(p.branches).not.toContain(OTHER);
+  });
+});

@@ -3,7 +3,10 @@ import "server-only";
 import type { AtPocketRecordRow } from "@/lib/atpocket";
 import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
 import type { ConstructionFieldIds } from "@/lib/calendar-kojo";
-import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
+import {
+  constructionTitleFieldIsEmpty,
+  pickRecordValueByFieldAliases,
+} from "@/lib/calendar-kojo";
 import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
 import type { CustomerCrmCandidate } from "@/lib/customer-crm-list";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
@@ -219,6 +222,12 @@ export function buildConstructionManagementPayload(
     const recObj = rec as Record<string, unknown>;
     const recordId = atPocketRecordIdFromRow(row);
     if (!recordId) continue;
+    /**
+     * 空き枠（お客様名が空の工事レコード）は予定ではないので出さない。件数にも
+     * 入れない。判定は本体カレンダーの空枠と同じ constructionTitleFieldIsEmpty
+     * （空白だけ・全角空白だけも空として扱う）。
+     */
+    if (constructionTitleFieldIsEmpty(recObj, fids.title)) continue;
     const dayKey = fids.startDate
       ? jstDayKeyFromPocketDate(
           pickRecordValueByFieldAliases(recObj, fids.startDate),
