@@ -194,6 +194,22 @@ describe("足場の4項目（環境変数あり）", () => {
     expect(snapshot.items[0]?.scaffold?.removalDate).toBe("2026-11-30");
   });
 
+  it("お客様情報の施工予定日も JST の YYYY-MM-DD で持つ（取得列は増えない）", async () => {
+    setScaffoldEnv();
+    h.defaultRows = [
+      row(11, { [NAME_ID]: "顧客A", [DATE_ID]: "2026/12/3" }),
+      row(12, { [NAME_ID]: "顧客B" }),
+    ];
+
+    const snapshot = await getCachedCustomerCrmSnapshot();
+
+    const byId = (id: string) =>
+      snapshot.items.find((i) => i.recordId === id)?.constructionDate;
+    expect(byId("11")).toBe("2026-12-03");
+    expect(byId("12")).toBe("");
+    expect(h.listCalls).toHaveLength(1);
+  });
+
   it("値が空のレコードは空文字になる", async () => {
     setScaffoldEnv();
     h.defaultRows = [row(11, { [NAME_ID]: "顧客A" })];

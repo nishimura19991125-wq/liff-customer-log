@@ -127,6 +127,15 @@ type CrmCandidate = CustomerCrmListItem & {
    * 書き換えずに済ませるため。読む側は undefined を空として扱うこと。
    */
   scaffold?: CrmScaffoldInfo;
+  /**
+   * お客様情報の「施工予定日」列の値（JST の YYYY-MM-DD。読めない形式はそのまま）。
+   *
+   * 工事登録アプリからの写し。施工管理タブの詳細で、その月に工事レコードが
+   * 無いときの施工予定日に使う。列は isConstructionDateUnset の判定で
+   * もともと取得しているので、問い合わせは増えない。
+   * 内部用で CustomerCrmListItem には載せない。省略可能な理由は scaffold と同じ。
+   */
+  constructionDate?: string;
 };
 
 /** 足場の4列の値。日付は YYYY-MM-DD にそろえる（読めない形式はそのまま） */
@@ -352,14 +361,26 @@ function readCrmScaffoldInfo(
 ): CrmScaffoldInfo {
   const read = (id: string | null) =>
     id ? readCustomerInfoFieldValue(recObj, id) : "";
-  const readDate = (id: string | null) =>
-    normalizeDateForInput(normalizeDateTimeForPocketField(read(id), "Date"));
   return {
     contractor: read(ids.contractor),
     request: read(ids.request),
-    installDate: readDate(ids.installDate),
-    removalDate: readDate(ids.removalDate),
+    installDate: readCrmDateValue(recObj, ids.installDate),
+    removalDate: readCrmDateValue(recObj, ids.removalDate),
   };
+}
+
+/** 日付の列を JST の YYYY-MM-DD で読む。列が無ければ空文字 */
+function readCrmDateValue(
+  recObj: Record<string, unknown>,
+  id: string | null,
+): string {
+  if (!id) return "";
+  return normalizeDateForInput(
+    normalizeDateTimeForPocketField(
+      readCustomerInfoFieldValue(recObj, id),
+      "Date",
+    ),
+  );
 }
 
 /**
@@ -490,6 +511,7 @@ async function fetchAllCustomerCrmCandidatesFromPocket(): Promise<CrmSnapshot> {
           ? readCustomerInfoFieldValue(recObj, ctx.contractorFieldId)
           : "",
         scaffold: readCrmScaffoldInfo(recObj, ctx.scaffoldFieldIds),
+        constructionDate: readCrmDateValue(recObj, ctx.constructionDateFieldId),
         sortKey: crmSortKeyFromRecord(recObj, recordId, ctx.sortFieldId),
         audience,
       });

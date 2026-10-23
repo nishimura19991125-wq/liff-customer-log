@@ -52,6 +52,23 @@ export type ConstructionManagementEvent = {
   duplicateConstructionTNumber: boolean;
   /** 同じ T番号 のお客様情報レコードが2件以上ある */
   duplicateCustomerTNumber: boolean;
+  /**
+   * このお客様の3つの日付（詳細表示用。JST の YYYY-MM-DD）。
+   *
+   * dayKey と違い、表示中の月の外の日付も入る。null は未登録（または読めない値）。
+   *   - 足場設置日・足場解体日: お客様情報の値
+   *   - 施工予定日: その月の工事レコードにあればその値。無ければお客様情報の
+   *     「施工予定日」列（工事登録アプリからの写し）
+   * 同じ T番号 のお客様情報が複数あるときは、先頭の1件の値を使う
+   * （duplicateCustomerTNumber で分かる）。
+   */
+  dates: ConstructionManagementEventDates;
+};
+
+export type ConstructionManagementEventDates = {
+  scaffoldInstall: string | null;
+  construction: string | null;
+  scaffoldRemoval: string | null;
 };
 
 export type ConstructionManagementCounts = Record<
@@ -184,6 +201,57 @@ export function buildConstructionManagementPayload(
 
   const events: ConstructionManagementEvent[] = [];
 
+  // ── 工事レコードを先に読む（足場の予定の詳細で施工予定日を引くため） ──
+  const fids = input.constructionFieldIds;
+  type ConstructionRow = {
+    recordId: string;
+    recObj: Record<string, unknown>;
+    dayKey: string;
+    t: string;
+  };
+  const constructionRows: ConstructionRow[] = [];
+  const constructionCountByT = new Map<string, number>();
+  /** T番号 → その月の施工予定日（同じ T番号 が複数あれば先に出た方） */
+  const constructionDayByT = new Map<string, string>();
+  for (const row of input.constructionRecords) {
+    const rec = row.record;
+    if (!rec || typeof rec !== "object") continue;
+    const recObj = rec as Record<string, unknown>;
+    const recordId = atPocketRecordIdFromRow(row);
+    if (!recordId) continue;
+    const dayKey = fids.startDate
+      ? jstDayKeyFromPocketDate(
+          pickRecordValueByFieldAliases(recObj, fids.startDate),
+        )
+      : null;
+    // 本体と同じ query は「月に重なる案件」を返すので、施工予定日で絞り直す
+    if (!inMonth(dayKey)) continue;
+    const t = fids.tNumber
+      ? tNumberKey(
+          coerceCustomerInfoDisplayString(
+            pickRecordValueByFieldAliases(recObj, fids.tNumber),
+          ),
+        )
+      : "";
+    constructionRows.push({ recordId, recObj, dayKey, t });
+    if (t) {
+      constructionCountByT.set(t, (constructionCountByT.get(t) ?? 0) + 1);
+      if (!constructionDayByT.has(t)) constructionDayByT.set(t, dayKey);
+    }
+  }
+
+  /** お客様1件の3つの日付（詳細表示用。月の外も含む） */
+  const datesOfCustomer = (
+    c: CustomerCrmCandidate | undefined,
+    t: string,
+  ): ConstructionManagementEventDates => ({
+    scaffoldInstall: jstDayKeyFromPocketDate(c?.scaffold?.installDate ?? ""),
+    construction:
+      (t ? constructionDayByT.get(t) : undefined) ??
+      jstDayKeyFromPocketDate(c?.constructionDate ?? ""),
+    scaffoldRemoval: jstDayKeyFromPocketDate(c?.scaffold?.removalDate ?? ""),
+  });
+
   // ── 足場設置・足場解体（お客様情報から） ──
   for (const c of input.customers) {
     // キャンセルされた案件は出さない（未定案件の一覧と同じ）
@@ -202,6 +270,7 @@ export function buildConstructionManagementPayload(
       customerMatched: true,
       duplicateConstructionTNumber: false,
       duplicateCustomerTNumber: Boolean(t && duplicateCustomerTs.has(t)),
+      dates: datesOfCustomer(c, t),
     };
     const install = jstDayKeyFromPocketDate(s.installDate);
     if (inMonth(install)) {
@@ -224,39 +293,6 @@ export function buildConstructionManagementPayload(
   }
 
   // ── 施工予定（工事レコードから） ──
-  const fids = input.constructionFieldIds;
-  type ConstructionRow = {
-    recordId: string;
-    recObj: Record<string, unknown>;
-    dayKey: string;
-    t: string;
-  };
-  const constructionRows: ConstructionRow[] = [];
-  const constructionCountByT = new Map<string, number>();
-  for (const row of input.constructionRecords) {
-    const rec = row.record;
-    if (!rec || typeof rec !== "object") continue;
-    const recObj = rec as Record<string, unknown>;
-    const recordId = atPocketRecordIdFromRow(row);
-    if (!recordId) continue;
-    const dayKey = fids.startDate
-      ? jstDayKeyFromPocketDate(
-          pickRecordValueByFieldAliases(recObj, fids.startDate),
-        )
-      : null;
-    // 本体と同じ query は「月に重なる案件」を返すので、施工予定日で絞り直す
-    if (!inMonth(dayKey)) continue;
-    const t = fids.tNumber
-      ? tNumberKey(
-          coerceCustomerInfoDisplayString(
-            pickRecordValueByFieldAliases(recObj, fids.tNumber),
-          ),
-        )
-      : "";
-    constructionRows.push({ recordId, recObj, dayKey, t });
-    if (t) constructionCountByT.set(t, (constructionCountByT.get(t) ?? 0) + 1);
-  }
-
   for (const r of constructionRows) {
     const matched = r.t ? (customersByT.get(r.t) ?? []) : [];
     // キャンセルされた T番号 の判定と同じく、1件でもキャンセルなら出さない
@@ -299,6 +335,11 @@ export function buildConstructionManagementPayload(
       customerMatched: matched.length > 0,
       duplicateConstructionTNumber: (constructionCountByT.get(r.t) ?? 0) > 1,
       duplicateCustomerTNumber: Boolean(r.t && duplicateCustomerTs.has(r.t)),
+      dates: {
+        ...datesOfCustomer(matched[0], ""),
+        // 施工予定日はこの工事レコード自身の値
+        construction: r.dayKey,
+      },
     });
   }
 

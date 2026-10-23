@@ -430,3 +430,60 @@ describe("件数", () => {
     });
   });
 });
+
+describe("詳細表示の3つの日付", () => {
+  it("★ 月の外にある日付も返る（未登録と区別できる）", () => {
+    const p = build({
+      customers: [
+        customer("1", {
+          install: "2026-10-20",
+          removal: "2026-11-25",
+          constructionDate: "2026-12-03",
+        }),
+      ],
+    });
+
+    expect(p.events).toHaveLength(1);
+    expect(p.events[0]?.dates).toEqual({
+      scaffoldInstall: "2026-10-20",
+      construction: "2026-12-03",
+      scaffoldRemoval: "2026-11-25",
+    });
+  });
+
+  it("★ 未登録の日付は null", () => {
+    const p = build({
+      customers: [customer("1", { install: "2026-11-05" })],
+    });
+    expect(p.events[0]?.dates).toEqual({
+      scaffoldInstall: "2026-11-05",
+      construction: null,
+      scaffoldRemoval: null,
+    });
+  });
+
+  it("★ 施工予定日は、その月の工事レコードの値を優先する", () => {
+    const p = build({
+      customers: [
+        customer("1", { install: "2026-11-05", constructionDate: "2026-11-30" }),
+      ],
+      constructionRecords: [construction("c1", "2026-11-10", "T-1")],
+    });
+
+    for (const e of p.events) {
+      expect(e.dates.construction).toBe("2026-11-10");
+      expect(e.dates.scaffoldInstall).toBe("2026-11-05");
+    }
+  });
+
+  it("お客様情報に無い施工予定は、足場の日付が null", () => {
+    const p = build({
+      constructionRecords: [construction("c1", "2026-11-10", "T-無し")],
+    });
+    expect(p.events[0]?.dates).toEqual({
+      scaffoldInstall: null,
+      construction: "2026-11-10",
+      scaffoldRemoval: null,
+    });
+  });
+});
