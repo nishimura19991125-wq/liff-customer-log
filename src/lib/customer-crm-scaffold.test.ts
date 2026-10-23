@@ -178,6 +178,22 @@ describe("足場の4項目（環境変数あり）", () => {
     });
   });
 
+  it("★ Z 付きの日時は JST の日付にそろえる（UTC 10/31 15:00 は JST 11/1）", async () => {
+    setScaffoldEnv();
+    h.defaultRows = [
+      row(11, {
+        [NAME_ID]: "顧客A",
+        [SCAFFOLD_INSTALL_ID]: "2026-10-31T15:00:00Z",
+        [SCAFFOLD_REMOVAL_ID]: "2026-11-30T14:59:59Z",
+      }),
+    ];
+
+    const snapshot = await getCachedCustomerCrmSnapshot();
+
+    expect(snapshot.items[0]?.scaffold?.installDate).toBe("2026-11-01");
+    expect(snapshot.items[0]?.scaffold?.removalDate).toBe("2026-11-30");
+  });
+
   it("値が空のレコードは空文字になる", async () => {
     setScaffoldEnv();
     h.defaultRows = [row(11, { [NAME_ID]: "顧客A" })];

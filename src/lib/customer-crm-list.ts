@@ -10,6 +10,7 @@ import {
   customerInfoSubtitleFieldId,
 } from "@/lib/customer-info-config";
 import { pickRecordValueByFieldAliases } from "@/lib/calendar-kojo";
+import { normalizeDateTimeForPocketField } from "@/lib/jst-hm";
 import { findCustomerInfoRecordIdByUniqueKeyCached } from "@/lib/customer-info-key-lookup-cache";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import {
@@ -338,18 +339,26 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
   };
 }
 
-/** 足場の4列を読む。列が無ければ空文字、日付は YYYY-MM-DD にそろえる */
+/**
+ * 足場の4列を読む。列が無ければ空文字、日付は JST の YYYY-MM-DD にそろえる。
+ *
+ * Z・オフセット付きの日時が来たときに UTC の日付を切り出さないよう、
+ * 先に normalizeDateTimeForPocketField で JST に直してから YYYY-MM-DD にする
+ * （例: 2026-10-31T15:00:00Z は JST では 11/1）。
+ */
 function readCrmScaffoldInfo(
   recObj: Record<string, unknown>,
   ids: CrmScaffoldFieldIds,
 ): CrmScaffoldInfo {
   const read = (id: string | null) =>
     id ? readCustomerInfoFieldValue(recObj, id) : "";
+  const readDate = (id: string | null) =>
+    normalizeDateForInput(normalizeDateTimeForPocketField(read(id), "Date"));
   return {
     contractor: read(ids.contractor),
     request: read(ids.request),
-    installDate: normalizeDateForInput(read(ids.installDate)),
-    removalDate: normalizeDateForInput(read(ids.removalDate)),
+    installDate: readDate(ids.installDate),
+    removalDate: readDate(ids.removalDate),
   };
 }
 
