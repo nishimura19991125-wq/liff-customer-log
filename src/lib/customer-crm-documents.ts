@@ -166,6 +166,60 @@ export function resolveCrmSubsidyFieldId(
 /** @deprecated resolveCrmSubsidyFieldId を使用 */
 export const resolveCrmSubsidyUsageFieldId = resolveCrmSubsidyFieldId;
 
+/**
+ * 足場の4列（施工管理タブ向け）。
+ *
+ * 環境変数名はフォーム項目と同じ CUSTOMER_INFO_FIELD_<キー> の形にそろえる
+ * （resolve-fields.ts の envFieldIdForFormKey と同じ規則）。
+ */
+export const CRM_SCAFFOLD_FIELD_ENV = {
+  /** 足場業者 */
+  contractor: "CUSTOMER_INFO_FIELD_SCAFFOLD_CONTRACTOR",
+  /** 足場依頼内容 */
+  request: "CUSTOMER_INFO_FIELD_SCAFFOLD_REQUEST",
+  /** 足場設置日 */
+  installDate: "CUSTOMER_INFO_FIELD_SCAFFOLD_INSTALL_DATE",
+  /** 足場解体日 */
+  removalDate: "CUSTOMER_INFO_FIELD_SCAFFOLD_REMOVAL_DATE",
+} as const;
+
+export type CrmScaffoldFieldIds = {
+  [K in keyof typeof CRM_SCAFFOLD_FIELD_ENV]: string | null;
+};
+
+/**
+ * 足場の4列の uniqueId を解決する。
+ *
+ * ■ 環境変数だけで決める
+ * 見出しの一致・部分一致では探さない。似た見出しの列を掴むと、別の日付を
+ * 足場の日として表示してしまう。設定が無ければ取得列に足さない（null）。
+ *
+ * ■ 設定はあるがアプリ定義に無いとき
+ * その列だけ null にして一覧は止めない（担当顧客一覧などと共有しているため）。
+ * 警告には環境変数名だけを出し、値（列ID）は出さない。
+ */
+export function resolveCrmScaffoldFieldIds(
+  appFields: AtPocketFieldRow[],
+): CrmScaffoldFieldIds {
+  const resolve = (envName: string): string | null => {
+    const env = process.env[envName]?.trim();
+    if (!env) return null;
+    const id = resolveConfiguredFieldToSchemaUniqueId(env, appFields);
+    if (!id) {
+      console.warn(
+        `[customer-crm] ${envName} がアプリ定義と一致しません。足場の列を読み込めません`,
+      );
+    }
+    return id;
+  };
+  return {
+    contractor: resolve(CRM_SCAFFOLD_FIELD_ENV.contractor),
+    request: resolve(CRM_SCAFFOLD_FIELD_ENV.request),
+    installDate: resolve(CRM_SCAFFOLD_FIELD_ENV.installDate),
+    removalDate: resolve(CRM_SCAFFOLD_FIELD_ENV.removalDate),
+  };
+}
+
 export type CrmSubsidyFieldIds = {
   /** 補助金有無 */
   subsidyPresenceId: string | null;

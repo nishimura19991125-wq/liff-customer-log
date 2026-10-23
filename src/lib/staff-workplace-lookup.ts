@@ -274,6 +274,44 @@ export async function lookupStaffAssignmentByStaffName(
   return map.get(target) ?? { workplace: null, company: null };
 }
 
+/**
+ * 勤務場所（支店）の名前を**名簿の登録順**で返す（施工管理タブの支店一覧）。
+ *
+ * ■ コードに一覧を持たない
+ * 支店の一覧をコードの既定値で持つと、@pocket 側で改称されたときに追随できない
+ * （9/9 に営業ランキングの支社一覧 SALES_PROGRESS_DEFAULT_VISIBLE_BRANCHES が
+ * 改称に追随せず、全員「その他」に落ちた）。ここでは名簿に実在する値だけを返す。
+ *
+ * ■ 担当者ごとの支店と同じ対応表を使う
+ * lookupStaffAssignmentByStaffName と同じ staffNameToAssignmentMap から拾うので、
+ * 案件ごとに引いた支店は必ずこの一覧のどれかと一致する。対応表は名簿の行順に
+ * 詰めてあり、**@pocket への追加取得は無い**（listStaffDepartmentsInRosterOrder
+ * と同じ作り）。同じ氏名が複数行あるときは対応表と同じく先の行だけを見る。
+ *
+ * ■ 勤務場所が空の人
+ * 一覧には入れない。「その他」「未設定」のような名前もここでは作らない。
+ * 名簿に無い値を混ぜると、実在の支店と見分けがつかなくなるため。
+ * そうした人が担当する案件をどう見せるか（未設定の枠を設けるか等）は、
+ * 一覧を使う側で決める。
+ *
+ * 前後の空白は落として比べる。それ以外の表記ゆれ（全角・半角など）は
+ * そろえない。名簿の表記をそのまま支店名として扱う。
+ */
+export async function listStaffWorkplacesInRosterOrder(): Promise<string[]> {
+  const cfg = await resolveStaffAssignmentLookupConfig();
+  if (!cfg?.workplaceFieldId) return [];
+  const map = await staffNameToAssignmentMap(cfg);
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const assignment of map.values()) {
+    const workplace = assignment.workplace?.trim() ?? "";
+    if (!workplace || seen.has(workplace)) continue;
+    seen.add(workplace);
+    ordered.push(workplace);
+  }
+  return ordered;
+}
+
 /** 名簿キャッシュ更新後に所属マップを破棄 */
 export function invalidateStaffAssignmentLookupCache(): void {
   cachedAssignmentMap = null;

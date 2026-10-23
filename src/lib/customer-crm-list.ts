@@ -21,10 +21,14 @@ import {
   resolveCrmContractorFieldId,
   resolveCrmDocumentFields,
   resolveCrmHousingStatusFieldId,
+  resolveCrmScaffoldFieldIds,
   resolveCrmSortDateFieldId,
   resolveCrmSubsidyFieldIds,
 } from "@/lib/customer-crm-documents";
-import type { CrmSubsidyFieldIds } from "@/lib/customer-crm-documents";
+import type {
+  CrmScaffoldFieldIds,
+  CrmSubsidyFieldIds,
+} from "@/lib/customer-crm-documents";
 import {
   customerInfoRecordIdFromRow,
   readCustomerInfoFieldValue,
@@ -33,7 +37,10 @@ import {
   matchCustomerInfoPendingAudience,
   resolveCustomerInfoCreatorFieldId,
 } from "@/lib/customer-info-creator-field";
-import { resolveCustomerInfoFormFieldId } from "@/lib/customer-info-form/resolve-fields";
+import {
+  normalizeDateForInput,
+  resolveCustomerInfoFormFieldId,
+} from "@/lib/customer-info-form/resolve-fields";
 import {
   crmEffectiveDocumentMissing,
   crmEffectiveSubsidyTarget,
@@ -109,6 +116,28 @@ type CrmCandidate = CustomerCrmListItem & {
    */
   housingStatus: string;
   contractorName: string;
+  /**
+   * 足場の4列（施工管理タブ向け）。
+   *
+   * 住宅ステータスと同じく内部用で、CustomerCrmListItem には**載せない**
+   * （/api/customers の応答を変えないため）。
+   * @pocket から作る行には必ず入る。列を設定していない環境では各値が空文字。
+   * 型を省略可能にしているのは、既存のテスト用データ（この項目を持たない）を
+   * 書き換えずに済ませるため。読む側は undefined を空として扱うこと。
+   */
+  scaffold?: CrmScaffoldInfo;
+};
+
+/** 足場の4列の値。日付は YYYY-MM-DD にそろえる（読めない形式はそのまま） */
+export type CrmScaffoldInfo = {
+  /** 足場業者 */
+  contractor: string;
+  /** 足場依頼内容 */
+  request: string;
+  /** 足場設置日 */
+  installDate: string;
+  /** 足場解体日 */
+  removalDate: string;
 };
 
 /**
@@ -208,6 +237,8 @@ type CrmFieldContext = {
   /** 未定案件一覧の表示に使う2列（3-1 で追加）。解決できなければ null */
   housingStatusFieldId: string | null;
   contractorFieldId: string | null;
+  /** 足場の4列（環境変数で指定。未設定なら null） */
+  scaffoldFieldIds: CrmScaffoldFieldIds;
   subsidyFieldIds: CrmSubsidyFieldIds;
   sortFieldId: string | null;
   customerStatusFieldId: string | null;
@@ -231,6 +262,7 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
   const constructionDateFieldId = resolveCrmConstructionDateFieldId(appFields);
   const housingStatusFieldId = resolveCrmHousingStatusFieldId(appFields);
   const contractorFieldId = resolveCrmContractorFieldId(appFields);
+  const scaffoldFieldIds = resolveCrmScaffoldFieldIds(appFields);
   const subsidyFieldIds = resolveCrmSubsidyFieldIds(appFields);
   const sortFieldId = resolveCrmSortDateFieldId(appFields);
   const customerStatusFieldId = resolveCrmCustomerStatusFieldId(appFields);
@@ -264,6 +296,10 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
   // 3-1: 列が増えるだけで、ページ数も呼び出し回数も変わらない
   if (housingStatusFieldId) fieldIdSet.add(housingStatusFieldId);
   if (contractorFieldId) fieldIdSet.add(contractorFieldId);
+  // 足場の4列も同じ。列が増えるだけで、ページ数も呼び出し回数も変わらない
+  for (const id of Object.values(scaffoldFieldIds)) {
+    if (id) fieldIdSet.add(id);
+  }
   if (subsidyFieldIds.subsidyPresenceId) {
     fieldIdSet.add(subsidyFieldIds.subsidyPresenceId);
   }
@@ -293,11 +329,27 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
     constructionDateFieldId,
     housingStatusFieldId,
     contractorFieldId,
+    scaffoldFieldIds,
     subsidyFieldIds,
     sortFieldId,
     customerStatusFieldId,
     docFields,
     fieldsCsv: [...fieldIdSet].join(","),
+  };
+}
+
+/** 足場の4列を読む。列が無ければ空文字、日付は YYYY-MM-DD にそろえる */
+function readCrmScaffoldInfo(
+  recObj: Record<string, unknown>,
+  ids: CrmScaffoldFieldIds,
+): CrmScaffoldInfo {
+  const read = (id: string | null) =>
+    id ? readCustomerInfoFieldValue(recObj, id) : "";
+  return {
+    contractor: read(ids.contractor),
+    request: read(ids.request),
+    installDate: normalizeDateForInput(read(ids.installDate)),
+    removalDate: normalizeDateForInput(read(ids.removalDate)),
   };
 }
 
@@ -428,6 +480,7 @@ async function fetchAllCustomerCrmCandidatesFromPocket(): Promise<CrmSnapshot> {
         contractorName: ctx.contractorFieldId
           ? readCustomerInfoFieldValue(recObj, ctx.contractorFieldId)
           : "",
+        scaffold: readCrmScaffoldInfo(recObj, ctx.scaffoldFieldIds),
         sortKey: crmSortKeyFromRecord(recObj, recordId, ctx.sortFieldId),
         audience,
       });
