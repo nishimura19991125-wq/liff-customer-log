@@ -21,7 +21,10 @@
   schedule = "55 10 * * *"
 
 [build.environment]
-  NODE_VERSION = "20"
+  # 本番の Node.js はここだけで指定する。.nvmrc は作らない
+  # （指定する場所が増えると、片方だけ更新して食い違うため）。
+  # ローカルの開発環境は Node 24 のままで、本番の 22 とは系列が違う。
+  NODE_VERSION = "22"
   # Secrets Controller がビルド成果物に埋め込まれた値と突き合わせる。
   # @pocket のフィールド uniqueId（field_*）やアプリ ID はサーバー用バンドル・ソースマップに現れやすく誤検知するため除外する。
   # 実際のシークレット（API キー等）は除外しないこと。
