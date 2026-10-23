@@ -7,6 +7,7 @@ import {
   CONSTRUCTION_MANAGEMENT_OTHER_BRANCH as OTHER,
   filterConstructionManagementEventsByBranch,
   jstDayKeyFromPocketDate,
+  resolveConstructionManagementVisibleBranches,
 } from "@/lib/construction-management";
 import type { ConstructionManagementInput } from "@/lib/construction-management";
 import type { CustomerCrmCandidate } from "@/lib/customer-crm-list";
@@ -599,5 +600,102 @@ describe("自分の案件の判定に使う氏名", () => {
     expect(build({ selfStaffName: null }).selfStaffName).toBeNull();
     expect(build({ selfStaffName: "  " }).selfStaffName).toBeNull();
     expect(build().selfStaffName).toBeNull();
+  });
+});
+
+describe("表示する支店を環境変数で絞る", () => {
+  it("★ 指定した支店が、指定した順で出る。名簿に無い指定は出さず、件数を返す", () => {
+    const r = resolveConstructionManagementVisibleBranches(
+      ["支店A", "業務委託", "支店B", "支店C"],
+      " 支店C , 支店A,存在しない支店, ,支店A",
+    );
+    expect(r.visibleBranches).toEqual(["支店C", "支店A"]);
+    expect(r.missingCount).toBe(1);
+  });
+
+  it("★ 未設定（空・空白・カンマだけ）なら null（名簿の勤務場所をそのまま使う）", () => {
+    for (const raw of [undefined, "", "   ", " , ,"]) {
+      const r = resolveConstructionManagementVisibleBranches(["支店A"], raw);
+      expect(r.visibleBranches).toBeNull();
+      expect(r.missingCount).toBe(0);
+    }
+  });
+
+  it("★ 指定外の勤務場所は一覧に出さず、その人の案件は「その他」に入る（消さない）", () => {
+    const p = build({
+      rosterWorkplaces: ["支店A", "業務委託", "支店B"],
+      visibleBranches: ["支店B", "支店A"],
+      workplaceOfStaff: (name) =>
+        ({ "担当 A": "支店A", "担当 委": "業務委託" })[name] ?? null,
+      customers: [
+        customer("1", { ap: "担当 委", install: "2026-11-05" }),
+        customer("2", { ap: "担当 A", install: "2026-11-06" }),
+      ],
+    });
+
+    expect(p.branches).toEqual(["支店B", "支店A", OTHER]);
+    expect(p.branches).not.toContain("業務委託");
+    expect(p.events).toHaveLength(2);
+    expect(p.events.find((e) => e.id === "scaffoldInstall:1")?.branches).toEqual([
+      OTHER,
+    ]);
+  });
+
+  it("指定外と指定内の AP/CL は、その他と支店の両方に出る", () => {
+    const p = build({
+      visibleBranches: ["支店A"],
+      workplaceOfStaff: (name) =>
+        ({ "担当 A": "支店A", "担当 委": "業務委託" })[name] ?? null,
+      customers: [
+        customer("1", { ap: "担当 A", cl: "担当 委", install: "2026-11-05" }),
+      ],
+    });
+    expect(p.events[0]?.branches.sort()).toEqual([OTHER, "支店A"].sort());
+  });
+
+  it("★ 「その他」は該当する予定があるときだけ末尾に出る（指定ありでも）", () => {
+    const p = build({
+      visibleBranches: ["支店A"],
+      customers: [customer("1", { ap: "担当 A", install: "2026-11-05" })],
+    });
+    expect(p.branches).toEqual(["支店A"]);
+  });
+
+  it("★ 未設定（null・省略）なら従来どおり名簿の順で出る", () => {
+    const base = {
+      rosterWorkplaces: ["支店C", "業務委託", "支店A"],
+      customers: [customer("1", { ap: "担当 A", install: "2026-11-05" })],
+    };
+    expect(build(base).branches).toEqual(["支店C", "業務委託", "支店A"]);
+    expect(build({ ...base, visibleBranches: null }).branches).toEqual([
+      "支店C",
+      "業務委託",
+      "支店A",
+    ]);
+  });
+
+  it("★ 支店で絞ったときの件数（指定外の人の案件はその他で数える）", () => {
+    const p = build({
+      visibleBranches: ["支店A", "支店B"],
+      workplaceOfStaff: (name) =>
+        ({ "担当 A": "支店A", "担当 B": "支店B", "担当 委": "業務委託" })[name] ??
+        null,
+      customers: [
+        customer("1", { ap: "担当 A", cl: "担当 B", install: "2026-11-05" }),
+        customer("2", { ap: "担当 委", install: "2026-11-06" }),
+        customer("3", { ap: "担当 A", removal: "2026-11-07" }),
+      ],
+    });
+    const count = (b: string) =>
+      filterConstructionManagementEventsByBranch(p.events, b).length;
+    expect(count("支店A")).toBe(2);
+    expect(count("支店B")).toBe(1);
+    expect(count(OTHER)).toBe(1);
+    expect(count("業務委託")).toBe(0);
+    expect(p.counts).toEqual({
+      scaffoldInstall: 2,
+      scaffoldRemoval: 1,
+      construction: 0,
+    });
   });
 });

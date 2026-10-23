@@ -133,6 +133,12 @@ export type ConstructionManagementInput = {
   workplaceOfStaff: (normalizedName: string) => string | null;
   /** 名簿の勤務場所の一覧（listStaffWorkplacesInRosterOrder） */
   rosterWorkplaces: readonly string[];
+  /**
+   * 表示する支店（resolveConstructionManagementVisibleBranches の結果）。
+   * 指定されていれば、この一覧を支店の一覧にし、ここに無い勤務場所の人は
+   * 「その他」に寄せる。null・省略なら名簿の勤務場所をそのまま使う。
+   */
+  visibleBranches?: readonly string[] | null;
   selfWorkplace: string | null;
   /** ログイン中の人の氏名（名簿の表記のまま）。省略時は null */
   selfStaffName?: string | null;
@@ -153,6 +159,48 @@ export function jstDayKeyFromPocketDate(raw: unknown): string | null {
   return optionalCalendarYmd(
     normalizeDateForInput(normalizeDateTimeForPocketField(s, "Date")),
   );
+}
+
+/** 施工管理タブに出す支店を指定する環境変数（カンマ区切り・指定した順） */
+export const CONSTRUCTION_MANAGEMENT_VISIBLE_BRANCHES_ENV =
+  "CONSTRUCTION_MANAGEMENT_VISIBLE_BRANCHES";
+
+/**
+ * 施工管理タブに出す支店を決める。
+ *
+ * ■ コードに一覧を持たない
+ * 支店の一覧をコードの既定値で持つと @pocket 側の改称に追随できない
+ * （9/9 に営業ランキングの SALES_PROGRESS_DEFAULT_VISIBLE_BRANCHES が改称に
+ * 追随せず、全員「その他」に落ちた）。指定は環境変数だけで行い、
+ * 実在の確認は名簿の勤務場所で行う。
+ *
+ * ■ 決め方
+ *   - 未設定（空・空白・カンマだけ）: null を返す。名簿の勤務場所をそのまま使う
+ *   - 設定あり: 指定した順で、名簿の勤務場所に**ある**ものだけを返す。
+ *     名簿に無い指定は出さず、その数を missingCount で返す（ログ用。名前は返さない）
+ *
+ * 突き合わせは前後の空白を落とした完全一致。名簿の表記をそのまま支店名として
+ * 扱う（listStaffWorkplacesInRosterOrder と同じ作法）。
+ */
+export function resolveConstructionManagementVisibleBranches(
+  rosterWorkplaces: readonly string[],
+  raw: string | undefined,
+): { visibleBranches: string[] | null; missingCount: number } {
+  const wanted = [
+    ...new Set(
+      (raw ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (wanted.length === 0) return { visibleBranches: null, missingCount: 0 };
+  const inRoster = new Set(rosterWorkplaces.map((w) => w.trim()));
+  const visibleBranches = wanted.filter((w) => inRoster.has(w));
+  return {
+    visibleBranches,
+    missingCount: wanted.length - visibleBranches.length,
+  };
 }
 
 /** T番号 の突き合わせ用（キャンセルされた T番号 の判定と同じ正規化） */
@@ -184,11 +232,22 @@ export function buildConstructionManagementPayload(
    * 担当者の欄が空の人（CL がいない案件など）は支店を持たない。
    */
   const branchCache = new Map<string, string>();
+  /** 表示する支店が指定されていれば、その集合（null なら名簿の勤務場所すべて） */
+  const visibleSet = input.visibleBranches
+    ? new Set(input.visibleBranches)
+    : null;
   const branchOf = (name: string): string => {
     const hit = branchCache.get(name);
     if (hit) return hit;
     const w = input.workplaceOfStaff(name)?.trim();
-    const branch = w || CONSTRUCTION_MANAGEMENT_OTHER_BRANCH;
+    /**
+     * 名簿にいない・勤務場所が空・**表示する支店に無い勤務場所**（業務委託など）
+     * は、どれも同じく「その他」に寄せる。案件は消さない。
+     */
+    const branch =
+      w && (!visibleSet || visibleSet.has(w))
+        ? w
+        : CONSTRUCTION_MANAGEMENT_OTHER_BRANCH;
     branchCache.set(name, branch);
     return branch;
   };
@@ -409,7 +468,7 @@ export function buildConstructionManagementPayload(
   for (const e of events) counts[e.kind] += 1;
 
   // 「その他」は該当する予定がある月だけ一覧に入れる
-  const branches = [...input.rosterWorkplaces];
+  const branches = [...(input.visibleBranches ?? input.rosterWorkplaces)];
   const hasOther = events.some((e) =>
     e.branches.includes(CONSTRUCTION_MANAGEMENT_OTHER_BRANCH),
   );

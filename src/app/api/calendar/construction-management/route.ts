@@ -13,7 +13,11 @@ import {
   collectConstructionFieldsCsv,
   resolveConstructionFieldIds,
 } from "@/lib/calendar-kojo";
-import { buildConstructionManagementPayload } from "@/lib/construction-management";
+import {
+  buildConstructionManagementPayload,
+  CONSTRUCTION_MANAGEMENT_VISIBLE_BRANCHES_ENV,
+  resolveConstructionManagementVisibleBranches,
+} from "@/lib/construction-management";
 import { getCachedCustomerCrmSnapshot } from "@/lib/customer-crm-list";
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
@@ -147,6 +151,11 @@ export async function GET(request: Request) {
       }
     }
     const rosterWorkplaces = await listStaffWorkplacesInRosterOrder();
+    // 表示する支店（未設定なら名簿の勤務場所をそのまま使う）
+    const visible = resolveConstructionManagementVisibleBranches(
+      rosterWorkplaces,
+      process.env[CONSTRUCTION_MANAGEMENT_VISIBLE_BRANCHES_ENV],
+    );
 
     const selfName = await resolveBoundStaffNameForLineUser(auth.lineUserId);
     const selfWorkplace = selfName
@@ -165,6 +174,7 @@ export async function GET(request: Request) {
       constructionFieldIds: fids,
       workplaceOfStaff: (name) => workplaceByName.get(name) ?? null,
       rosterWorkplaces,
+      visibleBranches: visible.visibleBranches,
       selfWorkplace,
       // 勤務場所を引くために上で取った氏名をそのまま使う（取得は増えない）
       selfStaffName: selfName,
@@ -190,6 +200,9 @@ export async function GET(request: Request) {
         hasSelfWorkplace: payload.selfWorkplace !== null,
         // 氏名そのものは出さない。取れたかどうかだけ
         hasSelfStaffName: Boolean(payload.selfStaffName),
+        // 表示する支店の指定。支店名は出さず、指定の有無と名簿に無かった数だけ
+        visibleBranchesConfigured: visible.visibleBranches !== null,
+        visibleBranchesMissing: visible.missingCount,
       }),
     );
 

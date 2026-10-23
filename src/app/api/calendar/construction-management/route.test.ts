@@ -504,3 +504,62 @@ describe("本人の氏名", () => {
     expect(dumped).toContain('"hasSelfStaffName":true');
   });
 });
+
+describe("表示する支店（CONSTRUCTION_MANAGEMENT_VISIBLE_BRANCHES）", () => {
+  const KEY = "CONSTRUCTION_MANAGEMENT_VISIBLE_BRANCHES";
+  let saved: string | undefined;
+  beforeEach(() => {
+    saved = process.env[KEY];
+    delete process.env[KEY];
+    h.rosterWorkplaces = ["支店A", "業務委託", "支店B"];
+    h.roster = { "担当 A": "支店A", "担当 B": "支店B", "担当 委": "業務委託" };
+  });
+  afterEach(() => {
+    if (saved === undefined) delete process.env[KEY];
+    else process.env[KEY] = saved;
+  });
+
+  it("★ 指定した支店が指定した順で出る。指定外・名簿に無い指定は出ない", async () => {
+    process.env[KEY] = "支店B,存在しない支店,支店A";
+    h.snapshot.items = [customer("1", { audience: { [AP]: "担当 A" } })];
+
+    const body = await (await GET(req())).json();
+    expect(body.branches).toEqual(["支店B", "支店A"]);
+  });
+
+  it("★ 指定外の勤務場所の人の案件は「その他」に入り、一覧の末尾に出る", async () => {
+    process.env[KEY] = "支店A,支店B";
+    h.snapshot.items = [customer("1", { audience: { [AP]: "担当 委" } })];
+
+    const body = await (await GET(req())).json();
+    expect(body.events).toHaveLength(1);
+    expect(body.events[0].branches).toEqual(["その他"]);
+    expect(body.branches).toEqual(["支店A", "支店B", "その他"]);
+  });
+
+  it("★ 未設定なら従来どおり名簿の順でそのまま出る", async () => {
+    h.snapshot.items = [customer("1", { audience: { [AP]: "担当 A" } })];
+
+    const body = await (await GET(req())).json();
+    expect(body.branches).toEqual(["支店A", "業務委託", "支店B"]);
+  });
+
+  it("★ ログには名簿に無かった指定の件数だけを出し、支店名は出さない", async () => {
+    process.env[KEY] = "支店B,存在しない支店,もう一つ無い支店,支店A";
+    h.snapshot.items = [customer("1", { audience: { [AP]: "担当 委" } })];
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await GET(req());
+
+    const dumped = [info, warn]
+      .flatMap((s) => s.mock.calls)
+      .map((c) => c.map((x) => String(x)).join(" "))
+      .join("\n");
+    expect(dumped).toContain('"visibleBranchesMissing":2');
+    expect(dumped).toContain('"visibleBranchesConfigured":true');
+    for (const name of ["支店", "業務委託", "存在しない", "その他"]) {
+      expect(dumped).not.toContain(name);
+    }
+  });
+});
