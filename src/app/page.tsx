@@ -353,11 +353,22 @@ export default function HomeHubPage() {
                 needsStaffBind={needsStaffBind}
                 onClose={() => setIsBulletinBoardVisible(false)}
               >
-                <HomeConstructionHandlerCases
-                  idToken={idToken}
-                  boundStaffName={account.boundStaffName}
-                  disabled={needsStaffBind || account.loading}
-                />
+                <div className="flex flex-col gap-3">
+                  <HomeConstructionHandlerCases
+                    idToken={idToken}
+                    boundStaffName={account.boundStaffName}
+                    disabled={needsStaffBind || account.loading}
+                  />
+                  {/* 打刻は遷移先の勤怠画面で行う。ここではリンクだけ置く */}
+                  <LiffMenuCard
+                    href="/attendance"
+                    title="打刻ページ"
+                    description="出勤・退勤を打刻し、@pocket の勤怠アプリに記録します。"
+                    icon={<AttendanceGlyph />}
+                    iconTone="blue"
+                    disabled={needsStaffBind}
+                  />
+                </div>
               </HomeCompactSummaries>
             ) : account.boundStaffName ? (
               <p className="text-[15px] font-semibold text-slate-800 dark:text-white">
@@ -462,7 +473,7 @@ export default function HomeHubPage() {
                   社内共通
                 </p>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  勤怠管理・稼働終了報告・社内イベントを表示します。
+                  稼働終了報告・社内イベントを表示します。
                 </p>
               </div>
               <span
@@ -479,14 +490,6 @@ export default function HomeHubPage() {
                 id="internal-common-menu"
                 className="flex flex-col gap-2 pl-2"
               >
-                <LiffMenuCard
-                  href="/attendance"
-                  title="勤怠管理"
-                  description="出勤・退勤を打刻し、@pocket の勤怠アプリに記録します。"
-                  icon={<AttendanceGlyph />}
-                  iconTone="blue"
-                  disabled={needsStaffBind}
-                />
                 <LiffMenuCard
                   href="/work-end-report"
                   title="稼働終了報告"
