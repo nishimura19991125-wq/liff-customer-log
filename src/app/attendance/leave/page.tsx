@@ -22,8 +22,8 @@ import {
   buildLeaveWeeks,
   formatLeaveDayLabel,
   isLeaveDaySelectable,
-  LEAVE_MAX_DAYS_PER_WEEK,
   leaveRegisterRequestBody,
+  leaveWeekRemainingMessage,
   leaveWeekUsage,
   nextLeaveDeadline,
   summarizeLeaveRegisterResult,
@@ -319,11 +319,7 @@ export default function LeaveRegistrationPage() {
                       : "text-slate-500 dark:text-slate-400"
                   }`}
                 >
-                  この週は{LEAVE_MAX_DAYS_PER_WEEK}日まで（登録済みを含めて {weekUsage.used}/
-                  {LEAVE_MAX_DAYS_PER_WEEK}日）
-                  {weekUsage.full
-                    ? "。上限に達しました。ほかの日にするときは、選んだ日を外してください。"
-                    : ""}
+                  {leaveWeekRemainingMessage(weekUsage)}
                 </p>
 
                 {/* その週の7日 */}

@@ -12,15 +12,12 @@ import {
   buildAttendanceCellStates,
   canFlagMissingDays,
 } from "@/lib/attendance-calendar-cell-state";
+import {
+  ATTENDANCE_WEEKDAY_LABELS,
+  attendanceWeekdayTone,
+  buildAttendanceMonthCells,
+} from "@/lib/attendance-month-grid";
 import { LIFF_SWR_ATTENDANCE_OPTIONS } from "@/lib/liff-swr";
-
-const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"] as const;
-
-type CalendarCell = {
-  day: number;
-  dateKey: string;
-  inMonth: boolean;
-};
 
 type MonthCalendarApiResponse = {
   configured?: boolean;
@@ -37,10 +34,6 @@ type MonthCalendarApiResponse = {
   error?: string;
 };
 
-function pad2(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
 function formatMonthTitle(year: number, month: number): string {
   return `${year}年${month}月`;
 }
@@ -48,45 +41,6 @@ function formatMonthTitle(year: number, month: number): string {
 function formatDateLabel(dateKey: string): string {
   const [y, m, d] = dateKey.split("-");
   return `${y}年${Number(m)}月${Number(d)}日`;
-}
-
-function buildMonthCells(year: number, month: number): CalendarCell[] {
-  const first = new Date(year, month - 1, 1);
-  const startOffset = first.getDay();
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const prevMonthDays = new Date(year, month - 1, 0).getDate();
-  const cells: CalendarCell[] = [];
-
-  for (let i = 0; i < 42; i++) {
-    const dayIndex = i - startOffset + 1;
-    if (dayIndex < 1) {
-      const day = prevMonthDays + dayIndex;
-      const prevMonth = month === 1 ? 12 : month - 1;
-      const prevYear = month === 1 ? year - 1 : year;
-      cells.push({
-        day,
-        dateKey: `${prevYear}-${pad2(prevMonth)}-${pad2(day)}`,
-        inMonth: false,
-      });
-    } else if (dayIndex > daysInMonth) {
-      const day = dayIndex - daysInMonth;
-      const nextMonth = month === 12 ? 1 : month + 1;
-      const nextYear = month === 12 ? year + 1 : year;
-      cells.push({
-        day,
-        dateKey: `${nextYear}-${pad2(nextMonth)}-${pad2(day)}`,
-        inMonth: false,
-      });
-    } else {
-      cells.push({
-        day: dayIndex,
-        dateKey: `${year}-${pad2(month)}-${pad2(dayIndex)}`,
-        inMonth: true,
-      });
-    }
-  }
-
-  return cells;
 }
 
 function DayDetailSheet({
@@ -205,7 +159,8 @@ export function AttendanceMonthCalendar({
 
   const records = data?.records ?? [];
   const byDate = useMemo(() => attendanceRecordsByDate(records), [records]);
-  const cells = useMemo(() => buildMonthCells(year, month), [year, month]);
+  // 月曜始まり（休みの登録画面と揃える。理由は attendance-month-grid.ts）
+  const cells = useMemo(() => buildAttendanceMonthCells(year, month), [year, month]);
   // 休み・赤いマスの判定（当日は JST で決める）。条件は attendance-calendar-cell-state.ts
   const cellStates = useMemo(
     () => buildAttendanceCellStates(cells, data, year, month),
@@ -313,13 +268,13 @@ export function AttendanceMonthCalendar({
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
         <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-700">
-          {WEEKDAYS.map((label, i) => (
+          {ATTENDANCE_WEEKDAY_LABELS.map((label, i) => (
             <div
               key={label}
               className={`py-2 text-center text-[11px] font-bold ${
-                i === 0
+                attendanceWeekdayTone(i) === "sunday"
                   ? "text-rose-500"
-                  : i === 6
+                  : attendanceWeekdayTone(i) === "saturday"
                     ? "text-sky-600 dark:text-sky-400"
                     : "text-slate-500 dark:text-slate-400"
               }`}

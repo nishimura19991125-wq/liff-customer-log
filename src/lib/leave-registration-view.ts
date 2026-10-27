@@ -97,6 +97,22 @@ export function leaveWeekUsage(
 }
 
 /**
+ * 週の残り日数の案内。数え方は leaveWeekUsage のまま（登録済み＋選択中）。
+ * 上限に達したら「残り0日です」のあとに、外せば選び直せることを添える。
+ */
+export function leaveWeekRemainingMessage(usage: {
+  used: number;
+  limit: number;
+  full: boolean;
+}): string {
+  const rest = Math.max(0, usage.limit - usage.used);
+  const head = `この週に登録できる休みは残り${rest}日です`;
+  return usage.full
+    ? `${head}。ほかの日にするときは、選んだ日を外してください。`
+    : head;
+}
+
+/**
  * 選べる日か。
  *   - 表示している2週間の中で、まだ登録されていない
  *   - その週の使用数（登録済み＋選択中）が上限に達していない

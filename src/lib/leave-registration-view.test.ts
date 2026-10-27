@@ -10,6 +10,7 @@ import {
   isLeaveDaySelectable,
   LEAVE_MAX_DAYS_PER_WEEK,
   leaveWeekUsage,
+  leaveWeekRemainingMessage,
   leaveRegisterRequestBody,
   nextLeaveDeadline,
   summarizeLeaveRegisterResult,
@@ -350,10 +351,11 @@ describe("★ 週2日までの制限（画面）", () => {
     });
   });
 
-  it("★ 画面に「この週は2日まで」の表示がある", () => {
+  it("★ 画面に週の残り日数の案内がある", () => {
+    // 文言そのものは leaveWeekRemainingMessage のテストで固定する
     const src = read("src/app/attendance/leave/page.tsx");
     expect(src).toContain("leaveWeekUsage");
-    expect(src).toMatch(/この週は.*日まで/);
+    expect(src).toContain("leaveWeekRemainingMessage(weekUsage)");
   });
 });
 
@@ -383,5 +385,43 @@ describe("★ 導線の置き場所", () => {
     const src = read("src/app/page.tsx");
     expect(src).toContain('href="/attendance/leave"');
     expect(src).toContain('title="休みの登録"');
+  });
+});
+
+describe("★ 週の残り日数の文言", () => {
+  const week1 = buildLeaveWeeks("2026-11-02")[0]!.days;
+
+  it("★ 何も選んでいなければ「残り2日です」", () => {
+    const usage = leaveWeekUsage(week1, [], new Set());
+    expect(leaveWeekRemainingMessage(usage)).toBe(
+      "この週に登録できる休みは残り2日です",
+    );
+  });
+
+  it("★ 登録済み1日なら「残り1日です」（登録済みを含めて数える）", () => {
+    const usage = leaveWeekUsage(week1, [], new Set(["2026-11-05"]));
+    expect(leaveWeekRemainingMessage(usage)).toBe(
+      "この週に登録できる休みは残り1日です",
+    );
+  });
+
+  it("★ 選択中1日でも「残り1日です」（選択中も含めて数える）", () => {
+    const usage = leaveWeekUsage(week1, ["2026-11-02"], new Set());
+    expect(leaveWeekRemainingMessage(usage)).toBe(
+      "この週に登録できる休みは残り1日です",
+    );
+  });
+
+  it("★ 上限に達したら「残り0日です」のあとに、外す案内が続く", () => {
+    const usage = leaveWeekUsage(week1, ["2026-11-02"], new Set(["2026-11-05"]));
+    expect(leaveWeekRemainingMessage(usage)).toBe(
+      "この週に登録できる休みは残り0日です。ほかの日にするときは、選んだ日を外してください。",
+    );
+  });
+
+  it("★ 旧い文言（「この週は2日まで」「0/2日」）は画面に残っていない", () => {
+    const src = read("src/app/attendance/leave/page.tsx");
+    expect(src).not.toContain("登録済みを含めて");
+    expect(src).not.toMatch(/この週は\{/);
   });
 });
