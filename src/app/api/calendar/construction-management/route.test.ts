@@ -241,6 +241,7 @@ describe("成功", () => {
       scaffoldInstall: 1,
       scaffoldRemoval: 0,
       construction: 1,
+      zanko: 0,
     });
     expect(body.branches).toEqual(["支店A", "支店B"]);
     expect(body.selfWorkplace).toBe("支店B");

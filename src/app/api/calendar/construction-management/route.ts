@@ -34,6 +34,11 @@ import {
   lookupStaffAssignmentByStaffName,
   resolveStaffAssignmentLookupConfig,
 } from "@/lib/staff-workplace-lookup";
+import {
+  failedZankoCalendarSources,
+  readZankoCalendarSources,
+} from "@/lib/zanko-calendar-sources";
+import { buildZankoCaseEntries } from "@/lib/zanko-cards";
 
 export const dynamic = "force-dynamic";
 
@@ -130,6 +135,19 @@ export async function GET(request: Request) {
     // ── 足場: お客様情報の全件スナップショット ──
     const snapshot = await getCachedCustomerCrmSnapshot();
 
+    /**
+     * 残工の材料（186・契約情報入力。残工 段階2）。工事カレンダーと同じ部品で、
+     * 同じキャッシュから読む。契約情報は上で読んだ全件キャッシュを渡し、
+     * 二重に読まない。186 は名簿の取得と並べて読む。
+     * 失敗しても投げない（186 が読めなければ残工は出ない）。
+     */
+    const zankoSourcesPromise = readZankoCalendarSources({
+      customerSnapshot: Promise.resolve(snapshot),
+    }).catch((e) => {
+      console.error(`[${SCOPE}] 残工の材料を読めませんでした`, e);
+      return failedZankoCalendarSources();
+    });
+
     // ── 支店: 名簿 ──
     const rosterRows = await fetchStaffRosterRowsCached();
     // 名簿は 429 で古い名簿も無いとき空で返る。空のまま進めると全員が
@@ -163,6 +181,8 @@ export async function GET(request: Request) {
         null)
       : null;
 
+    const zankoSources = await zankoSourcesPromise;
+
     const correlationId = randomUUID().slice(0, 8);
     const payload = buildConstructionManagementPayload({
       year,
@@ -178,6 +198,13 @@ export async function GET(request: Request) {
       selfWorkplace,
       // 勤務場所を引くために上で取った氏名をそのまま使う（取得は増えない）
       selfStaffName: selfName,
+      // 工事カレンダーと同じ部品で表示月の残工を決める
+      zankoEntries: buildZankoCaseEntries(
+        zankoSources.zanko.index,
+        zankoSources.contract.byT,
+        year,
+        month,
+      ),
       correlationId,
     });
 
@@ -190,6 +217,9 @@ export async function GET(request: Request) {
         scaffoldInstall: payload.counts.scaffoldInstall,
         scaffoldRemoval: payload.counts.scaffoldRemoval,
         construction: payload.counts.construction,
+        zanko: payload.counts.zanko,
+        zankoSource: zankoSources.zanko.status,
+        contractSource: zankoSources.contract.status,
         duplicateConstructionTNumberGroups:
           payload.duplicateTNumberGroups.construction,
         duplicateCustomerTNumberGroups: payload.duplicateTNumberGroups.customer,

@@ -60,7 +60,7 @@ function payload(
     year: 2026,
     month: 11,
     events: [],
-    counts: { scaffoldInstall: 0, scaffoldRemoval: 0, construction: 0 },
+    counts: { scaffoldInstall: 0, scaffoldRemoval: 0, construction: 0, zanko: 0 },
     branches: ["支店A", "支店B"],
     selfWorkplace: null,
     duplicateTNumberGroups: { construction: 0, customer: 0 },
@@ -125,11 +125,12 @@ describe("集計カードの件数", () => {
       scaffoldInstall: 1,
       construction: 1,
       scaffoldRemoval: 0,
+      zanko: 0,
     });
   });
 
   it("全支店・全区分なら API の counts と同じになる", () => {
-    const api = { scaffoldInstall: 2, construction: 1, scaffoldRemoval: 1 };
+    const api = { scaffoldInstall: 2, construction: 1, scaffoldRemoval: 1, zanko: 0 };
     const filtered = filterConstructionEvents(EVENTS, ALL_BRANCHES, ALL_KINDS);
     expect(countConstructionEvents(filtered, ALL_KINDS)).toEqual(api);
   });
@@ -141,6 +142,7 @@ describe("集計カードの件数", () => {
       scaffoldInstall: null,
       construction: 1,
       scaffoldRemoval: null,
+      zanko: null,
     });
   });
 });
@@ -368,6 +370,7 @@ describe("自分の案件のみ", () => {
       scaffoldInstall: 1,
       construction: 1,
       scaffoldRemoval: 0,
+      zanko: 0,
     });
 
     const onlyInstall = new Set<ConstructionManagementEventKind>(["scaffoldInstall"]);
@@ -376,6 +379,7 @@ describe("自分の案件のみ", () => {
       scaffoldInstall: 1,
       construction: null,
       scaffoldRemoval: null,
+      zanko: null,
     });
   });
 

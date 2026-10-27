@@ -19,8 +19,6 @@ const fids: ConstructionFieldIds = {
   manufacturer: "",
   panelCapacity: "",
   batteryCapacity: "",
-  inputStatus: "",
-  zankoDay: "",
   constructionHandler: "",
 };
 

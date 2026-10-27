@@ -237,3 +237,48 @@ describe("月データのキャッシュ", () => {
     expect(base).toContain("ci-1");
   });
 });
+
+describe("【残工】カード（残工 段階2）", () => {
+  async function zankoSources(ok: boolean) {
+    const { buildZankoIndex } = await import("@/lib/zanko-index");
+    const { buildContractRecordMap } = await import("@/lib/contract-records");
+    const index = buildZankoIndex(
+      [{ recordId: 1, record: { "z-3": "T0001", "z-7": "2026-11-12" } }],
+      { tNumberFieldId: "z-3", dateFieldId: "z-7" },
+    );
+    return {
+      zanko: ok
+        ? { status: "ok", index }
+        : { status: "error", reason: "fetch_failed", index: emptyZankoIndex() },
+      contract: {
+        status: "ok",
+        byT: buildContractRecordMap([
+          { recordId: "5", tNumber: "T0001", customerName: "山田 太郎" },
+        ]),
+      },
+    };
+  }
+
+  it("★ 186 の残工日に【残工】カードが出る", async () => {
+    h.sources = await zankoSources(true);
+
+    const { status, body } = await get();
+    const day = (body.byDay as Record<string, Array<{ line1: string }>>)[
+      "2026-11-12"
+    ];
+
+    expect(status).toBe(200);
+    expect(day?.map((i) => i.line1)).toEqual(["【残工】山田 太郎様"]);
+  });
+
+  it("★ 186 が読めないときはカードが出ない（カレンダー全体は表示される）", async () => {
+    h.sources = await zankoSources(false);
+
+    const { status, body } = await get();
+    const byDay = body.byDay as Record<string, unknown[]>;
+
+    expect(status).toBe(200);
+    expect(byDay["2026-11-12"]).toBeUndefined();
+    expect(byDay["2026-11-05"]).toHaveLength(1);
+  });
+});

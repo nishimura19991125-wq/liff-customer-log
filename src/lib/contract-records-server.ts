@@ -4,6 +4,7 @@ import { isPocketHttpRateLimitError } from "@/lib/atpocket";
 import {
   buildContractRecordMap,
   type ContractRecord,
+  type ContractSourceItem,
 } from "@/lib/contract-records";
 import { getCachedCustomerCrmSnapshot } from "@/lib/customer-crm-list";
 import { customerInfoConfigReady } from "@/lib/customer-info-config";
@@ -38,12 +39,19 @@ export type ContractReadResult =
       byT: Map<string, ContractRecord>;
     };
 
-export async function readContractRecords(): Promise<ContractReadResult> {
+/**
+ * customerSnapshot: 呼び出し側が既に全件キャッシュを読んでいれば、それを渡す
+ * （施工管理タブ。同じキャッシュをもう一度読みに行かない）。
+ * 省略時は getCachedCustomerCrmSnapshot を呼ぶ。
+ */
+export async function readContractRecords(
+  customerSnapshot?: Promise<{ items: readonly ContractSourceItem[] }>,
+): Promise<ContractReadResult> {
   if (!customerInfoConfigReady().ok) {
     return { status: "disabled", byT: new Map() };
   }
   try {
-    const snapshot = await getCachedCustomerCrmSnapshot();
+    const snapshot = await (customerSnapshot ?? getCachedCustomerCrmSnapshot());
     return { status: "ok", byT: buildContractRecordMap(snapshot.items) };
   } catch (e) {
     const rateLimited = isPocketHttpRateLimitError(e);

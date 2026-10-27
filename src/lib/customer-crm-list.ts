@@ -44,6 +44,7 @@ import {
 } from "@/lib/customer-info-form/resolve-fields";
 import { CUSTOMER_INFO_FORM_FIELDS } from "@/lib/customer-info-form/schema";
 import type { CrmContractInfo } from "@/lib/contract-records";
+import { resolveCustomerInfoConstructionHandlerFieldId } from "@/lib/customer-info-construction-handler";
 import {
   crmEffectiveDocumentMissing,
   crmEffectiveSubsidyTarget,
@@ -147,6 +148,11 @@ type CrmCandidate = CustomerCrmListItem & {
    * 5列が1つも解決できない環境では付けない（既存の行の形を変えない）。
    */
   contract?: CrmContractInfo;
+  /**
+   * 工事対応者（残工 段階2。【残工】カードの2行目に使う）。
+   * 列が見つかったときだけ付ける。内部用で CustomerCrmListItem には載せない。
+   */
+  constructionHandler?: string;
 };
 
 /** 足場の4列の値。日付は YYYY-MM-DD にそろえる（読めない形式はそのまま） */
@@ -266,6 +272,8 @@ type CrmFieldContext = {
   docFields: ReturnType<typeof resolveCrmDocumentFields>;
   /** 契約情報入力の5列（残工 段階1）。解決できなければ null */
   contractFieldIds: CrmContractFieldIds;
+  /** 工事対応者（残工 段階2）。解決できなければ null */
+  constructionHandlerFieldId: string | null;
   fieldsCsv: string;
 };
 
@@ -392,6 +400,10 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
   for (const id of Object.values(contractFieldIds)) {
     if (id) fieldIdSet.add(id);
   }
+  // 工事対応者（残工 段階2）。列が増えるだけで、ページ数も回数も変わらない
+  const constructionHandlerFieldId =
+    resolveCustomerInfoConstructionHandlerFieldId(appFields);
+  if (constructionHandlerFieldId) fieldIdSet.add(constructionHandlerFieldId);
 
   return {
     nameField,
@@ -409,6 +421,7 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
     customerStatusFieldId,
     docFields,
     contractFieldIds,
+    constructionHandlerFieldId,
     fieldsCsv: [...fieldIdSet].join(","),
   };
 }
@@ -580,6 +593,14 @@ async function fetchAllCustomerCrmCandidatesFromPocket(): Promise<CrmSnapshot> {
         scaffold: readCrmScaffoldInfo(recObj, ctx.scaffoldFieldIds),
         constructionDate: readCrmDateValue(recObj, ctx.constructionDateFieldId),
         ...(contract ? { contract } : {}),
+        ...(ctx.constructionHandlerFieldId
+          ? {
+              constructionHandler: readCustomerInfoFieldValue(
+                recObj,
+                ctx.constructionHandlerFieldId,
+              ),
+            }
+          : {}),
         sortKey: crmSortKeyFromRecord(recObj, recordId, ctx.sortFieldId),
         audience,
       });

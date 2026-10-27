@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { ZankoSourceStatus } from "@/lib/calendar-api-types";
+import type { ContractSourceItem } from "@/lib/contract-records";
 import {
   readContractRecords,
   type ContractReadResult,
@@ -37,10 +38,16 @@ export function failedZankoCalendarSources(): ZankoCalendarSources {
   };
 }
 
-export async function readZankoCalendarSources(): Promise<ZankoCalendarSources> {
+/**
+ * customerSnapshot: 呼び出し側が既に読んだお客様情報の全件キャッシュ（任意）。
+ * 施工管理タブはルートで読んでいるので、それを渡して二重に読まない。
+ */
+export async function readZankoCalendarSources(opts?: {
+  customerSnapshot?: Promise<{ items: readonly ContractSourceItem[] }>;
+}): Promise<ZankoCalendarSources> {
   const [zanko, contract] = await Promise.all([
     readZankoIndexCached(),
-    readContractRecords(),
+    readContractRecords(opts?.customerSnapshot),
   ]);
   return { zanko, contract };
 }

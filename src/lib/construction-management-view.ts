@@ -49,11 +49,12 @@ export function isMyConstructionEvent(
   );
 }
 
-/** 予定一覧・カレンダーのラベルの並び順（設置 → 施工 → 解体） */
+/** 予定一覧・カレンダーのラベルの並び順（設置 → 施工 → 解体 → 残工） */
 export const KIND_ORDER: readonly ConstructionManagementEventKind[] = [
   "scaffoldInstall",
   "construction",
   "scaffoldRemoval",
+  "zanko",
 ];
 
 /**
@@ -66,6 +67,8 @@ export const KIND_META: Record<
   scaffoldInstall: { label: "足場設置", shortLabel: "設置", color: "#2563EB" },
   scaffoldRemoval: { label: "足場解体", shortLabel: "解体", color: "#EA580C" },
   construction: { label: "施工予定", shortLabel: "施工", color: "#16A34A" },
+  // 残工（残工 段階2）。既存の青・緑・橙と区別できる紫
+  zanko: { label: "残工", shortLabel: "残工", color: "#9333EA" },
 };
 
 export type KindSelection = ReadonlySet<ConstructionManagementEventKind>;
@@ -149,6 +152,7 @@ export function countConstructionEvents(
     scaffoldInstall: kinds.has("scaffoldInstall") ? 0 : null,
     scaffoldRemoval: kinds.has("scaffoldRemoval") ? 0 : null,
     construction: kinds.has("construction") ? 0 : null,
+    zanko: kinds.has("zanko") ? 0 : null,
   };
   for (const e of filtered) {
     const n = counts[e.kind];

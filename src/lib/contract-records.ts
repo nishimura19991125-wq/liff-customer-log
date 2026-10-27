@@ -24,19 +24,52 @@ export type CrmContractInfo = {
   city: string;
 };
 
-export type ContractRecord = CrmContractInfo & {
-  recordId: string;
-  /** お客様情報に入っている T番号（そろえる前の値） */
-  tNumber: string;
-  customerName: string;
+/**
+ * 残工カードの2行目・色・件数に使う、お客様情報の列（残工 段階2）。
+ * 全件キャッシュの行には必ずある（工事対応者は列が見つかったときだけ）。
+ * 省略可能にしているのは、段階1のテスト用データ（この項目を持たない）の
+ * 形を変えずに済ませるため。読む側は undefined を空として扱うこと。
+ */
+type ContractCardExtras = {
+  /** 工事対応者 */
+  constructionHandler?: string;
+  /** 施工業者 */
+  contractorName?: string;
+  /** 住宅ステータス（生の値） */
+  housingStatus?: string;
+  /** 顧客ステータスがキャンセル */
+  isCancelled?: boolean;
 };
 
-export type ContractSourceItem = {
+export type ContractRecord = CrmContractInfo &
+  ContractCardExtras & {
+    recordId: string;
+    /** お客様情報に入っている T番号（そろえる前の値） */
+    tNumber: string;
+    customerName: string;
+  };
+
+export type ContractSourceItem = ContractCardExtras & {
   recordId: string;
   tNumber: string;
   customerName: string;
   contract?: CrmContractInfo;
 };
+
+const EXTRA_KEYS = [
+  "constructionHandler",
+  "contractorName",
+  "housingStatus",
+  "isCancelled",
+] as const;
+
+function pickExtras(item: ContractSourceItem): ContractCardExtras {
+  const out: ContractCardExtras = {};
+  for (const k of EXTRA_KEYS) {
+    if (item[k] !== undefined) (out as Record<string, unknown>)[k] = item[k];
+  }
+  return out;
+}
 
 const EMPTY_CONTRACT: CrmContractInfo = {
   manufacturer: "",
@@ -71,6 +104,7 @@ export function buildContractRecordMap(
       customerName: item.customerName,
       ...EMPTY_CONTRACT,
       ...(item.contract ?? {}),
+      ...pickExtras(item),
     });
   }
   return byT;

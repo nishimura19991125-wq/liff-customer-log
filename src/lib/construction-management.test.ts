@@ -35,8 +35,6 @@ const FIDS: ConstructionFieldIds = {
   manufacturer: "",
   panelCapacity: "",
   batteryCapacity: "",
-  inputStatus: "",
-  zankoDay: "",
   constructionHandler: "",
 };
 
@@ -152,6 +150,7 @@ describe("3種類の予定", () => {
       scaffoldInstall: 0,
       scaffoldRemoval: 0,
       construction: 0,
+      zanko: 0,
     });
   });
 
@@ -428,6 +427,7 @@ describe("件数", () => {
       scaffoldInstall: 2,
       scaffoldRemoval: 1,
       construction: 1,
+      zanko: 0,
     });
   });
 });
@@ -520,6 +520,7 @@ describe("空き枠（お客様名が空の工事レコード）", () => {
       scaffoldInstall: 1,
       scaffoldRemoval: 0,
       construction: 1,
+      zanko: 0,
     });
   });
 
@@ -696,6 +697,7 @@ describe("表示する支店を環境変数で絞る", () => {
       scaffoldInstall: 2,
       scaffoldRemoval: 1,
       construction: 0,
+      zanko: 0,
     });
   });
 });

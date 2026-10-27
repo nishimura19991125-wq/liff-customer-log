@@ -13,6 +13,7 @@ import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { normalizeDateForInput } from "@/lib/customer-info-form/resolve-fields";
 import { coerceCustomerInfoDisplayString } from "@/lib/customer-info-record";
 import { normalizeDateTimeForPocketField } from "@/lib/jst-hm";
+import type { ZankoCaseEntry } from "@/lib/zanko-cards";
 
 /**
  * 施工管理タブ（足場設置日・足場解体日・施工予定日を1つの月間カレンダーで見る）
@@ -28,7 +29,9 @@ export const CONSTRUCTION_MANAGEMENT_OTHER_BRANCH = "その他";
 export type ConstructionManagementEventKind =
   | "scaffoldInstall"
   | "scaffoldRemoval"
-  | "construction";
+  | "construction"
+  /** 残工（残工案件アプリ 186 の残工日。残工 段階2） */
+  | "zanko";
 
 export type ConstructionManagementEvent = {
   /** 画面のキー用。区分＋レコードID（@pocket へのリンクには使わない） */
@@ -47,9 +50,12 @@ export type ConstructionManagementEvent = {
   branches: string[];
   scaffoldContractor: string;
   scaffoldRequest: string;
-  /** 施工業者（施工予定のみ。足場の予定では空） */
+  /**
+   * 施工業者（施工予定・残工のみ。足場の予定では空）。
+   * 施工予定は工事レコードの値、残工は契約情報入力（お客様情報）の値。
+   */
   constructionContractor: string;
-  /** 施工予定のみ: お客様情報に同じ T番号 のレコードが見つかったか */
+  /** 施工予定・残工: お客様情報に同じ T番号 のレコードが見つかったか */
   customerMatched: boolean;
   /** 同じ T番号 の工事レコードが、この月の材料に2件以上ある */
   duplicateConstructionTNumber: boolean;
@@ -142,6 +148,12 @@ export type ConstructionManagementInput = {
   selfWorkplace: string | null;
   /** ログイン中の人の氏名（名簿の表記のまま）。省略時は null */
   selfStaffName?: string | null;
+  /**
+   * 表示月の【残工】（残工 段階2。zanko-cards の buildZankoCaseEntries）。
+   * 工事カレンダーと同じ部品で作るので、両タブで同じ残工が出る。
+   * 省略・空なら残工は出ない（186 が読めないときも空で渡される）。
+   */
+  zankoEntries?: readonly ZankoCaseEntry[];
   correlationId: string;
 };
 
@@ -448,10 +460,41 @@ export function buildConstructionManagementPayload(
     });
   }
 
+  // ── 残工（残工案件アプリ 186 の残工日。中身は契約情報入力から） ──
+  const customerByRecordId = new Map(
+    input.customers.map((c) => [c.recordId, c] as const),
+  );
+  for (const z of input.zankoEntries ?? []) {
+    // 契約情報入力の1件（全件キャッシュの同じ行）。キャンセルは部品側で除いてある
+    const c = z.contract
+      ? customerByRecordId.get(z.contract.recordId)
+      : undefined;
+    events.push({
+      id: `zanko:${z.tKey}:${z.dayKey}`,
+      kind: "zanko",
+      dayKey: z.dayKey,
+      customerName: z.contract?.customerName ?? "",
+      tNumber: z.contract?.tNumber ?? z.tKey,
+      branches: c
+        ? branchesOfCustomer(c)
+        : [CONSTRUCTION_MANAGEMENT_OTHER_BRANCH],
+      scaffoldContractor: c?.scaffold?.contractor ?? "",
+      scaffoldRequest: c?.scaffold?.request ?? "",
+      constructionContractor: z.contract?.contractorName ?? "",
+      customerMatched: Boolean(z.contract),
+      duplicateConstructionTNumber: false,
+      duplicateCustomerTNumber: duplicateCustomerTs.has(z.tKey),
+      dates: datesOfCustomer(c, z.tKey),
+      apStaffNames: c ? staffDisplayNames([c], input.apFieldId) : [],
+      clStaffNames: c ? staffDisplayNames([c], input.clFieldId) : [],
+    });
+  }
+
   const kindOrder: Record<ConstructionManagementEventKind, number> = {
     scaffoldInstall: 0,
     construction: 1,
     scaffoldRemoval: 2,
+    zanko: 3,
   };
   events.sort(
     (a, b) =>
@@ -464,6 +507,7 @@ export function buildConstructionManagementPayload(
     scaffoldInstall: 0,
     scaffoldRemoval: 0,
     construction: 0,
+    zanko: 0,
   };
   for (const e of events) counts[e.kind] += 1;
 

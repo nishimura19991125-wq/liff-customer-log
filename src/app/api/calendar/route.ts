@@ -43,6 +43,7 @@ import {
   readZankoCalendarSources,
   summarizeZankoSources,
 } from "@/lib/zanko-calendar-sources";
+import { buildZankoCaseEntries } from "@/lib/zanko-cards";
 import { isCalendarConstructionMoveEnabled } from "@/lib/calendar-construction-move-flag";
 
 export const dynamic = "force-dynamic";
@@ -151,7 +152,7 @@ export async function GET(request: Request) {
          *
          * 失敗しても投げない（それぞれ「無し」）。想定外に投げられても
          * 「失敗・無し」にして、カレンダー全体は表示する。
-         * 段階1では読むだけで、表示には使わない。
+         * 段階2から【残工】カードに使う（186 が読めなければカードは出ない）。
          */
         const sourcesPromise = readZankoCalendarSources().catch((e) => {
           console.error("[api/calendar] 残工の材料を読めませんでした", e);
@@ -210,6 +211,13 @@ export async function GET(request: Request) {
             extraHolidayKeys,
             includeSandwichNationalHoliday: includeSandwich,
             zankoSourceStatus: summarizeZankoSources(sources),
+            // 施工管理タブと同じ部品で表示月の残工を決める
+            zankoEntries: buildZankoCaseEntries(
+              sources.zanko.index,
+              sources.contract.byT,
+              year,
+              month,
+            ),
           },
         );
       },

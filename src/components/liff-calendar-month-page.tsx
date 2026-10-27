@@ -3018,7 +3018,12 @@ export function LiffCalendarMonthPage({
                                 {caseCardBody}
                               </div>
                             )}
-                              {handlerFromStaff ? (
+                              {/**
+                               * 【残工】カード（item.zanko）は工事登録アプリのレコードに
+                               * 紐づかないので、工事対応者の変更・工事日の変更・地図は
+                               * 出さない。お客様情報への導線（T番号 で動く）だけ出す
+                               */}
+                              {item.zanko ? null : handlerFromStaff ? (
                                 <CaseConstructionHandlerEditor
                                   item={item}
                                   idToken={idToken}
@@ -3038,7 +3043,8 @@ export function LiffCalendarMonthPage({
                                * true のときだけ出す（既定は出さない）。押せないボタンに
                                * するのではなく出さない。パネルのコードは残してある
                                */}
-                              {shouldShowConstructionMovePanel({
+                              {!item.zanko &&
+                              shouldShowConstructionMovePanel({
                                 enableEmptySlotFill: config.enableEmptySlotFill,
                                 constructionMoveEnabled: data?.constructionMoveEnabled,
                               }) ? (
@@ -3061,12 +3067,14 @@ export function LiffCalendarMonthPage({
                                   }
                                 />
                               ) : null}
-                              <div className="border-t border-slate-100 px-4 pb-4 pt-3">
-                                <MapNavigationButton
-                                  pinpointAddress={item.pinpointAddress}
-                                  normalAddress={item.normalAddress}
-                                />
-                              </div>
+                              {!item.zanko ? (
+                                <div className="border-t border-slate-100 px-4 pb-4 pt-3">
+                                  <MapNavigationButton
+                                    pinpointAddress={item.pinpointAddress}
+                                    normalAddress={item.normalAddress}
+                                  />
+                                </div>
+                              ) : null}
                               <CaseCustomerInfoLink
                                 item={item}
                                 config={config}

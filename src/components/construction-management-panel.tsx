@@ -230,7 +230,7 @@ export function ConstructionManagementPanel() {
       </label>
 
       {/* 予定区分フィルター */}
-      <div className="mt-3 grid grid-cols-3 gap-2" role="group" aria-label="予定区分">
+      <div className="mt-3 grid grid-cols-4 gap-2" role="group" aria-label="予定区分">
         {KIND_ORDER.map((k) => {
           const on = kinds.has(k);
           const meta = KIND_META[k];
@@ -259,7 +259,7 @@ export function ConstructionManagementPanel() {
         ⚠ AP と CL の支店が違う案件は両方の支店に計上される。
            支店ごとの件数を足しても全体の件数とは一致しない。
       */}
-      <div className="mt-3 grid grid-cols-3 gap-2">
+      <div className="mt-3 grid grid-cols-4 gap-2">
         {KIND_ORDER.map((k) => {
           const n = payload ? counts[k] : null;
           const off = !kinds.has(k);
@@ -548,7 +548,9 @@ function EventCard({
   event: ConstructionManagementEvent;
   onOpen: () => void;
 }) {
-  const isScaffold = event.kind !== "construction";
+  // 3行目: 足場の予定は足場業者、施工予定・残工は施工店
+  const isScaffold =
+    event.kind === "scaffoldInstall" || event.kind === "scaffoldRemoval";
   const company = isScaffold ? event.scaffoldContractor : event.constructionContractor;
   return (
     <button
@@ -589,6 +591,10 @@ function EventDetailSheet({
 
   const rows: [string, string][] = [
     ["支店", branchText(event)],
+    // 残工（残工 段階2）は残工日も出す。日付は残工案件アプリ（186）の値
+    ...(event.kind === "zanko"
+      ? ([["残工日", formatDetailDate(event.dayKey)]] as [string, string][])
+      : []),
     ["足場設置日", formatDetailDate(event.dates.scaffoldInstall)],
     ["施工予定日", formatDetailDate(event.dates.construction)],
     ["足場解体日", formatDetailDate(event.dates.scaffoldRemoval)],

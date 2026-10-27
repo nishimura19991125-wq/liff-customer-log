@@ -25,6 +25,7 @@ import {
   type MapAddressFieldIds,
 } from "@/lib/map-address-fields";
 import { pocketTableCellToPlainString } from "@/lib/staff-construction-availability";
+import type { ZankoCaseEntry } from "@/lib/zanko-cards";
 
 export type {
   CalendarApiPayload,
@@ -47,8 +48,11 @@ export type ConstructionFieldIds = {
   manufacturer: string;
   panelCapacity: string;
   batteryCapacity: string;
-  inputStatus: string;
-  zankoDay: string;
+  /**
+   * ⚠ 入力ステータス・残工日は持たない（残工 段階2）。
+   *    工事登録アプリでの残工の運用は廃止され、残工は残工案件アプリ（186）
+   *    から読む（zanko-records-cache / zanko-cards）。
+   */
   constructionHandler: string;
 };
 
@@ -66,8 +70,6 @@ type CalendarEventInternal = {
   contractorNameForColor: string;
   housingStatusKey: string;
   calendarSegments: Array<{ date: Date; label: string }> | null;
-  zankoCalendarSegment: { date: Date; label: string } | null;
-  inputStatusIsShinki: boolean;
   recordId: string | number | null;
   accessEditUrl: string;
   tNumberKey: string | null;
@@ -95,10 +97,13 @@ type CalendarMonthRow = {
   reportPostponed: boolean;
   chipSpecLine2: string;
   constructionHandlerName: string;
-  inputStatusIsShinki: boolean;
   pinpointAddress: string;
   normalAddress: string;
   attachments: CalendarAttachmentMeta[];
+  /** 残工案件アプリ（186）から作った【残工】カード（残工 段階2） */
+  zanko?: boolean;
+  /** 【残工】カードの1行目（市区郡付き）。zanko のときだけ使う */
+  zankoLine1?: string;
 };
 
 const HOUSING_STATUS_EXACT = [
@@ -158,8 +163,6 @@ const KW = {
   manufacturer: ["メーカー"],
   panelCapacity: ["パネル容量"],
   batteryCapacity: ["蓄電池容量", "蓄電池"],
-  inputStatus: ["入力ステータス"],
-  zankoDay: ["残工日"],
 };
 
 function pickFieldUniqueId(
@@ -348,12 +351,6 @@ export function resolveConstructionFieldIds(
       pickFieldUniqueIdByExactCaption(fields, "蓄電池容量") ||
       pickFieldUniqueIdByExactCaption(fields, "蓄電池") ||
       pickFieldUniqueId(fields, KW.batteryCapacity),
-    inputStatus:
-      pickFieldUniqueIdByExactCaption(fields, "入力ステータス") ||
-      pickFieldUniqueId(fields, KW.inputStatus),
-    zankoDay:
-      pickFieldUniqueIdByExactCaption(fields, "残工日") ||
-      pickFieldUniqueId(fields, KW.zankoDay),
     constructionHandler:
       pickFieldUniqueIdByExactCaption(fields, "工事対応者") ||
       pickFieldUniqueIdByExactCaption(fields, "工事登録者") ||
@@ -562,16 +559,16 @@ export function buildConstructionRecordsMonthOverlapQuery(
   const me = ymdKey(new Date(viewYear, month0 + 1, 0));
 
   const endId = fids.endDate?.trim();
-  const zankoId = fids.zankoDay?.trim();
 
-  const overlapCore = endId
+  /**
+   * ⚠ 以前は「残工日が月内」も条件に入れていた（工事登録アプリの残工日）。
+   *    残工は残工案件アプリ（186）から読むようになり、工事登録アプリの
+   *    残工日は使わないので外した（残工 段階2）。【残工】カードは工事
+   *    レコードに頼らず作るので、施工予定日が過去の月の案件も出る。
+   */
+  return endId
     ? `(${startId} <= "${me}" and (${endId} >= "${ms}" or ${endId} is empty))`
     : `(${startId} <= "${me}" and ${startId} >= "${ms}")`;
-
-  if (zankoId) {
-    return `(${overlapCore} or (${zankoId} >= "${ms}" and ${zankoId} <= "${me}"))`;
-  }
-  return overlapCore;
 }
 
 /**
@@ -593,7 +590,6 @@ export function buildConstructionRecordsFromTodayQuery(
 
   pushGte(fids.startDate);
   pushGte(fids.endDate);
-  pushGte(fids.zankoDay);
   pushGte(fids.shigumi);
   pushGte(fids.panelWork);
   pushGte(fids.electricWork);
@@ -750,6 +746,14 @@ function buildChipSpecLine2(
   const bStr = fids.batteryCapacity
     ? formatBatteryKwhFromRaw(recObj[fids.batteryCapacity])
     : "";
+  return composeChipSpecLine2(m, pStr, bStr);
+}
+
+/**
+ * 2行目の『メーカー』kW / kWh 部分。工事カードと【残工】カードで共用する。
+ * 蓄電池が2台なら bStr は「9.8kWh / 6.5kWh」（calendar_atpocket.js と同じ）。
+ */
+function composeChipSpecLine2(m: string, pStr: string, bStr: string): string {
   if (!m && !pStr && !bStr) return "";
   let out = m ? `『${m}』` : "";
   if (pStr && bStr) {
@@ -873,24 +877,6 @@ function recordToEvent(
     );
   }
 
-  let zankoCalendarSegment: { date: Date; label: string } | null = null;
-  if (
-    category === "list" &&
-    fids.inputStatus &&
-    fids.zankoDay &&
-    isInputStatusZanko(recObj[fids.inputStatus])
-  ) {
-    const zankoParsed = parseDate(recObj[fids.zankoDay]);
-    if (zankoParsed) {
-      zankoCalendarSegment = { date: startOfDay(zankoParsed), label: "残工日" };
-    }
-  }
-
-  let inputStatusIsShinki = false;
-  if (category === "list" && fids.inputStatus) {
-    inputStatusIsShinki = isInputStatusShinki(recObj[fids.inputStatus]);
-  }
-
   const { pinpointAddress, normalAddress } = readMapAddressesFromRecord(
     recObj,
     mapAddressIds,
@@ -910,8 +896,6 @@ function recordToEvent(
     contractorNameForColor: coForColor,
     housingStatusKey,
     calendarSegments,
-    zankoCalendarSegment,
-    inputStatusIsShinki,
     recordId: getRecordIdFromListItem(rec),
     accessEditUrl: getAccessEditUrlFromListItem(rec),
     tNumberKey,
@@ -937,14 +921,6 @@ function isReportContentExactMatch(raw: unknown, expected: string): boolean {
   return t === String(expected);
 }
 
-function isInputStatusZanko(raw: unknown): boolean {
-  return isReportContentExactMatch(raw, "残工");
-}
-
-function isInputStatusShinki(raw: unknown): boolean {
-  return isReportContentExactMatch(raw, "新規");
-}
-
 function expectedReportStatusLabel(segmentLabel: string): string {
   const s =
     segmentLabel != null && String(segmentLabel) !== ""
@@ -955,16 +931,6 @@ function expectedReportStatusLabel(segmentLabel: string): string {
   if (s === "電気工事日") return "電気工事完了";
   if (s === "アプリ設定日") return "アプリ設定完了";
   return "完工";
-}
-
-function evHasReportPostponed(ev: CalendarEventInternal): boolean {
-  if (!ev || ev.category !== "list") return false;
-  const list = ev._reportContentRaws;
-  if (!list?.length) return false;
-  for (const z of list) {
-    if (isReportContentExactMatch(z, "残工")) return true;
-  }
-  return false;
 }
 
 function rowMatchesReportKanko(
@@ -1067,6 +1033,7 @@ function displayNameLine1OnChip(row: CalendarMonthRow): string {
 function displayNameLine1OnChipWithReport(row: CalendarMonthRow): string {
   const base = displayNameLine1OnChip(row);
   if (!row || row.category === "empty") return base;
+  if (row.zanko) return row.zankoLine1 ?? "【残工】";
   const seg = row.segmentLabel != null ? String(row.segmentLabel) : "";
   if (seg === "残工日") return base;
   const hk = row.housingStatusKey;
@@ -1112,12 +1079,6 @@ function eventsForDisplayMonth(
 ): CalendarMonthRow[] {
   const monthStart = new Date(viewYear, viewMonth0, 1, 0, 0, 0, 0);
   const monthEndEx = new Date(viewYear, viewMonth0 + 1, 1, 0, 0, 0, 0);
-  function dayInViewMonth(d: Date): boolean {
-    const d0 = startOfDay(d);
-    return (
-      d0.getTime() >= monthStart.getTime() && d0.getTime() < monthEndEx.getTime()
-    );
-  }
 
   const out: CalendarMonthRow[] = [];
 
@@ -1141,10 +1102,10 @@ function eventsForDisplayMonth(
           contractorNameForColor: ev.contractorNameForColor,
           housingStatusKey: ev.housingStatusKey,
           reportKankoComplete: rowMatchesReportKanko(ev, seg.label),
-          reportPostponed: evHasReportPostponed(ev),
+          // 【延期】は段階3で残工案件アプリ（186）から入れ直す。それまでは出さない
+          reportPostponed: false,
           chipSpecLine2: ev.chipSpecLine2 ?? "",
           constructionHandlerName: ev.constructionHandlerName ?? "",
-          inputStatusIsShinki: ev.inputStatusIsShinki === true,
           pinpointAddress: ev.pinpointAddress ?? "",
           normalAddress: ev.normalAddress ?? "",
           attachments: ev.attachments ?? [],
@@ -1183,42 +1144,14 @@ function eventsForDisplayMonth(
             contractorNameForColor: ev.contractorNameForColor,
             housingStatusKey: ev.housingStatusKey,
             reportKankoComplete: rowMatchesReportKanko(ev, ""),
-            reportPostponed: evHasReportPostponed(ev),
+            reportPostponed: false,
             chipSpecLine2: ev.chipSpecLine2 ?? "",
             constructionHandlerName: ev.constructionHandlerName ?? "",
-            inputStatusIsShinki: ev.inputStatusIsShinki === true,
             pinpointAddress: ev.pinpointAddress ?? "",
             normalAddress: ev.normalAddress ?? "",
             attachments: ev.attachments ?? [],
           });
         }
-      }
-    }
-
-    if (ev.category === "list" && ev.zankoCalendarSegment) {
-      const zx = ev.zankoCalendarSegment;
-      const dZ = startOfDay(zx.date);
-      if (dayInViewMonth(dZ)) {
-        out.push({
-          dayKey: ymdKey(dZ),
-          title: ev.title,
-          segmentLabel: zx.label,
-          memo: ev.memo,
-          recordId: ev.recordId,
-          accessEditUrl: ev.accessEditUrl,
-          category: ev.category,
-          tNumberKey: ev.tNumberKey,
-          contractorNameForColor: ev.contractorNameForColor,
-          housingStatusKey: ev.housingStatusKey,
-          reportKankoComplete: rowMatchesReportKanko(ev, zx.label),
-          reportPostponed: false,
-          chipSpecLine2: ev.chipSpecLine2 ?? "",
-          constructionHandlerName: ev.constructionHandlerName ?? "",
-          inputStatusIsShinki: ev.inputStatusIsShinki === true,
-          pinpointAddress: ev.pinpointAddress ?? "",
-          normalAddress: ev.normalAddress ?? "",
-          attachments: ev.attachments ?? [],
-        });
       }
     }
   }
@@ -1266,7 +1199,67 @@ function rowToApiItem(row: CalendarMonthRow): CalendarMonthApiItem {
     normalAddress: row.normalAddress ?? "",
     attachments: row.attachments?.length ? row.attachments : undefined,
     constructionHandlerName: row.constructionHandlerName?.trim() || undefined,
+    ...(row.zanko ? { zanko: true } : {}),
   };
+}
+
+/**
+ * 【残工】カード1枚（残工 段階2）。
+ *
+ * 中身は契約情報入力（お客様情報）から T番号 で引いた値だけを使う。
+ * 工事登録アプリの値・186 の値は使わない。該当が無ければ空欄。
+ *
+ *   1行目: 【残工】お客様名様（市区郡）
+ *   2行目: 工事カードと同じ組み立て（displayNameLine2OnChip）
+ *          工事対応: …｜『メーカー』 kW / kWh｜施工: …
+ *   色・業者フィルター: 施工業者（contractorKey）
+ *
+ * 工事登録アプリのレコードに紐づけないので recordId・@pocket の URL・住所は
+ * 持たない。お客様情報への導線は T番号 で動く。
+ */
+function zankoEntryToApiItem(entry: ZankoCaseEntry): CalendarMonthApiItem {
+  const c = entry.contract;
+  const name = c?.customerName?.trim() ?? "";
+  const city = c?.city?.trim() ?? "";
+  const nameLine = name ? (name.endsWith("様") ? name : `${name}様`) : "";
+  const battery = [c?.batteryCapacity1, c?.batteryCapacity2]
+    .map((v) => formatBatteryKwhFromRaw(v ?? ""))
+    .filter(Boolean)
+    .join(" / ");
+  const housingRaw = c?.housingStatus?.trim() ?? "";
+  const housingStatusKey = housingRaw
+    ? resolveHousingStatusKey(housingRaw)
+    : HOUSING_STATUS_OTHER;
+
+  const row: CalendarMonthRow = {
+    dayKey: entry.dayKey,
+    title: name,
+    segmentLabel: "残工日",
+    memo: "",
+    recordId: null,
+    accessEditUrl: "",
+    category: "list",
+    tNumberKey: c?.tNumber?.trim() || entry.tKey,
+    contractorNameForColor: c?.contractorName?.trim() ?? "",
+    housingStatusKey,
+    // ✅（完工報告による解除）は段階4
+    reportKankoComplete: false,
+    reportPostponed: false,
+    chipSpecLine2: composeChipSpecLine2(
+      manufacturerFullFromRaw(c?.manufacturer ?? ""),
+      formatPanelCapKwFromRaw(c?.panelCapacity ?? ""),
+      battery,
+    ),
+    constructionHandlerName: c?.constructionHandler?.trim() ?? "",
+    pinpointAddress: "",
+    normalAddress: "",
+    attachments: [],
+    zanko: true,
+    zankoLine1: `【残工】${nameLine}${city ? `（${city}）` : ""}`,
+  };
+  const item = rowToApiItem(row);
+  // 住宅ステータスが引けなければバッジも空欄（「その他」にしない）
+  return housingRaw ? item : { ...item, housingShort: "" };
 }
 
 export type BuildCalendarPayloadOptions = {
@@ -1285,6 +1278,11 @@ export type BuildCalendarPayloadOptions = {
   startDateFieldCandidates?: string[];
   /** 残工の材料の読み取り状態（残工 段階1）。そのまま月データに載せる */
   zankoSourceStatus?: ZankoSourceStatus;
+  /**
+   * 表示月の【残工】（残工 段階2。zanko-cards の buildZankoCaseEntries）。
+   * 無ければ【残工】カードは出ない。
+   */
+  zankoEntries?: readonly ZankoCaseEntry[];
 };
 
 export function buildCalendarPayload(
@@ -1341,6 +1339,10 @@ export function buildCalendarPayload(
   const byDay: Record<string, CalendarMonthApiItem[]> = {};
   for (const [k, list] of Object.entries(grouped)) {
     byDay[k] = list.map(rowToApiItem);
+  }
+  // 【残工】カードはその日の工事カードの後ろに並べる
+  for (const entry of opts?.zankoEntries ?? []) {
+    (byDay[entry.dayKey] ??= []).push(zankoEntryToApiItem(entry));
   }
 
   return {
@@ -1403,10 +1405,6 @@ function upcomingWorkDaysFromEvent(
     ) {
       push(d, "");
     }
-  }
-
-  if (ev.zankoCalendarSegment) {
-    push(ev.zankoCalendarSegment.date, ev.zankoCalendarSegment.label);
   }
 
   out.sort((a, b) => a.dayKey.localeCompare(b.dayKey));
