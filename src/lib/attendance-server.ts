@@ -56,6 +56,8 @@ import {
   normalizeDateTimeForPocketField,
 } from "@/lib/jst-hm";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
+import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
+import { fetchLeaveMonth } from "@/lib/leave-server";
 import {
   extractDisplayHHmm,
   type AttendanceDayRecord,
@@ -1278,7 +1280,44 @@ export type AttendanceMonthCalendarResponse = {
   needsStaffBind?: boolean;
   configError?: string;
   rateLimited?: boolean;
+  /**
+   * records の取得が完全だったか。false のとき records が空でも
+   * 「打刻が無い」とは限らない（取得に失敗した・本人が分からない）。
+   */
+  recordsComplete: boolean;
+  /**
+   * 本人のその月の休み（JST の YYYY-MM-DD・重複なし・昇順）。
+   * 日付だけを返す。種別や他人の分は載せない。
+   * leavesStatus が error のときは null（空の配列で「休みが無い」と見せない）。
+   * 本人が分からないとき（紐付けなし・勤怠が未設定）は leaves も leavesStatus も無い。
+   */
+  leaves?: string[] | null;
+  /** 休暇アプリの取得結果。disabled は休暇アプリが未設定 */
+  leavesStatus?: "disabled" | "ok" | "error";
 };
+
+/**
+ * 本人の休みだけを日付で返す。
+ *
+ * fetchLeaveMonth は月ごとに**全員分**を1回だけ読んで共有している
+ * （キーは年月だけ）。ここで本人の分に絞るので、利用者が増えても
+ * @pocket への問い合わせは増えない。
+ */
+async function leavesForStaff(
+  staffName: string,
+  year: number,
+  month: number,
+): Promise<Pick<AttendanceMonthCalendarResponse, "leaves" | "leavesStatus">> {
+  const res = await fetchLeaveMonth(year, month);
+  if (res.status === "disabled") return { leaves: [], leavesStatus: "disabled" };
+  if (res.status === "error") return { leaves: null, leavesStatus: "error" };
+  const me = normApClStaffName(staffName);
+  const dates = new Set<string>();
+  for (const e of res.entries) {
+    if (me && normApClStaffName(e.staffName) === me) dates.add(e.date);
+  }
+  return { leaves: [...dates].sort(), leavesStatus: "ok" };
+}
 
 function pad2Month(n: number): string {
   return String(n).padStart(2, "0");
@@ -1361,7 +1400,7 @@ async function fetchMonthAttendanceRows(
   staffName: string,
   start: string,
   end: string,
-): Promise<AtPocketRecordRow[]> {
+): Promise<{ rows: AtPocketRecordRow[]; complete: boolean }> {
   const csv = attendanceFieldsCsv(ids);
   const readAuth = { apiKey: apiKeyForAttendancePocket() };
   const readAuth1 = { apiKey: apiKeyForAttendancePocket1() };
@@ -1382,8 +1421,21 @@ async function fetchMonthAttendanceRows(
 
   const merged = new Map<string, AtPocketRecordRow>();
   let anon = 0;
+  /**
+   * 取得が完全だったか。
+   *   - 行が取れた: 取れた問い合わせは成功している → 完全
+   *   - 行が0件: **最後の問い合わせ（本人だけ・全期間）が成功したときだけ**完全。
+   *     月で絞った問い合わせが0件でも、絞り込みが効かなかっただけかもしれず、
+   *     そのために本人だけの問い合わせへ落としている。それが失敗したら
+   *     「打刻が無い」とは言えない
+   *   - ページの上限に届いた: 取り切れていない → 不完全
+   */
+  let lastQuerySucceeded = false;
+  let truncated = false;
+  const maxPages = 5;
 
   for (const query of queries) {
+    lastQuerySucceeded = false;
     try {
       const rows = await fetchAllRecordsPages(
         appId,
@@ -1392,11 +1444,13 @@ async function fetchMonthAttendanceRows(
         query,
         { operation: "attendance-month-calendar" },
         {
-          maxPages: 5,
+          maxPages,
           maxRetries: 0,
           authKeys: [readAuth, readAuth1],
         },
       );
+      lastQuerySucceeded = true;
+      if (rows.length >= maxPages * 1000) truncated = true;
       for (const row of rows) {
         const key = atPocketRecordIdFromRow(row) ?? `__anon_${anon++}`;
         if (!merged.has(key)) merged.set(key, row);
@@ -1408,14 +1462,16 @@ async function fetchMonthAttendanceRows(
         blockAttendanceFetchAfterRateLimit();
         throw new Error("ATTENDANCE_RATE_LIMIT");
       }
+      // 問い合わせ文には氏名が入るので出さない。どちらの問い合わせかだけ残す
       console.warn("[attendance-month] query failed", {
-        query,
+        query: query === staffQ ? "staff" : "staff+month",
         error: String(e),
       });
     }
   }
 
-  return [...merged.values()];
+  const complete = !truncated && (merged.size > 0 || lastQuerySucceeded);
+  return { rows: [...merged.values()], complete };
 }
 
 /** ログインユーザー本人の月間打刻（出勤・退勤）を返す */
@@ -1431,6 +1487,7 @@ export async function getAttendanceMonthCalendarForLineUser(
       year,
       month,
       records: [],
+      recordsComplete: false,
       configError: loaded.error,
       rateLimited: loaded.rateLimited,
     };
@@ -1443,15 +1500,19 @@ export async function getAttendanceMonthCalendarForLineUser(
       year,
       month,
       records: [],
+      recordsComplete: false,
       needsStaffBind: true,
       configError: "担当者の紐付けが必要です",
     };
   }
 
   const { start, end } = monthDateBounds(year, month);
+  // 休みは打刻と別のアプリ。待ち時間を足さないよう並べて取る。
+  // leavesForStaff は失敗を leavesStatus: "error" で返し、例外は投げない
+  const leavesPromise = leavesForStaff(staffName, year, month);
 
   try {
-    const rows = await fetchMonthAttendanceRows(
+    const { rows, complete } = await fetchMonthAttendanceRows(
       loaded.appId,
       loaded.ids,
       staffName,
@@ -1465,12 +1526,25 @@ export async function getAttendanceMonthCalendarForLineUser(
       start,
       end,
     );
+    const leaves = await leavesPromise;
+    // 件数と真偽値だけ。氏名は出さない
+    console.info(
+      "[attendance-month]",
+      JSON.stringify({
+        records: records.length,
+        recordsComplete: complete,
+        leaves: leaves.leaves?.length ?? null,
+        leavesStatus: leaves.leavesStatus,
+      }),
+    );
     return {
       configured: true,
       year,
       month,
       staffName,
       records,
+      recordsComplete: complete,
+      ...leaves,
     };
   } catch (e) {
     if (e instanceof Error && e.message === "ATTENDANCE_RATE_LIMIT") {
@@ -1480,8 +1554,10 @@ export async function getAttendanceMonthCalendarForLineUser(
         month,
         staffName,
         records: [],
+        recordsComplete: false,
         rateLimited: true,
         configError: ATTENDANCE_RATE_LIMIT_MESSAGE,
+        ...(await leavesPromise),
       };
     }
     throw e;
