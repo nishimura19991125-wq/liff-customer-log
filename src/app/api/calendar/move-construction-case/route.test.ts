@@ -197,6 +197,7 @@ const { POST } = await import(
 );
 
 const ENV_KEYS = [
+  "CALENDAR_CONSTRUCTION_MOVE_ENABLED",
   "CALENDAR_APP_ID",
   "CALENDAR_MOVE_DELETE_SOURCE_RECORD",
   "CALENDAR_EMPTY_FILL_CUSTOMER_NAME_FIELD_ID",
@@ -233,6 +234,9 @@ const BASE_BODY = {
 
 beforeEach(() => {
   for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+  // 工事日の変更は既定で止まる（403）。ここでは移動そのものを見るので開けておく。
+  // 止めたときの挙動は calendar-construction-move-gate.test.ts で固定している
+  process.env.CALENDAR_CONSTRUCTION_MOVE_ENABLED = "true";
   process.env.CALENDAR_APP_ID = CAL_APP_ID;
   process.env.CALENDAR_EMPTY_FILL_CUSTOMER_NAME_FIELD_ID = NAME_ID;
   process.env.CALENDAR_EMPTY_FILL_CONSTRUCTION_HANDLER_FIELD_ID = HANDLER_ID;

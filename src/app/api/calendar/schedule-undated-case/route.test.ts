@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * タスクS-3: 「空き枠を使わずに登録する」経路。
@@ -123,7 +123,13 @@ const VALID = {
   viewMonth: 9,
 };
 
+let savedMoveEnabled: string | undefined;
+
 beforeEach(() => {
+  // 工事日の変更は既定で止まる（403）。ここでは登録の中身を見るので開けておく。
+  // 止めたときの挙動は calendar-construction-move-gate.test.ts で固定している
+  savedMoveEnabled = process.env.CALENDAR_CONSTRUCTION_MOVE_ENABLED;
+  process.env.CALENDAR_CONSTRUCTION_MOVE_ENABLED = "true";
   process.env.CALENDAR_APP_ID = "77";
   h.deleteCalls = [];
   h.writes = [];
@@ -136,6 +142,14 @@ beforeEach(() => {
     "field-4": "",
     "field-5": "既築案件",
   };
+});
+
+afterEach(() => {
+  if (savedMoveEnabled === undefined) {
+    delete process.env.CALENDAR_CONSTRUCTION_MOVE_ENABLED;
+  } else {
+    process.env.CALENDAR_CONSTRUCTION_MOVE_ENABLED = savedMoveEnabled;
+  }
 });
 
 describe("タスクS-3: 空き枠を使わずに施工予定日を登録する", () => {

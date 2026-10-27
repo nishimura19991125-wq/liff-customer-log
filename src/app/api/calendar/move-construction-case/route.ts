@@ -13,6 +13,7 @@ import {
   computeAuditChanges,
   formatDeletionContent,
 } from "@/lib/audit-log-changes";
+import { rejectWhenConstructionMoveDisabled } from "@/lib/calendar-construction-move-gate";
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
 import { calendarConstructionHandlerFieldIdFromEnv } from "@/lib/calendar-construction-handler-env";
 import { formatConstructionCreateRecordError } from "@/lib/calendar-construction-create-error";
@@ -172,6 +173,10 @@ function sleep(ms: number): Promise<void> {
 const SOURCE_RESET_RETRY_DELAYS_MS = [0, 400, 1200] as const;
 
 export async function POST(request: Request) {
+  // 工事日の変更を止めているときは、何も読まずに断る（既定は止める）
+  const disabled = rejectWhenConstructionMoveDisabled();
+  if (disabled) return disabled;
+
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
 

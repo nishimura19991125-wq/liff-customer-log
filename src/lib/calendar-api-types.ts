@@ -56,6 +56,11 @@ export type CalendarApiPayload = {
   emptyFillConstructionHandlerUsesStaffDirectory?: boolean;
   /** @deprecated emptyFillConstructionHandlerUsesStaffDirectory を参照してください */
   emptyFillConstructionRegistrantUsesStaffDirectory?: boolean;
+  /**
+   * 案件カードに「工事日を変更」を出してよいか（CALENDAR_CONSTRUCTION_MOVE_ENABLED）。
+   * キャッシュの外で毎回付ける。無いときは出さない。
+   */
+  constructionMoveEnabled?: boolean;
   /** 429 時に古いキャッシュを返したとき */
   rateLimited?: boolean;
   calendarStale?: boolean;

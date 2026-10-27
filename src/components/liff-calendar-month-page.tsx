@@ -25,6 +25,7 @@ import { CustomerNameSplitInput } from "@/components/customer-name-split-input";
 import { CalendarAssignUndatedCaseForm } from "@/components/calendar-assign-undated-case-form";
 import { CalendarMonthSkeleton } from "@/components/calendar-month-skeleton";
 import { CalendarMoveCasePanel } from "@/components/calendar-move-case-panel";
+import { shouldShowConstructionMovePanel } from "@/lib/calendar-construction-move-flag";
 import { dayKeyInMonth } from "@/lib/calendar-move-target-slots";
 import {
   ASSIGN_CUSTOMER_CASE_PATH,
@@ -3032,7 +3033,15 @@ export function LiffCalendarMonthPage({
                                   }
                                 />
                               ) : null}
-                              {config.enableEmptySlotFill ? (
+                              {/**
+                               * 「工事日を変更」は CALENDAR_CONSTRUCTION_MOVE_ENABLED が
+                               * true のときだけ出す（既定は出さない）。押せないボタンに
+                               * するのではなく出さない。パネルのコードは残してある
+                               */}
+                              {shouldShowConstructionMovePanel({
+                                enableEmptySlotFill: config.enableEmptySlotFill,
+                                constructionMoveEnabled: data?.constructionMoveEnabled,
+                              }) ? (
                                 <CalendarMoveCasePanel
                                   item={item}
                                   sourceDayKey={selectedDayKey}

@@ -9,6 +9,7 @@ import {
 import { writePocketRecordWithImportKey } from "@/lib/atpocket-write-with-import-key";
 import { recordAuditLog } from "@/lib/audit-log";
 import { computeAuditChanges } from "@/lib/audit-log-changes";
+import { rejectWhenConstructionMoveDisabled } from "@/lib/calendar-construction-move-gate";
 import { finalizeConstructionCalendarSave } from "@/lib/calendar-after-construction-save";
 import {
   buildConstructionFillPatch,
@@ -81,6 +82,10 @@ function coercePlainString(raw: unknown): string {
 }
 
 export async function POST(request: Request) {
+  // 工事日の変更を止めているときは、何も読まずに断る（既定は止める）
+  const disabled = rejectWhenConstructionMoveDisabled();
+  if (disabled) return disabled;
+
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
 

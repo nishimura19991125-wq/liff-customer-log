@@ -38,6 +38,7 @@ import {
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
 import { constructionHandlerStaffConfigReady } from "@/lib/staff-construction-handler-candidates";
+import { isCalendarConstructionMoveEnabled } from "@/lib/calendar-construction-move-flag";
 
 export const dynamic = "force-dynamic";
 
@@ -199,7 +200,14 @@ export async function GET(request: Request) {
           }
         : payload;
 
-    return NextResponse.json(withHandler);
+    /**
+     * 「工事日を変更」を出すかは、キャッシュの外で毎回付ける。
+     * 中で作ると、切り替えてもキャッシュの時間だけ古い値が残る
+     */
+    return NextResponse.json({
+      ...withHandler,
+      constructionMoveEnabled: isCalendarConstructionMoveEnabled(),
+    } satisfies CalendarApiPayload);
   } catch (e) {
     console.error("[api/calendar]", e);
     if (isPocketHttpRateLimitError(e)) {
