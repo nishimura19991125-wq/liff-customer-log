@@ -8,6 +8,10 @@ import {
   formatAttendanceTimeRange,
   type AttendanceDayRecord,
 } from "@/lib/attendance-calendar-types";
+import {
+  buildAttendanceCellStates,
+  canFlagMissingDays,
+} from "@/lib/attendance-calendar-cell-state";
 import { LIFF_SWR_ATTENDANCE_OPTIONS } from "@/lib/liff-swr";
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"] as const;
@@ -24,6 +28,9 @@ type MonthCalendarApiResponse = {
   month?: number;
   staffName?: string;
   records?: AttendanceDayRecord[];
+  recordsComplete?: boolean;
+  leaves?: string[] | null;
+  leavesStatus?: "disabled" | "ok" | "error";
   needsStaffBind?: boolean;
   configError?: string;
   rateLimited?: boolean;
@@ -85,10 +92,14 @@ function buildMonthCells(year: number, month: number): CalendarCell[] {
 function DayDetailSheet({
   dateKey,
   record,
+  isLeave,
+  isMissing,
   onClose,
 }: {
   dateKey: string;
   record: AttendanceDayRecord | undefined;
+  isLeave: boolean;
+  isMissing: boolean;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -124,6 +135,11 @@ function DayDetailSheet({
         >
           {formatDateLabel(dateKey)}
         </h3>
+        {isLeave ? (
+          <p className="mt-3 inline-flex items-center rounded-full bg-sky-100 px-2.5 py-1 text-[12px] font-semibold text-sky-800 dark:bg-sky-950/60 dark:text-sky-200">
+            休みの登録あり
+          </p>
+        ) : null}
         {hasAny ? (
           <dl className="mt-4 space-y-3">
             {checkIn ? (
@@ -148,8 +164,14 @@ function DayDetailSheet({
             ) : null}
           </dl>
         ) : (
-          <p className="mt-4 text-[14px] text-slate-500 dark:text-slate-400">
-            この日の打刻はありません
+          <p
+            className={`mt-4 text-[14px] ${
+              isMissing
+                ? "font-medium text-rose-700 dark:text-rose-300"
+                : "text-slate-500 dark:text-slate-400"
+            }`}
+          >
+            {isMissing ? "打刻・休みの登録がありません" : "この日の打刻はありません"}
           </p>
         )}
         <button
@@ -184,7 +206,17 @@ export function AttendanceMonthCalendar({
   const records = data?.records ?? [];
   const byDate = useMemo(() => attendanceRecordsByDate(records), [records]);
   const cells = useMemo(() => buildMonthCells(year, month), [year, month]);
+  // 休み・赤いマスの判定（当日は JST で決める）。条件は attendance-calendar-cell-state.ts
+  const cellStates = useMemo(
+    () => buildAttendanceCellStates(cells, data, year, month),
+    [cells, data, year, month],
+  );
+  const showLeaveLegend = data?.leavesStatus === "ok";
+  const showMissingLegend = canFlagMissingDays(data, year, month);
   const selectedRecord = selectedDateKey ? byDate[selectedDateKey] : undefined;
+  const selectedState = selectedDateKey
+    ? cellStates.get(selectedDateKey)
+    : undefined;
   const loading = isLoading && !data;
 
   function goPrevMonth() {
@@ -256,11 +288,23 @@ export function AttendanceMonthCalendar({
         </p>
       ) : null}
 
-      <div className="mb-2 flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
+      <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
         <span className="inline-flex items-center gap-1.5">
           <span className="size-2.5 rounded-sm bg-emerald-100 ring-1 ring-emerald-300 dark:bg-emerald-950/60 dark:ring-emerald-700" />
           打刻あり
         </span>
+        {showLeaveLegend ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2.5 rounded-sm bg-sky-50 ring-1 ring-sky-300 dark:bg-sky-950/50 dark:ring-sky-700" />
+            休み
+          </span>
+        ) : null}
+        {showMissingLegend ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2.5 rounded-sm bg-rose-50 ring-1 ring-rose-300 dark:bg-rose-950/40 dark:ring-rose-700" />
+            打刻・休みの登録なし
+          </span>
+        ) : null}
         <span className="inline-flex items-center gap-1.5">
           <span className="size-2.5 rounded-sm bg-slate-100 ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700" />
           なし
@@ -293,6 +337,11 @@ export function AttendanceMonthCalendar({
               record?.checkOut,
             );
             const hasPunch = Boolean(timeRange);
+            const state = cellStates.get(cell.dateKey) ?? {
+              hasPunch,
+              isLeave: false,
+              isMissing: false,
+            };
             const isSunday = new Date(`${cell.dateKey}T12:00:00`).getDay() === 0;
             const isSaturday =
               new Date(`${cell.dateKey}T12:00:00`).getDay() === 6;
@@ -301,21 +350,27 @@ export function AttendanceMonthCalendar({
               ? "bg-slate-50/60 dark:bg-slate-950/30"
               : hasPunch
                 ? "bg-emerald-50 ring-1 ring-inset ring-emerald-200/80 dark:bg-emerald-950/35 dark:ring-emerald-800/60"
-                : "bg-slate-50/70 dark:bg-slate-900/80";
+                : state.isLeave
+                  ? "bg-sky-50 ring-1 ring-inset ring-sky-200/80 dark:bg-sky-950/35 dark:ring-sky-800/60"
+                  : state.isMissing
+                    ? "bg-rose-50 ring-1 ring-inset ring-rose-200/80 dark:bg-rose-950/30 dark:ring-rose-800/60"
+                    : "bg-slate-50/70 dark:bg-slate-900/80";
 
             const dayColor = !cell.inMonth
               ? "text-slate-300 dark:text-slate-600"
-              : hasPunch
-                ? isSunday
-                  ? "text-rose-600 dark:text-rose-400"
-                  : isSaturday
-                    ? "text-sky-700 dark:text-sky-300"
-                    : "text-slate-900 dark:text-white"
-                : isSunday
-                  ? "text-rose-300 dark:text-rose-800"
-                  : isSaturday
-                    ? "text-sky-300 dark:text-sky-800"
-                    : "text-slate-400 dark:text-slate-600";
+              : state.isMissing
+                ? "text-rose-700 dark:text-rose-300"
+                : hasPunch || state.isLeave
+                  ? isSunday
+                    ? "text-rose-600 dark:text-rose-400"
+                    : isSaturday
+                      ? "text-sky-700 dark:text-sky-300"
+                      : "text-slate-900 dark:text-white"
+                  : isSunday
+                    ? "text-rose-300 dark:text-rose-800"
+                    : isSaturday
+                      ? "text-sky-300 dark:text-sky-800"
+                      : "text-slate-400 dark:text-slate-600";
 
             return (
               <button
@@ -349,6 +404,17 @@ export function AttendanceMonthCalendar({
                     </span>
                   </>
                 ) : null}
+
+                {state.isLeave ? (
+                  <span className="mt-1.5 inline-flex items-center rounded-full bg-sky-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                    休
+                  </span>
+                ) : null}
+
+                {state.isMissing ? (
+                  // 色だけに頼らない（読み上げでも分かるように）
+                  <span className="sr-only">打刻・休みの登録なし</span>
+                ) : null}
               </button>
             );
           })}
@@ -365,6 +431,8 @@ export function AttendanceMonthCalendar({
         <DayDetailSheet
           dateKey={selectedDateKey}
           record={selectedRecord}
+          isLeave={selectedState?.isLeave ?? false}
+          isMissing={selectedState?.isMissing ?? false}
           onClose={() => setSelectedDateKey(null)}
         />
       ) : null}
