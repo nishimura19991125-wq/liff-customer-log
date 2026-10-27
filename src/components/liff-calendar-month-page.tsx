@@ -25,6 +25,7 @@ import { CustomerNameSplitInput } from "@/components/customer-name-split-input";
 import { CalendarAssignUndatedCaseForm } from "@/components/calendar-assign-undated-case-form";
 import { CalendarMonthSkeleton } from "@/components/calendar-month-skeleton";
 import { CalendarMoveCasePanel } from "@/components/calendar-move-case-panel";
+import { ZANKO_GRAY_LINE_COLOR } from "@/lib/zanko-gray-colors";
 import { shouldShowConstructionMovePanel } from "@/lib/calendar-construction-move-flag";
 import { dayKeyInMonth } from "@/lib/calendar-move-target-slots";
 import {
@@ -2943,7 +2944,13 @@ export function LiffCalendarMonthPage({
                         i: number,
                       ) => {
                         const hue = contractorHue(item.contractorKey);
-                        const leftBorder = `4px solid hsl(${hue} 44% 46%)`;
+                        /**
+                         * 左の縦線は施工業者の色。グレーのカードだけ @pocket と同じ
+                         * #3f3f3f にする（POSTPONED_COLOR_LINE）
+                         */
+                        const leftBorder = item.gray
+                          ? `4px solid ${ZANKO_GRAY_LINE_COLOR}`
+                          : `4px solid hsl(${hue} 44% 46%)`;
                         /** カードの本文。@pocket を開ける／開けないで器だけ変える */
                         const caseCardBody = (
                           <>

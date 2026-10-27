@@ -285,9 +285,13 @@ body {
 
 /*
  * 【延期】・最新日でないカードのグレー（残工 段階3）。
- * @pocket は背景 #b6b6b6・文字 #111111。LIFF のカードは白地・slate 系の
- * 文字なので、同じ考え方で少し明るい gray-300 に濃い文字を合わせた
- * （文字と背景のコントラスト比はおよそ 12:1）。
+ * 明るい表示の色は @pocket（calendar_atpocket.js の CONFIG）に合わせている。
+ *   POSTPONED_COLOR_BG        #b6b6b6  背景
+ *   POSTPONED_COLOR_BORDER    #909090  枠線
+ *   POSTPONED_COLOR_LINE      #3f3f3f  左の縦線（工事カレンダー。zanko-gray-colors.ts）
+ *   POSTPONED_COLOR_TEXT      #111111  お客様名（コントラスト比 9.31:1）
+ *   POSTPONED_COLOR_SUB_TEXT  #262626  2行目（7.46:1）
+ * 一時停止アイコン（POSTPONED_SHOW_ICON = false）は出さない。
  *
  * Tailwind のユーティリティはレイヤーの中にあるので、レイヤーの外に
  * 書いたここが優先される。
@@ -297,16 +301,16 @@ body {
  * 付けたものだけ暗いグレー（gray-600・文字 gray-50。およそ 7:1）にする。
  */
 .zanko-gray-card {
-  background-color: #d1d5db !important;
-  border-color: #9ca3af !important;
+  background-color: #b6b6b6 !important;
+  border-color: #909090 !important;
 }
 
 .zanko-gray-card .zanko-gray-text {
-  color: #111827 !important;
+  color: #111111 !important;
 }
 
 .zanko-gray-card .zanko-gray-subtext {
-  color: #1f2937 !important;
+  color: #262626 !important;
 }
 
 .dark .zanko-gray-card.zanko-gray-follow-dark {
@@ -325,16 +329,26 @@ body {
 /*
  * 工事カレンダーの案件カード用。器に zanko-gray-body を付けると、
  * 最初の子（カードの本文）だけをグレーにする。下の操作の行
- * （お客様情報・工事対応者の変更など）は白のまま。
+ * （お客様情報・工事対応者の変更など。@pocket には無い）は白のまま。
+ * 灰色にすると緑の文字が読みにくくなるため。
+ * 枠線は器ごと @pocket の色にする。左の縦線は画面側で #3f3f3f にする。
+ * このカードはダークモードでも白いので、ダークモード用の色は持たない。
  */
+.zanko-gray-body {
+  /* 左は縦線（画面側の borderLeft）なので触らない。まとめて指定すると上書きしてしまう */
+  border-top-color: #909090 !important;
+  border-right-color: #909090 !important;
+  border-bottom-color: #909090 !important;
+}
+
 .zanko-gray-body > :first-child {
-  background-color: #d1d5db !important;
+  background-color: #b6b6b6 !important;
 }
 
 .zanko-gray-body > :first-child .zanko-gray-text {
-  color: #111827 !important;
+  color: #111111 !important;
 }
 
 .zanko-gray-body > :first-child .zanko-gray-subtext {
-  color: #1f2937 !important;
+  color: #262626 !important;
 }
