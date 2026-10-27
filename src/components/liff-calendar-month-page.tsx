@@ -2957,7 +2957,7 @@ export function LiffCalendarMonthPage({
                                 </span>
                               ) : null}
                             </div>
-                            <p className="text-[17px] font-bold leading-snug text-slate-900 sm:text-lg">
+                            <p className="zanko-gray-text text-[17px] font-bold leading-snug text-slate-900 sm:text-lg">
                               {item.line1}
                               {item.showKankoCheck ? (
                                 <span className="ml-1 text-xl text-emerald-600 sm:text-[1.35rem]">
@@ -2966,7 +2966,7 @@ export function LiffCalendarMonthPage({
                               ) : null}
                             </p>
                             {item.line2 ? (
-                              <p className="mt-2 text-[15px] font-semibold leading-relaxed text-slate-600 sm:text-base">
+                              <p className="zanko-gray-subtext mt-2 text-[15px] font-semibold leading-relaxed text-slate-600 sm:text-base">
                                 {item.line2}
                               </p>
                             ) : null}
@@ -2977,12 +2977,21 @@ export function LiffCalendarMonthPage({
                             ) : null}
                           </>
                         );
+                        /**
+                         * 【延期】・最新日でないカードはグレー（残工 段階3。サーバーで判定）。
+                         * 本文だけをグレーにし、下の操作の行（お客様情報など）は白のまま
+                         * にする。灰色の上だと緑の文字が読みにくくなるため。
+                         * 目印は器に付け、CSS で最初の子（本文）だけを塗る
+                         * （zanko-gray-body。globals.css）。
+                         * このカードはダークモードでも白いので、明るいグレーのまま使う。
+                         */
+                        const grayCls = item.gray ? " zanko-gray-body" : "";
                         return (
                           <li
                             key={`detail-${selectedDayKey}-case-${i}-${item.recordId ?? i}`}
                           >
                             <div
-                              className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100"
+                              className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100${grayCls}`}
                               style={{ borderLeft: leftBorder }}
                             >
                             {/**

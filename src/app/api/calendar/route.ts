@@ -211,6 +211,8 @@ export async function GET(request: Request) {
             extraHolidayKeys,
             includeSandwichNationalHoliday: includeSandwich,
             zankoSourceStatus: summarizeZankoSources(sources),
+            // 【延期】・グレーの判定（186 が読めなければ空なので付かない）
+            zankoIndex: sources.zanko.index,
             // 施工管理タブと同じ部品で表示月の残工を決める
             zankoEntries: buildZankoCaseEntries(
               sources.zanko.index,

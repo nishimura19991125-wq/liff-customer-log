@@ -541,6 +541,11 @@ function branchText(e: ConstructionManagementEvent): string {
   return e.branches.join("・");
 }
 
+/** 施工予定で 186 に同じ T番号 があれば【延期】（残工 段階3。判定はサーバー） */
+function postponedPrefix(e: ConstructionManagementEvent): string {
+  return e.postponed ? "【延期】" : "";
+}
+
 function EventCard({
   event,
   onOpen,
@@ -552,22 +557,28 @@ function EventCard({
   const isScaffold =
     event.kind === "scaffoldInstall" || event.kind === "scaffoldRemoval";
   const company = isScaffold ? event.scaffoldContractor : event.constructionContractor;
+  /**
+   * 【延期】・最新日でないカードはグレー（残工 段階3。サーバーで判定）。
+   * このカードはダークモードで暗くなるので、暗いグレーも使う（zanko-gray-follow-dark）
+   */
+  const grayCls = event.gray ? " zanko-gray-card zanko-gray-follow-dark" : "";
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="block w-full rounded-2xl border border-[#E2E8F0] bg-white px-4 py-3 text-left shadow-sm active:scale-[0.99] dark:border-slate-700 dark:bg-slate-800"
+      className={`block w-full rounded-2xl border border-[#E2E8F0] bg-white px-4 py-3 text-left shadow-sm active:scale-[0.99] dark:border-slate-700 dark:bg-slate-800${grayCls}`}
     >
       <span className="flex items-start justify-between gap-2">
-        <span className="min-w-0 break-words text-[16px] font-bold text-[#1E293B] dark:text-slate-100">
+        <span className="zanko-gray-text min-w-0 break-words text-[16px] font-bold text-[#1E293B] dark:text-slate-100">
+          {postponedPrefix(event)}
           {event.customerName ? `${event.customerName}様邸` : "（お客様名なし）"}
         </span>
         <KindBadge kind={event.kind} />
       </span>
-      <span className="mt-1 block text-[13px] text-[#64748B] dark:text-slate-400">
+      <span className="zanko-gray-subtext mt-1 block text-[13px] text-[#64748B] dark:text-slate-400">
         {branchText(event)}
       </span>
-      <span className="mt-0.5 block break-words text-[13px] text-[#1E293B] dark:text-slate-200">
+      <span className="zanko-gray-text mt-0.5 block break-words text-[13px] text-[#1E293B] dark:text-slate-200">
         {isScaffold ? "足場業者" : "施工店"}：{company || "未登録"}
       </span>
     </button>
@@ -618,6 +629,7 @@ function EventDetailSheet({
       >
         <div className="flex items-start justify-between gap-2">
           <h2 className="min-w-0 break-words text-[18px] font-bold text-[#1E293B] dark:text-slate-100">
+            {postponedPrefix(event)}
             {event.customerName ? `${event.customerName}様邸` : "（お客様名なし）"}
           </h2>
           <KindBadge kind={event.kind} />

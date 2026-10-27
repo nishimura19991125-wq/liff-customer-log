@@ -26,6 +26,9 @@ import {
 } from "@/lib/map-address-fields";
 import { pocketTableCellToPlainString } from "@/lib/staff-construction-availability";
 import type { ZankoCaseEntry } from "@/lib/zanko-cards";
+import type { ZankoIndex } from "@/lib/zanko-index";
+import { decideCaseCardZankoMarks } from "@/lib/zanko-postpone";
+import { tNumberJoinKey } from "@/lib/t-number-join-key";
 
 export type {
   CalendarApiPayload,
@@ -73,6 +76,8 @@ type CalendarEventInternal = {
   recordId: string | number | null;
   accessEditUrl: string;
   tNumberKey: string | null;
+  /** 残工案件アプリ（186）と突き合わせる T番号（NFKC。残工 段階3） */
+  tJoinKey: string;
   _reportContentRaws: unknown[] | null;
   chipSpecLine2: string;
   constructionHandlerName: string;
@@ -104,6 +109,8 @@ type CalendarMonthRow = {
   zanko?: boolean;
   /** 【残工】カードの1行目（市区郡付き）。zanko のときだけ使う */
   zankoLine1?: string;
+  /** グレーにするか（残工 段階3。zanko-postpone で決める） */
+  gray?: boolean;
 };
 
 const HOUSING_STATUS_EXACT = [
@@ -648,7 +655,8 @@ function normalizeTNumberKey(raw: unknown): string | null {
   return String(raw).replace(/\s+/g, " ").trim();
 }
 
-function resolveHousingStatusKey(raw: unknown): string {
+/** 住宅ステータスの値 → 判定用のキー（新築案件・既築案件など。施工管理でも使う） */
+export function resolveHousingStatusKey(raw: unknown): string {
   if (raw == null || isBlankDisplayStr(String(raw))) return HOUSING_STATUS_OTHER;
   const t = String(raw).replace(/\s+/g, " ").trim();
   for (const ex of HOUSING_STATUS_EXACT) {
@@ -864,6 +872,11 @@ function recordToEvent(
   if (fids.tNumber) {
     tNumberKey = normalizeTNumberKey(recObj[fids.tNumber]);
   }
+  // 186 との突き合わせ用（NFKC）。工事報告との突き合わせは tNumberKey のまま
+  const tJoinKey =
+    category === "list" && fids.tNumber
+      ? tNumberJoinKey(recObj[fids.tNumber])
+      : "";
 
   let chipSpecLine2 = "";
   if (category === "list") {
@@ -899,6 +912,7 @@ function recordToEvent(
     recordId: getRecordIdFromListItem(rec),
     accessEditUrl: getAccessEditUrlFromListItem(rec),
     tNumberKey,
+    tJoinKey,
     _reportContentRaws: null,
     chipSpecLine2,
     constructionHandlerName,
@@ -1076,9 +1090,29 @@ function eventsForDisplayMonth(
   viewYear: number,
   viewMonth0: number,
   events: CalendarEventInternal[],
+  zankoIndex?: ZankoIndex | null,
 ): CalendarMonthRow[] {
   const monthStart = new Date(viewYear, viewMonth0, 1, 0, 0, 0, 0);
   const monthEndEx = new Date(viewYear, viewMonth0 + 1, 1, 0, 0, 0, 0);
+
+  /**
+   * 【延期】とグレー（残工 段階3）。186 が無ければ（読めないときも）付けない。
+   * lastDayKey は表示月で切る前のカードの最終日なので、表示月によらない。
+   */
+  const marksFor = (
+    ev: CalendarEventInternal,
+    lastDayKey: string,
+    reported: boolean,
+  ): { reportPostponed: boolean; gray?: boolean } => {
+    if (!zankoIndex || ev.category !== "list") return { reportPostponed: false };
+    const m = decideCaseCardZankoMarks(zankoIndex, {
+      tKey: ev.tJoinKey,
+      housingStatusKey: ev.housingStatusKey,
+      lastDayKey,
+      reported,
+    });
+    return { reportPostponed: m.postponed, ...(m.gray ? { gray: true } : {}) };
+  };
 
   const out: CalendarMonthRow[] = [];
 
@@ -1090,6 +1124,7 @@ function eventsForDisplayMonth(
         const d0 = startOfDay(seg.date);
         if (d0.getTime() < monthStart.getTime() || d0.getTime() >= monthEndEx.getTime())
           continue;
+        const reported = rowMatchesReportKanko(ev, seg.label);
         out.push({
           dayKey: ymdKey(d0),
           title: ev.title,
@@ -1101,9 +1136,9 @@ function eventsForDisplayMonth(
           tNumberKey: ev.tNumberKey,
           contractorNameForColor: ev.contractorNameForColor,
           housingStatusKey: ev.housingStatusKey,
-          reportKankoComplete: rowMatchesReportKanko(ev, seg.label),
-          // 【延期】は段階3で残工案件アプリ（186）から入れ直す。それまでは出さない
-          reportPostponed: false,
+          reportKankoComplete: reported,
+          // 新築・産業用の工程ごと。カードの最終日はその工程の日
+          ...marksFor(ev, ymdKey(d0), reported),
           chipSpecLine2: ev.chipSpecLine2 ?? "",
           constructionHandlerName: ev.constructionHandlerName ?? "",
           pinpointAddress: ev.pinpointAddress ?? "",
@@ -1127,6 +1162,9 @@ function eventsForDisplayMonth(
           e0.getTime() >= monthEndEx.getTime()
             ? addDays(monthEndEx, -1)
             : e0;
+        // カードの最終日は終了日（無ければ開始日）。表示月で切る前の値
+        const reported = rowMatchesReportKanko(ev, "");
+        const marks = marksFor(ev, ymdKey(e0), reported);
         for (
           let d = new Date(segStart.getTime());
           d.getTime() <= segEnd.getTime();
@@ -1143,8 +1181,8 @@ function eventsForDisplayMonth(
             tNumberKey: ev.tNumberKey,
             contractorNameForColor: ev.contractorNameForColor,
             housingStatusKey: ev.housingStatusKey,
-            reportKankoComplete: rowMatchesReportKanko(ev, ""),
-            reportPostponed: false,
+            reportKankoComplete: reported,
+            ...marks,
             chipSpecLine2: ev.chipSpecLine2 ?? "",
             constructionHandlerName: ev.constructionHandlerName ?? "",
             pinpointAddress: ev.pinpointAddress ?? "",
@@ -1200,6 +1238,7 @@ function rowToApiItem(row: CalendarMonthRow): CalendarMonthApiItem {
     attachments: row.attachments?.length ? row.attachments : undefined,
     constructionHandlerName: row.constructionHandlerName?.trim() || undefined,
     ...(row.zanko ? { zanko: true } : {}),
+    ...(row.gray ? { gray: true } : {}),
   };
 }
 
@@ -1255,6 +1294,7 @@ function zankoEntryToApiItem(entry: ZankoCaseEntry): CalendarMonthApiItem {
     normalAddress: "",
     attachments: [],
     zanko: true,
+    gray: entry.gray,
     zankoLine1: `【残工】${nameLine}${city ? `（${city}）` : ""}`,
   };
   const item = rowToApiItem(row);
@@ -1283,6 +1323,11 @@ export type BuildCalendarPayloadOptions = {
    * 無ければ【残工】カードは出ない。
    */
   zankoEntries?: readonly ZankoCaseEntry[];
+  /**
+   * 残工案件アプリ（186）の T番号 → 残工日[]（残工 段階3）。
+   * 【延期】とグレーの判定に使う。無ければどちらも付かない。
+   */
+  zankoIndex?: ZankoIndex | null;
 };
 
 export function buildCalendarPayload(
@@ -1329,7 +1374,12 @@ export function buildCalendarPayload(
     attachReportContentFromTNumberMap(ev, tmap);
   }
 
-  const rows = eventsForDisplayMonth(viewYear, viewMonth0, events);
+  const rows = eventsForDisplayMonth(
+    viewYear,
+    viewMonth0,
+    events,
+    opts?.zankoIndex,
+  );
   const grouped = groupByDayKey(rows);
 
   const extra = opts?.extraHolidayKeys ?? [];

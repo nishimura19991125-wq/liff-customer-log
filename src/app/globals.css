@@ -282,3 +282,59 @@ body {
   height: 17px;
   vertical-align: -3px;
 }
+
+/*
+ * 【延期】・最新日でないカードのグレー（残工 段階3）。
+ * @pocket は背景 #b6b6b6・文字 #111111。LIFF のカードは白地・slate 系の
+ * 文字なので、同じ考え方で少し明るい gray-300 に濃い文字を合わせた
+ * （文字と背景のコントラスト比はおよそ 12:1）。
+ *
+ * Tailwind のユーティリティはレイヤーの中にあるので、レイヤーの外に
+ * 書いたここが優先される。
+ *
+ * 工事カレンダーのカードはダークモードでも白いので、明るいグレーのまま。
+ * 施工管理のカードはダークモードで暗くなるので、zanko-gray-follow-dark を
+ * 付けたものだけ暗いグレー（gray-600・文字 gray-50。およそ 7:1）にする。
+ */
+.zanko-gray-card {
+  background-color: #d1d5db !important;
+  border-color: #9ca3af !important;
+}
+
+.zanko-gray-card .zanko-gray-text {
+  color: #111827 !important;
+}
+
+.zanko-gray-card .zanko-gray-subtext {
+  color: #1f2937 !important;
+}
+
+.dark .zanko-gray-card.zanko-gray-follow-dark {
+  background-color: #4b5563 !important;
+  border-color: #6b7280 !important;
+}
+
+.dark .zanko-gray-card.zanko-gray-follow-dark .zanko-gray-text {
+  color: #f9fafb !important;
+}
+
+.dark .zanko-gray-card.zanko-gray-follow-dark .zanko-gray-subtext {
+  color: #e5e7eb !important;
+}
+
+/*
+ * 工事カレンダーの案件カード用。器に zanko-gray-body を付けると、
+ * 最初の子（カードの本文）だけをグレーにする。下の操作の行
+ * （お客様情報・工事対応者の変更など）は白のまま。
+ */
+.zanko-gray-body > :first-child {
+  background-color: #d1d5db !important;
+}
+
+.zanko-gray-body > :first-child .zanko-gray-text {
+  color: #111827 !important;
+}
+
+.zanko-gray-body > :first-child .zanko-gray-subtext {
+  color: #1f2937 !important;
+}

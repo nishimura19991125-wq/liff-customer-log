@@ -6,6 +6,7 @@ import type { ConstructionFieldIds } from "@/lib/calendar-kojo";
 import {
   constructionTitleFieldIsEmpty,
   pickRecordValueByFieldAliases,
+  resolveHousingStatusKey,
 } from "@/lib/calendar-kojo";
 import { optionalCalendarYmd } from "@/lib/calendar-optional-ymd";
 import type { CustomerCrmCandidate } from "@/lib/customer-crm-list";
@@ -14,6 +15,8 @@ import { normalizeDateForInput } from "@/lib/customer-info-form/resolve-fields";
 import { coerceCustomerInfoDisplayString } from "@/lib/customer-info-record";
 import { normalizeDateTimeForPocketField } from "@/lib/jst-hm";
 import type { ZankoCaseEntry } from "@/lib/zanko-cards";
+import type { ZankoIndex } from "@/lib/zanko-index";
+import { decideCaseCardZankoMarks } from "@/lib/zanko-postpone";
 
 /**
  * 施工管理タブ（足場設置日・足場解体日・施工予定日を1つの月間カレンダーで見る）
@@ -82,6 +85,13 @@ export type ConstructionManagementEvent = {
    */
   apStaffNames?: string[];
   clStaffNames?: string[];
+  /**
+   * 【延期】を付けるか（残工 段階3。施工予定だけ）。付けないときは項目ごと省く。
+   * 判定は工事カレンダーと同じ zanko-postpone。
+   */
+  postponed?: boolean;
+  /** グレーで表示するか（残工 段階3。施工予定・残工だけ）。false なら省く */
+  gray?: boolean;
 };
 
 export type ConstructionManagementEventDates = {
@@ -154,6 +164,11 @@ export type ConstructionManagementInput = {
    * 省略・空なら残工は出ない（186 が読めないときも空で渡される）。
    */
   zankoEntries?: readonly ZankoCaseEntry[];
+  /**
+   * 残工案件アプリ（186）の T番号 → 残工日[]（残工 段階3）。
+   * 施工予定の【延期】とグレーの判定に使う。無ければどちらも付かない。
+   */
+  zankoIndex?: ZankoIndex | null;
   correlationId: string;
 };
 
@@ -428,7 +443,36 @@ export function buildConstructionManagementPayload(
           pickRecordValueByFieldAliases(r.recObj, fids.title),
         )
       : "";
+
+    /**
+     * 【延期】とグレー（残工 段階3）。工事カレンダーと同じ部品で決める。
+     * カードの最終日は終了日（無ければ施工予定日）。
+     * 施工管理は工事報告を読まないので、新築・産業用は「報告なし」として扱う
+     * （工事報告を読めないときと同じ安全側）。
+     */
+    const endDay = fids.endDate
+      ? jstDayKeyFromPocketDate(
+          pickRecordValueByFieldAliases(r.recObj, fids.endDate),
+        )
+      : null;
+    const marks = input.zankoIndex
+      ? decideCaseCardZankoMarks(input.zankoIndex, {
+          tKey: r.t,
+          housingStatusKey: resolveHousingStatusKey(
+            fids.housingStatus
+              ? coerceCustomerInfoDisplayString(
+                  pickRecordValueByFieldAliases(r.recObj, fids.housingStatus),
+                )
+              : "",
+          ),
+          lastDayKey: endDay && endDay > r.dayKey ? endDay : r.dayKey,
+          reported: false,
+        })
+      : { postponed: false, gray: false };
+
     events.push({
+      ...(marks.postponed ? { postponed: true } : {}),
+      ...(marks.gray ? { gray: true } : {}),
       id: `construction:${r.recordId}`,
       kind: "construction",
       dayKey: r.dayKey,
@@ -482,6 +526,8 @@ export function buildConstructionManagementPayload(
       scaffoldRequest: c?.scaffold?.request ?? "",
       constructionContractor: z.contract?.contractorName ?? "",
       customerMatched: Boolean(z.contract),
+      // 最新の残工日でなければグレー（工事カレンダーと同じ判定）
+      ...(z.gray ? { gray: true } : {}),
       duplicateConstructionTNumber: false,
       duplicateCustomerTNumber: duplicateCustomerTs.has(z.tKey),
       dates: datesOfCustomer(c, z.tKey),

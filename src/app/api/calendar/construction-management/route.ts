@@ -198,6 +198,8 @@ export async function GET(request: Request) {
       selfWorkplace,
       // 勤務場所を引くために上で取った氏名をそのまま使う（取得は増えない）
       selfStaffName: selfName,
+      // 【延期】・グレーの判定（186 が読めなければ空なので付かない）
+      zankoIndex: zankoSources.zanko.index,
       // 工事カレンダーと同じ部品で表示月の残工を決める
       zankoEntries: buildZankoCaseEntries(
         zankoSources.zanko.index,

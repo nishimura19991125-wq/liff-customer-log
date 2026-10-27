@@ -1,5 +1,6 @@
 import type { ContractRecord } from "@/lib/contract-records";
 import type { ZankoIndex } from "@/lib/zanko-index";
+import { zankoLatestDay } from "@/lib/zanko-postpone";
 
 /**
  * 表示月の【残工】を決める（残工 段階2）。**両タブがこの部品を使う。**
@@ -24,6 +25,11 @@ export type ZankoCaseEntry = {
   tKey: string;
   /** 契約情報入力の1件。T番号 で該当が無ければ null */
   contract: ContractRecord | null;
+  /**
+   * グレーにするか（残工 段階3）。同じ T番号 の最新の残工日でなければ true。
+   * 186 の全件から決めるので、表示月によらない。
+   */
+  gray: boolean;
 };
 
 export function buildZankoCaseEntries(
@@ -37,9 +43,10 @@ export function buildZankoCaseEntries(
   for (const [tKey, days] of index.datesByT) {
     const contract = contractByT.get(tKey) ?? null;
     if (contract?.isCancelled) continue;
+    const latest = zankoLatestDay(index, tKey);
     for (const dayKey of days) {
       if (!dayKey.startsWith(prefix)) continue;
-      out.push({ dayKey, tKey, contract });
+      out.push({ dayKey, tKey, contract, gray: dayKey !== latest });
     }
   }
   out.sort(
