@@ -185,17 +185,33 @@ describe("工事カレンダーのカード", () => {
     expect(cases(p.byDay["2026-11-03"])[0]?.zankoNoDateWarn).toBe(true);
   });
 
-  it("★ 【残工】カードには出ない", () => {
+  /**
+   * 4-b で書き換えた（承認済み）。
+   * 4-a では「残工日が空のレコードもある案件」の【残工】カードに ⚠️ が出ない
+   * ことを固定していたが、4-b でその案件の【残工】カードは【残工→延期】になり
+   * ⚠️ を出す仕様になった。4-a の意図（工事登録側の ⚠️ を普通の【残工】
+   * カードに出さない）は、残工日が空のレコードが無い案件で確かめる。
+   */
+  it("★ 普通の【残工】カードには出ない（【残工→延期】は 4-b で出す）", () => {
     const p = payload({
+      zankoRows: [["T0001", "2026-11-12"]],
+      construction: [KICHIKU],
+    });
+    const z = p.byDay["2026-11-12"]?.find((i) => i.zanko);
+    expect(z).toBeDefined();
+    expect(z?.zankoNoDateWarn).toBeFalsy();
+
+    // 残工日が空のレコードもある案件は【残工→延期】になり、⚠️ が出る
+    const p2 = payload({
       zankoRows: [
         ["T0001", "2026-11-12"],
         ["T0001", ""],
       ],
       construction: [KICHIKU],
     });
-    const z = p.byDay["2026-11-12"]?.find((i) => i.zanko);
-    expect(z).toBeDefined();
-    expect(z?.zankoNoDateWarn).toBeFalsy();
+    const z2 = p2.byDay["2026-11-12"]?.find((i) => i.zanko);
+    expect(z2?.line1.startsWith("【残工→延期】")).toBe(true);
+    expect(z2?.zankoNoDateWarn).toBe(true);
   });
 
   it("★ グレー・【延期】の判定は変わらない", () => {

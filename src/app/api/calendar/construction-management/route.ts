@@ -6,13 +6,24 @@ import {
   isPocketRateLimitMessage,
   safePocketErrorTextWithId,
 } from "@/lib/api-error-response";
-import { apiKeyForCalendarPocket, fetchAppFields } from "@/lib/atpocket";
+import {
+  apiKeyForCalendarPocket,
+  apiKeyForCalendarReportPocket1,
+  fetchAppFields,
+} from "@/lib/atpocket";
 import { fetchCalendarConstructionRecordsCached } from "@/lib/calendar-construction-records-cache";
 import {
   buildConstructionRecordsMonthOverlapQuery,
   collectConstructionFieldsCsv,
+  collectReportFieldsCsv,
   resolveConstructionFieldIds,
+  resolveReportFieldIds,
 } from "@/lib/calendar-kojo";
+import { fetchCalendarReportRecordsCached } from "@/lib/calendar-report-records-cache";
+import {
+  buildZankoReportFacts,
+  type ZankoReportFacts,
+} from "@/lib/zanko-report";
 import {
   buildConstructionManagementPayload,
   CONSTRUCTION_MANAGEMENT_VISIBLE_BRANCHES_ENV,
@@ -82,6 +93,38 @@ function unavailable(reason: string): NextResponse {
   );
 }
 
+/**
+ * 工事報告の材料（残工 段階4-b）。完了報告によるグレー・⚠️ のスキップと、
+ * 完工報告による延期扱いの解除に使う。
+ *
+ * 工事カレンダー（/api/calendar）と同じ列・同じキャッシュ
+ * （fetchCalendarReportRecordsCached。キーはアプリID＋列の一覧）で読む。
+ * 工事カレンダーを先に開いていれば @pocket の呼び出しは増えない。
+ * キャッシュが空のときだけ、列定義1回（30分キャッシュ）＋全件の一覧
+ * （1000件ごとに1回）が増える。
+ *
+ * 失敗しても投げない（null＝「報告なし」。施工管理全体は表示する）。
+ */
+async function readReportFactsForManagement(): Promise<ZankoReportFacts | null> {
+  const reportAppId = process.env.CALENDAR_REPORT_APP_ID?.trim();
+  if (!reportAppId) return null;
+  try {
+    const fields = await fetchAppFields(
+      reportAppId,
+      { apiKey: apiKeyForCalendarReportPocket1() },
+      // 工事カレンダーと同じ操作名にそろえる（ログで同じ取得と分かるように）
+      { operation: "calendar:工事報告fields", appEnv: "CALENDAR_REPORT_APP_ID" },
+    );
+    const csv = collectReportFieldsCsv(resolveReportFieldIds(fields));
+    if (!csv) return null;
+    const rows = await fetchCalendarReportRecordsCached(reportAppId, csv);
+    return buildZankoReportFacts(rows, fields);
+  } catch (e) {
+    console.error(`[${SCOPE}] 工事報告を読めませんでした（報告なしとして扱う）`, e);
+    return null;
+  }
+}
+
 export async function GET(request: Request) {
   const auth = await resolveCallerLineAuth(request);
   if (!auth.ok) return lineAuthUnauthorizedResponse(auth);
@@ -112,6 +155,9 @@ export async function GET(request: Request) {
     process.env.CALENDAR_RECORDS_QUERY_FILTER?.trim() !== "false";
 
   try {
+    // 工事報告（段階4-b）は工事レコードの取得と並べて読む。失敗しても投げない
+    const reportFactsPromise = readReportFactsForManagement();
+
     // ── 施工予定: 本体カレンダーと同じ列・同じ query ──
     const constructionFields = await fetchAppFields(
       calAppId,
@@ -182,6 +228,7 @@ export async function GET(request: Request) {
       : null;
 
     const zankoSources = await zankoSourcesPromise;
+    const reportFacts = await reportFactsPromise;
 
     const correlationId = randomUUID().slice(0, 8);
     const payload = buildConstructionManagementPayload({
@@ -200,12 +247,14 @@ export async function GET(request: Request) {
       selfStaffName: selfName,
       // 【延期】・グレーの判定（186 が読めなければ空なので付かない）
       zankoIndex: zankoSources.zanko.index,
+      zankoReportFacts: reportFacts,
       // 工事カレンダーと同じ部品で表示月の残工を決める
       zankoEntries: buildZankoCaseEntries(
         zankoSources.zanko.index,
         zankoSources.contract.byT,
         year,
         month,
+        reportFacts,
       ),
       correlationId,
     });
@@ -220,6 +269,7 @@ export async function GET(request: Request) {
         scaffoldRemoval: payload.counts.scaffoldRemoval,
         construction: payload.counts.construction,
         zanko: payload.counts.zanko,
+        hasReportFacts: reportFacts !== null,
         zankoSource: zankoSources.zanko.status,
         contractSource: zankoSources.contract.status,
         duplicateConstructionTNumberGroups:

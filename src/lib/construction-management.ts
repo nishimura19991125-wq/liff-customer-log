@@ -16,7 +16,11 @@ import { coerceCustomerInfoDisplayString } from "@/lib/customer-info-record";
 import { normalizeDateTimeForPocketField } from "@/lib/jst-hm";
 import type { ZankoCaseEntry } from "@/lib/zanko-cards";
 import type { ZankoIndex } from "@/lib/zanko-index";
-import { decideCaseCardZankoMarks } from "@/lib/zanko-postpone";
+import {
+  decideCaseCardZankoMarks,
+  shouldWarnZankoNoDate,
+} from "@/lib/zanko-postpone";
+import type { ZankoReportFacts } from "@/lib/zanko-report";
 
 /**
  * 施工管理タブ（足場設置日・足場解体日・施工予定日を1つの月間カレンダーで見る）
@@ -85,6 +89,16 @@ export type ConstructionManagementEvent = {
    */
   apStaffNames?: string[];
   clStaffNames?: string[];
+  /**
+   * 残工日が未定の ⚠️ と赤枠（残工 段階4-b。施工予定・残工）。false なら省く
+   */
+  zankoNoDateWarn?: boolean;
+  /**
+   * 残工を【残工→延期】として扱う（残工 段階4-b。残工だけ）。
+   * 区分は残工のまま（区分フィルターは「残工」で切り替える）。画面は区分
+   * バッジを「残工→延期」にする。false なら省く
+   */
+  zankoEmptyPostponed?: boolean;
   /**
    * 【延期】を付けるか（残工 段階3。施工予定だけ）。付けないときは項目ごと省く。
    * 判定は工事カレンダーと同じ zanko-postpone。
@@ -169,6 +183,12 @@ export type ConstructionManagementInput = {
    * 施工予定の【延期】とグレーの判定に使う。無ければどちらも付かない。
    */
   zankoIndex?: ZankoIndex | null;
+  /**
+   * 工事報告の材料（残工 段階4-b。zanko-report の buildZankoReportFacts）。
+   * 完了報告によるグレー・⚠️ のスキップに使う。null・省略は「報告なし」
+   * （工事報告を読めないときと同じ安全側）
+   */
+  zankoReportFacts?: ZankoReportFacts | null;
   correlationId: string;
 };
 
@@ -447,9 +467,10 @@ export function buildConstructionManagementPayload(
     /**
      * 【延期】とグレー（残工 段階3）。工事カレンダーと同じ部品で決める。
      * カードの最終日は終了日（無ければ施工予定日）。
-     * 施工管理は工事報告を読まないので、新築・産業用は「報告なし」として扱う
-     * （工事報告を読めないときと同じ安全側）。
+     * 完了報告は工事報告の「完工」で見る（段階4-b から。施工予定は区分の無い
+     * カードなので、期待する報告内容は「完工」）。読めなければ「報告なし」。
      */
+    const reported = Boolean(input.zankoReportFacts?.kankoReportedT.has(r.t));
     const endDay = fids.endDate
       ? jstDayKeyFromPocketDate(
           pickRecordValueByFieldAliases(r.recObj, fids.endDate),
@@ -466,13 +487,18 @@ export function buildConstructionManagementPayload(
               : "",
           ),
           lastDayKey: endDay && endDay > r.dayKey ? endDay : r.dayKey,
-          reported: false,
+          reported,
         })
       : { postponed: false, gray: false };
+    // 残工日が未定の ⚠️ と赤枠（段階4-b）。工事カレンダーと同じ判定
+    const warn = input.zankoIndex
+      ? shouldWarnZankoNoDate(input.zankoIndex, r.t, reported)
+      : false;
 
     events.push({
       ...(marks.postponed ? { postponed: true } : {}),
       ...(marks.gray ? { gray: true } : {}),
+      ...(warn ? { zankoNoDateWarn: true } : {}),
       id: `construction:${r.recordId}`,
       kind: "construction",
       dayKey: r.dayKey,
@@ -526,8 +552,10 @@ export function buildConstructionManagementPayload(
       scaffoldRequest: c?.scaffold?.request ?? "",
       constructionContractor: z.contract?.contractorName ?? "",
       customerMatched: Boolean(z.contract),
-      // 最新の残工日でなければグレー（工事カレンダーと同じ判定）
+      // グレー・【残工→延期】・⚠️（工事カレンダーと同じ判定。段階3・4-b）
       ...(z.gray ? { gray: true } : {}),
+      ...(z.emptyPostponed ? { zankoEmptyPostponed: true } : {}),
+      ...(z.warn ? { zankoNoDateWarn: true } : {}),
       duplicateConstructionTNumber: false,
       duplicateCustomerTNumber: duplicateCustomerTs.has(z.tKey),
       dates: datesOfCustomer(c, z.tKey),

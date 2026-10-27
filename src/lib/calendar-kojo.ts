@@ -65,6 +65,11 @@ export type ConstructionFieldIds = {
 export type ReportFieldIds = {
   tNumber: string;
   reportContent: string;
+  /**
+   * 完工日（残工 段階4-b。完工報告による延期扱いの解除に使う）。
+   * 見つからなければ空文字（解除しない）。
+   */
+  kankoDate: string;
 };
 
 type CalendarEventInternal = {
@@ -470,7 +475,19 @@ export function resolveReportFieldIds(
     reportContent:
       pickFieldUniqueIdByExactCaption(fields, "報告内容") ||
       pickFieldUniqueId(fields, ["報告内容"]),
+    kankoDate: resolveReportKankoDateFieldId(fields),
   };
+}
+
+/**
+ * 工事報告の「完工日」列（残工 段階4-b）。
+ * 環境変数 CALENDAR_REPORT_KANKO_DATE_FIELD_ID → 見出し「完工日」の完全一致。
+ * 部分一致にはしない（「完工日予定」のような別の列を拾わないため）。
+ */
+function resolveReportKankoDateFieldId(fields: AtPocketFieldRow[]): string {
+  const env = process.env.CALENDAR_REPORT_KANKO_DATE_FIELD_ID?.trim();
+  if (env) return resolveConfiguredFieldToSchemaUniqueId(env, fields) ?? "";
+  return pocketFieldUniqueIdByCaption(fields, "完工日") ?? "";
 }
 
 export function collectConstructionFieldsCsv(
@@ -503,7 +520,8 @@ export function collectConstructionFieldsCsv(
 }
 
 export function collectReportFieldsCsv(rf: ReportFieldIds): string {
-  return [rf.tNumber, rf.reportContent].filter(Boolean).join(",");
+  // 完工日は同じ一覧の fields に足すだけ。呼び出し回数は増えない
+  return [rf.tNumber, rf.reportContent, rf.kankoDate].filter(Boolean).join(",");
 }
 
 function extractValue(raw: unknown): unknown {
@@ -927,6 +945,13 @@ function recordToEvent(
   };
 }
 
+/**
+ * 報告内容が「完工」か（✅ の判定と同じ。残工 段階4-b の解除・【残工】カードの ✅ で使う）
+ */
+export function isReportContentKanko(raw: unknown): boolean {
+  return isReportContentExactMatch(raw, "完工");
+}
+
 function isReportContentExactMatch(raw: unknown, expected: string): boolean {
   if (!expected) return false;
   if (raw == null) return false;
@@ -1293,8 +1318,9 @@ function zankoEntryToApiItem(entry: ZankoCaseEntry): CalendarMonthApiItem {
     tNumberKey: c?.tNumber?.trim() || entry.tKey,
     contractorNameForColor: c?.contractorName?.trim() ?? "",
     housingStatusKey,
-    // ✅（完工報告による解除）は段階4
-    reportKankoComplete: false,
+    // ✅ は本体工事の完工報告を見ているだけ（残工の完了ではない）。
+    // 解除した案件は最後の残工日のカードだけ（zanko-postpone）
+    reportKankoComplete: entry.kankoCheck,
     reportPostponed: false,
     chipSpecLine2: composeChipSpecLine2(
       manufacturerFullFromRaw(c?.manufacturer ?? ""),
@@ -1307,7 +1333,9 @@ function zankoEntryToApiItem(entry: ZankoCaseEntry): CalendarMonthApiItem {
     attachments: [],
     zanko: true,
     gray: entry.gray,
-    zankoLine1: `【残工】${nameLine}${city ? `（${city}）` : ""}`,
+    // 【残工→延期】の ⚠️ と赤枠（残工 段階4-b）
+    zankoNoDateWarn: entry.warn,
+    zankoLine1: `${entry.prefix}${nameLine}${city ? `（${city}）` : ""}`,
   };
   const item = rowToApiItem(row);
   // 住宅ステータスが引けなければバッジも空欄（「その他」にしない）

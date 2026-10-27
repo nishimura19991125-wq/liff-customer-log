@@ -33,6 +33,7 @@ import type {
 import { jstWallParts, jstYmd } from "@/lib/jst-hm";
 import { initLiffAndGetToken, triggerLiffRelogin } from "@/lib/liff-session";
 import { isLiffSwrSessionExpired, LIFF_SWR_CALENDAR_OPTIONS } from "@/lib/liff-swr";
+import { ZANKO_NO_DATE_WARN_TITLE } from "@/lib/zanko-gray-colors";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 const API_PATH = "/api/calendar/construction-management";
@@ -526,15 +527,31 @@ function ErrorBox({
   );
 }
 
-function KindBadge({ kind }: { kind: ConstructionManagementEventKind }) {
+function KindBadge({
+  kind,
+  label,
+}: {
+  kind: ConstructionManagementEventKind;
+  /** 表示だけ変えるとき（【残工→延期】）。区分そのものは変えない */
+  label?: string;
+}) {
   return (
     <span
       className="shrink-0 rounded-full px-2.5 py-0.5 text-[12px] font-bold text-white"
       style={{ backgroundColor: KIND_META[kind].color }}
     >
-      {KIND_META[kind].label}
+      {label ?? KIND_META[kind].label}
     </span>
   );
+}
+
+/**
+ * 区分バッジの表示（残工 段階4-b）。
+ * 施工管理には接頭辞の仕組みが無いので、【残工→延期】は区分バッジで表す。
+ * 区分は残工のまま（区分フィルターは「残工」で切り替える）。
+ */
+function kindBadgeLabel(e: ConstructionManagementEvent): string | undefined {
+  return e.zankoEmptyPostponed ? "残工→延期" : undefined;
 }
 
 function branchText(e: ConstructionManagementEvent): string {
@@ -562,18 +579,31 @@ function EventCard({
    * このカードはダークモードで暗くなるので、暗いグレーも使う（zanko-gray-follow-dark）
    */
   const grayCls = event.gray ? " zanko-gray-card zanko-gray-follow-dark" : "";
+  /** 残工日が未定の赤枠（残工 段階4-b）。カードの内側に重ねて描く */
+  const warnCls = event.zankoNoDateWarn ? " zanko-warn-card" : "";
   return (
     <button
       type="button"
       onClick={onOpen}
-      className={`block w-full rounded-2xl border border-[#E2E8F0] bg-white px-4 py-3 text-left shadow-sm active:scale-[0.99] dark:border-slate-700 dark:bg-slate-800${grayCls}`}
+      className={`block w-full rounded-2xl border border-[#E2E8F0] bg-white px-4 py-3 text-left shadow-sm active:scale-[0.99] dark:border-slate-700 dark:bg-slate-800${grayCls}${warnCls}`}
     >
       <span className="flex items-start justify-between gap-2">
         <span className="zanko-gray-text min-w-0 break-words text-[16px] font-bold text-[#1E293B] dark:text-slate-100">
           {postponedPrefix(event)}
           {event.customerName ? `${event.customerName}様邸` : "（お客様名なし）"}
+          {/* 残工日が未定（残工 段階4-b）。お客様名の行の末尾、区分バッジの手前 */}
+          {event.zankoNoDateWarn ? (
+            <span
+              className="zanko-warn-icon ml-1"
+              role="img"
+              title={ZANKO_NO_DATE_WARN_TITLE}
+              aria-label={ZANKO_NO_DATE_WARN_TITLE}
+            >
+              ⚠️
+            </span>
+          ) : null}
         </span>
-        <KindBadge kind={event.kind} />
+        <KindBadge kind={event.kind} label={kindBadgeLabel(event)} />
       </span>
       <span className="zanko-gray-subtext mt-1 block text-[13px] text-[#64748B] dark:text-slate-400">
         {branchText(event)}
@@ -632,7 +662,7 @@ function EventDetailSheet({
             {postponedPrefix(event)}
             {event.customerName ? `${event.customerName}様邸` : "（お客様名なし）"}
           </h2>
-          <KindBadge kind={event.kind} />
+          <KindBadge kind={event.kind} label={kindBadgeLabel(event)} />
         </div>
         <dl className="mt-4 divide-y divide-[#E2E8F0] dark:divide-slate-700">
           {rows.map(([k, v]) => (

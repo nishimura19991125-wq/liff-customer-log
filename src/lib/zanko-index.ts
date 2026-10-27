@@ -43,7 +43,8 @@ export function emptyZankoIndex(): ZankoIndex {
   };
 }
 
-function readZankoDate(raw: unknown): string | null {
+/** @pocket の日付の値を JST の YYYY-MM-DD にする。読めなければ null（工事報告の完工日でも使う） */
+export function readZankoDate(raw: unknown): string | null {
   const s = coerceCustomerInfoDisplayString(raw);
   if (!s) return null;
   const ymd = normalizeDateForInput(normalizeDateTimeForPocketField(s, "Date"));

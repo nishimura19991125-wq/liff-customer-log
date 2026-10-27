@@ -44,6 +44,7 @@ import {
   summarizeZankoSources,
 } from "@/lib/zanko-calendar-sources";
 import { buildZankoCaseEntries } from "@/lib/zanko-cards";
+import { buildZankoReportFacts } from "@/lib/zanko-report";
 import { isCalendarConstructionMoveEnabled } from "@/lib/calendar-construction-move-flag";
 
 export const dynamic = "force-dynamic";
@@ -219,6 +220,8 @@ export async function GET(request: Request) {
               sources.contract.byT,
               year,
               month,
+              // 完工報告による解除・✅（段階4-b）。上で読んだ工事報告から作る
+              buildZankoReportFacts(reportRecords, reportFields),
             ),
           },
         );

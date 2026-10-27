@@ -1,4 +1,5 @@
 import type { ZankoIndex } from "@/lib/zanko-index";
+import type { ZankoReportFacts } from "@/lib/zanko-report";
 
 /**
  * 【延期】の印とグレー表示の判定（残工 段階3）。**両タブがこの部品を使う。**
@@ -100,4 +101,96 @@ export function shouldWarnZankoNoDate(
 ): boolean {
   if (!tKey || reported) return false;
   return index.tNumbersWithUndated.has(tKey);
+}
+
+/**
+ * 完工報告による延期扱いの解除（残工 段階4-b）。
+ *
+ * @pocket の設定のうち、次の動きに固定している。
+ *   ZANKO_RESOLVE_BY_LATER_KANKO    true  最後の残工日以降の完工日があれば解除
+ *   ZANKO_RESOLVE_SAME_DAY_AS_LATER true  同じ日も「後」とみなす
+ *
+ * 最後の残工日 = 残工日が入っているレコードのうち最も新しい日。
+ * 残工日が1件も入っていない案件・完工日が無い・工事報告を読めていない
+ * ときは解除しない。
+ */
+export function isZankoResolvedByKanko(
+  index: ZankoIndex,
+  facts: ZankoReportFacts | null | undefined,
+  tKey: string,
+): boolean {
+  if (!facts || !tKey) return false;
+  const last = zankoLatestDay(index, tKey);
+  if (!last) return false;
+  return (facts.kankoDatesByT.get(tKey) ?? []).some((d) => d >= last);
+}
+
+export type ZankoCardMarks = {
+  /** 1行目の先頭 */
+  prefix: "【残工】" | "【残工→延期】";
+  /** 残工日が空のレコードがあるため延期として扱う（【残工→延期】） */
+  emptyPostponed: boolean;
+  /** 完工報告で延期扱いを解除した */
+  resolved: boolean;
+  gray: boolean;
+  /** ⚠️ と赤枠 */
+  warn: boolean;
+  /** 完工の ✅ */
+  kankoCheck: boolean;
+};
+
+/**
+ * 【残工】カード1枚の判定（残工 段階4-b）。両タブがこれを使う。
+ *
+ *   解除した案件
+ *     【残工】のままグレー・⚠️ なし。
+ *     ✅ は最後の残工日のカードだけ（ZANKO_KANKO_MARK_LATEST_ONLY = true）。
+ *     前の残工日のカードに出すと「その日の作業が完了した」と誤解されるため
+ *   残工日が空のレコードがある案件（ZANKO_EMPTY_TREATS_AS_POSTPONED = true）
+ *     【残工→延期】・グレー・⚠️ と赤枠。
+ *     ⚠️ は完了報告でスキップしない。【残工】カードの ✅ は本体工事の「完工」を
+ *     見ているだけで、残工が終わったことを意味しないため
+ *   それ以外
+ *     【残工】。グレーは段階3のまま（最新の残工日でなければグレー）
+ *
+ * 解除していない案件の ✅ は、本体工事の完工の報告があれば出す（@pocket と同じ）。
+ * 工事報告を読めていなければ出さない。
+ */
+export function decideZankoCardMarks(
+  index: ZankoIndex,
+  facts: ZankoReportFacts | null | undefined,
+  tKey: string,
+  dayKey: string,
+): ZankoCardMarks {
+  const latest = zankoLatestDay(index, tKey);
+  const kankoReported = Boolean(facts?.kankoReportedT.has(tKey));
+
+  if (isZankoResolvedByKanko(index, facts, tKey)) {
+    return {
+      prefix: "【残工】",
+      emptyPostponed: false,
+      resolved: true,
+      gray: true,
+      warn: false,
+      kankoCheck: dayKey === latest,
+    };
+  }
+  if (index.tNumbersWithUndated.has(tKey)) {
+    return {
+      prefix: "【残工→延期】",
+      emptyPostponed: true,
+      resolved: false,
+      gray: true,
+      warn: true,
+      kankoCheck: kankoReported,
+    };
+  }
+  return {
+    prefix: "【残工】",
+    emptyPostponed: false,
+    resolved: false,
+    gray: dayKey !== latest,
+    warn: false,
+    kankoCheck: kankoReported,
+  };
 }
