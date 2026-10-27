@@ -46,6 +46,7 @@ import {
 } from "@/lib/calendar-slot-reservation";
 import { isCustomerTNumberCancelled } from "@/lib/customer-cancelled-t-numbers";
 import { getCachedCustomerCrmSnapshot } from "@/lib/customer-crm-list";
+import { recheckCustomerInfoConstructionDate } from "@/lib/customer-info-construction-date-recheck";
 import {
   describeConstructionLinkFailure,
   findConstructionRecordByTNumber,
@@ -62,6 +63,10 @@ import {
 } from "@/lib/staff-construction-handler-candidates";
 
 export const dynamic = "force-dynamic";
+
+/** 施工予定日が既に入っている案件を断るときの文言 */
+const CONSTRUCTION_DATE_ALREADY_SET_MESSAGE =
+  "この案件は既に工事日が登録されています。";
 export const maxDuration = 26;
 
 /**
@@ -376,6 +381,42 @@ export async function POST(request: Request) {
             "顧客ステータスが「キャンセル」の案件は割り当てできません。別の案件を選んでください。",
         },
         { status: 400 },
+      );
+    }
+
+    /**
+     * 施工予定日を @pocket から読み直す。**一覧のキャッシュは使わない。**
+     *
+     * 画面の一覧は施工予定日が空の案件だけを出すが、一覧はキャッシュ
+     * （最大10分）から作っている。古い一覧から選ばれたときや API を
+     * 直接呼ばれたときに、工事日が決まった案件へ書けてしまっていた。
+     * 1つの案件に工事日を入れるのは1回だけなので、入っていれば断る。
+     *
+     * どの経路（既存へ書く・空き枠を案件に変える・新規作成）よりも前、
+     * 空き枠の削除よりも前に置く。断ったときは1件も書かず、消さない。
+     * 読み直せなかったときも書かない（安全側）。
+     *
+     * ⚠ 環境変数で切り替えない。元から抜けていた確認を足しただけなので、
+     *    戻す必要がない
+     */
+    const recheck = await recheckCustomerInfoConstructionDate(
+      customerInfoRecordId,
+    );
+    if (recheck.kind === "set") {
+      return NextResponse.json(
+        { error: CONSTRUCTION_DATE_ALREADY_SET_MESSAGE },
+        { status: 403 },
+      );
+    }
+    if (recheck.kind === "error") {
+      return NextResponse.json(
+        {
+          error:
+            recheck.reason === "not_found"
+              ? "お客様情報のレコードが見つかりません。一覧を更新してから選び直してください。"
+              : "工事日の登録状況を確認できませんでした。しばらくしてから再度お試しください。",
+        },
+        { status: recheck.reason === "not_found" ? 404 : 502 },
       );
     }
 

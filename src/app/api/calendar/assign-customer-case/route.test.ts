@@ -62,6 +62,12 @@ const h = vi.hoisted(() => ({
   cancelled: false,
   finalize: [] as Record<string, unknown>[],
   akiOnCreate: "AKI-NEW" as string | null,
+  /** お客様情報の施工予定日を読み直した結果（既定は空） */
+  recheck: { kind: "unset" } as
+    | { kind: "unset" }
+    | { kind: "set" }
+    | { kind: "error"; reason: string },
+  recheckCalls: [] as string[],
 }));
 
 vi.mock("@/lib/request-auth", () => ({
@@ -142,6 +148,17 @@ vi.mock("@/lib/calendar-construction-pocket-common", async () => {
     ensureConstructionImportKeyOnRecord: async () => h.akiOnCreate,
   };
 });
+
+/**
+ * 施工予定日の読み直し（@pocket の単票 GET）。既定は「空」で、
+ * 既存のテストは今までどおり書き込める
+ */
+vi.mock("@/lib/customer-info-construction-date-recheck", () => ({
+  recheckCustomerInfoConstructionDate: async (recordId: string) => {
+    h.recheckCalls.push(recordId);
+    return h.recheck;
+  },
+}));
 
 vi.mock("@/lib/customer-cancelled-t-numbers", () => ({
   isCustomerTNumberCancelled: async () => h.cancelled,
@@ -237,6 +254,8 @@ beforeEach(() => {
   h.cancelled = false;
   h.finalize.length = 0;
   h.akiOnCreate = "AKI-NEW";
+  h.recheck = { kind: "unset" };
+  h.recheckCalls.length = 0;
   h.customer = {
     recordId: "cus-1",
     customerName: "山田 太郎",
@@ -819,4 +838,91 @@ describe("★ 照合に失敗したときの相関ID", () => {
       });
     }
   }
+});
+
+describe("施工予定日を読み直す（工事日が決まった案件へは書かない）", () => {
+  const ALREADY = "この案件は既に工事日が登録されています。";
+
+  it("★ 空なら今までどおり書き込める", async () => {
+    h.lookupRows = [existingConstructionRow()];
+
+    const { status } = await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+
+    expect(status).toBe(200);
+    expect(h.recheckCalls).toEqual(["cus-1"]);
+    expect(h.writes).toHaveLength(1);
+  });
+
+  it.each([
+    ["既存の工事レコードへ書く経路（空き枠あり）", true, "slot-9"],
+    ["既存の工事レコードへ書く経路（空き枠なし）", true, undefined],
+    ["空き枠を案件に変える経路", false, "slot-9"],
+    ["新規作成の経路", false, undefined],
+  ] as const)(
+    "★ 入っていたら 403 で断り、1件も書かず消さない：%s",
+    async (_label, hasExisting, slotRecordId) => {
+      h.recheck = { kind: "set" };
+      h.lookupRows = hasExisting ? [existingConstructionRow()] : [];
+
+      const { status, body } = await call({
+        ...BASE_BODY,
+        ...(slotRecordId ? { slotRecordId } : {}),
+      });
+
+      expect(status).toBe(403);
+      expect(body.error).toBe(ALREADY);
+      expect(h.writes).toEqual([]);
+      expect(h.deleteCalls).toEqual([]);
+      expect(h.finalize).toEqual([]);
+      // 断ったあとは工事アプリの検索も空き枠の読み取りもしない
+      expect(h.lookupCalls).toBe(0);
+      expect(h.recordGets).toEqual([]);
+    },
+  );
+
+  it("★ 一覧のキャッシュではなく、読み直した値で判定する（キャッシュは空でも断る）", async () => {
+    h.customer = { ...h.customer, isConstructionDateUnset: true };
+    h.recheck = { kind: "set" };
+    h.lookupRows = [existingConstructionRow()];
+
+    const { status, body } = await call({ ...BASE_BODY, slotRecordId: "slot-9" });
+
+    expect(status).toBe(403);
+    expect(body.error).toBe(ALREADY);
+    expect(h.writes).toEqual([]);
+    expect(h.deleteCalls).toEqual([]);
+  });
+
+  it("★ 一覧のキャッシュが「入っている」でも、読み直して空なら書ける", async () => {
+    h.customer = { ...h.customer, isConstructionDateUnset: false };
+    h.recheck = { kind: "unset" };
+    h.lookupRows = [existingConstructionRow()];
+
+    const { status } = await call({ ...BASE_BODY });
+
+    expect(status).toBe(200);
+    expect(h.writes).toHaveLength(1);
+  });
+
+  it.each(["fetch_failed", "not_found", "field_unresolved", "config"])(
+    "★ 読み直しに失敗したら書かない（%s）",
+    async (reason) => {
+      h.recheck = { kind: "error", reason };
+      h.lookupRows = [existingConstructionRow()];
+
+      const { status, body } = await call({
+        ...BASE_BODY,
+        slotRecordId: "slot-9",
+      });
+
+      expect(status).toBeGreaterThanOrEqual(400);
+      expect(typeof body.error).toBe("string");
+      // 「既に登録されています」とは言わない（分からなかっただけ）
+      expect(body.error).not.toBe(ALREADY);
+      expect(h.writes).toEqual([]);
+      expect(h.deleteCalls).toEqual([]);
+      expect(h.finalize).toEqual([]);
+      expect(h.lookupCalls).toBe(0);
+    },
+  );
 });
