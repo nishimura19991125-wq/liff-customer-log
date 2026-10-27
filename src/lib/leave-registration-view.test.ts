@@ -486,3 +486,38 @@ describe("★ 週の残り日数の文言", () => {
     expect(src).not.toMatch(/この週は\{/);
   });
 });
+
+describe("★ 上部のリンクの並び", () => {
+  // 見た目は描画できないので、2つのリンクを包む要素のクラス名で確かめる
+  function linkRow(): { classes: string[] } | null {
+    const src = read("src/app/attendance/leave/page.tsx");
+    const m =
+      /<div className="([^"]*)">\s*<LiffGhostLink href="\/">← トップへ<\/LiffGhostLink>\s*<LiffGhostLink href="\/attendance">勤怠管理へ<\/LiffGhostLink>\s*<\/div>/.exec(
+        src,
+      );
+    return m ? { classes: m[1]!.split(/\s+/) } : null;
+  }
+
+  it("★ 文言・リンク先・順番は変わらない（左に「← トップへ」、右に「勤怠管理へ」）", () => {
+    expect(linkRow()).not.toBeNull();
+  });
+
+  it("★ 2つが左右に分かれる（flex + justify-between）", () => {
+    const row = linkRow()!;
+    expect(row.classes).toContain("flex");
+    expect(row.classes).toContain("justify-between");
+  });
+
+  it("★ 縦の位置は中央でそろう（items-center）", () => {
+    expect(linkRow()!.classes).toContain("items-center");
+  });
+
+  it("★ 折り返して右のリンクが左へ落ちない（flex-wrap を付けない）", () => {
+    expect(linkRow()!.classes).not.toContain("flex-wrap");
+  });
+
+  it("★ 左右の余白を足さない（下のカードと同じ幅のまま）", () => {
+    const row = linkRow()!;
+    expect(row.classes.some((c) => /^-?(p|px|pl|pr|m|mx|ml|mr)-/.test(c))).toBe(false);
+  });
+});

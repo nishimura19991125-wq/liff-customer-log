@@ -221,7 +221,8 @@ export default function LeaveRegistrationPage() {
           }
         />
 
-        <div className="mb-4 flex flex-wrap gap-x-4 gap-y-2">
+        {/* 「← トップへ」は左、「勤怠管理へ」は右端（下のカードの右端とそろう） */}
+        <div className="mb-4 flex items-center justify-between gap-4">
           <LiffGhostLink href="/">← トップへ</LiffGhostLink>
           <LiffGhostLink href="/attendance">勤怠管理へ</LiffGhostLink>
         </div>
