@@ -77,3 +77,27 @@ export function decideCaseCardZankoMarks(
   // POSTPONED_GRAY_SKIP_REPORTED: 完了報告がある工程はグレーにしない
   return { postponed: false, gray: !card.reported };
 }
+
+/**
+ * 残工日が未定の案件の ⚠️ と赤枠を出すか（残工 段階4-a）。
+ *
+ * @pocket の設定のうち、次の2つの動きに固定している。
+ *   ZANKO_NO_DATE_WARN_MODE = "anyEmpty"
+ *     186 に同じ T番号 で残工日が空のレコードが1件でもあれば出す。
+ *     古いレコードに日付があっても、新しいのが空なら出す
+ *     （残工がさらに残工になり、次の日程が未定の状態を拾うため）
+ *   ZANKO_NO_DATE_WARN_SKIP_REPORTED = true
+ *     完了報告がある工程のカードには出さない（✅ と同じ判定。
+ *     工事報告を読めていなければ「報告なし」として出す）
+ *
+ * 工事登録側のカード（施工予定日・新築・産業用の4日程）に使う。
+ * 【残工】カードには使わない。
+ */
+export function shouldWarnZankoNoDate(
+  index: ZankoIndex,
+  tKey: string,
+  reported: boolean,
+): boolean {
+  if (!tKey || reported) return false;
+  return index.tNumbersWithUndated.has(tKey);
+}

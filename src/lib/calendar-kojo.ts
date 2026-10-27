@@ -27,7 +27,10 @@ import {
 import { pocketTableCellToPlainString } from "@/lib/staff-construction-availability";
 import type { ZankoCaseEntry } from "@/lib/zanko-cards";
 import type { ZankoIndex } from "@/lib/zanko-index";
-import { decideCaseCardZankoMarks } from "@/lib/zanko-postpone";
+import {
+  decideCaseCardZankoMarks,
+  shouldWarnZankoNoDate,
+} from "@/lib/zanko-postpone";
 import { tNumberJoinKey } from "@/lib/t-number-join-key";
 
 export type {
@@ -111,6 +114,8 @@ type CalendarMonthRow = {
   zankoLine1?: string;
   /** グレーにするか（残工 段階3。zanko-postpone で決める） */
   gray?: boolean;
+  /** 残工日が未定の ⚠️ と赤枠（残工 段階4-a。zanko-postpone で決める） */
+  zankoNoDateWarn?: boolean;
 };
 
 const HOUSING_STATUS_EXACT = [
@@ -1103,7 +1108,7 @@ function eventsForDisplayMonth(
     ev: CalendarEventInternal,
     lastDayKey: string,
     reported: boolean,
-  ): { reportPostponed: boolean; gray?: boolean } => {
+  ): { reportPostponed: boolean; gray?: boolean; zankoNoDateWarn?: boolean } => {
     if (!zankoIndex || ev.category !== "list") return { reportPostponed: false };
     const m = decideCaseCardZankoMarks(zankoIndex, {
       tKey: ev.tJoinKey,
@@ -1111,7 +1116,13 @@ function eventsForDisplayMonth(
       lastDayKey,
       reported,
     });
-    return { reportPostponed: m.postponed, ...(m.gray ? { gray: true } : {}) };
+    // 残工日が未定の ⚠️（段階4-a）。完了報告の判定はグレーと同じ reported
+    const warn = shouldWarnZankoNoDate(zankoIndex, ev.tJoinKey, reported);
+    return {
+      reportPostponed: m.postponed,
+      ...(m.gray ? { gray: true } : {}),
+      ...(warn ? { zankoNoDateWarn: true } : {}),
+    };
   };
 
   const out: CalendarMonthRow[] = [];
@@ -1239,6 +1250,7 @@ function rowToApiItem(row: CalendarMonthRow): CalendarMonthApiItem {
     constructionHandlerName: row.constructionHandlerName?.trim() || undefined,
     ...(row.zanko ? { zanko: true } : {}),
     ...(row.gray ? { gray: true } : {}),
+    ...(row.zankoNoDateWarn ? { zankoNoDateWarn: true } : {}),
   };
 }
 

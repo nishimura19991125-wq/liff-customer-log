@@ -25,7 +25,10 @@ import { CustomerNameSplitInput } from "@/components/customer-name-split-input";
 import { CalendarAssignUndatedCaseForm } from "@/components/calendar-assign-undated-case-form";
 import { CalendarMonthSkeleton } from "@/components/calendar-month-skeleton";
 import { CalendarMoveCasePanel } from "@/components/calendar-move-case-panel";
-import { ZANKO_GRAY_LINE_COLOR } from "@/lib/zanko-gray-colors";
+import {
+  ZANKO_GRAY_LINE_COLOR,
+  ZANKO_NO_DATE_WARN_TITLE,
+} from "@/lib/zanko-gray-colors";
 import { shouldShowConstructionMovePanel } from "@/lib/calendar-construction-move-flag";
 import { dayKeyInMonth } from "@/lib/calendar-move-target-slots";
 import {
@@ -2968,6 +2971,20 @@ export function LiffCalendarMonthPage({
                             </div>
                             <p className="zanko-gray-text text-[17px] font-bold leading-snug text-slate-900 sm:text-lg">
                               {item.line1}
+                              {/**
+                               * 残工日が未定（残工 段階4-a）。完工の ✅ の左に出す。
+                               * 大きさは CSS（zanko-warn-icon）。行の高さを変えない
+                               */}
+                              {item.zankoNoDateWarn ? (
+                                <span
+                                  className="zanko-warn-icon ml-1"
+                                  role="img"
+                                  title={ZANKO_NO_DATE_WARN_TITLE}
+                                  aria-label={ZANKO_NO_DATE_WARN_TITLE}
+                                >
+                                  ⚠️
+                                </span>
+                              ) : null}
                               {item.showKankoCheck ? (
                                 <span className="ml-1 text-xl text-emerald-600 sm:text-[1.35rem]">
                                   ✅
@@ -2995,12 +3012,14 @@ export function LiffCalendarMonthPage({
                          * このカードはダークモードでも白いので、明るいグレーのまま使う。
                          */
                         const grayCls = item.gray ? " zanko-gray-body" : "";
+                        /** 残工日が未定の赤枠（残工 段階4-a）。カードの内側に重ねて描く */
+                        const warnCls = item.zankoNoDateWarn ? " zanko-warn-card" : "";
                         return (
                           <li
                             key={`detail-${selectedDayKey}-case-${i}-${item.recordId ?? i}`}
                           >
                             <div
-                              className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100${grayCls}`}
+                              className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100${grayCls}${warnCls}`}
                               style={{ borderLeft: leftBorder }}
                             >
                             {/**

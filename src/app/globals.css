@@ -394,3 +394,47 @@ body {
 .zanko-gray-body > .border-t {
   border-top-color: #909090 !important;
 }
+
+/*
+ * 残工日が未定の案件の赤枠と ⚠️（残工 段階4-a）。@pocket の設定と同じ。
+ *   ZANKO_NO_DATE_WARN_BORDER_COLOR  #dc2626
+ *   ZANKO_NO_DATE_WARN_BORDER_WIDTH  2px
+ *   ZANKO_NO_DATE_WARN_SIZE          16px（640px 以下は 14px）
+ *
+ * 赤枠はカードの内側に描く（box-shadow の inset。@pocket と同じ）。
+ * 枠線・余白を足さないので、カードの高さ・幅は変わらない。
+ *
+ * 器そのものの box-shadow にしないのは、グレーのカードでは本文（最初の子）
+ * に背景があり、器の inset の影がその下に隠れるため。疑似要素を最前面に
+ * 重ねて描く。押せる範囲は変えない（pointer-events: none）。
+ * 赤 #dc2626 の明るさのコントラスト比は、白の上で 4.83:1、グレー #b6b6b6 の
+ * 上で 2.38:1（@pocket と同じ組み合わせ）。グレーの上は明るさの差が小さいが、
+ * 赤と灰の色味の違いで見分けられる。工事カレンダーのカードはダークモードでも
+ * 明るいままなので、ダークモード用の色は持たない。
+ */
+.zanko-warn-card {
+  position: relative;
+}
+
+.zanko-warn-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 2px #dc2626;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.zanko-warn-icon {
+  display: inline-block;
+  font-size: 16px;
+  line-height: 1;
+  vertical-align: baseline;
+}
+
+@media (max-width: 640px) {
+  .zanko-warn-icon {
+    font-size: 14px;
+  }
+}
