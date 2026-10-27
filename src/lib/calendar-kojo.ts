@@ -9,6 +9,7 @@ import type {
   CalendarMonthApiItem,
   CalendarRecordMonthPatch,
   ConstructionHandlerHomeCase,
+  ZankoSourceStatus,
 } from "@/lib/calendar-api-types";
 import {
   atPocketFileHasPayload,
@@ -1282,6 +1283,8 @@ export type BuildCalendarPayloadOptions = {
   constructionFieldIdsOverride?: ConstructionFieldIds;
   /** startDate 以外に試す日付列（ブリッジカレンダー等） */
   startDateFieldCandidates?: string[];
+  /** 残工の材料の読み取り状態（残工 段階1）。そのまま月データに載せる */
+  zankoSourceStatus?: ZankoSourceStatus;
 };
 
 export function buildCalendarPayload(
@@ -1345,6 +1348,9 @@ export function buildCalendarPayload(
     month: viewMonth1To12,
     holidayKeys,
     byDay,
+    ...(opts?.zankoSourceStatus
+      ? { zankoSourceStatus: opts.zankoSourceStatus }
+      : {}),
   };
 }
 

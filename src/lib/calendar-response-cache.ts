@@ -23,6 +23,9 @@ const CALENDAR_PAYLOAD_STALE_SERVE_MS = 6 * 60 * 60 * 1000;
 export function buildCalendarPayloadCacheKey(year: number, month: number): string {
   const calAppId = process.env.CALENDAR_APP_ID?.trim() ?? "";
   const reportAppId = process.env.CALENDAR_REPORT_APP_ID?.trim() ?? "";
+  // 残工 段階1: 186 と契約情報入力（お客様情報）を材料に加えたため
+  const zankoAppId = process.env.ZANKO_APP_ID?.trim() ?? "";
+  const customerInfoAppId = process.env.CUSTOMER_INFO_APP_ID?.trim() ?? "";
   const extraRaw = process.env.CALENDAR_EXTRA_HOLIDAYS?.trim();
   const extraHolidayKeys = extraRaw
     ? extraRaw.split(",").map((s) => s.trim()).filter(Boolean)
@@ -33,9 +36,11 @@ export function buildCalendarPayloadCacheKey(year: number, month: number): strin
     process.env.CALENDAR_RECORDS_QUERY_FILTER?.trim() !== "false";
 
   return JSON.stringify({
-    v: 3,
+    v: 4,
     calAppId,
     reportAppId,
+    zankoAppId,
+    customerInfoAppId,
     extra: extraHolidayKeys.slice().sort().join(","),
     sandwich: includeSandwich,
     recordsQueryFilter: recordsQueryFilterEnabled,

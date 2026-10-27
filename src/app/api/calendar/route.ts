@@ -38,6 +38,11 @@ import {
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
 import { constructionHandlerStaffConfigReady } from "@/lib/staff-construction-handler-candidates";
+import {
+  failedZankoCalendarSources,
+  readZankoCalendarSources,
+  summarizeZankoSources,
+} from "@/lib/zanko-calendar-sources";
 import { isCalendarConstructionMoveEnabled } from "@/lib/calendar-construction-move-flag";
 
 export const dynamic = "force-dynamic";
@@ -139,6 +144,20 @@ export async function GET(request: Request) {
       cacheKey,
       calendarCacheTtlMs(),
       async (): Promise<CalendarApiPayload> => {
+        /**
+         * 残工の材料（186・契約情報入力）。工事レコードの取得と**並べて**読む。
+         * 契約情報はお客様情報の全件キャッシュから作るので、キャッシュが
+         * 空だと全件取得になる。待ってから始めるとそのぶん表示が遅れる。
+         *
+         * 失敗しても投げない（それぞれ「無し」）。想定外に投げられても
+         * 「失敗・無し」にして、カレンダー全体は表示する。
+         * 段階1では読むだけで、表示には使わない。
+         */
+        const sourcesPromise = readZankoCalendarSources().catch((e) => {
+          console.error("[api/calendar] 残工の材料を読めませんでした", e);
+          return failedZankoCalendarSources();
+        });
+
         const constructionFields = await fetchAppFields(calAppId, calFieldsAuth, {
           operation: "calendar:工事fields",
           appEnv: "CALENDAR_APP_ID",
@@ -178,6 +197,8 @@ export async function GET(request: Request) {
             : [];
         }
 
+        const sources = await sourcesPromise;
+
         return buildCalendarPayload(
           year,
           month,
@@ -185,7 +206,11 @@ export async function GET(request: Request) {
           reportRecords,
           constructionFields,
           reportFields,
-          { extraHolidayKeys, includeSandwichNationalHoliday: includeSandwich },
+          {
+            extraHolidayKeys,
+            includeSandwichNationalHoliday: includeSandwich,
+            zankoSourceStatus: summarizeZankoSources(sources),
+          },
         );
       },
     );

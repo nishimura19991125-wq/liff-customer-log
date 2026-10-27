@@ -37,6 +37,20 @@ export type CalendarMonthApiItem = {
   tNumber?: string;
 };
 
+/**
+ * 残工の材料の読み取り状態（残工 段階1）。
+ *   ok       読めた（zankoStale: 429 のため古い値）
+ *   disabled 環境変数が無いので読んでいない
+ *   error    読めなかった（reason を添える）。その材料は「無し」として扱う
+ */
+export type ZankoSourceStatus = {
+  zanko: "ok" | "disabled" | "error";
+  zankoReason?: "field_unresolved" | "rate_limited" | "fetch_failed";
+  zankoStale?: boolean;
+  contract: "ok" | "disabled" | "error";
+  contractReason?: "rate_limited" | "fetch_failed";
+};
+
 /** 1件の工事レコードを表示月カレンダーに即時反映するための差分 */
 export type CalendarRecordMonthPatch = {
   recordId: string;
@@ -61,6 +75,11 @@ export type CalendarApiPayload = {
    * キャッシュの外で毎回付ける。無いときは出さない。
    */
   constructionMoveEnabled?: boolean;
+  /**
+   * 残工の材料（186・契約情報入力）を読めたか（残工 段階1）。
+   * 画面には出さない。失敗しても月データは返す（それぞれ「無し」として扱う）。
+   */
+  zankoSourceStatus?: ZankoSourceStatus;
   /** 429 時に古いキャッシュを返したとき */
   rateLimited?: boolean;
   calendarStale?: boolean;

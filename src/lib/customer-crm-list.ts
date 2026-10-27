@@ -42,6 +42,8 @@ import {
   normalizeDateForInput,
   resolveCustomerInfoFormFieldId,
 } from "@/lib/customer-info-form/resolve-fields";
+import { CUSTOMER_INFO_FORM_FIELDS } from "@/lib/customer-info-form/schema";
+import type { CrmContractInfo } from "@/lib/contract-records";
 import {
   crmEffectiveDocumentMissing,
   crmEffectiveSubsidyTarget,
@@ -136,6 +138,15 @@ type CrmCandidate = CustomerCrmListItem & {
    * 内部用で CustomerCrmListItem には載せない。省略可能な理由は scaffold と同じ。
    */
   constructionDate?: string;
+  /**
+   * 契約情報入力の5列（残工 段階1。工事カレンダーの残工で使う）。
+   *
+   * メーカー・太陽光パネル容量・蓄電池容量①②・市区郡。列が増えるだけで、
+   * ページ数も呼び出し回数も変わらない。内部用で CustomerCrmListItem には
+   * 載せない（/api/customers の応答を変えないため）。
+   * 5列が1つも解決できない環境では付けない（既存の行の形を変えない）。
+   */
+  contract?: CrmContractInfo;
 };
 
 /** 足場の4列の値。日付は YYYY-MM-DD にそろえる（読めない形式はそのまま） */
@@ -253,8 +264,56 @@ type CrmFieldContext = {
   sortFieldId: string | null;
   customerStatusFieldId: string | null;
   docFields: ReturnType<typeof resolveCrmDocumentFields>;
+  /** 契約情報入力の5列（残工 段階1）。解決できなければ null */
+  contractFieldIds: CrmContractFieldIds;
   fieldsCsv: string;
 };
+
+type CrmContractFieldIds = Record<keyof CrmContractInfo, string | null>;
+
+/**
+ * 契約情報入力の5列 → フォーム定義（schema.ts）の key。
+ * 列は既存の仕組みで決める：環境変数 CUSTOMER_INFO_FIELD_* → フォーム定義の見出し。
+ */
+const CONTRACT_FORM_KEYS: Record<keyof CrmContractInfo, string> = {
+  manufacturer: "manufacturer",
+  panelCapacity: "panelCapacityKw",
+  batteryCapacity1: "batteryCapacity1",
+  batteryCapacity2: "batteryCapacity2",
+  city: "city",
+};
+
+function resolveCrmContractFieldIds(
+  appFields: AtPocketFieldRow[],
+): CrmContractFieldIds {
+  const out = {} as CrmContractFieldIds;
+  for (const [name, key] of Object.entries(CONTRACT_FORM_KEYS) as Array<
+    [keyof CrmContractInfo, string]
+  >) {
+    const caption =
+      CUSTOMER_INFO_FORM_FIELDS.find((d) => d.key === key)?.caption ?? "";
+    out[name] = caption
+      ? resolveCustomerInfoFormFieldId(key, caption, appFields)
+      : null;
+  }
+  return out;
+}
+
+function readCrmContractInfo(
+  recObj: Record<string, unknown>,
+  ids: CrmContractFieldIds,
+): CrmContractInfo | undefined {
+  if (!Object.values(ids).some(Boolean)) return undefined;
+  const read = (id: string | null) =>
+    id ? readCustomerInfoFieldValue(recObj, id) : "";
+  return {
+    manufacturer: read(ids.manufacturer),
+    panelCapacity: read(ids.panelCapacity),
+    batteryCapacity1: read(ids.batteryCapacity1),
+    batteryCapacity2: read(ids.batteryCapacity2),
+    city: read(ids.city),
+  };
+}
 
 function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | null {
   const nameField = resolveConfiguredFieldToSchemaUniqueId(
@@ -328,6 +387,11 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
   if (creatorFieldId) fieldIdSet.add(creatorFieldId);
   if (customerStatusFieldId) fieldIdSet.add(customerStatusFieldId);
   for (const d of docFields) fieldIdSet.add(d.fieldId);
+  // 契約情報入力の5列（残工 段階1）。列が増えるだけで、ページ数も回数も変わらない
+  const contractFieldIds = resolveCrmContractFieldIds(appFields);
+  for (const id of Object.values(contractFieldIds)) {
+    if (id) fieldIdSet.add(id);
+  }
 
   return {
     nameField,
@@ -344,6 +408,7 @@ function buildCrmFieldContext(appFields: AtPocketFieldRow[]): CrmFieldContext | 
     sortFieldId,
     customerStatusFieldId,
     docFields,
+    contractFieldIds,
     fieldsCsv: [...fieldIdSet].join(","),
   };
 }
@@ -489,6 +554,8 @@ async function fetchAllCustomerCrmCandidatesFromPocket(): Promise<CrmSnapshot> {
         ctx.constructionDateFieldId,
       );
 
+      const contract = readCrmContractInfo(recObj, ctx.contractFieldIds);
+
       candidates.push({
         recordId,
         customerName,
@@ -512,6 +579,7 @@ async function fetchAllCustomerCrmCandidatesFromPocket(): Promise<CrmSnapshot> {
           : "",
         scaffold: readCrmScaffoldInfo(recObj, ctx.scaffoldFieldIds),
         constructionDate: readCrmDateValue(recObj, ctx.constructionDateFieldId),
+        ...(contract ? { contract } : {}),
         sortKey: crmSortKeyFromRecord(recObj, recordId, ctx.sortFieldId),
         audience,
       });
