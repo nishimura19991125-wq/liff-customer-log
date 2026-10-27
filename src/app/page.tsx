@@ -368,6 +368,14 @@ export default function HomeHubPage() {
                     iconTone="blue"
                     disabled={needsStaffBind}
                   />
+                  <LiffMenuCard
+                    href="/attendance/leave"
+                    title="休みの登録"
+                    description="来週の月曜から2週間の休みを登録します。"
+                    icon={<CalendarGlyph />}
+                    iconTone="blue"
+                    disabled={needsStaffBind}
+                  />
                 </div>
               </HomeCompactSummaries>
             ) : account.boundStaffName ? (

@@ -480,6 +480,9 @@ export default function AttendancePage() {
                   ) : null}
                 </div>
               </LiffCard>
+              <div className="mt-2 flex justify-end">
+                <LiffGhostLink href="/attendance/leave">休みを登録する →</LiffGhostLink>
+              </div>
             </div>
 
             {feedback ? (
