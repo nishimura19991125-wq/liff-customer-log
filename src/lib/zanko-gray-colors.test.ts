@@ -36,7 +36,8 @@ function rule(selector: string): string {
 
 function decl(selector: string, prop: string): string {
   const body = rule(selector);
-  const m = body.match(new RegExp(`${prop}\\s*:\\s*([^;]+);`));
+  // 宣言の先頭で探す（color が background-color の中に当たらないように）
+  const m = body.match(new RegExp(`(?:^|[\\s;])${prop}\\s*:\\s*([^;]+);`));
   expect(m, `${selector} に ${prop} が無い`).not.toBeNull();
   return m![1]!.replace("!important", "").trim().toLowerCase();
 }
@@ -82,21 +83,54 @@ describe("工事カレンダー（明るい表示）", () => {
     );
   });
 
-  it("★ 「お客様情報」の行は白のまま（灰色にするのは本文だけ）", () => {
-    // 器そのもの・本文以外の子に背景を付けるルールが無い
-    const selectors = [...CSS.matchAll(/(^|\n)([^\n{}]*zanko-gray-body[^\n{}]*)\{([^}]*)\}/g)];
-    for (const [, , sel, body] of selectors) {
-      if (/background/.test(body!)) {
-        expect(sel!.trim()).toBe(".zanko-gray-body > :first-child");
-      }
-    }
-    // お客様情報の導線は本文の外（器の中の、本文より後ろ）にある
+  it("★ 操作の行（工事対応者の変更・お客様情報・地図）もカード全体が #b6b6b6", () => {
+    expect(decl(".zanko-gray-body", "background-color")).toBe("#b6b6b6");
+    // 操作の行は器の中の、本文より後ろにある（器の背景がそのまま見える）
     const container = PAGE.indexOf("style={{ borderLeft: leftBorder }}");
     const body = PAGE.indexOf("{caseAccessLinkEnabled ? (", container);
     const link = PAGE.indexOf("<CaseCustomerInfoLink", body);
     expect(container).toBeGreaterThan(0);
     expect(body).toBeGreaterThan(container);
     expect(link).toBeGreaterThan(body);
+  });
+});
+
+describe("工事カレンダーの操作の行（灰色の枠付きボタン）", () => {
+  it("★ ボタンは背景 #b6b6b6・枠線 #3f3f3f・文字 #111111", () => {
+    const sel = ".zanko-gray-body .zanko-gray-btn";
+    expect(decl(sel, "background-color")).toBe("#b6b6b6");
+    expect(decl(sel, "border-color")).toBe("#3f3f3f");
+    expect(decl(sel, "color")).toBe("#111111");
+  });
+
+  it("★ 押したときは背景 #a3a3a3（灰色の上でも分かる）", () => {
+    expect(decl(".zanko-gray-body .zanko-gray-btn:active", "background-color")).toBe(
+      "#a3a3a3",
+    );
+  });
+
+  it("★ 押せないときの薄さ（disabled:opacity）は上書きしない", () => {
+    expect(rule(".zanko-gray-body .zanko-gray-btn")).not.toMatch(/opacity/);
+  });
+
+  it("★ 対象のボタンに目印が付いている（編集・キャンセル・保存・お客様情報・地図）", () => {
+    const n = PAGE.split("zanko-gray-btn").length - 1;
+    expect(n).toBeGreaterThanOrEqual(5);
+    expect(PAGE).toContain(`<MapNavigationButton
+                                    className="zanko-gray-btn"`);
+  });
+
+  it("★ メッセージは濃い色（成功 #064e3b・エラー #7f1d1d・注意 #111111）", () => {
+    expect(decl(".zanko-gray-body .zanko-gray-msg-ok", "color")).toBe("#064e3b");
+    expect(decl(".zanko-gray-body .zanko-gray-msg-err", "color")).toBe("#7f1d1d");
+    expect(decl(".zanko-gray-body .zanko-gray-msg-warn", "color")).toBe("#111111");
+    for (const c of ["zanko-gray-msg-ok", "zanko-gray-msg-err", "zanko-gray-msg-warn"]) {
+      expect(PAGE).toContain(c);
+    }
+  });
+
+  it("★ 工事カレンダーのカードはダークモードでも白いので、ダークモード用の色を持たない", () => {
+    expect(CSS).not.toMatch(/.dark[^{]*zanko-gray-body/);
   });
 });
 
@@ -129,6 +163,16 @@ describe("コントラスト比（4.5:1 以上）", () => {
 
   it("★ #b6b6b6 と #262626 は 7.46:1", () => {
     expect(contrast("#b6b6b6", "#262626")).toBeCloseTo(7.46, 2);
+  });
+
+  it.each([
+    ["ボタンの文字", "#111111", "#b6b6b6"],
+    ["押したとき", "#111111", "#a3a3a3"],
+    ["成功のメッセージ", "#064e3b", "#b6b6b6"],
+    ["エラーのメッセージ", "#7f1d1d", "#b6b6b6"],
+    ["注意のメッセージ", "#111111", "#b6b6b6"],
+  ])("★ %s %s / %s は 4.5:1 以上", (_n, fg, bg) => {
+    expect(contrast(fg, bg)).toBeGreaterThanOrEqual(4.5);
   });
 
   it("★ ダークモードも 4.5:1 以上", () => {

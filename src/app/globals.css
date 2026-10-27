@@ -328,13 +328,25 @@ body {
 
 /*
  * 工事カレンダーの案件カード用。器に zanko-gray-body を付けると、
- * 最初の子（カードの本文）だけをグレーにする。下の操作の行
- * （お客様情報・工事対応者の変更など。@pocket には無い）は白のまま。
- * 灰色にすると緑の文字が読みにくくなるため。
+ * カード全体（本文と下の操作の行）をグレーにする（@pocket と同じ）。
  * 枠線は器ごと @pocket の色にする。左の縦線は画面側で #3f3f3f にする。
  * このカードはダークモードでも白いので、ダークモード用の色は持たない。
+ *
+ * 操作の行（工事対応者の変更・お客様情報・地図。@pocket には無い）の
+ * ボタンは、目印 zanko-gray-btn を付けたものだけ「灰色の枠付きボタン」にする。
+ *   背景 #b6b6b6・枠線 #3f3f3f（5.19:1）・文字 #111111（9.31:1）
+ *   押したとき 背景 #a3a3a3（文字 7.49:1）
+ *   押せないときは各ボタンの disabled:opacity（50〜60%）のまま。薄く見せて
+ *   押せないことを伝える（文字 2.92〜3.79:1。押せない部品はコントラスト比の対象外）
+ * 塗りの緑・青のボタン（白い文字）は灰色の上だと浮き、緑は元々 3.77:1 のため。
+ * 工事日を変更のパネル（今は止めていて出ない）は、選択中の色などを持つので
+ * 行の背景だけ灰色になり、中のボタンは変えない。
+ *
+ * メッセージは灰色の上でも 4.5:1 以上になる濃い色にする。
+ *   成功 #064e3b（4.79:1）・エラー #7f1d1d（4.94:1）・注意 #111111（9.31:1）
  */
 .zanko-gray-body {
+  background-color: #b6b6b6 !important;
   /* 左は縦線（画面側の borderLeft）なので触らない。まとめて指定すると上書きしてしまう */
   border-top-color: #909090 !important;
   border-right-color: #909090 !important;
@@ -351,4 +363,34 @@ body {
 
 .zanko-gray-body > :first-child .zanko-gray-subtext {
   color: #262626 !important;
+}
+
+.zanko-gray-body .zanko-gray-btn {
+  background-color: #b6b6b6 !important;
+  border-width: 1px !important;
+  border-style: solid !important;
+  border-color: #3f3f3f !important;
+  color: #111111 !important;
+  box-shadow: none !important;
+}
+
+.zanko-gray-body .zanko-gray-btn:active {
+  background-color: #a3a3a3 !important;
+}
+
+.zanko-gray-body .zanko-gray-msg-ok {
+  color: #064e3b !important;
+}
+
+.zanko-gray-body .zanko-gray-msg-err {
+  color: #7f1d1d !important;
+}
+
+.zanko-gray-body .zanko-gray-msg-warn {
+  color: #111111 !important;
+}
+
+/* 行の区切り線も灰色の上で見えるように枠線と同じ色にする */
+.zanko-gray-body > .border-t {
+  border-top-color: #909090 !important;
 }

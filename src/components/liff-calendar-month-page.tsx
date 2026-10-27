@@ -283,7 +283,7 @@ function CaseConstructionHandlerEditor({
         {!editing ? (
           <button
             type="button"
-            className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-700 shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99] disabled:opacity-50"
+            className="zanko-gray-btn shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-700 shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99] disabled:opacity-50"
             disabled={!canSubmit || submitting}
             onClick={openEditor}
           >
@@ -309,7 +309,7 @@ function CaseConstructionHandlerEditor({
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button
               type="button"
-              className="rounded-xl border border-slate-200 bg-white py-2.5 text-[13px] font-bold text-slate-700 shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99] disabled:opacity-50"
+              className="zanko-gray-btn rounded-xl border border-slate-200 bg-white py-2.5 text-[13px] font-bold text-slate-700 shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99] disabled:opacity-50"
               disabled={submitting}
               onClick={cancelEditor}
             >
@@ -317,7 +317,7 @@ function CaseConstructionHandlerEditor({
             </button>
             <button
               type="button"
-              className="rounded-xl bg-emerald-600 py-2.5 text-[13px] font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+              className="zanko-gray-btn rounded-xl bg-emerald-600 py-2.5 text-[13px] font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
               disabled={
                 submitting ||
                 !canSubmit ||
@@ -334,7 +334,9 @@ function CaseConstructionHandlerEditor({
       {feedback ? (
         <p
           className={`mt-2 text-[12px] font-semibold leading-relaxed ${
-            feedback.kind === "ok" ? "text-emerald-800" : "text-red-700"
+            feedback.kind === "ok"
+              ? "text-emerald-800 zanko-gray-msg-ok"
+              : "text-red-700 zanko-gray-msg-err"
           }`}
         >
           {feedback.text}
@@ -877,14 +879,14 @@ function CaseCustomerInfoLink({
         type="button"
         onClick={() => void openCustomerInfo()}
         disabled={loading}
-        className="inline-flex w-full items-center justify-center rounded-lg bg-emerald-600 p-3 text-[15px] font-bold text-white shadow-md transition active:scale-[0.98] active:bg-emerald-700 disabled:opacity-60"
+        className="zanko-gray-btn inline-flex w-full items-center justify-center rounded-lg bg-emerald-600 p-3 text-[15px] font-bold text-white shadow-md transition active:scale-[0.98] active:bg-emerald-700 disabled:opacity-60"
       >
         {loading ? "お客様情報を開いています…" : "お客様情報を開く →"}
       </button>
       {error ? (
         <p
           role="alert"
-          className="mt-2 text-[13px] font-semibold leading-relaxed text-amber-800"
+          className="zanko-gray-msg-warn mt-2 text-[13px] font-semibold leading-relaxed text-amber-800"
         >
           {error}
         </p>
@@ -3086,6 +3088,7 @@ export function LiffCalendarMonthPage({
                               {!item.zanko ? (
                                 <div className="border-t border-slate-100 px-4 pb-4 pt-3">
                                   <MapNavigationButton
+                                    className="zanko-gray-btn"
                                     pinpointAddress={item.pinpointAddress}
                                     normalAddress={item.normalAddress}
                                   />
