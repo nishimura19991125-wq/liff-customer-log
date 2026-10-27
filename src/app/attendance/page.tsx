@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { AttendanceMonthCalendar } from "@/components/attendance-month-calendar";
@@ -452,23 +453,36 @@ export default function AttendancePage() {
                     開くまで @pocket を叩かない。マウントしていなければ
                     中の SWR も動かない（キーが張られない）
                   */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCalendarMounted(true);
-                      setCalendarOpen((open) => !open);
-                    }}
-                    aria-expanded={calendarOpen}
-                    aria-controls="attendance-month-calendar"
-                    className="flex w-full items-center justify-between gap-3 text-left"
-                  >
-                    <span className="text-[14px] font-bold text-slate-800 dark:text-slate-100">
-                      今月の記録
-                    </span>
-                    <span className="text-[12px] font-semibold text-emerald-700 dark:text-emerald-400">
-                      {calendarOpen ? "閉じる ▲" : "開く ▼"}
-                    </span>
-                  </button>
+                  {/*
+                    見出しの行。休みの登録へのリンクはここ（右端）に置く。
+                    開閉ボタンの外なので、折りたたんだままでも見えて押せる
+                    （ボタンの中にリンクは入れられない）。
+                  */}
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCalendarMounted(true);
+                        setCalendarOpen((open) => !open);
+                      }}
+                      aria-expanded={calendarOpen}
+                      aria-controls="attendance-month-calendar"
+                      className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
+                    >
+                      <span className="text-[14px] font-bold text-slate-800 dark:text-slate-100">
+                        今月の記録
+                      </span>
+                      <span className="text-[12px] font-semibold text-emerald-700 dark:text-emerald-400">
+                        {calendarOpen ? "閉じる ▲" : "開く ▼"}
+                      </span>
+                    </button>
+                    <Link
+                      href="/attendance/leave"
+                      className="shrink-0 border-l border-slate-200 pl-3 text-[12px] font-semibold text-emerald-700 underline-offset-2 hover:underline dark:border-slate-700 dark:text-emerald-400"
+                    >
+                      休みを登録 →
+                    </Link>
+                  </div>
 
                   {calendarMounted && idToken ? (
                     <div
@@ -480,9 +494,6 @@ export default function AttendancePage() {
                   ) : null}
                 </div>
               </LiffCard>
-              <div className="mt-2 flex justify-end">
-                <LiffGhostLink href="/attendance/leave">休みを登録する →</LiffGhostLink>
-              </div>
             </div>
 
             {feedback ? (

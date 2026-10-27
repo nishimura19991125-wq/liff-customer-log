@@ -22,6 +22,11 @@ import {
   resolveLeaveConfig,
   resolveLeaveFieldIds,
 } from "@/lib/leave-server";
+import {
+  formatLeaveDayLabel,
+  LEAVE_MAX_DAYS_PER_WEEK,
+  leaveWeekKey,
+} from "@/lib/leave-registration-view";
 import { applyImportKeyForWrite } from "@/lib/pocket-import-key-payload";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
@@ -177,6 +182,39 @@ async function writeWithRetryOn429<T>(
   }
 }
 
+/**
+ * 週（月曜〜日曜）ごとに「登録済み＋今回」が上限を超えていないかを見る。
+ * 同じ日は1回だけ数える（登録済みの日をもう一度送っても二重に数えない）。
+ * 超えている週があれば、どの週かが分かる文言を返す。無ければ null。
+ *
+ * 画面でも同じ制限をかけているが、API を直接呼べば超えられるので
+ * ここでも見る。数え方は画面と同じ leaveWeekKey / LEAVE_MAX_DAYS_PER_WEEK。
+ */
+function findWeekOverLimit(
+  dates: readonly string[],
+  registered: ReadonlySet<string>,
+  windowStart: string,
+): string | null {
+  const weeks = [...new Set(dates.map(leaveWeekKey))].sort();
+  for (const monday of weeks) {
+    const sunday = addDaysYmd(monday, 6);
+    const days = new Set<string>();
+    for (const d of registered) if (d >= monday && d <= sunday) days.add(d);
+    const fresh = dates.filter((d) => leaveWeekKey(d) === monday && !registered.has(d));
+    for (const d of fresh) days.add(d);
+    if (days.size > LEAVE_MAX_DAYS_PER_WEEK) {
+      const already = days.size - fresh.length;
+      const diffDays = Math.round(
+        (Date.parse(`${monday}T00:00:00Z`) - Date.parse(`${windowStart}T00:00:00Z`)) /
+          86_400_000,
+      );
+      const label = diffDays >= 0 ? `第${Math.floor(diffDays / 7) + 1}週` : "この週";
+      return `${label}（${formatLeaveDayLabel(monday)}〜${formatLeaveDayLabel(sunday)}）は週${LEAVE_MAX_DAYS_PER_WEEK}日までです（登録済み${already}日・今回${fresh.length}日）。選ぶ日を減らしてください。`;
+    }
+  }
+  return null;
+}
+
 function readText(recObj: Record<string, unknown>, fieldId: string): string {
   const raw = pickRecordValueByFieldAliases(recObj, fieldId);
   if (raw === null || raw === undefined) return "";
@@ -271,9 +309,10 @@ export async function registerLeavesForLineUser(
     }
 
     // 氏名では絞らない。@pocket の一致は表記ゆれに弱いので、期間で取ってから
-    // 正規化した氏名で突き合わせる（2週間分なので件数は小さい）
-    const from = dates[0]!;
-    const to = dates[dates.length - 1]!;
+    // 正規化した氏名で突き合わせる（2週間分なので件数は小さい）。
+    // 週2日の制限で登録済みの日を数えるため、選んだ日を含む週の月曜〜日曜を読む
+    const from = leaveWeekKey(dates[0]!);
+    const to = addDaysYmd(leaveWeekKey(dates[dates.length - 1]!), 6);
     const query = `${ids.leaveDate} >= "${escapePocketQueryValue(from)}" and ${ids.leaveDate} <= "${escapePocketQueryValue(to)}"`;
     const csv = [ids.staffName, ids.leaveType, ids.leaveDate, ids.importKey].join(",");
     const rows: AtPocketRecordRow[] = await fetchAllRecordsPages(
@@ -309,6 +348,12 @@ export async function registerLeavesForLineUser(
       error: text,
       correlationId,
     };
+  }
+
+  // ── 週2日までの制限（登録済みも数える）。超えていたら1日も書かない ──
+  const over = findWeekOverLimit(dates, registered, leaveRegistrationWindow(now).start);
+  if (over) {
+    return { ok: false, status: 400, error: over };
   }
 
   // ── 2) 1日ずつ作る ──

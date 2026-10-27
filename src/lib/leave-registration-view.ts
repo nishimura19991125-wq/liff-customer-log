@@ -72,16 +72,53 @@ export function nextLeaveDeadline(now: Date = new Date()): string {
   return deadlinesOfMonth(nextY, nextM)[0]!;
 }
 
-/** 選べる日か（表示している2週間の中で、まだ登録されていない） */
+/** 1つの週（月曜〜日曜）に休みにできる日数。登録済みの日も数える */
+export const LEAVE_MAX_DAYS_PER_WEEK = 2;
+
+/** その日が属する週の月曜（YYYY-MM-DD）。週は月曜始まり */
+export function leaveWeekKey(ymd: string): string {
+  return addDays(ymd, -((weekdayOf(ymd) + 6) % 7));
+}
+
+/** 週の使用数（登録済み＋選択中。同じ日は1回だけ数える） */
+export function leaveWeekUsage(
+  weekDays: readonly string[],
+  selected: readonly string[],
+  registered: ReadonlySet<string>,
+): { used: number; limit: number; full: boolean } {
+  const used = new Set(
+    weekDays.filter((d) => registered.has(d) || selected.includes(d)),
+  ).size;
+  return {
+    used,
+    limit: LEAVE_MAX_DAYS_PER_WEEK,
+    full: used >= LEAVE_MAX_DAYS_PER_WEEK,
+  };
+}
+
+/**
+ * 選べる日か。
+ *   - 表示している2週間の中で、まだ登録されていない
+ *   - その週の使用数（登録済み＋選択中）が上限に達していない
+ * selected を省略すると、選択中は数えない。
+ */
 export function isLeaveDaySelectable(
   date: string,
   shownDays: readonly string[],
   registered: ReadonlySet<string>,
+  selected: readonly string[] = [],
 ): boolean {
-  return shownDays.includes(date) && !registered.has(date);
+  if (!shownDays.includes(date) || registered.has(date)) return false;
+  if (selected.includes(date)) return true;
+  const week = leaveWeekKey(date);
+  const weekDays = shownDays.filter((d) => leaveWeekKey(d) === week);
+  return !leaveWeekUsage(weekDays, selected, registered).full;
 }
 
-/** 押した日の選択を切り替える（選べない日は無視する）。昇順で返す */
+/**
+ * 押した日の選択を切り替える（選べない日は無視する）。昇順で返す。
+ * 選んだ日はいつでも外せる（上限に達していても）。
+ */
 export function toggleLeaveDate(
   selected: readonly string[],
   date: string,
@@ -89,7 +126,7 @@ export function toggleLeaveDate(
   registered: ReadonlySet<string>,
 ): string[] {
   if (selected.includes(date)) return selected.filter((d) => d !== date);
-  if (!isLeaveDaySelectable(date, shownDays, registered)) return [...selected];
+  if (!isLeaveDaySelectable(date, shownDays, registered, selected)) return [...selected];
   return [...selected, date].sort();
 }
 

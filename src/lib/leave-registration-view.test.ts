@@ -8,6 +8,8 @@ import {
   buildLeaveWeeks,
   formatLeaveDayLabel,
   isLeaveDaySelectable,
+  LEAVE_MAX_DAYS_PER_WEEK,
+  leaveWeekUsage,
   leaveRegisterRequestBody,
   nextLeaveDeadline,
   summarizeLeaveRegisterResult,
@@ -279,5 +281,107 @@ describe("★ 画面と導線", () => {
 
   it("★ 勤怠画面からも開ける", () => {
     expect(read("src/app/attendance/page.tsx")).toContain('href="/attendance/leave"');
+  });
+});
+
+describe("★ 週2日までの制限（画面）", () => {
+  const week1 = buildLeaveWeeks("2026-11-02")[0]!.days; // 11/2〜11/8
+  const week2 = buildLeaveWeeks("2026-11-02")[1]!.days; // 11/9〜11/15
+  const shown = [...week1, ...week2];
+  const none = new Set<string>();
+
+  it("★ 1つの週で3日目は選べない", () => {
+    const sel = ["2026-11-02", "2026-11-03"];
+    expect(isLeaveDaySelectable("2026-11-04", shown, none, sel)).toBe(false);
+    expect(toggleLeaveDate(sel, "2026-11-04", shown, none)).toEqual(sel);
+  });
+
+  it("★ 登録済みが1日あれば、あと1日しか選べない", () => {
+    const reg = new Set(["2026-11-05"]);
+    const one = toggleLeaveDate([], "2026-11-02", shown, reg);
+    expect(one).toEqual(["2026-11-02"]);
+    expect(isLeaveDaySelectable("2026-11-03", shown, reg, one)).toBe(false);
+    expect(toggleLeaveDate(one, "2026-11-03", shown, reg)).toEqual(one);
+  });
+
+  it("★ 登録済みが2日あれば、その週は選べない", () => {
+    const reg = new Set(["2026-11-05", "2026-11-06"]);
+    for (const d of week1) {
+      expect(isLeaveDaySelectable(d, shown, reg, [])).toBe(false);
+    }
+  });
+
+  it("★ 選択を外すと、また選べるようになる", () => {
+    const sel = ["2026-11-02", "2026-11-03"];
+    const after = toggleLeaveDate(sel, "2026-11-03", shown, none);
+    expect(after).toEqual(["2026-11-02"]);
+    expect(isLeaveDaySelectable("2026-11-04", shown, none, after)).toBe(true);
+  });
+
+  it("★ 上限に達していても、選んだ日は外せる", () => {
+    const reg = new Set(["2026-11-05"]);
+    expect(toggleLeaveDate(["2026-11-02"], "2026-11-02", shown, reg)).toEqual([]);
+  });
+
+  it("★ 第1週と第2週は別々に数える", () => {
+    const sel = ["2026-11-02", "2026-11-03"];
+    expect(isLeaveDaySelectable("2026-11-09", shown, none, sel)).toBe(true);
+    const both = toggleLeaveDate(
+      toggleLeaveDate(sel, "2026-11-09", shown, none),
+      "2026-11-10",
+      shown,
+      none,
+    );
+    expect(both).toEqual(["2026-11-02", "2026-11-03", "2026-11-09", "2026-11-10"]);
+    expect(isLeaveDaySelectable("2026-11-11", shown, none, both)).toBe(false);
+  });
+
+  it("★ 週の使用数（登録済み＋選択中）と、上限に達したかが分かる", () => {
+    const reg = new Set(["2026-11-05"]);
+    expect(leaveWeekUsage(week1, ["2026-11-02"], reg)).toEqual({
+      used: 2,
+      limit: LEAVE_MAX_DAYS_PER_WEEK,
+      full: true,
+    });
+    expect(leaveWeekUsage(week2, ["2026-11-02"], reg)).toEqual({
+      used: 0,
+      limit: 2,
+      full: false,
+    });
+  });
+
+  it("★ 画面に「この週は2日まで」の表示がある", () => {
+    const src = read("src/app/attendance/leave/page.tsx");
+    expect(src).toContain("leaveWeekUsage");
+    expect(src).toMatch(/この週は.*日まで/);
+  });
+});
+
+describe("★ 導線の置き場所", () => {
+  it("★ 勤怠画面では「今月の記録」の見出しの行にリンクがある（折りたたんでも見える）", () => {
+    const src = read("src/app/attendance/page.tsx");
+    const heading = src.indexOf("今月の記録");
+    const link = src.indexOf('href="/attendance/leave"');
+    const calendar = src.indexOf('id="attendance-month-calendar"');
+    expect(heading).toBeGreaterThan(-1);
+    expect(link).toBeGreaterThan(heading);
+    // カレンダー本体（開いたときだけ出る部分）より前＝見出しの行
+    expect(calendar).toBeGreaterThan(link);
+    // 以前の位置（カードの下）には残さない
+    expect(src.split('href="/attendance/leave"').length - 1).toBe(1);
+  });
+
+  it("★ 開閉の仕組みはそのまま", () => {
+    const src = read("src/app/attendance/page.tsx");
+    expect(src).toContain("setCalendarMounted(true)");
+    expect(src).toContain("setCalendarOpen((open) => !open)");
+    expect(src).toContain("aria-expanded={calendarOpen}");
+    expect(src).toContain("calendarMounted && idToken");
+  });
+
+  it("★ トップページの「休みの登録」カードは残っている", () => {
+    const src = read("src/app/page.tsx");
+    expect(src).toContain('href="/attendance/leave"');
+    expect(src).toContain('title="休みの登録"');
   });
 });

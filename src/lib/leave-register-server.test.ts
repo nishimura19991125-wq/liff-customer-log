@@ -200,8 +200,9 @@ describe("★ 先に読んで、登録済みの日は飛ばす", () => {
   it("★ その場で1回読む（期間で絞る）", async () => {
     await registerLeavesForLineUser("U-me", ["2026-11-02", "2026-11-05"], noWait);
     expect(h.reads).toHaveLength(1);
+    // 週2日の制限で登録済みの日を数えるため、選んだ日を含む週の月曜〜日曜を読む
     expect(h.reads[0]!.query).toBe(
-      'field-4 >= "2026-11-02" and field-4 <= "2026-11-05"',
+      'field-4 >= "2026-11-02" and field-4 <= "2026-11-08"',
     );
   });
 
@@ -246,16 +247,17 @@ describe("★ 先に読んで、登録済みの日は飛ばす", () => {
 describe("★ 途中で失敗したとき", () => {
   it("★ 登録できた日・失敗した日・試していない日に分かれて返る", async () => {
     h.createFail.set("2026/11/03", { times: 9, status: 500 });
+    // 週2日の制限の内側（第1週 11/2・11/3、第2週 11/9・11/10）
     const res = await registerLeavesForLineUser(
       "U-me",
-      ["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05"],
+      ["2026-11-02", "2026-11-03", "2026-11-09", "2026-11-10"],
       noWait,
     );
     expect(res.ok).toBe(false);
     if (res.ok || !("created" in res)) throw new Error("breakdown expected");
     expect(res.created).toEqual(["2026-11-02"]);
     expect(res.failed).toBe("2026-11-03");
-    expect(res.notAttempted).toEqual(["2026-11-04", "2026-11-05"]);
+    expect(res.notAttempted).toEqual(["2026-11-09", "2026-11-10"]);
     expect(res.correlationId).toMatch(/^[0-9a-f]{8}$/);
   });
 
@@ -499,5 +501,88 @@ describe("★ 応答に内部の情報を出さない", () => {
       }),
     );
     expect(res.status).toBe(401);
+  });
+});
+
+describe("★ 週2日までの制限（サーバ側）", () => {
+  it("★ 1つの週に3日を送ったら全部拒否し、1日も登録しない", async () => {
+    const res = await registerLeavesForLineUser(
+      "U-me",
+      ["2026-11-02", "2026-11-03", "2026-11-04"],
+      noWait,
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.status).toBe(400);
+    expect(h.creates).toHaveLength(0);
+  });
+
+  it("★ 登録済みを含めて3日以上になる登録は全部拒否する", async () => {
+    h.existingRows = [existing(ME, "2026/11/07")];
+    const res = await registerLeavesForLineUser(
+      "U-me",
+      ["2026-11-02", "2026-11-03"],
+      noWait,
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.status).toBe(400);
+    expect(h.creates).toHaveLength(0);
+  });
+
+  it("★ 拒否の文言で、どの週が超えているか分かる", async () => {
+    h.existingRows = [existing(ME, "2026/11/10")];
+    const res = await registerLeavesForLineUser(
+      "U-me",
+      ["2026-11-02", "2026-11-09", "2026-11-11"],
+      noWait,
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toContain("第2週");
+    expect(res.error).toContain("11/9(月)〜11/15(日)");
+    expect(res.error).not.toContain("第1週");
+  });
+
+  it("★ 2日ちょうどは登録できる", async () => {
+    const res = await registerLeavesForLineUser(
+      "U-me",
+      ["2026-11-02", "2026-11-03"],
+      noWait,
+    );
+    expect(res.ok && res.created).toEqual(["2026-11-02", "2026-11-03"]);
+  });
+
+  it("★ 登録済み1日＋新しく1日の2日ちょうども登録できる", async () => {
+    h.existingRows = [existing(ME, "2026/11/07")];
+    const res = await registerLeavesForLineUser("U-me", ["2026-11-02"], noWait);
+    expect(res.ok && res.created).toEqual(["2026-11-02"]);
+  });
+
+  it("★ 登録済みの日をもう一度送っても二重に数えない", async () => {
+    h.existingRows = [existing(ME, "2026/11/02")];
+    const res = await registerLeavesForLineUser(
+      "U-me",
+      ["2026-11-02", "2026-11-03"],
+      noWait,
+    );
+    expect(res.ok && res.created).toEqual(["2026-11-03"]);
+  });
+
+  it("★ 第1週と第2週は別々に数える（2日＋2日は登録できる）", async () => {
+    const res = await registerLeavesForLineUser(
+      "U-me",
+      ["2026-11-02", "2026-11-03", "2026-11-09", "2026-11-10"],
+      noWait,
+    );
+    expect(res.ok && res.created).toHaveLength(4);
+  });
+
+  it("★ 他人の登録済みは数えない", async () => {
+    h.existingRows = [existing("社員B", "2026/11/04"), existing("社員B", "2026/11/05")];
+    const res = await registerLeavesForLineUser(
+      "U-me",
+      ["2026-11-02", "2026-11-03"],
+      noWait,
+    );
+    expect(res.ok).toBe(true);
   });
 });

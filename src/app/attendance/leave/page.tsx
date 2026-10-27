@@ -22,7 +22,9 @@ import {
   buildLeaveWeeks,
   formatLeaveDayLabel,
   isLeaveDaySelectable,
+  LEAVE_MAX_DAYS_PER_WEEK,
   leaveRegisterRequestBody,
+  leaveWeekUsage,
   nextLeaveDeadline,
   summarizeLeaveRegisterResult,
   toggleLeaveDate,
@@ -126,6 +128,7 @@ export default function LeaveRegistrationPage() {
     [data?.registered],
   );
   const currentWeek = weeks.find((w) => w.index === weekIndex) ?? weeks[0];
+  const weekUsage = leaveWeekUsage(currentWeek?.days ?? [], selected, registered);
   const deadline = nextLeaveDeadline();
   const deadlineIsToday = deadline === jstYmd();
   const body = leaveRegisterRequestBody(selected, registered);
@@ -308,13 +311,30 @@ export default function LeaveRegistrationPage() {
                   })}
                 </div>
 
+                {/* 週2日までの案内（登録済みも数える） */}
+                <p
+                  className={`text-[13px] leading-relaxed ${
+                    weekUsage.full
+                      ? "font-medium text-amber-800 dark:text-amber-200"
+                      : "text-slate-500 dark:text-slate-400"
+                  }`}
+                >
+                  この週は{LEAVE_MAX_DAYS_PER_WEEK}日まで（登録済みを含めて {weekUsage.used}/
+                  {LEAVE_MAX_DAYS_PER_WEEK}日）
+                  {weekUsage.full
+                    ? "。上限に達しました。ほかの日にするときは、選んだ日を外してください。"
+                    : ""}
+                </p>
+
                 {/* その週の7日 */}
                 <LiffCard>
                   <ul className="flex flex-col divide-y divide-slate-100 dark:divide-slate-800">
                     {(currentWeek?.days ?? []).map((d) => {
                       const isRegistered = registered.has(d);
                       const isSelected = selected.includes(d);
-                      const selectable = isLeaveDaySelectable(d, shownDays, registered);
+                      const selectable = isLeaveDaySelectable(d, shownDays, registered, selected);
+                      // 週の上限で選べない日（登録済みではない）
+                      const isOverLimit = !isRegistered && !isSelected && !selectable;
                       return (
                         <li key={d}>
                           <button
@@ -325,7 +345,7 @@ export default function LeaveRegistrationPage() {
                               setSelected((prev) => toggleLeaveDate(prev, d, shownDays, registered))
                             }
                             className={`flex min-h-12 w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition ${
-                              isRegistered
+                              isRegistered || isOverLimit
                                 ? "cursor-not-allowed bg-slate-50 text-slate-400 dark:bg-slate-900/60 dark:text-slate-600"
                                 : isSelected
                                   ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100"
@@ -336,7 +356,13 @@ export default function LeaveRegistrationPage() {
                               {formatLeaveDayLabel(d)}
                             </span>
                             <span className="shrink-0 text-[12px] font-semibold">
-                              {isRegistered ? "登録済み" : isSelected ? "✓ 選択中" : "選ぶ"}
+                              {isRegistered
+                                ? "登録済み"
+                                : isSelected
+                                  ? "✓ 選択中"
+                                  : isOverLimit
+                                    ? "上限"
+                                    : "選ぶ"}
                             </span>
                           </button>
                         </li>
