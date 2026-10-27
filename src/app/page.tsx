@@ -370,7 +370,7 @@ export default function HomeHubPage() {
                   />
                   <LiffMenuCard
                     href="/attendance/leave"
-                    title="休みの登録"
+                    title="休暇登録"
                     description="来週の月曜から2週間の休みを登録します。"
                     icon={<CalendarGlyph />}
                     iconTone="blue"

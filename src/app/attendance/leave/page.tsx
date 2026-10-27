@@ -161,7 +161,7 @@ export default function LeaveRegistrationPage() {
     } catch {
       setSummary({
         kind: "error",
-        message: "休みの登録に失敗しました。通信状況を確認して、もう一度お試しください。",
+        message: "休暇登録に失敗しました。通信状況を確認して、もう一度お試しください。",
       });
     } finally {
       setSubmitting(false);
@@ -206,7 +206,7 @@ export default function LeaveRegistrationPage() {
     <LiffScreen>
       <main className="liff-page-main mx-auto w-full max-w-lg flex-1 py-6">
         <LiffPageHeader
-          title="休みの登録"
+          title="休暇登録"
           subtitle="来週の月曜から2週間の休みを登録します"
           action={
             <div className="flex shrink-0 items-center gap-2">
@@ -259,7 +259,7 @@ export default function LeaveRegistrationPage() {
             ) : disabled ? (
               <LiffCard>
                 <p className="px-4 py-4 text-[14px] text-slate-600 dark:text-slate-300">
-                  休みの登録は現在利用できません。
+                  休暇登録は現在利用できません。
                 </p>
               </LiffCard>
             ) : !data?.window ? (

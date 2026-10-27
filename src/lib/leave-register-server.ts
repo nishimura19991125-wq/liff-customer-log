@@ -282,7 +282,7 @@ export async function registerLeavesForLineUser(
   const cfg = resolveLeaveConfig();
   const apiKey = leaveApiKey();
   if (!cfg.enabled || !apiKey) {
-    return { ok: false, status: 503, error: "休みの登録は現在利用できません" };
+    return { ok: false, status: 503, error: "休暇登録は現在利用できません" };
   }
 
   const staffName = await resolveBoundStaffNameForLineUser(lineUserId);
@@ -340,7 +340,7 @@ export async function registerLeavesForLineUser(
     const raw = e instanceof Error ? e.message : String(e);
     const { text, correlationId } = safePocketErrorTextWithId(e, {
       scope: SCOPE,
-      message: "休みの登録に失敗しました。しばらくしてから再度お試しください。",
+      message: "休暇登録に失敗しました。しばらくしてから再度お試しください。",
     });
     return {
       ok: false,
@@ -399,9 +399,9 @@ export async function registerLeavesForLineUser(
       const rateLimited = isLeaveWriteRateLimited(e);
       const { text, correlationId } = safePocketErrorTextWithId(e, {
         scope: SCOPE,
-        message: "休みの登録が途中で失敗しました。もう一度送ると、残りの日だけを登録します。",
+        message: "休暇登録が途中で失敗しました。もう一度送ると、残りの日だけを登録します。",
         rateLimitedMessage:
-          "休みの登録が途中で止まりました。時間をおいてもう一度送ると、残りの日だけを登録します。",
+          "休暇登録が途中で止まりました。時間をおいてもう一度送ると、残りの日だけを登録します。",
       });
       const notAttempted = toCreate.slice(i + 1);
       // 件数だけ。氏名・日付の中身は出さない

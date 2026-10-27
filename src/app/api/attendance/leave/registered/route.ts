@@ -27,7 +27,7 @@ export async function GET(request: Request) {
   } catch (e) {
     return pocketErrorResponse(e, {
       scope: "api/attendance/leave/registered",
-      message: "休みの登録状況を取得できませんでした。しばらくしてから再度お試しください。",
+      message: "休暇登録の状況を取得できませんでした。しばらくしてから再度お試しください。",
     });
   }
 }

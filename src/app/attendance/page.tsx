@@ -480,7 +480,7 @@ export default function AttendancePage() {
                       href="/attendance/leave"
                       className="shrink-0 border-l border-slate-200 pl-3 text-[12px] font-semibold text-emerald-700 underline-offset-2 hover:underline dark:border-slate-700 dark:text-emerald-400"
                     >
-                      休みを登録 →
+                      休暇を登録 →
                     </Link>
                   </div>
 

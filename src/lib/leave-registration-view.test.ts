@@ -381,10 +381,71 @@ describe("★ 導線の置き場所", () => {
     expect(src).toContain("calendarMounted && idToken");
   });
 
-  it("★ トップページの「休みの登録」カードは残っている", () => {
+  it("★ トップページの「休暇登録」カードは残っている", () => {
     const src = read("src/app/page.tsx");
     expect(src).toContain('href="/attendance/leave"');
-    expect(src).toContain('title="休みの登録"');
+    expect(src).toContain('title="休暇登録"');
+  });
+});
+
+describe("★ 画面の文言は「休暇登録」", () => {
+  it("★ トップページのカードは「休暇登録」", () => {
+    const src = read("src/app/page.tsx");
+    expect(src).toContain('title="休暇登録"');
+    expect(src).not.toContain('title="休みの登録"');
+  });
+
+  it("★ 勤怠画面の導線は「休暇を登録 →」", () => {
+    const src = read("src/app/attendance/page.tsx");
+    expect(src).toContain("休暇を登録 →");
+    expect(src).not.toContain("休みを登録 →");
+  });
+
+  it("★ 登録画面の見出しは「休暇登録」", () => {
+    const src = read("src/app/attendance/leave/page.tsx");
+    expect(src).toContain('title="休暇登録"');
+    expect(src).not.toContain('title="休みの登録"');
+  });
+
+  it("★ 機能名として出す文言（利用できない・失敗）も「休暇登録」", () => {
+    const files = [
+      "src/app/attendance/leave/page.tsx",
+      "src/app/api/attendance/leave/route.ts",
+      "src/app/api/attendance/leave/registered/route.ts",
+      "src/lib/leave-register-server.ts",
+      "src/lib/leave-registration-view.ts",
+    ];
+    for (const f of files) {
+      // コメントは対象外。文字列（"…" と `…`）の中だけを見る。
+      // 日そのものを指す「休み」（説明文・登録結果）は変えないので除く
+      const strings = read(f).match(/"[^"\n]*"|`[^`\n]*`/g) ?? [];
+      const keep = /日分の休みを登録しました|2週間の休みを登録します/;
+      expect(
+        strings.filter((s) => /休みの登録|休みを登録/.test(s) && !keep.test(s)),
+      ).toEqual([]);
+    }
+    expect(read("src/lib/leave-register-server.ts")).toContain("休暇登録は現在利用できません");
+    expect(read("src/app/attendance/leave/page.tsx")).toContain("休暇登録は現在利用できません");
+  });
+
+  it("★ 変えない文言はそのまま（日そのものを指す「休み」）", () => {
+    const usage = leaveWeekUsage(buildLeaveWeeks("2026-11-02")[0]!.days, [], new Set());
+    expect(leaveWeekRemainingMessage(usage)).toBe("この週に登録できる休みは残り2日です");
+    expect(
+      leaveWeekRemainingMessage({ used: 2, limit: 2, full: true }),
+    ).toContain("ほかの日にするときは、選んだ日を外してください");
+    // 説明文・登録結果・勤怠カレンダーの表示は変えない
+    expect(read("src/app/page.tsx")).toContain("来週の月曜から2週間の休みを登録します。");
+    expect(read("src/app/attendance/leave/page.tsx")).toContain(
+      "来週の月曜から2週間の休みを登録します",
+    );
+    expect(
+      summarizeLeaveRegisterResult(200, { ok: true, created: ["2026-11-02"], alreadyRegistered: [] })
+        .message,
+    ).toContain("1日分の休みを登録しました");
+    const cal = read("src/components/attendance-month-calendar.tsx");
+    expect(cal).toContain("休みの登録あり");
+    expect(cal).toContain("打刻・休みの登録なし");
   });
 });
 

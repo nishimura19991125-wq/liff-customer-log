@@ -210,6 +210,6 @@ export function summarizeLeaveRegisterResult(
 
   return {
     kind: "error",
-    message: body.error?.trim() || "休みの登録に失敗しました。しばらくしてから再度お試しください。",
+    message: body.error?.trim() || "休暇登録に失敗しました。しばらくしてから再度お試しください。",
   };
 }

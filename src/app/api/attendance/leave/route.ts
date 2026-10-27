@@ -44,7 +44,7 @@ export async function POST(request: Request) {
   } catch (e) {
     return pocketErrorResponse(e, {
       scope: "api/attendance/leave",
-      message: "休みの登録に失敗しました。しばらくしてから再度お試しください。",
+      message: "休暇登録に失敗しました。しばらくしてから再度お試しください。",
     });
   }
 }
