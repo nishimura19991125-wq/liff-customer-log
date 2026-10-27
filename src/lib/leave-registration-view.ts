@@ -117,18 +117,23 @@ export function leaveWeekRemainingMessage(usage: {
  *   - 表示している2週間の中で、まだ登録されていない
  *   - その週の使用数（登録済み＋選択中）が上限に達していない
  * selected を省略すると、選択中は数えない。
+ *
+ * registered は「登録のある日」すべて（種別を問わず選べない）。
+ * countedRegistered は週2日の制限で数える登録済みの日（「休み」だけ）。
+ * 省略すると registered をそのまま数える。
  */
 export function isLeaveDaySelectable(
   date: string,
   shownDays: readonly string[],
   registered: ReadonlySet<string>,
   selected: readonly string[] = [],
+  countedRegistered: ReadonlySet<string> = registered,
 ): boolean {
   if (!shownDays.includes(date) || registered.has(date)) return false;
   if (selected.includes(date)) return true;
   const week = leaveWeekKey(date);
   const weekDays = shownDays.filter((d) => leaveWeekKey(d) === week);
-  return !leaveWeekUsage(weekDays, selected, registered).full;
+  return !leaveWeekUsage(weekDays, selected, countedRegistered).full;
 }
 
 /**
@@ -140,9 +145,12 @@ export function toggleLeaveDate(
   date: string,
   shownDays: readonly string[],
   registered: ReadonlySet<string>,
+  countedRegistered: ReadonlySet<string> = registered,
 ): string[] {
   if (selected.includes(date)) return selected.filter((d) => d !== date);
-  if (!isLeaveDaySelectable(date, shownDays, registered, selected)) return [...selected];
+  if (!isLeaveDaySelectable(date, shownDays, registered, selected, countedRegistered)) {
+    return [...selected];
+  }
   return [...selected, date].sort();
 }
 

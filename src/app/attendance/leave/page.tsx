@@ -31,6 +31,7 @@ import {
   type LeaveRegisterResponse,
   type LeaveRegisterSummary,
 } from "@/lib/leave-registration-view";
+import { isRestLeaveType, leaveTypeLabel } from "@/lib/leave-type-mark";
 import { isLineSessionExpiredPayload } from "@/lib/line-auth-codes";
 import { initLiffAndGetToken } from "@/lib/liff-session";
 import { isLiffSwrSessionExpired, LIFF_SWR_DEFAULT_OPTIONS } from "@/lib/liff-swr";
@@ -41,6 +42,8 @@ const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
 type RegisteredResponse = {
   window?: { start: string; end: string };
   registered?: string[] | null;
+  /** 登録済みの日ごとの種別（休み・有給・忌引き・欠勤 など） */
+  registeredTypes?: Record<string, string> | null;
   leavesStatus?: "disabled" | "ok" | "error";
   error?: string;
 };
@@ -128,7 +131,17 @@ export default function LeaveRegistrationPage() {
     [data?.registered],
   );
   const currentWeek = weeks.find((w) => w.index === weekIndex) ?? weeks[0];
-  const weekUsage = leaveWeekUsage(currentWeek?.days ?? [], selected, registered);
+  // 週2日の制限で数えるのは「休み」だけ。有給・忌引き・欠勤の日は選べないが、数えない
+  const restRegistered = useMemo(
+    () =>
+      new Set(
+        (data?.registered ?? []).filter((d) =>
+          isRestLeaveType(data?.registeredTypes?.[d]),
+        ),
+      ),
+    [data?.registered, data?.registeredTypes],
+  );
+  const weekUsage = leaveWeekUsage(currentWeek?.days ?? [], selected, restRegistered);
   const deadline = nextLeaveDeadline();
   const deadlineIsToday = deadline === jstYmd();
   const body = leaveRegisterRequestBody(selected, registered);
@@ -329,7 +342,13 @@ export default function LeaveRegistrationPage() {
                     {(currentWeek?.days ?? []).map((d) => {
                       const isRegistered = registered.has(d);
                       const isSelected = selected.includes(d);
-                      const selectable = isLeaveDaySelectable(d, shownDays, registered, selected);
+                      const selectable = isLeaveDaySelectable(
+                        d,
+                        shownDays,
+                        registered,
+                        selected,
+                        restRegistered,
+                      );
                       // 週の上限で選べない日（登録済みではない）
                       const isOverLimit = !isRegistered && !isSelected && !selectable;
                       return (
@@ -339,7 +358,9 @@ export default function LeaveRegistrationPage() {
                             disabled={!selectable || submitting}
                             aria-pressed={isSelected}
                             onClick={() =>
-                              setSelected((prev) => toggleLeaveDate(prev, d, shownDays, registered))
+                              setSelected((prev) =>
+                                toggleLeaveDate(prev, d, shownDays, registered, restRegistered),
+                              )
                             }
                             className={`flex min-h-12 w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition ${
                               isRegistered || isOverLimit
@@ -354,7 +375,7 @@ export default function LeaveRegistrationPage() {
                             </span>
                             <span className="shrink-0 text-[12px] font-semibold">
                               {isRegistered
-                                ? "登録済み"
+                                ? leaveTypeLabel(data?.registeredTypes?.[d])
                                 : isSelected
                                   ? "✓ 選択中"
                                   : isOverLimit

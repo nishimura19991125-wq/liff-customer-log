@@ -58,6 +58,7 @@ import {
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { fetchLeaveMonth } from "@/lib/leave-server";
+import { leaveTypesByDate } from "@/lib/leave-type-mark";
 import {
   extractDisplayHHmm,
   type AttendanceDayRecord,
@@ -1292,6 +1293,12 @@ export type AttendanceMonthCalendarResponse = {
    * 本人が分からないとき（紐付けなし・勤怠が未設定）は leaves も leavesStatus も無い。
    */
   leaves?: string[] | null;
+  /**
+   * 本人の休暇の種別（{ "YYYY-MM-DD": 種別 }）。キーは leaves と同じ日付。
+   * 同じ日に複数あれば leave-type-mark.ts の順位で1つ。他人の分は入れない。
+   * leavesStatus が error のときは null、disabled のときは空。
+   */
+  leaveTypes?: Record<string, string> | null;
   /** 休暇アプリの取得結果。disabled は休暇アプリが未設定 */
   leavesStatus?: "disabled" | "ok" | "error";
 };
@@ -1307,16 +1314,25 @@ async function leavesForStaff(
   staffName: string,
   year: number,
   month: number,
-): Promise<Pick<AttendanceMonthCalendarResponse, "leaves" | "leavesStatus">> {
+): Promise<
+  Pick<AttendanceMonthCalendarResponse, "leaves" | "leaveTypes" | "leavesStatus">
+> {
   const res = await fetchLeaveMonth(year, month);
-  if (res.status === "disabled") return { leaves: [], leavesStatus: "disabled" };
-  if (res.status === "error") return { leaves: null, leavesStatus: "error" };
-  const me = normApClStaffName(staffName);
-  const dates = new Set<string>();
-  for (const e of res.entries) {
-    if (me && normApClStaffName(e.staffName) === me) dates.add(e.date);
+  if (res.status === "disabled") {
+    return { leaves: [], leaveTypes: {}, leavesStatus: "disabled" };
   }
-  return { leaves: [...dates].sort(), leavesStatus: "ok" };
+  if (res.status === "error") {
+    return { leaves: null, leaveTypes: null, leavesStatus: "error" };
+  }
+  const me = normApClStaffName(staffName);
+  // 先に本人の分だけに絞る（種別も日付も、他人の分は混ぜない）
+  const mine = me
+    ? res.entries.filter((e) => normApClStaffName(e.staffName) === me)
+    : [];
+  const leaveTypes = leaveTypesByDate(
+    mine.map((e) => ({ date: e.date, type: e.leaveType, recordId: e.recordId })),
+  );
+  return { leaves: Object.keys(leaveTypes), leaveTypes, leavesStatus: "ok" };
 }
 
 function pad2Month(n: number): string {

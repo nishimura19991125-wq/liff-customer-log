@@ -90,6 +90,13 @@ function leaveRow(id: number, name: string, date: string) {
     record: { "field-1": name, "field-2": "有給", "field-3": String(id), "field-4": date },
   };
 }
+/** 種別を指定できる版 */
+function leaveRowT(id: number, name: string, date: string, type: string) {
+  return {
+    recordId: id,
+    record: { "field-1": name, "field-2": type, "field-3": String(id), "field-4": date },
+  };
+}
 
 beforeEach(() => {
   process.env.ATTENDANCE_APP_ID = "99";
@@ -132,11 +139,21 @@ describe("★ 本人の休みだけを返す", () => {
     expect(JSON.stringify(res)).not.toContain(OTHER);
   });
 
-  it("★ 休みは日付だけ（種別・レコードIDなど他の項目を出さない）", async () => {
-    h.leaveRows = [leaveRow(1, ME, "2026/10/05")];
+  it("★ 本人の種別だけを出し、他人の種別やレコードIDは出さない", async () => {
+    // 休暇種別を表示するため、本人の種別は返す（以前は日付だけだった）
+    h.leaveRows = [
+      leaveRowT(1, ME, "2026/10/05", "有給"),
+      leaveRowT(2, OTHER, "2026/10/06", "忌引き"),
+      leaveRowT(3, OTHER, "2026/10/05", "欠勤"),
+    ];
     const res = await getAttendanceMonthCalendarForLineUser("U-me", 2026, 10);
     expect(res.leaves).toEqual(["2026-10-05"]);
-    expect(JSON.stringify(res)).not.toContain("有給");
+    expect(res.leaveTypes).toEqual({ "2026-10-05": "有給" });
+    const text = JSON.stringify(res);
+    expect(text).not.toContain("忌引き");
+    expect(text).not.toContain("欠勤");
+    expect(text).not.toContain("recordId");
+    expect(text).not.toContain("kyuka");
   });
 
   it("★ 氏名の前後に空白があっても一致する", async () => {
@@ -276,5 +293,64 @@ describe("★ records の取得が完全だったか（recordsComplete）", () =
     expect(res.rateLimited).toBe(true);
     expect(res.records).toEqual([]);
     expect(res.recordsComplete).toBe(false);
+  });
+});
+
+describe("★ 休暇種別（leaveTypes）", () => {
+  it("★ 種別（field-2）を読み、日付ごとに本人の種別を返す", async () => {
+    h.leaveRows = [
+      leaveRowT(1, ME, "2026/10/05", "休み"),
+      leaveRowT(2, ME, "2026/10/06", "有給"),
+      leaveRowT(3, ME, "2026/10/07", "忌引き"),
+      leaveRowT(4, ME, "2026/10/08", "欠勤"),
+    ];
+    const res = await getAttendanceMonthCalendarForLineUser("U-me", 2026, 10);
+    expect(res.leaveTypes).toEqual({
+      "2026-10-05": "休み",
+      "2026-10-06": "有給",
+      "2026-10-07": "忌引き",
+      "2026-10-08": "欠勤",
+    });
+  });
+
+  it("★ leaveTypes に他人の分が混ざらない（同じ日でも、本人に休暇が無い日でも）", async () => {
+    h.leaveRows = [
+      leaveRowT(1, ME, "2026/10/05", "休み"),
+      leaveRowT(2, OTHER, "2026/10/05", "忌引き"),
+      leaveRowT(3, OTHER, "2026/10/09", "有給"),
+      leaveRowT(4, `  ${OTHER}　`, "2026/10/10", "欠勤"),
+    ];
+    const res = await getAttendanceMonthCalendarForLineUser("U-me", 2026, 10);
+    expect(res.leaveTypes).toEqual({ "2026-10-05": "休み" });
+    expect(Object.keys(res.leaveTypes ?? {})).toEqual(res.leaves);
+  });
+
+  it("★ 同じ日に複数あれば 忌引き > 欠勤 > 有給 > 知らない種別 > 休み で1つ", async () => {
+    h.leaveRows = [
+      leaveRowT(1, ME, "2026/10/05", "休み"),
+      leaveRowT(2, ME, "2026/10/05", "有給"),
+      leaveRowT(3, ME, "2026/10/06", "特別休暇"),
+      leaveRowT(4, ME, "2026/10/06", "休み"),
+      leaveRowT(5, ME, "2026/10/07", "有給"),
+      leaveRowT(6, ME, "2026/10/07", "忌引き"),
+    ];
+    const res = await getAttendanceMonthCalendarForLineUser("U-me", 2026, 10);
+    expect(res.leaveTypes).toEqual({
+      "2026-10-05": "有給",
+      "2026-10-06": "特別休暇",
+      "2026-10-07": "忌引き",
+    });
+  });
+
+  it("★ 取得に失敗したら leaveTypes も null（空で「休暇なし」と見せない）", async () => {
+    h.leaveFail = true;
+    const res = await getAttendanceMonthCalendarForLineUser("U-me", 2026, 10);
+    expect(res.leaveTypes).toBeNull();
+  });
+
+  it("休暇アプリが未設定なら leaveTypes は空", async () => {
+    delete process.env.LEAVE_APP_ID;
+    const res = await getAttendanceMonthCalendarForLineUser("U-me", 2026, 10);
+    expect(res.leaveTypes).toEqual({});
   });
 });

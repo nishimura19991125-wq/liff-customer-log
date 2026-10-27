@@ -152,3 +152,47 @@ describe("★ API の応答", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("★ 登録済みの日の種別（registeredTypes）", () => {
+  function rowT(name: string, date: string, type: string, recordId = 1) {
+    return { recordId, record: { "field-1": name, "field-2": type, "field-4": date } };
+  }
+
+  it("★ 本人の登録済みの日ごとに種別を返す", async () => {
+    h.rowsByMonth.set("2026-11", [
+      rowT(ME, "2026/11/05", "有給"),
+      rowT(ME, "2026/11/06", "休み"),
+    ]);
+    const res = await getRegisteredLeavesForLineUser("U-me", NOW);
+    expect(res.ok && res.registered).toEqual(["2026-11-05", "2026-11-06"]);
+    expect(res.ok && res.registeredTypes).toEqual({
+      "2026-11-05": "有給",
+      "2026-11-06": "休み",
+    });
+  });
+
+  it("★ 他人の種別は混ざらない", async () => {
+    h.rowsByMonth.set("2026-11", [
+      rowT(ME, "2026/11/05", "休み"),
+      rowT("社員B", "2026/11/05", "忌引き"),
+      rowT("社員B", "2026/11/07", "欠勤"),
+    ]);
+    const res = await getRegisteredLeavesForLineUser("U-me", NOW);
+    expect(res.ok && res.registeredTypes).toEqual({ "2026-11-05": "休み" });
+  });
+
+  it("★ 同じ日に複数あれば順位で1つ（忌引き > 欠勤 > 有給 > 知らない種別 > 休み）", async () => {
+    h.rowsByMonth.set("2026-11", [
+      rowT(ME, "2026/11/05", "休み", 1),
+      rowT(ME, "2026/11/05", "欠勤", 2),
+    ]);
+    const res = await getRegisteredLeavesForLineUser("U-me", NOW);
+    expect(res.ok && res.registeredTypes).toEqual({ "2026-11-05": "欠勤" });
+  });
+
+  it("★ 読めなければ registeredTypes も null", async () => {
+    h.failMonths.add("2026-11");
+    const res = await getRegisteredLeavesForLineUser("U-me", NOW);
+    expect(res.ok && res.registeredTypes).toBeNull();
+  });
+});

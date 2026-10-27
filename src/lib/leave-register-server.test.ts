@@ -586,3 +586,88 @@ describe("★ 週2日までの制限（サーバ側）", () => {
     expect(res.ok).toBe(true);
   });
 });
+
+describe("★ 休暇種別で分ける（サーバ側）", () => {
+  function existingT(name: string, date: string, type: string, recordId = 1) {
+    return {
+      recordId,
+      record: { "field-1": name, "field-2": type, "field-3": String(recordId), "field-4": date },
+    };
+  }
+
+  it("★ 「休み」以外が入っている日を含む送信は全体を拒否し、1日も書かない", async () => {
+    h.existingRows = [existingT(ME, "2026/11/05", "有給")];
+    const res = await registerLeavesForLineUser(
+      "U-me",
+      ["2026-11-02", "2026-11-05"],
+      noWait,
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.status).toBe(400);
+    expect(res.error).toContain("11/5(木)");
+    expect(res.error).toContain("有給");
+    expect(h.creates).toHaveLength(0);
+  });
+
+  it("★ 忌引き・欠勤・知らない種別も同じく拒否する", async () => {
+    for (const type of ["忌引き", "欠勤", "特別休暇"]) {
+      h.existingRows = [existingT(ME, "2026/11/05", type)];
+      h.creates = [];
+      const res = await registerLeavesForLineUser("U-me", ["2026-11-05"], noWait);
+      expect(res.ok).toBe(false);
+      expect(h.creates).toHaveLength(0);
+    }
+  });
+
+  it("★ 同じ日に「休み」と「有給」があれば有給として扱い、拒否する", async () => {
+    h.existingRows = [
+      existingT(ME, "2026/11/05", "休み", 1),
+      existingT(ME, "2026/11/05", "有給", 2),
+    ];
+    const res = await registerLeavesForLineUser("U-me", ["2026-11-05"], noWait);
+    expect(res.ok).toBe(false);
+  });
+
+  it("★ 「休み」が入っている日は従来どおり飛ばす（送り直しても二重にならない）", async () => {
+    h.existingRows = [existingT(ME, "2026/11/05", "休み")];
+    const res = await registerLeavesForLineUser(
+      "U-me",
+      ["2026-11-02", "2026-11-05"],
+      noWait,
+    );
+    expect(res.ok && res.alreadyRegistered).toEqual(["2026-11-05"]);
+    expect(res.ok && res.created).toEqual(["2026-11-02"]);
+  });
+
+  it("★ 他人の有給がある日は拒否しない", async () => {
+    h.existingRows = [existingT("社員B", "2026/11/05", "有給")];
+    const res = await registerLeavesForLineUser("U-me", ["2026-11-05"], noWait);
+    expect(res.ok && res.created).toEqual(["2026-11-05"]);
+  });
+
+  it("★ 週2日の制限は「休み」だけを数える（有給2日の週でも休みを2日登録できる）", async () => {
+    h.existingRows = [
+      existingT(ME, "2026/11/05", "有給", 1),
+      existingT(ME, "2026/11/06", "有給", 2),
+    ];
+    const res = await registerLeavesForLineUser(
+      "U-me",
+      ["2026-11-02", "2026-11-03"],
+      noWait,
+    );
+    expect(res.ok && res.created).toEqual(["2026-11-02", "2026-11-03"]);
+  });
+
+  it("★ 休み1日＋有給1日の週は、休みをあと1日しか登録できない", async () => {
+    h.existingRows = [
+      existingT(ME, "2026/11/05", "休み", 1),
+      existingT(ME, "2026/11/06", "有給", 2),
+    ];
+    const ok = await registerLeavesForLineUser("U-me", ["2026-11-02"], noWait);
+    expect(ok.ok).toBe(true);
+    h.existingRows.push(existingT(ME, "2026/11/02", "休み", 3));
+    const ng = await registerLeavesForLineUser("U-me", ["2026-11-03"], noWait);
+    expect(ng.ok).toBe(false);
+  });
+});

@@ -3,6 +3,7 @@ import "server-only";
 import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 import { leaveRegistrationWindow } from "@/lib/leave-register-server";
 import { fetchLeaveMonth } from "@/lib/leave-server";
+import { leaveTypesByDate } from "@/lib/leave-type-mark";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
 /**
@@ -24,6 +25,11 @@ export type RegisteredLeavesResult =
       window: { start: string; end: string };
       /** 本人の、期間内の登録済みの日（昇順）。leavesStatus が error のときは null */
       registered: string[] | null;
+      /**
+       * 登録済みの日ごとの種別（{ "YYYY-MM-DD": 種別 }）。本人の分だけ。
+       * 同じ日に複数あれば leave-type-mark.ts の順位で1つ。error のときは null
+       */
+      registeredTypes: Record<string, string> | null;
       leavesStatus: "disabled" | "ok" | "error";
     }
   | { ok: false; status: number; error: string };
@@ -52,20 +58,41 @@ export async function getRegisteredLeavesForLineUser(
   );
 
   if (results.some((r) => r.status === "disabled")) {
-    return { ok: true, window, registered: [], leavesStatus: "disabled" };
+    return {
+      ok: true,
+      window,
+      registered: [],
+      registeredTypes: {},
+      leavesStatus: "disabled",
+    };
   }
   if (results.some((r) => r.status === "error")) {
-    return { ok: true, window, registered: null, leavesStatus: "error" };
+    return {
+      ok: true,
+      window,
+      registered: null,
+      registeredTypes: null,
+      leavesStatus: "error",
+    };
   }
 
   const me = normApClStaffName(staffName);
-  const dates = new Set<string>();
+  const mine: Array<{ date: string; type: string; recordId: string | null }> = [];
   for (const r of results) {
     if (r.status !== "ok") continue;
     for (const e of r.entries) {
       if (e.date < window.start || e.date > window.end) continue;
-      if (me && normApClStaffName(e.staffName) === me) dates.add(e.date);
+      if (me && normApClStaffName(e.staffName) === me) {
+        mine.push({ date: e.date, type: e.leaveType, recordId: e.recordId });
+      }
     }
   }
-  return { ok: true, window, registered: [...dates].sort(), leavesStatus: "ok" };
+  const registeredTypes = leaveTypesByDate(mine);
+  return {
+    ok: true,
+    window,
+    registered: Object.keys(registeredTypes),
+    registeredTypes,
+    leavesStatus: "ok",
+  };
 }

@@ -27,7 +27,13 @@ import {
   LEAVE_MAX_DAYS_PER_WEEK,
   leaveWeekKey,
 } from "@/lib/leave-registration-view";
+import {
+  isRestLeaveType,
+  leaveTypeLabel,
+  leaveTypesByDate,
+} from "@/lib/leave-type-mark";
 import { applyImportKeyForWrite } from "@/lib/pocket-import-key-payload";
+import { atPocketRecordIdFromRow } from "@/lib/atpocket-record-id";
 import { resolveBoundStaffNameForLineUser } from "@/lib/staff-bound-lookup";
 
 /**
@@ -295,7 +301,8 @@ export async function registerLeavesForLineUser(
 
   // ── 1) 列と、その期間の休暇（その場で1回） ──
   let ids: ReturnType<typeof resolveLeaveFieldIds>;
-  const registered = new Set<string>();
+  /** 本人の登録済みの日 → 種別（同じ日に複数あれば leave-type-mark.ts の順位で1つ） */
+  let typesByDate: Record<string, string> = {};
   try {
     const fields = await fetchAppFields(appId, auth, {
       operation: "leave:fields",
@@ -328,14 +335,21 @@ export async function registerLeavesForLineUser(
       throw new Error(`登録前の確認で取得の上限に達しました rows=${rows.length}`);
     }
     const me = normApClStaffName(staffName);
+    const mine: Array<{ date: string; type: string; recordId: string | null }> = [];
     for (const row of rows) {
       const rec = (row.record ?? {}) as Record<string, unknown>;
       if (normApClStaffName(readText(rec, ids.staffName)) !== me) continue;
       const d = normalizeDateForInput(
         normalizeDateTimeForPocketField(readText(rec, ids.leaveDate), "Date"),
       );
-      if (d) registered.add(d);
+      if (!d) continue;
+      mine.push({
+        date: d,
+        type: readText(rec, ids.leaveType),
+        recordId: atPocketRecordIdFromRow(row) ?? null,
+      });
     }
+    typesByDate = leaveTypesByDate(mine);
   } catch (e) {
     const raw = e instanceof Error ? e.message : String(e);
     const { text, correlationId } = safePocketErrorTextWithId(e, {
@@ -350,8 +364,31 @@ export async function registerLeavesForLineUser(
     };
   }
 
-  // ── 週2日までの制限（登録済みも数える）。超えていたら1日も書かない ──
-  const over = findWeekOverLimit(dates, registered, leaveRegistrationWindow(now).start);
+  const registered = new Set(Object.keys(typesByDate));
+
+  // ── 「休み」以外（有給・忌引き・欠勤・知らない種別）が入っている日を含むなら、
+  //    全体を拒否して1日も書かない（重ねて登録させない）。
+  //    「休み」が入っている日は従来どおり飛ばす（送り直しても二重にならない） ──
+  const blocked = dates.filter(
+    (d) => registered.has(d) && !isRestLeaveType(typesByDate[d]),
+  );
+  if (blocked.length > 0) {
+    const list = blocked
+      .map((d) => `${formatLeaveDayLabel(d)}は${leaveTypeLabel(typesByDate[d])}`)
+      .join("、");
+    return {
+      ok: false,
+      status: 400,
+      error: `${list}がすでに登録されています。その日を外してください。`,
+    };
+  }
+
+  // ── 週2日までの制限（登録済みの「休み」も数える。有給などは数えない）。
+  //    超えていたら1日も書かない ──
+  const restRegistered = new Set(
+    [...registered].filter((d) => isRestLeaveType(typesByDate[d])),
+  );
+  const over = findWeekOverLimit(dates, restRegistered, leaveRegistrationWindow(now).start);
   if (over) {
     return { ok: false, status: 400, error: over };
   }

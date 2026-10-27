@@ -444,7 +444,8 @@ describe("★ 画面の文言は「休暇登録」", () => {
         .message,
     ).toContain("1日分の休みを登録しました");
     const cal = read("src/components/attendance-month-calendar.tsx");
-    expect(cal).toContain("休みの登録あり");
+    // 日の詳細は種別の名前で出す（休暇種別の表示で「休みの登録あり」から変更）
+    expect(cal).toContain("leaveTypeLabel(");
     expect(cal).toContain("打刻・休みの登録なし");
   });
 });
@@ -519,5 +520,41 @@ describe("★ 上部のリンクの並び", () => {
   it("★ 左右の余白を足さない（下のカードと同じ幅のまま）", () => {
     const row = linkRow()!;
     expect(row.classes.some((c) => /^-?(p|px|pl|pr|m|mx|ml|mr)-/.test(c))).toBe(false);
+  });
+});
+
+describe("★ 種別が入っている日と、週2日の数え方（画面）", () => {
+  const week1 = buildLeaveWeeks("2026-11-02")[0]!.days;
+  const shown = [...week1, ...buildLeaveWeeks("2026-11-02")[1]!.days];
+  // 11/5・11/6 は有給（登録済みだが「休み」ではない）
+  const registered = new Set(["2026-11-05", "2026-11-06"]);
+  const counted = new Set<string>(); // 週2日で数えるのは休みだけ
+
+  it("★ 種別が入っている日は選べない", () => {
+    expect(isLeaveDaySelectable("2026-11-05", shown, registered, [], counted)).toBe(false);
+    expect(toggleLeaveDate([], "2026-11-05", shown, registered, counted)).toEqual([]);
+  });
+
+  it("★ 有給2日の週でも、残り日数は減らない（残り2日です）", () => {
+    const usage = leaveWeekUsage(week1, [], counted);
+    expect(leaveWeekRemainingMessage(usage)).toBe("この週に登録できる休みは残り2日です");
+  });
+
+  it("★ 有給2日の週でも、休みを2日まで選べる（3日目は選べない）", () => {
+    const a = toggleLeaveDate([], "2026-11-02", shown, registered, counted);
+    const b = toggleLeaveDate(a, "2026-11-03", shown, registered, counted);
+    expect(b).toEqual(["2026-11-02", "2026-11-03"]);
+    expect(isLeaveDaySelectable("2026-11-04", shown, registered, b, counted)).toBe(false);
+  });
+
+  it("★ 数える集合を省くと、従来どおり登録済み全部を数える", () => {
+    expect(isLeaveDaySelectable("2026-11-02", shown, registered, [])).toBe(false);
+  });
+
+  it("★ 画面は種別を出し、週2日は「休み」だけで数える", () => {
+    const src = read("src/app/attendance/leave/page.tsx");
+    expect(src).toContain("registeredTypes");
+    expect(src).toContain("leaveTypeLabel");
+    expect(src).toContain("isRestLeaveType");
   });
 });

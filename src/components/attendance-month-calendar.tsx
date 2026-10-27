@@ -17,7 +17,20 @@ import {
   attendanceWeekdayTone,
   buildAttendanceMonthCells,
 } from "@/lib/attendance-month-grid";
+import { leaveTypeLabel, leaveTypeMark } from "@/lib/leave-type-mark";
 import { LIFF_SWR_ATTENDANCE_OPTIONS } from "@/lib/liff-swr";
+
+/**
+ * 休暇の日の色。種別（休み・有給・忌引き・欠勤）にかかわらず同じ灰色で、
+ * 印の文字（leave-type-mark.ts の対応表）だけで見分ける。
+ * 打刻なしの赤いマス（rose）とも、何も無い日（薄い slate）とも別の濃さにする。
+ */
+const LEAVE_CELL_CLASS =
+  "bg-slate-200/80 ring-1 ring-inset ring-slate-300 dark:bg-slate-700/60 dark:ring-slate-500/70";
+const LEAVE_BADGE_CLASS =
+  "bg-slate-500 text-white dark:bg-slate-300 dark:text-slate-900";
+const LEAVE_LEGEND_CLASS =
+  "bg-slate-200 ring-1 ring-slate-400 dark:bg-slate-700 dark:ring-slate-400";
 
 type MonthCalendarApiResponse = {
   configured?: boolean;
@@ -27,6 +40,8 @@ type MonthCalendarApiResponse = {
   records?: AttendanceDayRecord[];
   recordsComplete?: boolean;
   leaves?: string[] | null;
+  /** 本人の休暇の種別（{ "YYYY-MM-DD": 種別 }） */
+  leaveTypes?: Record<string, string> | null;
   leavesStatus?: "disabled" | "ok" | "error";
   needsStaffBind?: boolean;
   configError?: string;
@@ -47,12 +62,15 @@ function DayDetailSheet({
   dateKey,
   record,
   isLeave,
+  leaveType,
   isMissing,
   onClose,
 }: {
   dateKey: string;
   record: AttendanceDayRecord | undefined;
   isLeave: boolean;
+  /** 休暇の種別（休み・有給 など）。空なら「休み」と出す */
+  leaveType?: string;
   isMissing: boolean;
   onClose: () => void;
 }) {
@@ -90,8 +108,8 @@ function DayDetailSheet({
           {formatDateLabel(dateKey)}
         </h3>
         {isLeave ? (
-          <p className="mt-3 inline-flex items-center rounded-full bg-sky-100 px-2.5 py-1 text-[12px] font-semibold text-sky-800 dark:bg-sky-950/60 dark:text-sky-200">
-            休みの登録あり
+          <p className="mt-3 inline-flex items-center rounded-full bg-slate-200 px-2.5 py-1 text-[12px] font-semibold text-slate-800 dark:bg-slate-700 dark:text-slate-100">
+            {leaveTypeLabel(leaveType)}
           </p>
         ) : null}
         {hasAny ? (
@@ -250,8 +268,8 @@ export function AttendanceMonthCalendar({
         </span>
         {showLeaveLegend ? (
           <span className="inline-flex items-center gap-1.5">
-            <span className="size-2.5 rounded-sm bg-sky-50 ring-1 ring-sky-300 dark:bg-sky-950/50 dark:ring-sky-700" />
-            休み
+            <span className={`size-2.5 rounded-sm ${LEAVE_LEGEND_CLASS}`} />
+            休暇（休・有・忌・欠）
           </span>
         ) : null}
         {showMissingLegend ? (
@@ -306,7 +324,7 @@ export function AttendanceMonthCalendar({
               : hasPunch
                 ? "bg-emerald-50 ring-1 ring-inset ring-emerald-200/80 dark:bg-emerald-950/35 dark:ring-emerald-800/60"
                 : state.isLeave
-                  ? "bg-sky-50 ring-1 ring-inset ring-sky-200/80 dark:bg-sky-950/35 dark:ring-sky-800/60"
+                  ? LEAVE_CELL_CLASS
                   : state.isMissing
                     ? "bg-rose-50 ring-1 ring-inset ring-rose-200/80 dark:bg-rose-950/30 dark:ring-rose-800/60"
                     : "bg-slate-50/70 dark:bg-slate-900/80";
@@ -361,8 +379,11 @@ export function AttendanceMonthCalendar({
                 ) : null}
 
                 {state.isLeave ? (
-                  <span className="mt-1.5 inline-flex items-center rounded-full bg-sky-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
-                    休
+                  <span
+                    className={`mt-1.5 inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold ${LEAVE_BADGE_CLASS}`}
+                    aria-label={leaveTypeLabel(data?.leaveTypes?.[cell.dateKey])}
+                  >
+                    {leaveTypeMark(data?.leaveTypes?.[cell.dateKey])}
                   </span>
                 ) : null}
 
@@ -387,6 +408,7 @@ export function AttendanceMonthCalendar({
           dateKey={selectedDateKey}
           record={selectedRecord}
           isLeave={selectedState?.isLeave ?? false}
+          leaveType={data?.leaveTypes?.[selectedDateKey] ?? undefined}
           isMissing={selectedState?.isMissing ?? false}
           onClose={() => setSelectedDateKey(null)}
         />
