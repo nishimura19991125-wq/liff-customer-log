@@ -2,6 +2,7 @@ import type {
   CalendarApiPayload,
   CalendarRecordMonthPatch,
 } from "@/lib/calendar-api-types";
+import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 
 /** 保存直後にクライアントの byDay を差し替え（同一 recordId の旧行を除去してからマージ） */
 export function applyCalendarRecordPatch(
@@ -48,6 +49,62 @@ export function applyConstructionHandlerNameLocal(
       if (item.constructionHandlerName === name) return item;
       dayChanged = true;
       return { ...item, constructionHandlerName: name };
+    });
+    byDay[dayKey] = dayChanged ? next : list;
+    if (dayChanged) changed = true;
+  }
+  return changed ? { ...data, byDay } : data;
+}
+
+const HANDLER_LINE2_PREFIX = "工事対応: ";
+
+/** T番号 の比べ方。サーバの tNumberJoinKey と同じ（NFKC・空白の畳み込み） */
+function tNumberLocalKey(raw: string | undefined): string {
+  return normApClStaffName(raw ?? "");
+}
+
+/** 2行目の「工事対応: …」を差し替える（無ければ先頭に足す。並びはサーバと同じ） */
+function replaceHandlerInLine2(line2: string, name: string): string {
+  const head = `${HANDLER_LINE2_PREFIX}${name}`;
+  if (line2.startsWith(HANDLER_LINE2_PREFIX)) {
+    const sep = line2.indexOf("｜");
+    return sep >= 0 ? `${head}${line2.slice(sep)}` : head;
+  }
+  return line2 ? `${head}｜${line2}` : head;
+}
+
+/**
+ * 【残工】カードから工事対応者を変えた直後に、同じ T番号 のカードの名前を
+ * その場で差し替える。
+ *
+ * 普通のカードの「再取得できなかったとき」（applyConstructionHandlerNameLocal）
+ * と同じ考え方。【残工】カードはレコードIDを持たないので T番号 で当てる。
+ * 工事登録アプリの同じ T番号 のレコードにも書いているので、普通のカードも
+ * 一緒に差し替える。2行目にも「工事対応: …」が入るのでそこも直す。
+ * 正しい値はサーバのキャッシュを捨ててあるので、次の再取得で揃う。
+ */
+export function applyConstructionHandlerNameByTNumberLocal(
+  data: CalendarApiPayload,
+  tNumber: string,
+  constructionHandlerName: string,
+): CalendarApiPayload {
+  const want = tNumberLocalKey(tNumber);
+  const name = constructionHandlerName.trim();
+  if (!want || !name) return data;
+
+  let changed = false;
+  const byDay: CalendarApiPayload["byDay"] = {};
+  for (const [dayKey, list] of Object.entries(data.byDay)) {
+    let dayChanged = false;
+    const next = list.map((item) => {
+      if (item.category !== "list") return item;
+      if (tNumberLocalKey(item.tNumber) !== want) return item;
+      const line2 = replaceHandlerInLine2(item.line2 ?? "", name);
+      if (item.constructionHandlerName === name && item.line2 === line2) {
+        return item;
+      }
+      dayChanged = true;
+      return { ...item, constructionHandlerName: name, line2 };
     });
     byDay[dayKey] = dayChanged ? next : list;
     if (dayChanged) changed = true;

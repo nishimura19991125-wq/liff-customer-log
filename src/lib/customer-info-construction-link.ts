@@ -206,8 +206,55 @@ export async function findConstructionRecordByTNumber(opts: {
   tNumber: string;
   fieldsCsv: string;
 }): Promise<FoundConstructionRecord> {
+  const listed = await listConstructionRecordsByTNumber(opts);
+  if (listed.kind === "error") return listed;
+  const { matched } = listed;
+
+  if (matched.length === 1) {
+    return { kind: "found", ...matched[0]! };
+  }
+  if (matched.length > 1) {
+    // 同じ T番号 の工事レコードが複数ある。掴み違えると実データを壊す
+    console.error(
+      "[customer-info-construction-link] 同じ T番号 の工事レコードが複数あるため特定しません",
+      { count: matched.length },
+    );
+    return {
+      kind: "error",
+      reason: "lookup-ambiguous",
+      cause: new Error(
+        `同じ T番号 の工事レコードが複数あります（${matched.length}件）`,
+      ),
+    };
+  }
+  return { kind: "not-found" };
+}
+
+export type ListedConstructionRecords =
+  | {
+      kind: "ok";
+      /** T番号 が完全一致したレコード（0件・複数件もありうる） */
+      matched: { recordId: string; record: Record<string, unknown> }[];
+    }
+  /** 探せなかった（429・タイムアウトなど）。0件と取り違えないこと */
+  | { kind: "error"; reason: "lookup-failed"; cause: unknown };
+
+/**
+ * 工事登録アプリを T番号 の完全一致で探し、一致したものを**すべて**返す。
+ * 絞り込みのクエリ1回だけで、全件走査はしない。
+ *
+ * findConstructionRecordByTNumber（1件に特定する）の中身をここへ移した。
+ * 【残工】カードの工事対応者の変更は、同じ T番号 のレコードすべてに
+ * 同じ値を書くので、複数件をそのまま受け取る。
+ */
+export async function listConstructionRecordsByTNumber(opts: {
+  calAppId: string;
+  tNumberFieldId: string;
+  tNumber: string;
+  fieldsCsv: string;
+}): Promise<ListedConstructionRecords> {
   const want = opts.tNumber.trim();
-  if (!want) return { kind: "not-found" };
+  if (!want) return { kind: "ok", matched: [] };
 
   const query = `${opts.tNumberFieldId} = "${escapePocketQueryValue(want)}"`;
 
@@ -244,25 +291,7 @@ export async function findConstructionRecordByTNumber(opts: {
     const s = id == null ? "" : String(id).trim();
     if (s) matched.push({ recordId: s, record: recObj });
   }
-
-  if (matched.length === 1) {
-    return { kind: "found", ...matched[0]! };
-  }
-  if (matched.length > 1) {
-    // 同じ T番号 の工事レコードが複数ある。掴み違えると実データを壊す
-    console.error(
-      "[customer-info-construction-link] 同じ T番号 の工事レコードが複数あるため特定しません",
-      { count: matched.length },
-    );
-    return {
-      kind: "error",
-      reason: "lookup-ambiguous",
-      cause: new Error(
-        `同じ T番号 の工事レコードが複数あります（${matched.length}件）`,
-      ),
-    };
-  }
-  return { kind: "not-found" };
+  return { kind: "ok", matched };
 }
 
 /**

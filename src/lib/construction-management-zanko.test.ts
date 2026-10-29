@@ -310,10 +310,12 @@ describe("配線", () => {
     );
   });
 
-  it("★ 工事カレンダーの残工カードは、お客様情報の導線だけ出す", () => {
+  it("★ 工事カレンダーの残工カードは、お客様情報の導線と工事対応者の変更を出す", () => {
     const src = read("src/components/liff-calendar-month-page.tsx");
-    // 工事対応者の変更・工事日の変更・地図は残工カードでは出さない
-    expect(src).toContain("{item.zanko ? null : handlerFromStaff ? (");
+    // 工事対応者の変更は普通のカードと同じ条件で出す（仕様変更）
+    expect(src).not.toContain("{item.zanko ? null : handlerFromStaff ? (");
+    expect(src).toContain("{handlerFromStaff ? (");
+    // 工事日の変更・地図は残工カードでは出さない
     expect(src).toContain("!item.zanko &&");
     expect(src).toContain("{!item.zanko ? (");
     // お客様情報の導線は条件を変えない

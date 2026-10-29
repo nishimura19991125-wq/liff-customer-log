@@ -65,6 +65,7 @@ import {
   applyCalendarCaseMove,
   applyCalendarRecordPatch,
   applyConstructionHandlerNameLocal,
+  applyConstructionHandlerNameByTNumberLocal,
 } from "@/lib/calendar-apply-patch";
 import { CalendarContractorFilterPanel } from "@/components/calendar-contractor-filter-panel";
 import type { CalendarDisplayMode } from "@/lib/calendar-contractor-filter";
@@ -140,11 +141,18 @@ function CaseConstructionHandlerEditor({
       skipForceRefresh?: boolean;
       recordId?: string;
       constructionHandlerName?: string;
+      /** 【残工】カードから変えたとき。同じ T番号 のカードの名前を差し替える */
+      zankoTNumber?: string;
     },
   ) => Promise<void>;
   onSessionExpired?: () => void;
 }) {
   const recordId = item.recordId?.trim() ?? "";
+  /**
+   * 【残工】カードはレコードIDを持たないので T番号 で変更する
+   * （/api/calendar/update-zanko-construction-handler）。見た目・操作は同じ
+   */
+  const zankoTNumber = item.zanko ? (item.tNumber?.trim() ?? "") : "";
   const currentName = item.constructionHandlerName?.trim() ?? "";
   const [editing, setEditing] = useState(false);
   const [selectedHandlerStaffId, setSelectedHandlerStaffId] = useState("");
@@ -159,9 +167,9 @@ function CaseConstructionHandlerEditor({
     setEditing(false);
     setFeedback(null);
     setSelectedHandlerStaffId(matchHandlerStaffRecordId(currentName, handlerRows));
-  }, [currentName, handlerRows, recordId]);
+  }, [currentName, handlerRows, recordId, zankoTNumber]);
 
-  const canSubmit = Boolean(idToken && recordId);
+  const canSubmit = Boolean(idToken && (recordId || zankoTNumber));
   const currentMatchedId = matchHandlerStaffRecordId(currentName, handlerRows);
 
   function openEditor() {
@@ -181,7 +189,7 @@ function CaseConstructionHandlerEditor({
       selectedHandlerStaffId.trim() ||
       resolveStaffIdRef.current?.().trim() ||
       "";
-    if (!recordId) return;
+    if (!recordId && !zankoTNumber) return;
     if (!resolvedId) {
       setFeedback({
         kind: "err",
@@ -202,7 +210,19 @@ function CaseConstructionHandlerEditor({
     try {
       const token = await idTokenForConstructionSubmit(idToken, onSessionExpired);
       if (!token) return;
-      const res = await fetch("/api/calendar/update-construction-handler", {
+      const res = zankoTNumber
+        ? await fetch("/api/calendar/update-zanko-construction-handler", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              tNumber: zankoTNumber,
+              constructionHandlerStaffRecordId: resolvedId,
+            }),
+          })
+        : await fetch("/api/calendar/update-construction-handler", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -239,7 +259,14 @@ function CaseConstructionHandlerEditor({
         });
         return;
       }
-      if (data.calendarPatch) {
+      if (zankoTNumber) {
+        // 【残工】カード: 同じ T番号 のカードの名前をその場で差し替える
+        await onSaved(null, {
+          skipForceRefresh: true,
+          zankoTNumber,
+          constructionHandlerName: data.constructionHandlerName,
+        });
+      } else if (data.calendarPatch) {
         await onSaved(data.calendarPatch);
       } else if (data.calendarPatchSkipped) {
         await onSaved(null, {
@@ -305,7 +332,7 @@ function CaseConstructionHandlerEditor({
             selectedHandlerStaffId={selectedHandlerStaffId}
             setSelectedHandlerStaffId={setSelectedHandlerStaffId}
             required={false}
-            inputId={`construction-handler-change-${recordId || "unknown"}`}
+            inputId={`construction-handler-change-${recordId || zankoTNumber || "unknown"}`}
             fallbackDisplayName={currentName}
             resolveStaffIdRef={resolveStaffIdRef}
           />
@@ -2307,10 +2334,26 @@ export function LiffCalendarMonthPage({
         skipForceRefresh?: boolean;
         recordId?: string;
         constructionHandlerName?: string;
+        zankoTNumber?: string;
       },
     ) => {
       const t = idToken;
       if (!t) return;
+      if (!patch && meta?.zankoTNumber && meta.constructionHandlerName) {
+        // 【残工】カードからの変更。同じ T番号 のカードの名前を差し替える
+        void mutateCalendar(
+          (prev) =>
+            prev
+              ? applyConstructionHandlerNameByTNumberLocal(
+                  prev,
+                  meta.zankoTNumber!,
+                  meta.constructionHandlerName!,
+                )
+              : prev,
+          { revalidate: false },
+        );
+        return;
+      }
       if (patch) {
         void mutateCalendar(
           (prev) => (prev ? applyCalendarRecordPatch(prev, patch) : prev),
@@ -3056,11 +3099,12 @@ export function LiffCalendarMonthPage({
                               </div>
                             )}
                               {/**
-                               * 【残工】カード（item.zanko）は工事登録アプリのレコードに
-                               * 紐づかないので、工事対応者の変更・工事日の変更・地図は
-                               * 出さない。お客様情報への導線（T番号 で動く）だけ出す
+                               * 【残工】カードは工事登録アプリのレコードに
+                               * 紐づかないので、工事日の変更・地図は出さない（下の分岐）。
+                               * 工事対応者の変更は普通のカードと同じ条件で出す
+                               * （T番号 で変更する。CaseConstructionHandlerEditor 内で分岐）
                                */}
-                              {item.zanko ? null : handlerFromStaff ? (
+                              {handlerFromStaff ? (
                                 <CaseConstructionHandlerEditor
                                   item={item}
                                   idToken={idToken}
