@@ -14,6 +14,8 @@ import {
   PAYMENT_METHODS_WITH_CASH,
   PAYMENT_METHODS_WITH_LOAN,
   REFERRAL_SOURCE_FIELD_KEYS,
+  REFERRAL_SOURCE_KEY,
+  isReferralSourceRequiredByClub,
   shouldShowReferralSourceFields,
   preApplicationRequiresDocuments,
   NON_FIT_HIDDEN_DOCUMENT_KEYS,
@@ -270,8 +272,16 @@ export function isCustomerInfoFormFieldVisible(
    * 条件W と同じ形。key ごとの分岐は書かず、対象は
    * REFERRAL_SOURCE_FIELD_KEYS（options.ts）1箇所だけで持つ。
    * この2項目には他の条件が無いので、ここで表示・非表示が確定する。
+   *
+   * ⚠ 紹介元だけはもう1つ条件がある。AP/CL のどちらかがトラーチ倶楽部なら、
+   *   導入経緯に関係なく表示する（必須にもなる）。判定は
+   *   isReferralSourceRequiredByClub（options.ts）1箇所。紹介手数料と条件を
+   *   分けた理由もそちらに書いてある。
    */
   if (REFERRAL_SOURCE_FIELD_KEYS.has(key)) {
+    if (key === REFERRAL_SOURCE_KEY && isReferralSourceRequiredByClub(values)) {
+      return true;
+    }
     return shouldShowReferralSourceFields(values);
   }
 

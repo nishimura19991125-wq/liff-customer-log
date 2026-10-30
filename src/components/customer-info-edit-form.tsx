@@ -46,6 +46,10 @@ import {
 } from "@/lib/customer-info-form/pt-transfer";
 import { inferPanelComboFromValues } from "@/lib/customer-info-form/panel-combo";
 import {
+  REFERRAL_SOURCE_CLUB_REQUIRED_HINT,
+  REFERRAL_SOURCE_KEY,
+} from "@/lib/customer-info-form/options";
+import {
   applyCustomerInfoHiddenDefaultsToValues,
   isCustomerInfoFormFieldVisible,
 } from "@/lib/customer-info-form/rules";
@@ -1121,6 +1125,15 @@ export function CustomerInfoEditForm({
           {invalid || givenInvalid ? (
             <p className="mt-1 text-[11px] font-semibold text-red-600">
               入力してください
+            </p>
+          ) : null}
+          {/*
+            紹介元はトラーチ倶楽部の案件でだけ必須になる（ふだんは任意）。
+            保存できない理由が分かるよう、必須のあいだは理由を出す
+          */}
+          {field.key === REFERRAL_SOURCE_KEY && field.showRequired ? (
+            <p className={LOCKED_NOTE_CLASS}>
+              {REFERRAL_SOURCE_CLUB_REQUIRED_HINT}
             </p>
           ) : null}
           {/*

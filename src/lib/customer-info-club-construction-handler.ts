@@ -22,19 +22,31 @@ import { normApClStaffName } from "@/lib/customer-info-form/pt-transfer";
 export const CLUB_CONSTRUCTION_HANDLER_NAME = "トラーチ倶楽部";
 
 /**
- * AP担当者・CL担当者が両方ともトラーチ倶楽部か。
+ * 担当者名がトラーチ倶楽部か（1人分の判定）。
  *
  * 比較は isSameApClStaff と同じく normApClStaffName（NFKC・空白の畳み込み・
- * 前後の空白除去）を通した完全一致。片方でも空・別の人なら false。
+ * 前後の空白除去）を通した完全一致。空・別の人なら false。
+ *
+ * ⚠ **トラーチ倶楽部かどうかの判定はこの関数だけで行うこと。**
+ *   工事対応者の自動入力（isClubApClPair：AP・CL の両方）と、
+ *   紹介元の必須（isReferralSourceRequiredByClub：AP・CL のどちらか）が
+ *   どちらもこれを呼ぶ。判定を2通り書くと、片方だけ当たる案件が出る。
+ */
+export function isClubStaffName(name: string | null | undefined): boolean {
+  const club = normApClStaffName(CLUB_CONSTRUCTION_HANDLER_NAME);
+  return normApClStaffName(name ?? undefined) === club;
+}
+
+/**
+ * AP担当者・CL担当者が両方ともトラーチ倶楽部か。
+ *
+ * 1人分の判定は isClubStaffName。片方でも空・別の人なら false。
  */
 export function isClubApClPair(
   apStaff: string | null | undefined,
   clStaff: string | null | undefined,
 ): boolean {
-  const club = normApClStaffName(CLUB_CONSTRUCTION_HANDLER_NAME);
-  const ap = normApClStaffName(apStaff ?? undefined);
-  const cl = normApClStaffName(clStaff ?? undefined);
-  return ap === club && cl === club;
+  return isClubStaffName(apStaff) && isClubStaffName(clStaff);
 }
 
 /**

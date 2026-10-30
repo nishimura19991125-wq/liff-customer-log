@@ -87,6 +87,16 @@ import {
   isClubApClPair,
   shouldAutoFillClubConstructionHandler,
 } from "@/lib/customer-info-club-construction-handler";
+import {
+  isReferralSourceRequiredByClub,
+  REFERRAL_SOURCE_KEY,
+} from "@/lib/customer-info-form/options";
+import {
+  isReferralSourceBlank,
+  REFERRAL_SOURCE_COLUMN_MISSING_ERROR,
+  REFERRAL_SOURCE_REQUIRED_ERROR,
+  REFERRAL_SOURCE_UNREADABLE_ERROR,
+} from "@/lib/customer-info-referral-source-guard";
 import { stripCustomerInfoConstructionFieldsFromPayload } from "@/lib/customer-info-construction-locked-fields";
 import { resolveCustomerInfoCreatorFieldId } from "@/lib/customer-info-creator-field";
 import {
@@ -243,6 +253,101 @@ async function fillClubConstructionHandlerIfEmpty(input: {
     return;
   }
   payload[handlerFieldId] = CLUB_CONSTRUCTION_HANDLER_NAME;
+}
+
+/**
+ * AP担当者・CL担当者のどちらかがトラーチ倶楽部で、紹介元が空なら保存を拒否する。
+ * 拒否するときはその応答、通すときは null を返す。
+ *
+ * ■ 保存後の値で判定する
+ * AP/CL は fillClubConstructionHandlerIfEmpty と同じく apClStaffAfterSave
+ * （payload に載っていればその値、無ければ保存前の値）。紹介元も、payload に
+ * 載っていればその値、無ければ保存前の @pocket の値を読む。
+ * 既存レコードが条件に当てはまって紹介元が空なら、他の項目だけ直す保存も
+ * 止まる（意図した動き）。
+ *
+ * ■ 紹介元の列は必要なときだけ読む
+ * トラーチ倶楽部の案件で、かつ payload に紹介元が無いときだけ1回読む。
+ * 普段の保存で読む列は増やさない。
+ *
+ * ■ 確かめられないときは止める
+ * 列が見つからない・読めないときは、トラーチ倶楽部の案件に限って保存を止める。
+ * 保存前の AP/CL を読めていない（apClStaffAfterSave が null）担当者は
+ * トラーチ倶楽部とみなさない。送られた値で判定する画面側の必須チェックは
+ * その場合も効いている。
+ */
+async function rejectIfClubReferralSourceMissing(input: {
+  appId: string;
+  recordId: string;
+  readAuth: AtPocketFetchAuth;
+  resolved: Awaited<ReturnType<typeof resolveCustomerInfoFormFields>>["resolved"];
+  payload: Record<string, unknown>;
+  loadedStaff: { apStaff?: string; clStaff?: string } | null;
+}): Promise<NextResponse | null> {
+  const { payload, loadedStaff } = input;
+  const apStaff = apClStaffAfterSave({
+    payload,
+    fieldId: input.resolved.find((f) => f.key === "apStaff")?.fieldId,
+    loaded: loadedStaff ? (loadedStaff.apStaff ?? "") : null,
+  });
+  const clStaff = apClStaffAfterSave({
+    payload,
+    fieldId: input.resolved.find((f) => f.key === "clStaff")?.fieldId,
+    loaded: loadedStaff ? (loadedStaff.clStaff ?? "") : null,
+  });
+  // 普段の保存はここで抜ける（@pocket を読まない）
+  if (!isReferralSourceRequiredByClub({ apStaff, clStaff })) return null;
+
+  const referralFieldId = input.resolved.find(
+    (f) => f.key === REFERRAL_SOURCE_KEY,
+  )?.fieldId;
+  if (!referralFieldId) {
+    console.warn(
+      "[api/customer-info/records/[recordId] PUT] 紹介元の列を解決できないため、トラーチ倶楽部の案件の保存を止めました",
+    );
+    return NextResponse.json(
+      { error: REFERRAL_SOURCE_COLUMN_MISSING_ERROR },
+      { status: 503 },
+    );
+  }
+
+  let referralSource: string;
+  if (Object.prototype.hasOwnProperty.call(payload, referralFieldId)) {
+    referralSource = String(payload[referralFieldId] ?? "");
+  } else {
+    try {
+      const row = await fetchRecordById(
+        input.appId,
+        input.recordId,
+        input.readAuth,
+        referralFieldId,
+      );
+      if (!row?.record || typeof row.record !== "object") {
+        throw new Error("record not found");
+      }
+      referralSource = readCustomerInfoFieldValue(
+        row.record as Record<string, unknown>,
+        referralFieldId,
+      );
+    } catch (e) {
+      console.warn(
+        "[api/customer-info/records/[recordId] PUT] 紹介元の取得に失敗したため、トラーチ倶楽部の案件の保存を止めました",
+        e,
+      );
+      return NextResponse.json(
+        { error: REFERRAL_SOURCE_UNREADABLE_ERROR },
+        { status: 503 },
+      );
+    }
+  }
+
+  if (isReferralSourceBlank(referralSource)) {
+    return NextResponse.json(
+      { error: REFERRAL_SOURCE_REQUIRED_ERROR },
+      { status: 400 },
+    );
+  }
+  return null;
 }
 
 /** お客様情報アプリの住宅ステータス列。連携（sync 側）と同じ解決順にする */
@@ -953,6 +1058,23 @@ export async function PUT(request: Request, ctx: RouteCtx) {
           { error: "更新する項目がありません" },
           { status: 400 },
         );
+      }
+
+      /**
+       * AP・CL のどちらかがトラーチ倶楽部なら、紹介元が空の保存を拒否する。
+       * キャンセルの保存は他の必須項目と同じく対象外
+       * （findMissingRequiredCustomerInfoFields の treatAllRequiredAsOptional）。
+       */
+      if (!savingCancelled) {
+        const rejected = await rejectIfClubReferralSourceMissing({
+          appId: cfg.appId,
+          recordId,
+          readAuth,
+          resolved,
+          payload,
+          loadedStaff,
+        });
+        if (rejected) return rejected;
       }
 
       /**

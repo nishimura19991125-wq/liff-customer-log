@@ -32,6 +32,12 @@ const APP_FIELDS = [
   { uniqueId: "field-12", caption: "CLPT" },
   { uniqueId: "field-13", caption: "電話番号" },
   { uniqueId: "field-14", caption: "Aki番号" },
+  /**
+   * 紹介元。トラーチ倶楽部の案件（AP/CL のどちらか）で紹介元が必須になり、
+   * 列が無いと保存そのものが止まる（503）。このファイルは工事対応者の
+   * 自動入力を見るテストだが、保存を通すための前提としてこの列が要る。
+   */
+  { uniqueId: "field-21", caption: "紹介元" },
 ];
 
 vi.mock("@/lib/request-auth", () => ({
@@ -152,12 +158,32 @@ const { PUT } = await import(
 
 const ctx = { params: Promise.resolve({ recordId: "1483" }) };
 
+/**
+ * 保存に既定で載せる紹介元。
+ *
+ * ■ テスト用データを直した理由
+ * トラーチ倶楽部の案件（AP/CL のどちらか）で紹介元が必須になった
+ * （referral-source-club.test.ts）。このファイルの保存はほとんどが
+ * トラーチ倶楽部の案件なので、紹介元を送らないとサーバが拒否する。
+ * 送らなかった項目は、表示中なら空で書き込む扱いになるため、保存前の
+ * レコードに入れておくだけでは足りない。
+ *
+ * ⚠ 工事対応者の自動入力の仕様は変わっていない。**expect(...) は変えずに、
+ *   前提データ（列一覧の紹介元と、ここで送る紹介元）だけを足した。**
+ *   同じように落ちたときは、まず前提データが足りないかを疑うこと。
+ *   期待値を変えて通さないこと。
+ */
+const DEFAULT_REFERRAL_SOURCE = { referralSource: "A商事" };
+
 async function put(formValues: Record<string, unknown>) {
   const res = await PUT(
     new Request("https://example.test/records/1483", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ formValues }),
+      // テストごとに渡した値を優先する
+      body: JSON.stringify({
+        formValues: { ...DEFAULT_REFERRAL_SOURCE, ...formValues },
+      }),
     }),
     ctx,
   );

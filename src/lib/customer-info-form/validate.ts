@@ -5,7 +5,11 @@ import {
 } from "@/lib/customer-info-form/form-change";
 import { hasDecimalKwValue } from "@/lib/customer-info-form/decimal-kw";
 import { parseCommaIntegerDigits } from "@/lib/customer-info-form/numeric-comma";
-import { isIndoorSurveyStatusNotDone } from "@/lib/customer-info-form/options";
+import {
+  isIndoorSurveyStatusNotDone,
+  isReferralSourceRequiredByClub,
+  REFERRAL_SOURCE_KEY,
+} from "@/lib/customer-info-form/options";
 import { isValidPhoneNumberFormat } from "@/lib/customer-info-form/phone-number";
 import { isValidPostalCodeFormat } from "@/lib/customer-info-form/postal-code";
 import { parsePtDigitsOnly } from "@/lib/customer-info-form/pt-transfer";
@@ -55,12 +59,22 @@ function isBlankText(raw: string): boolean {
   return t === "" || t === "-";
 }
 
-/** フォーム値に応じて必須か（schema の required:false は常に任意） */
+/**
+ * フォーム値に応じて必須か。
+ *
+ * schema の required:false は常に任意。例外は紹介元だけで、AP/CL の
+ * どちらかがトラーチ倶楽部なら必須になる（isReferralSourceRequiredByClub）。
+ * キャンセル案件で必須を外すのは他の項目と同じ。
+ */
 export function isCustomerInfoFieldRequired(
   field: Pick<CustomerInfoFormFieldForValidate, "key" | "required">,
   values: CustomerInfoFormValues,
   context?: CustomerInfoRequiredCheckContext,
 ): boolean {
+  if (field.key === REFERRAL_SOURCE_KEY) {
+    if (isCustomerInfoCancelledForRequiredCheck(values, context)) return false;
+    return isReferralSourceRequiredByClub(values);
+  }
   if (field.required === false) return false;
   if (isCustomerInfoCancelledForRequiredCheck(values, context)) return false;
   if (

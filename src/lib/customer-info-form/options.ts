@@ -1,3 +1,4 @@
+import { isClubStaffName } from "@/lib/customer-info-club-construction-handler";
 import type { CustomerInfoFormValues } from "@/lib/customer-info-form/types";
 
 export const PAYMENT_METHOD_OPTIONS = [
@@ -165,6 +166,43 @@ export function shouldShowReferralSourceFields(
     (values.introduction ?? "").trim(),
   );
 }
+
+/** 紹介元のキー。トラーチ倶楽部の条件はこの項目だけに掛かる */
+export const REFERRAL_SOURCE_KEY = "referralSource";
+
+/**
+ * トラーチ倶楽部の案件か（紹介元を表示・必須にするか）。
+ *
+ * ■ 紹介元は2つの条件で動く
+ *   - 条件A（導入経緯）：shouldShowReferralSourceFields。紹介手数料と共通。
+ *     当てはまれば表示する（任意）。
+ *   - トラーチ倶楽部：この関数。AP担当者 **または** CL担当者 が
+ *     トラーチ倶楽部なら、導入経緯に関係なく表示して必須にする。
+ *   表示 = 条件A または トラーチ倶楽部、必須 = トラーチ倶楽部。
+ *   保存は表示に従う（表示中なら送る、非表示なら @pocket を触らない）。
+ *
+ * ■ 紹介手数料と条件が分かれた理由
+ *   トラーチ倶楽部の案件では、どこから来た案件かを必ず残す運用にした
+ *   （紹介元を必須にする依頼）。導入経緯がダイレクトなど条件A の対象外でも
+ *   紹介元は要る。一方、紹介手数料は依頼の対象外で、条件A のままでよい。
+ *   そのため REFERRAL_SOURCE_FIELD_KEYS（条件A の対象）は2項目のまま残し、
+ *   紹介元にだけこの条件を足している。違ってよい箇所は
+ *   referral-source-club.test.ts の ALLOWED_REFERRAL_DIFFERENCES で固定している。
+ *
+ * **表示・必須・保存・サーバでの拒否は、必ずこの1関数から導くこと。**
+ *
+ * トラーチ倶楽部かどうかの判定は isClubStaffName（工事対応者の自動入力と同じ）。
+ * ここで名前を比べ直さないこと。
+ */
+export function isReferralSourceRequiredByClub(
+  values: { apStaff?: string | null; clStaff?: string | null },
+): boolean {
+  return isClubStaffName(values.apStaff) || isClubStaffName(values.clStaff);
+}
+
+/** トラーチ倶楽部の案件で紹介元が必須な理由（画面に出す） */
+export const REFERRAL_SOURCE_CLUB_REQUIRED_HINT =
+  "AP担当者またはCL担当者がトラーチ倶楽部のため必須です。";
 
 /**
  * 機器保証期間（@pocket リスト式・単一選択）。
