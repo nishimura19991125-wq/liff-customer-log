@@ -160,6 +160,29 @@ vi.mock("@/lib/google-chat", () => ({
   sendGoogleChatContractMessage: async () => ({ kind: "sent" as const }),
 }));
 
+/**
+ * 加盟店リスト（取引先会社一覧のトラーチ倶楽部加盟店）。
+ *
+ * ■ テスト用データを足した理由
+ * トラーチ倶楽部の案件では、紹介元が加盟店リストにある値でないと保存できない
+ * （referral-source-member.test.ts）。保存のたびに一覧を読み直し、読めなければ
+ * 保存を止める。このファイルの保存は トラーチ倶楽部の案件で紹介元が入っているものがあり、加盟店リストが無いと
+ * すべて「取引先の一覧を確認できなかった」で止まる。
+ * そのため、ここで送っている紹介元（A商事・B商事）を加盟店リストに入れておく。
+ *
+ * ⚠ 空なら拒否する仕様（このファイルが見ているもの）は変わっていない。**expect(...) は変えずに、前提データ（加盟店リスト）だけを足した。**
+ *   同じように落ちたときは、まず前提データが足りないかを疑うこと。
+ *   期待値を変えて通さないこと。
+ */
+vi.mock("@/lib/trading-partner-manufacturers", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/trading-partner-manufacturers")>();
+  return {
+    ...actual,
+    fetchTradingPartnerClubMemberOptionsFresh: async () => ["A商事", "B商事"],
+  };
+});
+
 const { PUT } = await import(
   "@/app/api/customer-info/records/[recordId]/route"
 );

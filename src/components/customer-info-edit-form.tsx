@@ -54,6 +54,7 @@ import {
   customerInfoFieldUsesStaffNameCombobox,
   REFERRAL_SOURCE_COMBOBOX_PLACEHOLDER,
 } from "@/lib/customer-info-form/combobox-fields";
+import { referralSourceNotMemberNote } from "@/lib/customer-info-form/referral-source-member";
 import {
   referralSourceFieldPresentation,
   referralSourceOptionsStateFromResponse,
@@ -153,6 +154,8 @@ export type CustomerInfoFormFieldApi = {
   showRequired?: boolean;
   /** UI 用: 欄の下に出す説明（紹介元の選択肢を読めなかったときなど） */
   inputNote?: string;
+  /** UI 用: 欄の下に赤字で出す注意（このままでは保存できない理由） */
+  inputWarning?: string;
 };
 
 function parseCheckboxValue(raw: string): Set<string> {
@@ -923,6 +926,13 @@ export function CustomerInfoEditForm({
             options: p.options,
             optionsPending: false,
             inputNote: p.note ?? undefined,
+            // 加盟店リストに無い既存の値は選択肢に残すが、そのままでは
+            // サーバが拒否するので先に知らせる
+            inputWarning:
+              referralSourceNotMemberNote(
+                displayValues,
+                referralSourceOptions,
+              ) ?? undefined,
           };
         }
         if (f.key === "creditCompany") {
@@ -1208,6 +1218,11 @@ export function CustomerInfoEditForm({
           ) : null}
           {field.inputNote ? (
             <p className={LOCKED_NOTE_CLASS}>{field.inputNote}</p>
+          ) : null}
+          {field.inputWarning ? (
+            <p className="mt-1 text-[11px] font-semibold leading-relaxed text-red-600">
+              {field.inputWarning}
+            </p>
           ) : null}
           {/*
             書類のアップロード欄（タスクF）。表示条件は既存の visibleFields に従う。

@@ -94,16 +94,22 @@ import {
 import {
   isReferralSourceBlank,
   REFERRAL_SOURCE_COLUMN_MISSING_ERROR,
+  REFERRAL_SOURCE_MEMBER_LIST_UNREADABLE_ERROR,
+  REFERRAL_SOURCE_NOT_MEMBER_ERROR,
   REFERRAL_SOURCE_REQUIRED_ERROR,
   REFERRAL_SOURCE_UNREADABLE_ERROR,
 } from "@/lib/customer-info-referral-source-guard";
+import { isReferralSourceInMemberList } from "@/lib/customer-info-form/referral-source-member";
 import { stripCustomerInfoConstructionFieldsFromPayload } from "@/lib/customer-info-construction-locked-fields";
 import { resolveCustomerInfoCreatorFieldId } from "@/lib/customer-info-creator-field";
 import {
   lineAuthUnauthorizedResponse,
   resolveCallerLineAuth,
 } from "@/lib/request-auth";
-import { enrichCustomerInfoFormFieldsWithManufacturers } from "@/lib/trading-partner-manufacturers";
+import {
+  enrichCustomerInfoFormFieldsWithManufacturers,
+  fetchTradingPartnerClubMemberOptionsFresh,
+} from "@/lib/trading-partner-manufacturers";
 
 export const dynamic = "force-dynamic";
 
@@ -344,6 +350,41 @@ async function rejectIfClubReferralSourceMissing(input: {
   if (isReferralSourceBlank(referralSource)) {
     return NextResponse.json(
       { error: REFERRAL_SOURCE_REQUIRED_ERROR },
+      { status: 400 },
+    );
+  }
+
+  /**
+   * 加盟店リスト（会社種別=トラーチ倶楽部加盟店・取引状況=取引中）と照合する。
+   *
+   * 保存のたびにキャッシュを使わず読み直す。加盟店を登録した直後でも
+   * 保存できるようにするため。増える @pocket の呼び出しは通常1回で、
+   * トラーチ倶楽部の案件で紹介元が入っている保存に限る。
+   *
+   * 読み直せない（失敗・未設定・0件）ときは保存を止める。加盟店以外が
+   * 入るよりは止めるほうがよい、という判断。文言は「リストに無い」とは
+   * 言わない（原因が違う）。
+   * 既存レコードの紹介元がリストに無いときも止まる（意図した動き）。
+   */
+  let members: string[] | null;
+  try {
+    members = await fetchTradingPartnerClubMemberOptionsFresh();
+  } catch (e) {
+    console.warn(
+      "[api/customer-info/records/[recordId] PUT] 加盟店リストの取得に失敗したため、トラーチ倶楽部の案件の保存を止めました",
+      e,
+    );
+    members = null;
+  }
+  if (!members || members.length === 0) {
+    return NextResponse.json(
+      { error: REFERRAL_SOURCE_MEMBER_LIST_UNREADABLE_ERROR },
+      { status: 503 },
+    );
+  }
+  if (!isReferralSourceInMemberList(members, referralSource)) {
+    return NextResponse.json(
+      { error: REFERRAL_SOURCE_NOT_MEMBER_ERROR },
       { status: 400 },
     );
   }

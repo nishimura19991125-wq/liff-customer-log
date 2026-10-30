@@ -32,3 +32,19 @@ export function isReferralSourceBlank(raw: string | null | undefined): boolean {
   const t = (raw ?? "").trim();
   return t === "" || t === "-";
 }
+
+/**
+ * 紹介元が加盟店リスト（会社種別=トラーチ倶楽部加盟店・取引状況=取引中）に無いとき。
+ * 画面の説明（REFERRAL_SOURCE_NOT_MEMBER_NOTE）と同じく、選び直せばよいと伝える。
+ */
+export const REFERRAL_SOURCE_NOT_MEMBER_ERROR =
+  "紹介元がトラーチ倶楽部加盟店の一覧にありません。候補から選び直してください。";
+
+/**
+ * 加盟店リストを読み直せなかったとき（失敗・未設定・0件）。
+ *
+ * ⚠ 「リストに無い」とは言わない。原因が違う（入っている値は正しいかもしれない）。
+ * 加盟店以外が入るよりは保存を止めるほうがよい、という判断で止める。
+ */
+export const REFERRAL_SOURCE_MEMBER_LIST_UNREADABLE_ERROR =
+  "取引先の一覧を確認できなかったため保存できません。時間をおいてもう一度お試しください。";

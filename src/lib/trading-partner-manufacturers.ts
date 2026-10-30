@@ -367,6 +367,26 @@ async function fetchClubMemberOptionsUncached(): Promise<string[] | null> {
   return fetchCompanyOptionsUncached(COMPANY_TYPE_CLUB_MEMBER);
 }
 
+/**
+ * トラーチ倶楽部加盟店（取引中）の会社名を、キャッシュを使わず @pocket から読み直す。
+ *
+ * お客様情報の保存で紹介元を照合するときに使う。加盟店を登録した直後でも
+ * 保存できるよう、画面用の一覧（fetchTradingPartnerClubMemberOptions の
+ * 10分キャッシュ）は読まないし、書き換えもしない。
+ *
+ * 失敗は握りつぶさずに投げる（保存側が「確認できなかった」として止める）。
+ * 未設定なら null。
+ *
+ * @pocket の呼び出しは通常1回（一覧1ページ・1000件まで）。列を環境変数で
+ * 3つとも指定していなければ列定義の取得が増え、加盟店が1件以下なら
+ * 全列での取り直しが1回増える（いずれも既存の読み込み処理の動き）。
+ */
+export async function fetchTradingPartnerClubMemberOptionsFresh(): Promise<
+  string[] | null
+> {
+  return fetchClubMemberOptionsUncached();
+}
+
 let clubMemberCache: CompanyOptionsCache | null = null;
 let clubMemberInflight: Promise<string[] | null> | null = null;
 
