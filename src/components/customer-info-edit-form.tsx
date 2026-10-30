@@ -46,9 +46,15 @@ import {
 } from "@/lib/customer-info-form/pt-transfer";
 import { inferPanelComboFromValues } from "@/lib/customer-info-form/panel-combo";
 import {
+  isReferralSourceRequiredByClub,
   REFERRAL_SOURCE_CLUB_REQUIRED_HINT,
   REFERRAL_SOURCE_KEY,
 } from "@/lib/customer-info-form/options";
+import {
+  referralSourceFieldPresentation,
+  referralSourceOptionsStateFromResponse,
+  type ReferralSourceOptionsState,
+} from "@/lib/customer-info-form/referral-source-options";
 import {
   applyCustomerInfoHiddenDefaultsToValues,
   isCustomerInfoFormFieldVisible,
@@ -141,6 +147,8 @@ export type CustomerInfoFormFieldApi = {
   value: string;
   /** UI 用: 現在のフォーム値に応じた必須表示 */
   showRequired?: boolean;
+  /** UI 用: 欄の下に出す説明（紹介元の選択肢を読めなかったときなど） */
+  inputNote?: string;
 };
 
 function parseCheckboxValue(raw: string): Set<string> {
@@ -602,6 +610,14 @@ export function CustomerInfoEditForm({
     useState(false);
 
   /**
+   * 紹介元の選択肢（取引先会社一覧のトラーチ倶楽部加盟店）。
+   * トラーチ倶楽部の案件になったときに1回だけ読む。それ以外の案件では読まない
+   */
+  const [referralSourceOptions, setReferralSourceOptions] =
+    useState<ReferralSourceOptionsState>({ status: "idle" });
+  const referralSourceOptionsRequestedRef = useRef(false);
+
+  /**
    * この編集セッション中に、システムが hiddenValue（＝「不要」）を書いた書類項目。
    *
    * 画面内の状態としてだけ持つ（localStorage / sessionStorage は使わない）。
@@ -785,6 +801,32 @@ export function CustomerInfoEditForm({
     };
   }, [idToken]);
 
+  /**
+   * 紹介元の選択肢を読む。読み込み中の state を依存に入れると、
+   * 読み込み中に切り替えた時点で後片付けが走り結果を捨ててしまうので、
+   * 「読みに行ったか」は ref で持つ。失敗したら紹介元はテキスト入力に戻る
+   */
+  const referralSourceClubCase = isReferralSourceRequiredByClub(displayValues);
+  useEffect(() => {
+    if (!idToken || !referralSourceClubCase) return;
+    if (referralSourceOptionsRequestedRef.current) return;
+    referralSourceOptionsRequestedRef.current = true;
+    setReferralSourceOptions({ status: "loading" });
+    void (async () => {
+      try {
+        const res = await fetch("/api/customer-info/referral-source-options", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const data: unknown = await res.json().catch(() => null);
+        setReferralSourceOptions(
+          referralSourceOptionsStateFromResponse(res.ok, data),
+        );
+      } catch {
+        setReferralSourceOptions({ status: "failed" });
+      }
+    })();
+  }, [idToken, referralSourceClubCase]);
+
   useEffect(() => {
     if (!idToken) {
       setApClStaff(null);
@@ -856,6 +898,23 @@ export function CustomerInfoEditForm({
     return formFields
       .filter((f) => isCustomerInfoFormFieldVisible(f.key, displayValues))
       .map((f) => {
+        /**
+         * 紹介元：トラーチ倶楽部の案件だけ選択式。一覧を読めなければテキスト。
+         * 値には触らない（欄の形だけ変える）
+         */
+        if (f.key === REFERRAL_SOURCE_KEY) {
+          const p = referralSourceFieldPresentation(
+            displayValues,
+            referralSourceOptions,
+          );
+          return {
+            ...f,
+            type: p.type,
+            options: p.options,
+            optionsPending: false,
+            inputNote: p.note ?? undefined,
+          };
+        }
         if (f.key === "creditCompany") {
           if (
             creditCompaniesLoading ||
@@ -941,6 +1000,7 @@ export function CustomerInfoEditForm({
     creditCompanies,
     creditCompaniesLoading,
     creditCompaniesConfigured,
+    referralSourceOptions,
     constructionContractors,
     constructionContractorsLoading,
     constructionContractorsConfigured,
@@ -1135,6 +1195,9 @@ export function CustomerInfoEditForm({
             <p className={LOCKED_NOTE_CLASS}>
               {REFERRAL_SOURCE_CLUB_REQUIRED_HINT}
             </p>
+          ) : null}
+          {field.inputNote ? (
+            <p className={LOCKED_NOTE_CLASS}>{field.inputNote}</p>
           ) : null}
           {/*
             書類のアップロード欄（タスクF）。表示条件は既存の visibleFields に従う。

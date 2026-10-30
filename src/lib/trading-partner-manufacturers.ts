@@ -19,6 +19,13 @@ import {
 const COMPANY_TYPE_MANUFACTURER = "メーカー";
 const COMPANY_TYPE_CREDIT = "信販会社";
 const COMPANY_TYPE_CONSTRUCTION_SHOP = "施工店";
+/**
+ * 紹介元の選択肢（トラーチ倶楽部の案件で使う）。
+ *
+ * ⚠ 「倶」は新字体。会社種別が「俱」（旧字体）のまま残っている会社は一覧に出ない。
+ *   比較は他の種類と同じく NFKC 後の完全一致で、旧字体は拾わない。
+ */
+const COMPANY_TYPE_CLUB_MEMBER = "トラーチ倶楽部加盟店";
 const TRADE_STATUS_ACTIVE = "取引中";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -354,6 +361,49 @@ export async function fetchTradingPartnerConstructionShopOptions(): Promise<
   })();
 
   return constructionShopInflight;
+}
+
+async function fetchClubMemberOptionsUncached(): Promise<string[] | null> {
+  return fetchCompanyOptionsUncached(COMPANY_TYPE_CLUB_MEMBER);
+}
+
+let clubMemberCache: CompanyOptionsCache | null = null;
+let clubMemberInflight: Promise<string[] | null> | null = null;
+
+/**
+ * 取引先会社一覧からトラーチ倶楽部加盟店（取引中）の会社名リスト。未設定時は null。
+ *
+ * お客様情報の紹介元の選択肢に使う。読み込み・並び順・キャッシュは
+ * 信販会社・施工店と同じ（fetchCompanyOptionsUncached を共有）。
+ * 失敗したときは空を返し、画面は紹介元をテキスト入力に戻す。
+ */
+export async function fetchTradingPartnerClubMemberOptions(): Promise<
+  string[] | null
+> {
+  const now = Date.now();
+  if (clubMemberCache && clubMemberCache.expiresAt > now) {
+    return clubMemberCache.options;
+  }
+  if (clubMemberInflight) return clubMemberInflight;
+
+  clubMemberInflight = (async () => {
+    try {
+      const options = await fetchClubMemberOptionsUncached();
+      clubMemberCache = { expiresAt: Date.now() + CACHE_TTL_MS, options };
+      return options;
+    } catch (e) {
+      console.error(
+        "[trading-partner-manufacturers] club member options fetch failed",
+        e,
+      );
+      clubMemberCache = { expiresAt: Date.now() + 60_000, options: [] };
+      return [];
+    } finally {
+      clubMemberInflight = null;
+    }
+  })();
+
+  return clubMemberInflight;
 }
 
 /** 取引先会社一覧からメーカー（取引中）の会社名リスト。未設定時は null */
