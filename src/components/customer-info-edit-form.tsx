@@ -51,6 +51,10 @@ import {
   REFERRAL_SOURCE_KEY,
 } from "@/lib/customer-info-form/options";
 import {
+  customerInfoFieldUsesStaffNameCombobox,
+  REFERRAL_SOURCE_COMBOBOX_PLACEHOLDER,
+} from "@/lib/customer-info-form/combobox-fields";
+import {
   referralSourceFieldPresentation,
   referralSourceOptionsStateFromResponse,
   type ReferralSourceOptionsState,
@@ -369,7 +373,8 @@ function FieldControl({
     );
   }
 
-  if (AP_CL_STAFF_KEYS.has(field.key)) {
+  // AP担当者・CL担当者、トラーチ倶楽部の案件の紹介元（一覧を読めたとき）
+  if (customerInfoFieldUsesStaffNameCombobox(field)) {
     return (
       <StaffNameSuggestCombobox
         id={`customer-info-${field.key}`}
@@ -380,6 +385,11 @@ function FieldControl({
         invalid={invalid}
         loading={Boolean(field.optionsPending)}
         inputClassName={INPUT_CLASS}
+        placeholder={
+          field.key === REFERRAL_SOURCE_KEY
+            ? REFERRAL_SOURCE_COMBOBOX_PLACEHOLDER
+            : undefined
+        }
         onChange={onChange}
       />
     );
